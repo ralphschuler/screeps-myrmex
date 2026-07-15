@@ -33,7 +33,15 @@ describe("Screeps auto-respawn", () => {
       get: vi.fn(async (endpoint) => {
         if (endpoint === "user/world-status") return { ok: 1, status: "normal" };
         if (endpoint === "game/shards/info") return shardInfo;
-        return { ok: 1, rooms: 2 };
+        if (endpoint === "user/rooms") {
+          return {
+            ok: 1,
+            reservations: { shard0: [], shard3: [], shardX: [] },
+            shards: { shard0: ["W1N1"], shard3: ["W2N2"], shardX: [] },
+          };
+        }
+
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
       }),
       post: vi.fn(),
     };
@@ -41,6 +49,9 @@ describe("Screeps auto-respawn", () => {
     const result = await ensureRespawn({ client, enabled: true });
 
     expect(result).toEqual({ action: "healthy", ownedRooms: 2 });
+    expect(client.get.mock.calls.filter(([endpoint]) => endpoint === "user/rooms")).toEqual([
+      ["user/rooms"],
+    ]);
     expect(client.post).not.toHaveBeenCalled();
   });
 
@@ -49,14 +60,21 @@ describe("Screeps auto-respawn", () => {
       get: vi.fn(async (endpoint) => {
         if (endpoint === "user/world-status") return { ok: 1, status: "lost" };
         if (endpoint === "game/shards/info") return shardInfo;
-        return { ok: 1, rooms: 0 };
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
       }),
       post: vi.fn(),
     };
 
     const result = await ensureRespawn({ client, enabled: false });
 
-    expect(result.action).toBe("would-respawn");
+    expect(result).toEqual({ action: "would-respawn", ownedRooms: 0, status: "lost" });
+    expect(client.get.mock.calls.filter(([endpoint]) => endpoint === "user/rooms")).toEqual([
+      ["user/rooms"],
+    ]);
     expect(client.post).not.toHaveBeenCalled();
   });
 
@@ -65,7 +83,11 @@ describe("Screeps auto-respawn", () => {
       get: vi.fn(async (endpoint) => {
         if (endpoint === "user/world-status") return { ok: 1, status: "normal" };
         if (endpoint === "game/shards/info") return shardInfo;
-        return { ok: 1, rooms: 0 };
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
       }),
       post: vi.fn(),
     };
@@ -92,7 +114,7 @@ describe("Screeps auto-respawn", () => {
         }
 
         if (endpoint === "user/rooms") {
-          return { ok: 1, rooms: 0 };
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
         }
 
         if (endpoint === "game/shards/info") {
@@ -129,7 +151,7 @@ describe("Screeps auto-respawn", () => {
         }
 
         if (endpoint === "user/rooms") {
-          return { ok: 1, rooms: 0 };
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
         }
 
         if (endpoint === "game/shards/info") {
@@ -175,6 +197,26 @@ describe("Screeps auto-respawn", () => {
     );
   });
 
+  it.each([
+    ["missing shard map", { ok: 1, rooms: 0 }],
+    ["non-array shard rooms", { ok: 1, shards: { shard3: null } }],
+    ["non-string room name", { ok: 1, shards: { shard3: [null] } }],
+  ])("fails closed on %s", async (_description, roomsPayload) => {
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "lost" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") return roomsPayload;
+
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }),
+      post: vi.fn(),
+    };
+
+    await expect(ensureRespawn({ client, enabled: true })).rejects.toThrow("malformed room count");
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
   it("discovers shards and deterministically selects the best available start", async () => {
     let statusCalls = 0;
     const objects = [
@@ -191,7 +233,13 @@ describe("Screeps auto-respawn", () => {
         if (endpoint === "game/shards/info") {
           return { ok: 1, shards: [{ name: "shard3" }, { name: "shard1" }] };
         }
-        if (endpoint === "user/rooms") return { ok: 1, rooms: 0 };
+        if (endpoint === "user/rooms") {
+          return {
+            ok: 1,
+            reservations: { shard1: [], shard3: [] },
+            shards: { shard1: [], shard3: [] },
+          };
+        }
         if (endpoint === "user/respawn-prohibited-rooms") return { ok: 1, rooms: [] };
         if (endpoint === "user/world-start-room")
           return { ok: 1, room: `W${query.shard.at(-1)}N1` };

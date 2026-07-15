@@ -7,21 +7,27 @@ const INTERIOR_MIN = 4;
 const INTERIOR_MAX = ROOM_SIZE - 5;
 
 function roomCount(payload) {
-  const rooms = payload?.rooms;
+  const shards = payload?.shards;
 
-  if (typeof rooms === "number") {
-    return rooms;
+  if (shards === null || typeof shards !== "object" || Array.isArray(shards)) {
+    return undefined;
   }
 
-  if (Array.isArray(rooms)) {
-    return rooms.length;
+  let count = 0;
+
+  for (const [shard, rooms] of Object.entries(shards)) {
+    if (
+      shard.length === 0 ||
+      !Array.isArray(rooms) ||
+      rooms.some((room) => typeof room !== "string" || room.length === 0)
+    ) {
+      return undefined;
+    }
+
+    count += rooms.length;
   }
 
-  if (rooms !== null && typeof rooms === "object") {
-    return Object.keys(rooms).length;
-  }
-
-  return undefined;
+  return count;
 }
 
 function terrainString(payload) {
@@ -275,22 +281,19 @@ export async function ensureRespawn({
   polls = 24,
   wait = () => new Promise((resolvePromise) => setTimeout(resolvePromise, 15_000)),
 }) {
-  const [worldStatus, shardsPayload] = await Promise.all([
+  const [worldStatus, shardsPayload, roomsPayload] = await Promise.all([
     client.get("user/world-status"),
     client.get("game/shards/info"),
+    client.get("user/rooms"),
   ]);
   const shards = parseShards(shardsPayload);
-  const roomsPayloads = await Promise.all(
-    shards.map((shard) => client.get("user/rooms", { interval: 8, shard })),
-  );
   const status = worldStatus?.status;
-  const roomCounts = roomsPayloads.map(roomCount);
+  const ownedRooms = roomCount(roomsPayload);
 
-  if (roomCounts.some((count) => count === undefined)) {
+  if (ownedRooms === undefined) {
     throw new Error("Screeps returned a malformed room count; refusing to mutate the account.");
   }
 
-  const ownedRooms = roomCounts.reduce((sum, count) => sum + count, 0);
   const zeroRoomRecovery = status === "normal" && ownedRooms === 0 && respawnOnZeroRooms;
 
   if (status === "normal" && !zeroRoomRecovery) {
