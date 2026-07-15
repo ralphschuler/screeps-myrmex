@@ -46,6 +46,5 @@ jobs:
           SCREEPS_RESPAWN_NAME: ${{ vars.SCREEPS_RESPAWN_NAME || 'Myrmex' }}
           SCREEPS_RESPAWN_ON_ZERO_ROOMS: ${{ vars.SCREEPS_RESPAWN_ON_ZERO_ROOMS }}
           SCREEPS_RESPAWN_TARGETS: ${{ secrets.SCREEPS_RESPAWN_TARGETS }}
-          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
           SCREEPS_TOKEN: ${{ secrets.SCREEPS_TOKEN }}
         run: node scripts/auto-respawn.mjs
