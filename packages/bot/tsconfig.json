@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["screeps"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

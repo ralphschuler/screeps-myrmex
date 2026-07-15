@@ -1,0 +1,39 @@
+{
+  "name": "screeps-myrmex",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MYRMEX: an autonomous, economy-first Screeps bot built to endure, retaliate, and expand.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run docs:check && npm run build",
+    "clean": "node scripts/clean.mjs",
+    "docs:check": "markdownlint-cli2",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --project packages/bot/tsconfig.json --noEmit && tsc --project packages/scenario-kit/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/screeps": "3.4.0",
+    "esbuild": "0.28.1",
+    "eslint": "10.7.0",
+    "globals": "17.7.0",
+    "markdownlint-cli2": "0.23.0",
+    "prettier": "3.9.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
+    "vitest": "4.1.10"
+  }
+}

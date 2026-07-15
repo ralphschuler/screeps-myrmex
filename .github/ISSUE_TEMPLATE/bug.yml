@@ -1,0 +1,36 @@
+name: Gameplay failure
+description: Report an observed outcome that violates MYRMEX strategy or invariants.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include Screeps credentials, private tokens, or sensitive alliance intelligence.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Observed outcome
+      description: What happened in game, and what should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Deterministic reproduction
+      description: Provide the tick range, relevant room state, and minimal scenario data.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Strategic impact
+      description: Describe energy, CPU, survival, territory, or diplomatic consequences.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: Bundle or source commit SHA.
+    validations:
+      required: true

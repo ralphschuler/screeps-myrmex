@@ -1,0 +1,54 @@
+name: Sync Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: wiki-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Publish versioned Wiki
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Publish Wiki pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          destination="$(mktemp -d)/wiki"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+
+          if ! git clone "$remote" "$destination"; then
+            mkdir -p "$destination"
+            git -C "$destination" init
+            git -C "$destination" remote add origin "$remote"
+          fi
+
+          find "$destination" -maxdepth 1 -type f -name '*.md' -delete
+          cp wiki/*.md "$destination"/
+          git -C "$destination" add --all
+
+          if git -C "$destination" diff --cached --quiet; then
+            echo "Wiki is already current."
+            exit 0
+          fi
+
+          git -C "$destination" config user.name "github-actions[bot]"
+          git -C "$destination" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$destination" commit -m "Sync Wiki from ${GITHUB_SHA}"
+          git -C "$destination" push origin HEAD:master

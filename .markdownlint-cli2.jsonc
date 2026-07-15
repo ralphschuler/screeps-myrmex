@@ -1,0 +1,8 @@
+{
+  "config": {
+    "MD013": false,
+    "MD033": false,
+  },
+  "globs": ["README.md", "CONTRIBUTING.md", "SECURITY.md", "docs/**/*.md", "wiki/**/*.md"],
+  "ignores": ["node_modules/**", "dist/**"],
+}

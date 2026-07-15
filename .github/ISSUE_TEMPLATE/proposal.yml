@@ -1,0 +1,41 @@
+name: Strategic capability proposal
+description: Propose behavior tied to a measurable Screeps outcome.
+title: "proposal: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Strategic problem
+      description: Which survival, economy, CPU, defense, expansion, or warfare problem exists?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Acceptance outcome
+      description: State the measurable game outcome and guardrails.
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario design
+      description: Describe initial world state, tick budget, and assertions.
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Roadmap phase
+      options:
+        - Phase 0 — specification
+        - Phase 1 — survival
+        - Phase 2 — colony
+        - Phase 3 — remotes
+        - Phase 4 — expansion
+        - Phase 5 — defense
+        - Phase 6 — MMO canary
+        - Phase 7–8 — power projection
+    validations:
+      required: true
