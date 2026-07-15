@@ -69,3 +69,14 @@ export interface CreepActionExecutionResult {
     | "executed";
   readonly status: "executed" | "failed" | "rejected";
 }
+
+/** Immutable per-tick evidence produced after the movement buffers are sealed. */
+export interface MovementRuntimeResult {
+  readonly actionDecisions: readonly CreepActionDecision[];
+  readonly actionExecution: readonly CreepActionExecutionResult[];
+  readonly actionSubmitted: number;
+  readonly movementDecisions: readonly MovementDecision[];
+  readonly movementExecution: readonly MovementExecutionResult[];
+  readonly movementSubmitted: number;
+  readonly status: "disabled" | "executed" | "not-run";
+}

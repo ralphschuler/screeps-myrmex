@@ -19,8 +19,11 @@ repair. Structural guards reject direct, aliased, rebound, `call`, `apply`, `mov
 `moveByPath` bypasses.
 
 The authority stores no persistent queue or creep task Memory. Future lease agents (#38) are only
-producers. Expected return codes and adapter faults become typed execution results; they do not
-throw across the tick boundary.
+producers. Issue #112 provides bounded tick-local producer channels plus reconstructible static
+matrix/local-path cache namespaces and a local-only, policy-bounded search seam. The path cache
+never holds live objects, occupancy, reservations, or task state; the arbiter applies dynamic
+reservation after cache lookup. Expected return codes and adapter faults become typed execution
+results; they do not throw across the tick boundary.
 
 ## Consequences
 
