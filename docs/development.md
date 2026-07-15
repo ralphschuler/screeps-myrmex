@@ -56,7 +56,7 @@ The fallback target format is:
 
 Room names and coordinates are operational intelligence, so keep this value in a secret rather than
 a repository variable. Every configured target must name its shard. The respawner discovers the
-currently available shards itself, counts owned rooms across all of them, and requests a start room
+currently available shards itself, reads the account-wide room map once, and requests a start room
 on every shard. It ranks valid rooms by spawn-site quality and uses shard name and room name as
 stable tie-breakers. No target coordinate is printed to the public workflow log.
 
@@ -74,7 +74,7 @@ workflows:
 
 - deployment: `GET` and `POST /api/user/code`;
 - shard discovery: `GET /api/game/shards/info`;
-- health: `GET /api/user/world-status` and `GET /api/user/rooms` on every discovered shard;
+- health: `GET /api/user/world-status` and one aggregate `GET /api/user/rooms`;
 - respawn transition: `POST /api/user/respawn`;
 - target selection: `GET /api/user/respawn-prohibited-rooms`, `GET /api/user/world-start-room`,
   `GET /api/game/room-terrain`, and `GET /api/game/room-objects`;
