@@ -5,12 +5,18 @@ demonstrably stable.
 
 ## Phase 0 — Executable Specification
 
+**Status:** implemented; release evidence is tracked in
+[issue #22](https://github.com/ralphschuler/screeps-myrmex/issues/22) and
+[`phase0-evidence.md`](phase0-evidence.md).
+
 - Repository, CI, bundle, documentation, and Wiki.
 - Versioned memory and deterministic tick phases.
 - Scenario DSL and the first cold-boot/recovery outcomes.
 - CPU and outcome telemetry contracts.
 
-**Exit:** deterministic replay and CPU accounting work before gameplay code.
+**Exit:** deterministic replay, recovery, CPU accounting, mandatory-tail reservation, and ownership
+enforcement pass the repository gate. Phase 1 may begin after the Phase 0 evidence PR is green and
+merged.
 
 ## Phase 1 — Survival Kernel
 

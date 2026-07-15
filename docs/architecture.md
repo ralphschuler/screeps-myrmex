@@ -10,7 +10,9 @@ This document defines the core systems of MYRMEX, the authority each system owns
 supported ways those systems integrate. It is deliberately specific so that human and AI
 contributors extend one bot instead of creating competing frameworks.
 
-The codebase is still in Phase 0. A system described here may not exist yet. Its absence is an
+The Phase 0 substrate is executable: state, kernel, CPU admission, heap cache, world observation,
+intent arbitration/execution contracts, telemetry, deterministic replay, and architecture checks are
+implemented. Systems assigned to later roadmap phases remain normative targets. Their absence is an
 implementation task, not permission to invent a different boundary. If a requirement cannot fit this
 architecture, write an ADR before changing the architecture.
 
@@ -153,6 +155,11 @@ interface TickContext {
 }
 ```
 
+The Phase 0 `TickContext` is the intentionally smaller executable subset: tick, shard, memory
+status, detached state view, immutable snapshot, sealed arbitration result, reconcile result, and
+bounded tick telemetry. It contains neither `Game` nor mutable `Memory`. Later fields enter only
+with the roadmap system that owns them.
+
 `RuntimeServices` contains narrow interfaces, not concrete systems. It exposes state transactions,
 cache lookup, segment requests, deterministic IDs, and telemetry. Gameplay planners MUST NOT receive
 executors through this interface.
@@ -183,7 +190,7 @@ Every tick runs the following seven phases in order.
 | Plan      | objectives, contracts, demands, normal intents      | staged transitions only              | none                      |
 | Execute   | arbitration decisions and command results           | none                                 | executors only            |
 | Reconcile | updated contracts, ledgers, and cache invalidations | one staged commit                    | none                      |
-| Telemetry | bounded metrics and diagnostics                     | telemetry ring/head only             | visual/log output only    |
+| Telemetry | bounded metrics and diagnostics                     | none in Phase 0                      | visual/log output only    |
 
 ### 6.1 Boot
 
@@ -279,6 +286,40 @@ Telemetry always runs in a reserved budget, even after a system failure. It reco
 answer what MYRMEX decided, why, what command ran, and what outcome occurred. It MUST cap log lines,
 metric cardinality, memory growth, and segment writes.
 
+Phase 0 exposes two immutable tick-local records from `runTick`. `KernelTickReport` contains system
+status, faults, mode, system/phase CPU, and unattributed kernel overhead. The bounded
+`TickTelemetry` summary contains snapshot size, cache size, bucket, and environment status; its
+cache measurement and construction run inside the reserved `telemetry.minimum` boundary. Together
+they form the tick result. A future durable ring MUST be prepared before Reconcile or written
+through `SegmentManager`; it MUST NOT add a second `Memory.myrmex` assignment after the reconcile
+commit.
+
+### 6.8 Phase 0 composition
+
+The executable foundation registers these systems explicitly in `runtime/tick.ts`:
+
+| System                | Phase     | Admission                       | CPU estimate |
+| --------------------- | --------- | ------------------------------- | -----------: |
+| `core.boot`           | Boot      | mandatory, recovery-safe        |         0.05 |
+| `world.observe`       | Observe   | mandatory, recovery-safe        |         1.00 |
+| `safety.foundation`   | Safety    | mandatory, recovery-safe        |         0.10 |
+| `planning.foundation` | Plan      | economic                        |         0.10 |
+| `cache.sweep`         | Plan      | surplus maintenance, cadence 25 |         0.25 |
+| `execution.arbitrate` | Execute   | mandatory tail                  |         0.50 |
+| `state.reconcile`     | Reconcile | mandatory tail                  |         1.00 |
+| `telemetry.minimum`   | Telemetry | mandatory tail                  |         0.50 |
+
+Memory opening is a bounded preflight because recovery status is an input to CPU-mode selection. It
+may perform only the documented migration step budget. `RuntimeKernel` remains the sole scheduled
+phase orchestrator. Phase 1 replaces foundation markers with survival policy systems; it does not
+add another loop.
+
+`runTick` captures CPU before that Memory preflight and passes the baseline into the kernel. The
+kernel's final reading follows mandatory telemetry work and report collection preparation. Thus
+`KernelTickReport.cpuUsed` equals the sum of per-system CPU plus `overheadCpu`; overhead includes
+Memory preflight, composition, admission, and orchestration between system boundaries. Only the
+constant-size return-object assembly occurs after the final meter reading.
+
 ## 7. Runtime Kernel
 
 ### 7.1 RuntimeKernel
@@ -353,8 +394,10 @@ class it orders by deadline, explicit wake reason, oldest due tick, then stable 
 priorities remain inside domain arbiters and do not change kernel criticality.
 
 No system may read `Game.cpu.bucket` to self-admit. It receives `CpuMode` and `CpuBudget` from the
-scheduler. A budget overrun emits a fault, reduces the next estimate, and may quarantine optional
-full runs until a probe succeeds.
+scheduler. Phase 0 records actual usage, estimate error, and explicit overruns. Repeated optional
+failures or overruns enter bounded quarantine and exponential probe backoff. An adaptive estimate
+policy may be added only with bounded persistence and boundary scenarios; static registered
+estimates remain authoritative until then.
 
 ### 7.4 Fault boundaries
 
@@ -410,25 +453,41 @@ Memory access uses typed repositories:
 Migrations are sequential, idempotent, downgrade-aware only when an ADR requires rollback, and
 tested from every supported schema version. Destructive migration requires a recovery strategy.
 
+The current state substrate applies these hard limits before commit: depth 64, 50,000 JSON nodes,
+1,500,000 combined string/key code units, 10,000 array items, 10,000 object keys, 1,024 code units
+per key, and 16 recovery diagnostics. A malformed optional authority subtree is rebuilt while valid
+authority subtrees and valid boot identity are salvaged. Future schema versions fail closed without
+downgrade.
+
 ### 8.2 CacheManager
 
 `CacheManager` replaces ad hoc module globals and duplicate caches. It owns all reusable heap data
 that can be discarded and rebuilt.
 
-Every cache namespace declares:
+Every cache namespace is registered once by its canonical owner:
 
 ```ts
-interface CacheNamespace<Key, Value> {
+interface CacheNamespaceContract<Key, Value> {
   readonly id: CacheNamespaceId;
+  readonly owner: SystemId;
   readonly version: number;
-  readonly maxEntries: number;
-  readonly defaultTtl: number;
-  load(key: Key, context: CacheLoadContext): Value | undefined;
+  readonly capacity: number;
+  readonly maxKeyLength: number;
+  readonly ttlTicks: number | null;
+  readonly maxEncodedLength: number;
+  readonly estimatedRebuildCpu: number;
+  keyOf(key: Key): DeterministicCacheKey;
+  readonly codec: CacheCodec<Value>;
 }
 ```
 
-Each entry records namespace version, key, creation tick, last-use tick, expiry tick, dependency
-epochs, and estimated size class. Required behavior:
+The manager returns a typed namespace handle. `getOrCompute` accepts the deterministic loader at the
+call site so the current immutable inputs remain explicit. Values cross the namespace codec boundary
+on every write and hit; this detaches caller references and rejects representations beyond the
+declared size budget.
+
+Each entry records its deterministic key, creation tick, last-use tick, expiry tick, dependency
+epochs, and encoded length under the registered namespace version. Required behavior:
 
 - missing, expired, invalidated, or corrupt entries are cache misses;
 - loaders are deterministic and side-effect free;
@@ -436,6 +495,7 @@ epochs, and estimated size class. Required behavior:
 - namespaces use stable keys and MUST NOT scan all entries during normal lookup;
 - a bounded maintenance sweep removes expired or least-recently-used entries;
 - cache statistics expose hits, misses, builds, evictions, and build CPU;
+- expiry maintenance is resumable and inspects at most the caller's explicit entry budget;
 - global reset correctness is tested with a completely empty manager;
 - no planner changes a strategic decision solely because a cache happened to be warm.
 
@@ -1018,6 +1078,33 @@ Required architecture assertions include:
 - optional system failure does not prevent mandatory tail phases.
 
 Tests assert outcomes and invariants, not merely imports or implementation call counts.
+
+### 18.1 Deterministic replay contract
+
+`@myrmex/scenario-kit` models only the mechanics needed to prove the active roadmap gate. A replay
+definition has a stable scenario ID and seed, a JSON-safe initial world, and one consecutive
+`Game.time` input per tick with an explicit CPU budget. A tick may mark a simulated global reset.
+
+The runner passes the step adapter an immutable beginning-of-tick world and input, a seeded random
+stream, and reconstructible heap state. The adapter returns the world visible on the next tick, an
+explicit outcome, and modeled CPU usage. It does not mutate the input snapshot or apply commands to
+the current-tick world. This mirrors Screeps' snapshot-and-deferred-command tick model without
+attempting to emulate unrelated engine behavior.
+
+Every run emits a canonical versioned transcript, a hash of the complete transcript, and a second
+outcome hash that deliberately ignores heap-reset and CPU metadata. Replaying the same definition
+and seed MUST reproduce the complete hash. Warm and reset runs MAY differ in complete telemetry but
+MUST reproduce the outcome hash whenever heap data is reconstructible. Invalid canonical data,
+non-consecutive time, CPU overrun, and failed scenario assertions fail the run.
+
+Production code MUST NOT import the runner. Runtime integration is an adapter in tests that maps a
+bounded fake world into the kernel's normal inputs and maps command results into the following
+tick's world.
+
+The versioned Phase 0 matrix and its exact limits are recorded in
+[`phase0-evidence.md`](phase0-evidence.md). It covers cold/warm boot, heap reset, interrupted
+migration, malformed optional state, planner/commit fault, CPU pressure, cache reset, command
+results, and reordered observations.
 
 ## 19. Roadmap Activation
 
