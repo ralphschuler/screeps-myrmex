@@ -1209,6 +1209,13 @@ there is no valid spawn and remains recoverable when a controller is still owned
 re-read world status immediately before `POST /user/respawn` so a concurrent or newly visible spawn
 cannot be destroyed from stale health data.
 
+A scheduled run may place only after its own guarded `POST /user/respawn` was accepted and the same
+run observed the transition to `empty`. If the invocation did not submit that transition, placement
+requires a manual workflow dispatch even when a preflight reread changes from `lost` to `empty`.
+This one-shot gate prevents the next schedule from blindly replaying an unchanged candidate set
+after an all-candidate failure while preserving a controlled recovery path for an already-empty
+account.
+
 Respawn-prohibited-room discovery is advisory. Its response is retried and normalized for qualified
 MMO keys and legacy unqualified room names. If it remains unavailable, the adapter may attempt
 bounded candidates because `place-spawn` remains the authoritative validator and cannot place in a

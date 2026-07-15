@@ -180,10 +180,14 @@ function placementErrorCategory(payload) {
     ["too soon after last respawn", "respawn-cooldown"],
     ["already playing", "already-playing"],
     ["blocked", "account-blocked"],
+    ["invalid room", "invalid-room"],
     ["invalid location", "invalid-location"],
     ["invalid params", "invalid-params"],
     ["name exists", "name-conflict"],
     ["no cpu", "no-cpu"],
+    ["not supported", "unsupported-room"],
+    ["out of borders", "out-of-borders"],
+    ["room busy", "room-busy"],
   ]);
 
   return known.get(error) ?? "api-rejected";
@@ -377,7 +381,8 @@ async function inspectDynamicRoom(client, shard, room) {
     (object) =>
       object?.type === "controller" &&
       (object.user === undefined || object.user === null || object.user === "") &&
-      (object.level === undefined || object.level === 0),
+      (object.level === undefined || object.level === 0) &&
+      (object.reservation === undefined || object.reservation === null),
   );
 
   if (sources.length < 2 || controllers.length !== 1) {
@@ -550,10 +555,12 @@ export async function ensureRespawn({
     new Promise((resolvePromise) => setTimeout(resolvePromise, RESPAWN_COOLDOWN_WAIT_MS)),
   allocateCpu = false,
   cpuAllocationPolls = CPU_ALLOCATION_POLLS,
+  allowInitialEmptyPlacement = false,
   report = () => {},
 }) {
   let accountState = await readAccountState(client);
   let { ownedRooms, shards, status } = accountState;
+  let respawnAcceptedThisRun = false;
 
   if (status === "normal") {
     if (enabled && !dryRun && allocateCpu && ownedRooms > 0) {
@@ -601,6 +608,7 @@ export async function ensureRespawn({
 
     if (status === "lost") {
       await client.post("user/respawn", {});
+      respawnAcceptedThisRun = true;
       await waitForEmptyStatus(client, { polls, wait });
       report("Respawn accepted; waiting for the 180-second placement cooldown.");
       await waitForRespawnCooldown();
@@ -617,6 +625,12 @@ export async function ensureRespawn({
         );
       }
     }
+  }
+
+  if (!respawnAcceptedThisRun && !allowInitialEmptyPlacement) {
+    throw new Error(
+      "manual-empty-placement-required: refusing placement without a respawn transition accepted in this run.",
+    );
   }
 
   let prohibited = await readProhibitedRoomKeys(client, {
@@ -753,6 +767,7 @@ if (isMainModule()) {
     dryRun: process.env.SCREEPS_RESPAWN_DRY_RUN === "true",
     enabled: process.env.SCREEPS_AUTO_RESPAWN_ENABLED === "true",
     allocateCpu: process.env.SCREEPS_AUTO_ALLOCATE_CPU !== "false",
+    allowInitialEmptyPlacement: process.env.SCREEPS_ALLOW_INITIAL_EMPTY_PLACEMENT === "true",
     report: (message) => console.log(message),
     spawnNamePrefix: process.env.SCREEPS_RESPAWN_NAME || "Myrmex",
   });

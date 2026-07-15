@@ -29,6 +29,11 @@ wait and a guarded same-target retry. It verifies CPU on the selected shard afte
 recently respawned account with one owned shard and zero CPU may complete that repair on a later
 run; established and multi-shard healthy accounts are not rebalanced.
 
+Spawn placement is manual-dispatch only unless the current scheduled invocation submitted the
+guarded respawn transition itself and then observed `empty`. A later schedule, or a preflight that
+changes from `lost` to `empty` without this run's mutation, will not replay the same failed
+candidate set without a new operator-controlled dispatch.
+
 See the repository's `docs/development.md` for exact secrets, variables, token scope, dry-run,
 deployment, and rollback instructions.
 
