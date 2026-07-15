@@ -1115,9 +1115,18 @@ External automation MUST:
 - leave expansion, colony bootstrapping, and all post-spawn gameplay to the runtime.
 
 Auto-respawn is the only external authority allowed to call the account respawn and initial
-place-spawn endpoints. It may act on the Screeps `lost` or `empty` states. Treating `normal` plus
-zero reported rooms as terminal loss requires the separate `SCREEPS_RESPAWN_ON_ZERO_ROOMS` opt-in.
-This prevents a shard/configuration error from silently causing destructive account reset.
+place-spawn endpoints. It may act only on the Screeps `lost` or `empty` states. `normal` is
+authoritative evidence of a valid spawn in a controlled room and MUST return without respawn
+mutation, even when the aggregate room endpoint temporarily reports zero rooms. A `lost` state means
+there is no valid spawn and remains recoverable when a controller is still owned. The adapter MUST
+re-read world status immediately before `POST /user/respawn` so a concurrent or newly visible spawn
+cannot be destroyed from stale health data.
+
+Respawn-prohibited-room discovery is advisory. Its response is retried and normalized for qualified
+MMO keys and legacy unqualified room names. If it remains unavailable, the adapter may attempt
+bounded candidates because `place-spawn` remains the authoritative validator and cannot place in a
+server-prohibited room. This fallback MUST NOT weaken world-status guards, expose candidate data, or
+treat an unverified placement as success.
 
 The same authority may allocate CPU only to the shard selected for a newly placed spawn. It prefers
 an already funded shard because `Game.cpu.setShardLimits` has a 12-hour change cooldown. A later run

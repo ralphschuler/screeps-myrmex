@@ -20,6 +20,10 @@ states, selects a viable start-room tile, verifies placement, and keeps target c
 workflow logs. Start selection examines bounded nearby rooms on every shard, prefers an already
 funded shard, and independently validates neutral two-source rooms and safe terrain.
 
+The scheduled job always performs a health check, but `world-status=normal` is an unconditional
+no-respawn result even when room-list data is temporarily stale. A `lost` state means no valid
+spawn; the script checks that state a second time immediately before destructive account mutation.
+
 After an accepted respawn, automation honors the documented 180-second cooldown with a 185-second
 wait and a guarded same-target retry. It verifies CPU on the selected shard after placement. A
 recently respawned account with one owned shard and zero CPU may complete that repair on a later

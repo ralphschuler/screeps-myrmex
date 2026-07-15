@@ -66,13 +66,12 @@ the public workflow log.
 
 Add these environment variables:
 
-| Variable                        | Required         | Default                   | Meaning                                                                  |
-| ------------------------------- | ---------------- | ------------------------- | ------------------------------------------------------------------------ |
-| `SCREEPS_AUTO_RESPAWN_ENABLED`  | yes for mutation | `false`                   | must equal `true` before scheduled recovery can mutate the account       |
-| `SCREEPS_AUTO_ALLOCATE_CPU`     | no               | `true`                    | allocate CPU to a newly selected shard and verify the resulting limit    |
-| `SCREEPS_RESPAWN_ON_ZERO_ROOMS` | no               | `false`                   | also recover when status is `normal` but the rooms endpoint reports zero |
-| `SCREEPS_RESPAWN_NAME`          | no               | `Myrmex`                  | non-secret prefix for the generated spawn name                           |
-| `SCREEPS_API_BASE_URL`          | no               | `https://screeps.com/api` | API base for MMO or an explicitly supported server                       |
+| Variable                       | Required         | Default                   | Meaning                                                               |
+| ------------------------------ | ---------------- | ------------------------- | --------------------------------------------------------------------- |
+| `SCREEPS_AUTO_RESPAWN_ENABLED` | yes for mutation | `false`                   | must equal `true` before scheduled recovery can mutate the account    |
+| `SCREEPS_AUTO_ALLOCATE_CPU`    | no               | `true`                    | allocate CPU to a newly selected shard and verify the resulting limit |
+| `SCREEPS_RESPAWN_NAME`         | no               | `Myrmex`                  | non-secret prefix for the generated spawn name                        |
+| `SCREEPS_API_BASE_URL`         | no               | `https://screeps.com/api` | API base for MMO or an explicitly supported server                    |
 
 Use a dedicated Screeps token scoped, where supported, to only the endpoints required by the two
 workflows:
@@ -87,8 +86,11 @@ workflows:
 - CPU selection and repair: `GET /api/auth/me` and `POST /api/user/console`.
 
 Screeps officially documents auth tokens and code upload, but describes the wider Web API as
-undocumented. The recovery script therefore validates every response, recognizes only known world
-states, verifies successful spawn placement, and fails closed on malformed or changed responses.
+undocumented. The recovery script therefore validates critical responses, recognizes only known
+world states, verifies successful spawn placement, and fails closed on malformed state or ownership
+data. The prohibited-room endpoint is advisory: malformed or unavailable data is retried three
+times, then candidate placement relies on the authoritative server-side validation performed by
+`place-spawn` rather than leaving an already reset account permanently empty.
 
 Foundation references:
 
@@ -119,16 +121,20 @@ validated commit to the same branch or activation of a separately maintained las
 1. Configure `SCREEPS_TOKEN`; shard discovery is automatic.
 2. Keep `SCREEPS_AUTO_RESPAWN_ENABLED=false` and run `Auto Respawn` manually with dry-run enabled.
 3. Optionally configure private fallback targets.
-4. Set `SCREEPS_RESPAWN_ON_ZERO_ROOMS=true` only when a normal account state with zero reported
-   rooms should be treated as terminal loss.
-5. Leave `SCREEPS_AUTO_ALLOCATE_CPU=true` unless CPU is managed by separate trusted automation.
-6. Set `SCREEPS_AUTO_RESPAWN_ENABLED=true` to authorize scheduled mutation.
+4. Leave `SCREEPS_AUTO_ALLOCATE_CPU=true` unless CPU is managed by separate trusted automation.
+5. Set `SCREEPS_AUTO_RESPAWN_ENABLED=true` to authorize scheduled mutation.
 
-Established healthy accounts are read-only. A `lost` account, or an explicitly authorized zero-room
-account, is moved through respawn and polled until it becomes `empty`. The workflow then waits 185
-seconds, covering the documented 180-second timeout plus a five-second buffer, and re-reads account
-state before discovery. An account already in `empty` skips the destructive respawn call; if
-placement still reports the global cooldown, the workflow waits 185 seconds and retries the same
+The scheduled workflow always wakes up to perform a read-only health check. `world-status=normal` is
+authoritative evidence of a valid spawn in a controlled room, so the script returns `healthy` even
+if the aggregate room list is temporarily stale or empty. It never lets room-count disagreement
+override `normal`.
+
+A `lost` account has game objects but no valid spawn and is moved through respawn even if it still
+owns a controller. Immediately before `POST /user/respawn`, the script re-reads world status and
+returns without mutation if a valid spawn appeared. An `empty` account skips the destructive respawn
+call and proceeds to placement. After an accepted respawn, the workflow waits 185 seconds, covering
+the documented 180-second timeout plus a five-second buffer, and re-reads account state before
+discovery. If placement still reports the global cooldown, it waits 185 seconds and retries the same
 candidate once without consuming the remaining candidates. After `place-spawn`, the action requires
 `world-status=normal`.
 
@@ -138,7 +144,8 @@ placement, the workflow uses `Game.cpu.setShardLimits` through the console endpo
 hours, so a recently respawned healthy account with exactly one owned shard and zero CPU is eligible
 for bounded repair on later scheduled runs. Older or multi-shard healthy accounts are never
 rebalanced by this workflow. Unknown states, inconsistent ownership, malformed API data, exhausted
-targets, or changed responses fail closed.
+targets, or changed critical responses fail closed. Advisory prohibited-room failures cannot bypass
+Screeps placement rules and are logged without room or coordinate data.
 
 Auto-respawn is disaster recovery, not expansion strategy. Once the initial spawn exists, the
 runtime's cold-boot and colony systems own all further decisions.

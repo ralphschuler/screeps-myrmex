@@ -10,6 +10,7 @@ const CPU_ALLOCATION_POLLS = 4;
 const NEARBY_ROOM_RADIUS = 3;
 const DYNAMIC_TARGETS_PER_SHARD = 3;
 const RECENT_RESPAWN_CPU_REPAIR_MS = 60 * 60 * 1_000;
+const PROHIBITED_ROOM_POLLS = 3;
 
 function roomCount(payload) {
   const shards = payload?.shards;
@@ -115,21 +116,62 @@ export function nearbyRoomNames(room, radius = NEARBY_ROOM_RADIUS) {
   return rooms;
 }
 
-function prohibitedRoomKeys(payload) {
+function parseProhibitedRoomKeys(payload) {
   const rooms = payload?.rooms;
 
-  if (
-    !Array.isArray(rooms) ||
-    rooms.some((key) => {
-      if (typeof key !== "string") return true;
-      const parts = key.split("/");
-      return parts.length !== 2 || parts.some((part) => part.length === 0);
-    })
-  ) {
-    throw new Error("Screeps returned malformed prohibited rooms; refusing spawn placement.");
+  if (!Array.isArray(rooms)) {
+    return undefined;
   }
 
-  return new Set(rooms);
+  const keys = new Set();
+
+  for (const key of rooms) {
+    if (typeof key !== "string" || key.length === 0) {
+      return undefined;
+    }
+
+    const parts = key.split("/");
+
+    if (parts.length === 2 && parts.every((part) => part.length > 0)) {
+      keys.add(key);
+      continue;
+    }
+
+    if (parts.length === 1 && parseRoomCoordinate(key) !== undefined) {
+      keys.add(`*/${key}`);
+      continue;
+    }
+
+    return undefined;
+  }
+
+  return keys;
+}
+
+function isRespawnRoomProhibited(prohibited, target) {
+  return prohibited.has(respawnRoomKey(target)) || prohibited.has(`*/${target.room}`);
+}
+
+async function readProhibitedRoomKeys(client, { polls, report, wait }) {
+  for (let attempt = 0; attempt < polls; attempt += 1) {
+    try {
+      const keys = parseProhibitedRoomKeys(await client.get("user/respawn-prohibited-rooms"));
+
+      if (keys !== undefined) {
+        return keys;
+      }
+    } catch {
+      // This endpoint is advisory; the placement endpoint remains authoritative.
+    }
+
+    if (attempt < polls - 1) {
+      report("Prohibited-room data is unavailable; retrying the advisory check.");
+      await wait();
+    }
+  }
+
+  report("Prohibited-room data stayed unavailable; relying on server-side placement validation.");
+  return new Set();
 }
 
 function placementErrorCategory(payload) {
@@ -370,7 +412,7 @@ async function dynamicTargetsForShard(client, shard, prohibited) {
   const targets = [];
 
   for (const room of candidates) {
-    if (prohibited.has(respawnRoomKey({ room, shard }))) {
+    if (isRespawnRoomProhibited(prohibited, { room, shard })) {
       continue;
     }
 
@@ -499,7 +541,6 @@ export async function ensureRespawn({
   client,
   enabled,
   dryRun = false,
-  respawnOnZeroRooms = false,
   configuredTargets = [],
   spawnNamePrefix = "Myrmex",
   now = () => Date.now(),
@@ -514,9 +555,7 @@ export async function ensureRespawn({
   let accountState = await readAccountState(client);
   let { ownedRooms, shards, status } = accountState;
 
-  const zeroRoomRecovery = status === "normal" && ownedRooms === 0 && respawnOnZeroRooms;
-
-  if (status === "normal" && !zeroRoomRecovery) {
+  if (status === "normal") {
     if (enabled && !dryRun && allocateCpu && ownedRooms > 0) {
       await repairRecentRespawnCpu(client, accountState, {
         polls: cpuAllocationPolls,
@@ -529,11 +568,11 @@ export async function ensureRespawn({
     return { action: "healthy", ownedRooms };
   }
 
-  if ((status === "lost" || status === "empty") && ownedRooms !== 0) {
-    throw new Error("Screeps terminal world status conflicts with owned rooms; refusing mutation.");
+  if (status === "empty" && ownedRooms !== 0) {
+    throw new Error("Screeps empty world status conflicts with owned rooms; refusing placement.");
   }
 
-  if (status !== "lost" && status !== "empty" && !zeroRoomRecovery) {
+  if (status !== "lost" && status !== "empty") {
     throw new Error("Screeps returned an unknown world status; refusing to mutate the account.");
   }
 
@@ -541,29 +580,52 @@ export async function ensureRespawn({
     return { action: "would-respawn", ownedRooms, status };
   }
 
-  if (status !== "empty") {
-    await client.post("user/respawn", {});
-    await waitForEmptyStatus(client, { polls, wait });
-    report("Respawn accepted; waiting for the 180-second placement cooldown.");
-    await waitForRespawnCooldown();
+  if (status === "lost") {
+    report("No valid spawn is visible; waiting before the destructive-state confirmation.");
+    await wait();
     accountState = await readAccountState(client);
     ({ ownedRooms, shards, status } = accountState);
 
-    if (status === "normal" && ownedRooms > 0) {
+    if (status === "normal") {
+      report("A valid spawn appeared before respawn mutation; leaving the account unchanged.");
       return { action: "healthy", ownedRooms };
     }
 
-    if (status !== "empty" || ownedRooms !== 0) {
-      throw new Error(
-        "Screeps account state changed during the respawn cooldown; refusing placement.",
-      );
+    if (status === "empty" && ownedRooms !== 0) {
+      throw new Error("Screeps empty world status conflicts with owned rooms; refusing placement.");
+    }
+
+    if (status !== "lost" && status !== "empty") {
+      throw new Error("Screeps account state changed before respawn; refusing mutation.");
+    }
+
+    if (status === "lost") {
+      await client.post("user/respawn", {});
+      await waitForEmptyStatus(client, { polls, wait });
+      report("Respawn accepted; waiting for the 180-second placement cooldown.");
+      await waitForRespawnCooldown();
+      accountState = await readAccountState(client);
+      ({ ownedRooms, shards, status } = accountState);
+
+      if (status === "normal") {
+        return { action: "healthy", ownedRooms };
+      }
+
+      if (status !== "empty" || ownedRooms !== 0) {
+        throw new Error(
+          "Screeps account state changed during the respawn cooldown; refusing placement.",
+        );
+      }
     }
   }
 
-  const prohibitedPayload = await client.get("user/respawn-prohibited-rooms");
-  let prohibited = prohibitedRoomKeys(prohibitedPayload);
+  let prohibited = await readProhibitedRoomKeys(client, {
+    polls: PROHIBITED_ROOM_POLLS,
+    report,
+    wait,
+  });
   const targets = configuredTargets.filter(
-    (target) => shards.includes(target.shard) && !prohibited.has(respawnRoomKey(target)),
+    (target) => shards.includes(target.shard) && !isRespawnRoomProhibited(prohibited, target),
   );
   const dynamicTargets = await discoverDynamicTargets(client, shards, prohibited);
   targets.push(...dynamicTargets);
@@ -600,7 +662,7 @@ export async function ensureRespawn({
   const rejectionCategories = new Set();
 
   for (const target of uniqueTargets) {
-    if (!shards.includes(target.shard) || prohibited.has(respawnRoomKey(target))) {
+    if (!shards.includes(target.shard) || isRespawnRoomProhibited(prohibited, target)) {
       continue;
     }
 
@@ -626,10 +688,14 @@ export async function ensureRespawn({
         throw new Error("Screeps account state changed during cooldown retry; refusing placement.");
       }
 
-      prohibited = prohibitedRoomKeys(await client.get("user/respawn-prohibited-rooms"));
+      prohibited = await readProhibitedRoomKeys(client, {
+        polls: PROHIBITED_ROOM_POLLS,
+        report,
+        wait,
+      });
       shards = accountState.shards;
 
-      if (!shards.includes(target.shard) || prohibited.has(respawnRoomKey(target))) {
+      if (!shards.includes(target.shard) || isRespawnRoomProhibited(prohibited, target)) {
         rejectionCategories.add("became-prohibited");
         continue;
       }
@@ -687,7 +753,6 @@ if (isMainModule()) {
     dryRun: process.env.SCREEPS_RESPAWN_DRY_RUN === "true",
     enabled: process.env.SCREEPS_AUTO_RESPAWN_ENABLED === "true",
     allocateCpu: process.env.SCREEPS_AUTO_ALLOCATE_CPU !== "false",
-    respawnOnZeroRooms: process.env.SCREEPS_RESPAWN_ON_ZERO_ROOMS === "true",
     report: (message) => console.log(message),
     spawnNamePrefix: process.env.SCREEPS_RESPAWN_NAME || "Myrmex",
   });

@@ -595,10 +595,10 @@ Once configured, deploy only a validated merged commit. Never print credentials.
 deployment unless screeps.com accepted the upload and the deployed version marker matches.
 
 `.github/workflows/auto-respawn.yml` is separately authorized only when
-`SCREEPS_AUTO_RESPAWN_ENABLED=true` in the protected environment. Do not weaken its
-recognized-state, zero-room opt-in, target secrecy, placement verification, or fail-closed behavior.
-Auto-respawn is account disaster recovery and does not count as a gameplay feature or expansion
-decision.
+`SCREEPS_AUTO_RESPAWN_ENABLED=true` in the protected environment. Do not weaken its recognized-state
+allowlist, authoritative `normal`-state guard, immediate pre-mutation recheck, target secrecy,
+placement verification, or fail-closed behavior. Auto-respawn is account disaster recovery and does
+not count as a gameplay feature or expansion decision.
 
 After deployment, immediately inspect available evidence for:
 

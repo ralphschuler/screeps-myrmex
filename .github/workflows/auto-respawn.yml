@@ -45,7 +45,6 @@ jobs:
           SCREEPS_RESPAWN_DRY_RUN:
             ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
           SCREEPS_RESPAWN_NAME: ${{ vars.SCREEPS_RESPAWN_NAME || 'Myrmex' }}
-          SCREEPS_RESPAWN_ON_ZERO_ROOMS: ${{ vars.SCREEPS_RESPAWN_ON_ZERO_ROOMS }}
           SCREEPS_RESPAWN_TARGETS: ${{ secrets.SCREEPS_RESPAWN_TARGETS }}
           SCREEPS_TOKEN: ${{ secrets.SCREEPS_TOKEN }}
         run: node scripts/auto-respawn.mjs

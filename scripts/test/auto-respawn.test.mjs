@@ -93,7 +93,7 @@ describe("Screeps auto-respawn", () => {
     expect(client.post).not.toHaveBeenCalled();
   });
 
-  it("requires explicit zero-room authorization for a normal account state", async () => {
+  it("treats normal world status as authoritative even when the room list is temporarily empty", async () => {
     const client = {
       get: vi.fn(async (endpoint) => {
         if (endpoint === "user/world-status") return { ok: 1, status: "normal" };
@@ -107,21 +107,14 @@ describe("Screeps auto-respawn", () => {
       post: vi.fn(),
     };
 
-    const ordinary = await ensureRespawn({ client, enabled: true });
-    const authorizedDryRun = await ensureRespawn({
-      client,
-      dryRun: true,
-      enabled: true,
-      respawnOnZeroRooms: true,
-    });
+    const result = await ensureRespawn({ client, enabled: true });
 
-    expect(ordinary).toEqual({ action: "healthy", ownedRooms: 0 });
-    expect(authorizedDryRun.action).toBe("would-respawn");
+    expect(result).toEqual({ action: "healthy", ownedRooms: 0 });
     expect(client.post).not.toHaveBeenCalled();
   });
 
   it("moves a lost account through respawn before placement", async () => {
-    const statuses = ["lost", "empty", "empty", "normal"];
+    const statuses = ["lost", "lost", "empty", "empty", "normal"];
     const waitForRespawnCooldown = vi.fn();
     const client = {
       get: vi.fn(async (endpoint) => {
@@ -157,6 +150,35 @@ describe("Screeps auto-respawn", () => {
     expect(result).toEqual({ action: "respawned" });
     expect(client.post).toHaveBeenNthCalledWith(1, "user/respawn", {});
     expect(waitForRespawnCooldown).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops before destructive mutation when a valid spawn appears during preflight", async () => {
+    const statuses = ["lost", "normal"];
+    const rooms = [[], ["W1N1"]];
+    const report = vi.fn();
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") {
+          return { ok: 1, status: statuses.shift() };
+        }
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, shards: { shard3: rooms.shift() } };
+        }
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }),
+      post: vi.fn(),
+    };
+
+    const wait = vi.fn();
+    const result = await ensureRespawn({ client, enabled: true, report, wait });
+
+    expect(result).toEqual({ action: "healthy", ownedRooms: 1 });
+    expect(client.post).not.toHaveBeenCalled();
+    expect(wait).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith(
+      "A valid spawn appeared before respawn mutation; leaving the account unchanged.",
+    );
   });
 
   it("waits and retries the same target once when placement reports the global cooldown", async () => {
@@ -404,7 +426,43 @@ describe("Screeps auto-respawn", () => {
     );
   });
 
-  it.each([[null], [["W1N1"]]])("fails closed on malformed prohibited rooms: %j", async (rooms) => {
+  it("retries malformed prohibited-room data before placement", async () => {
+    const statuses = ["empty", "normal"];
+    const prohibitedResponses = [
+      { ok: 1, rooms: null },
+      { ok: 1, rooms: [] },
+    ];
+    const wait = vi.fn();
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") {
+          return { ok: 1, status: statuses.shift() };
+        }
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+        if (endpoint === "user/respawn-prohibited-rooms") {
+          return prohibitedResponses.shift();
+        }
+        throw new Error("dynamic target unavailable");
+      }),
+      post: vi.fn(async () => ({ ok: 1 })),
+    };
+
+    const result = await ensureRespawn({
+      client,
+      configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
+      enabled: true,
+      wait,
+    });
+
+    expect(result).toEqual({ action: "respawned" });
+    expect(wait).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses server-side placement validation when prohibited-room data stays malformed", async () => {
+    const wait = vi.fn();
     const client = {
       get: vi.fn(async (endpoint) => {
         if (endpoint === "user/world-status") return { ok: 1, status: "empty" };
@@ -412,10 +470,10 @@ describe("Screeps auto-respawn", () => {
         if (endpoint === "user/rooms") {
           return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
         }
-        if (endpoint === "user/respawn-prohibited-rooms") return { ok: 1, rooms };
-        throw new Error(`Unexpected endpoint: ${endpoint}`);
+        if (endpoint === "user/respawn-prohibited-rooms") return { ok: 1, rooms: null };
+        throw new Error("dynamic target unavailable");
       }),
-      post: vi.fn(),
+      post: vi.fn(async () => ({ ok: 0, error: "invalid location" })),
     };
 
     await expect(
@@ -423,8 +481,41 @@ describe("Screeps auto-respawn", () => {
         client,
         configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
         enabled: true,
+        wait,
       }),
-    ).rejects.toThrow("malformed prohibited rooms");
+    ).rejects.toThrow("invalid-location");
+    expect(wait).toHaveBeenCalledTimes(2);
+    expect(client.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an unqualified legacy prohibited room as prohibited on every shard", async () => {
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "empty" };
+        if (endpoint === "game/shards/info") {
+          return { ok: 1, shards: [{ name: "shard1" }, { name: "shard3" }] };
+        }
+        if (endpoint === "user/rooms") {
+          return { ok: 1, shards: { shard1: [], shard3: [] } };
+        }
+        if (endpoint === "user/respawn-prohibited-rooms") {
+          return { ok: 1, rooms: ["W1N1"] };
+        }
+        throw new Error("dynamic target unavailable");
+      }),
+      post: vi.fn(),
+    };
+
+    await expect(
+      ensureRespawn({
+        client,
+        configuredTargets: [
+          { room: "W1N1", shard: "shard1", x: 20, y: 20 },
+          { room: "W1N1", shard: "shard3", x: 20, y: 20 },
+        ],
+        enabled: true,
+      }),
+    ).rejects.toThrow("No permitted respawn target");
     expect(client.post).not.toHaveBeenCalled();
   });
 
@@ -550,10 +641,40 @@ describe("Screeps auto-respawn", () => {
     );
   });
 
-  it("refuses a terminal status that conflicts with owned rooms", async () => {
+  it("recovers a lost account that still owns a room but has no valid spawn", async () => {
+    const statuses = ["lost", "lost", "empty", "empty", "normal"];
+    const roomLists = [["W1N1"], ["W1N1"], []];
     const client = {
       get: vi.fn(async (endpoint) => {
-        if (endpoint === "user/world-status") return { ok: 1, status: "lost" };
+        if (endpoint === "user/world-status") {
+          return { ok: 1, status: statuses.shift() };
+        }
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, shards: { shard3: roomLists.shift() } };
+        }
+        if (endpoint === "user/respawn-prohibited-rooms") return { ok: 1, rooms: [] };
+        throw new Error("dynamic target unavailable");
+      }),
+      post: vi.fn(async () => ({ ok: 1 })),
+    };
+
+    const result = await ensureRespawn({
+      client,
+      configuredTargets: [{ room: "W2N2", shard: "shard3", x: 20, y: 20 }],
+      enabled: true,
+      wait: vi.fn(),
+      waitForRespawnCooldown: vi.fn(),
+    });
+
+    expect(result).toEqual({ action: "respawned" });
+    expect(client.post).toHaveBeenNthCalledWith(1, "user/respawn", {});
+  });
+
+  it("refuses placement when empty world status conflicts with owned rooms", async () => {
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "empty" };
         if (endpoint === "game/shards/info") return shardInfo;
         if (endpoint === "user/rooms") {
           return { ok: 1, shards: { shard3: ["W1N1"] } };
@@ -564,7 +685,7 @@ describe("Screeps auto-respawn", () => {
     };
 
     await expect(ensureRespawn({ client, enabled: true })).rejects.toThrow(
-      "terminal world status conflicts with owned rooms",
+      "empty world status conflicts with owned rooms",
     );
     expect(client.post).not.toHaveBeenCalled();
   });
