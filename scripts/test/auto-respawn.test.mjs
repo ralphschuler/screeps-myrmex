@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { ensureRespawn, parseConfiguredTargets, selectSpawnPosition } from "../auto-respawn.mjs";
+import {
+  ensureRespawn,
+  parseConfiguredTargets,
+  parseShards,
+  selectSpawnPosition,
+} from "../auto-respawn.mjs";
+
+const shardInfo = { ok: 1, shards: [{ name: "shard3" }] };
 
 describe("Screeps auto-respawn", () => {
   it("selects a deterministic open interior tile", () => {
@@ -23,13 +30,15 @@ describe("Screeps auto-respawn", () => {
 
   it("does nothing while the account owns rooms", async () => {
     const client = {
-      get: vi.fn(async (endpoint) =>
-        endpoint === "user/world-status" ? { ok: 1, status: "normal" } : { ok: 1, rooms: 2 },
-      ),
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "normal" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        return { ok: 1, rooms: 2 };
+      }),
       post: vi.fn(),
     };
 
-    const result = await ensureRespawn({ client, enabled: true, shard: "shard3" });
+    const result = await ensureRespawn({ client, enabled: true });
 
     expect(result).toEqual({ action: "healthy", ownedRooms: 2 });
     expect(client.post).not.toHaveBeenCalled();
@@ -37,13 +46,15 @@ describe("Screeps auto-respawn", () => {
 
   it("reports a loss without mutation when disabled", async () => {
     const client = {
-      get: vi.fn(async (endpoint) =>
-        endpoint === "user/world-status" ? { ok: 1, status: "lost" } : { ok: 1, rooms: 0 },
-      ),
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "lost" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        return { ok: 1, rooms: 0 };
+      }),
       post: vi.fn(),
     };
 
-    const result = await ensureRespawn({ client, enabled: false, shard: "shard3" });
+    const result = await ensureRespawn({ client, enabled: false });
 
     expect(result.action).toBe("would-respawn");
     expect(client.post).not.toHaveBeenCalled();
@@ -51,19 +62,20 @@ describe("Screeps auto-respawn", () => {
 
   it("requires explicit zero-room authorization for a normal account state", async () => {
     const client = {
-      get: vi.fn(async (endpoint) =>
-        endpoint === "user/world-status" ? { ok: 1, status: "normal" } : { ok: 1, rooms: 0 },
-      ),
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "normal" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        return { ok: 1, rooms: 0 };
+      }),
       post: vi.fn(),
     };
 
-    const ordinary = await ensureRespawn({ client, enabled: true, shard: "shard3" });
+    const ordinary = await ensureRespawn({ client, enabled: true });
     const authorizedDryRun = await ensureRespawn({
       client,
       dryRun: true,
       enabled: true,
       respawnOnZeroRooms: true,
-      shard: "shard3",
     });
 
     expect(ordinary).toEqual({ action: "healthy", ownedRooms: 0 });
@@ -83,6 +95,10 @@ describe("Screeps auto-respawn", () => {
           return { ok: 1, rooms: 0 };
         }
 
+        if (endpoint === "game/shards/info") {
+          return shardInfo;
+        }
+
         if (endpoint === "user/respawn-prohibited-rooms") {
           return { ok: 1, rooms: [] };
         }
@@ -96,7 +112,6 @@ describe("Screeps auto-respawn", () => {
       client,
       configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
       enabled: true,
-      shard: "shard3",
       wait: vi.fn(),
     });
 
@@ -117,6 +132,10 @@ describe("Screeps auto-respawn", () => {
           return { ok: 1, rooms: 0 };
         }
 
+        if (endpoint === "game/shards/info") {
+          return shardInfo;
+        }
+
         if (endpoint === "user/respawn-prohibited-rooms") {
           return { ok: 1, rooms: [] };
         }
@@ -131,7 +150,6 @@ describe("Screeps auto-respawn", () => {
       configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
       enabled: true,
       now: () => 1,
-      shard: "shard3",
     });
 
     expect(result).toEqual({ action: "respawned" });
@@ -142,12 +160,55 @@ describe("Screeps auto-respawn", () => {
     );
   });
 
-  it("validates configured target JSON", () => {
-    expect(parseConfiguredTargets('[{"room":"W1N1","x":20,"y":20}]', "shard3")).toEqual([
+  it("validates shard discovery and configured target JSON", () => {
+    expect(
+      parseShards({ shards: [{ name: "shard3" }, { name: "shard1" }, { name: "shard3" }] }),
+    ).toEqual(["shard1", "shard3"]);
+    expect(parseConfiguredTargets('[{"room":"W1N1","x":20,"y":20,"shard":"shard3"}]')).toEqual([
       { room: "W1N1", shard: "shard3", x: 20, y: 20 },
     ]);
-    expect(() => parseConfiguredTargets('[{"room":"W1N1","x":1,"y":20}]', "shard3")).toThrow(
+    expect(() => parseConfiguredTargets('[{"room":"W1N1","x":20,"y":20}]')).toThrow(
       "invalid target",
+    );
+    expect(() => parseConfiguredTargets('[{"room":"W1N1","x":1,"y":20,"shard":"shard3"}]')).toThrow(
+      "invalid target",
+    );
+  });
+
+  it("discovers shards and deterministically selects the best available start", async () => {
+    let statusCalls = 0;
+    const objects = [
+      { type: "source", x: 10, y: 10 },
+      { type: "source", x: 40, y: 40 },
+      { type: "controller", x: 25, y: 25 },
+    ];
+    const client = {
+      get: vi.fn(async (endpoint, query) => {
+        if (endpoint === "user/world-status") {
+          statusCalls += 1;
+          return { ok: 1, status: statusCalls === 1 ? "empty" : "normal" };
+        }
+        if (endpoint === "game/shards/info") {
+          return { ok: 1, shards: [{ name: "shard3" }, { name: "shard1" }] };
+        }
+        if (endpoint === "user/rooms") return { ok: 1, rooms: 0 };
+        if (endpoint === "user/respawn-prohibited-rooms") return { ok: 1, rooms: [] };
+        if (endpoint === "user/world-start-room")
+          return { ok: 1, room: `W${query.shard.at(-1)}N1` };
+        if (endpoint === "game/room-terrain")
+          return { ok: 1, terrain: [{ terrain: "0".repeat(2_500) }] };
+        if (endpoint === "game/room-objects") return { ok: 1, objects };
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }),
+      post: vi.fn(async () => ({ ok: 1 })),
+    };
+
+    await ensureRespawn({ client, enabled: true, now: () => 1 });
+
+    expect(client.post).toHaveBeenCalledWith(
+      "game/place-spawn",
+      expect.objectContaining({ room: "W1N1", shard: "shard1" }),
+      { allowApiError: true },
     );
   });
 });
