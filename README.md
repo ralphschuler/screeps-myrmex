@@ -45,7 +45,8 @@ scripts/                narrow build and repository checks
 ```
 
 Read [the architecture](docs/architecture.md), [the strategy](docs/strategy.md), and
-[the roadmap](docs/roadmap.md) before adding features.
+[the roadmap](docs/roadmap.md) before adding features. AI agents should execute
+[the autonomous build loop](loop.md) one outcome slice at a time.
 
 ## Non-Negotiable Rules
 
