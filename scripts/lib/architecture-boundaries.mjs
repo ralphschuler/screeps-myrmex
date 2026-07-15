@@ -137,7 +137,9 @@ const RUNTIME_POLICY_FIELDS = new Set([
 ]);
 
 const AUTHORITY_DECLARATIONS = new Map([
+  ["BudgetLedger", "colony/budget-ledger.ts"],
   ["CacheManager", "cache/cache-manager.ts"],
+  ["ColonyDirector", "colony/director.ts"],
   ["CpuScheduler", "runtime/kernel/cpu-scheduler.ts"],
   ["MemoryManager", "state/manager.ts"],
   ["RuntimeConfigAuthority", "config/authority.ts"],
@@ -227,6 +229,13 @@ function inspectSource(contents, path) {
           stringLiteralValue(node.arguments[0]) === null)
       ) {
         addUnlessAllowed("config-owner-access-outside-runtime", path === "runtime/tick.ts");
+      }
+      if (
+        ((calledConfigOwnerMethod !== null && CONFIG_OWNER_METHODS.has(calledConfigOwnerMethod)) ||
+          calledConfigOwnerAlias) &&
+        stringLiteralValue(node.arguments[0]) === "colonies"
+      ) {
+        addUnlessAllowed("colonies-owner-access-outside-runtime", path === "runtime/tick.ts");
       }
     }
 

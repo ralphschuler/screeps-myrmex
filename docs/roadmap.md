@@ -24,18 +24,27 @@ merged.
   fail-closed self/ally/NAP exclusions form the Phase 1 foundation. The contract and deterministic
   proof matrix are tracked by [issue #36](https://github.com/ralphschuler/screeps-myrmex/issues/36)
   and [`phase1-config-evidence.md`](phase1-config-evidence.md).
+- The authoritative owned-room survival lifecycle and local energy/spawn-time/CPU reservation ledger
+  are tracked by [issue #37](https://github.com/ralphschuler/screeps-myrmex/issues/37) and
+  [`phase1-colony-evidence.md`](phase1-colony-evidence.md). They derive one deterministic recovery
+  objective and explicitly fund or block it without taking over spawn selection or command
+  execution.
 - Bootstrap harvesting, spawn demand, filling, upgrading, and construction.
 - Replacement deadlines and recovery from zero creeps.
 - Minimal movement arbitration and deterministic body construction.
 
-Issue #36 intentionally leaves every Phase 1 gameplay gate source-unavailable. Each subsequent
-outcome change may mark only its own source gate available after its prerequisites and outcome test
-exist; operational Memory may disable that work but can never activate it.
+The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 makes
+only `phase1.colony` available under `runtime-config-source-v2`; every downstream gate remains
+source-unavailable. Each subsequent outcome change may mark only its own gate available after its
+prerequisites and outcome test exist. Operational Memory may disable available work but can never
+activate an unfinished gate.
 
 **Exit:** recover from empty Memory and zero creeps without console intervention.
 
 ## Phase 2 — Complete Colony
 
+- Extend the existing colony authority from the survival lifecycle to complete RCL policy; do not
+  create a second per-room kernel or state machine.
 - Static mining, logistics contracts, links, storage, terminal, and layouts.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.

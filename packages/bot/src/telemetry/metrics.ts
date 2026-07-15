@@ -1,5 +1,12 @@
 import type { CacheManagerMetrics } from "../cache";
 import {
+  BUDGET_REASON_CODES,
+  COLONY_STATES,
+  type BudgetReasonCode,
+  type ColonyPlanningResult,
+  type ColonyState,
+} from "../colony";
+import {
   FEATURE_GATE_IDS,
   type FeatureGateId,
   type FeatureGateReason,
@@ -13,6 +20,24 @@ export interface FeatureGateTelemetry {
   readonly enabled: boolean;
   readonly reason: FeatureGateReason;
   readonly blockedBy: FeatureGateId | null;
+}
+
+export interface BoundedCount<Id extends string> {
+  readonly id: Id;
+  readonly count: number;
+}
+
+export interface ColonyTelemetry {
+  readonly status: ColonyPlanningResult["status"];
+  readonly ownerRevision: number | null;
+  readonly states: readonly BoundedCount<ColonyState>[];
+  readonly budgetReasons: readonly BoundedCount<BudgetReasonCode>[];
+  readonly objectives: number;
+  readonly activeReservations: number;
+  readonly pendingReservations: number;
+  readonly energyReserved: number;
+  readonly cpuReserved: number;
+  readonly spawnTicksReserved: number;
 }
 
 export interface TickTelemetry {
@@ -32,6 +57,7 @@ export interface TickTelemetry {
   readonly configCandidateRevision: number | null;
   readonly configAcceptedCandidateRevision: number | null;
   readonly featureGates: readonly FeatureGateTelemetry[];
+  readonly colony: ColonyTelemetry;
 }
 
 export interface TickTelemetryInput {
@@ -43,6 +69,7 @@ export interface TickTelemetryInput {
   readonly cache: CacheManagerMetrics;
   readonly config: RuntimeConfig;
   readonly configResolution: RuntimeConfigResolutionMetadata;
+  readonly colony: ColonyPlanningResult;
 }
 
 /** Creates a bounded, immutable per-tick summary; durable history is a later telemetry policy. */
@@ -73,5 +100,31 @@ export function recordTickTelemetry(input: TickTelemetryInput): TickTelemetry {
         }),
       ),
     ),
+    colony: Object.freeze({
+      status: input.colony.status,
+      ownerRevision: input.colony.ownerRevision,
+      states: Object.freeze(
+        COLONY_STATES.map((id) =>
+          Object.freeze({
+            id,
+            count: input.colony.colonies.filter((colony) => colony.state === id).length,
+          }),
+        ),
+      ),
+      budgetReasons: Object.freeze(
+        BUDGET_REASON_CODES.map((id) =>
+          Object.freeze({
+            id,
+            count: input.colony.decisions.filter((decision) => decision.reasonCode === id).length,
+          }),
+        ),
+      ),
+      objectives: input.colony.objectives.length,
+      activeReservations: input.colony.totals.active,
+      pendingReservations: input.colony.totals.pending,
+      energyReserved: input.colony.totals.energyReserved,
+      cpuReserved: input.colony.totals.cpuReserved,
+      spawnTicksReserved: input.colony.totals.spawnTicksReserved,
+    }),
   });
 }

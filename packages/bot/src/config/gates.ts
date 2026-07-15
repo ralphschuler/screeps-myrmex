@@ -13,9 +13,9 @@ export interface FeatureGateDefinition {
   readonly prerequisites: readonly FeatureGateId[];
 }
 
-/** #36 defines the gates but activates no unfinished Phase 1 behavior. */
+/** Source availability is advanced only with a complete, tested gameplay slice. */
 export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze([
-  { id: "phase1.colony", available: false, prerequisites: [] },
+  { id: "phase1.colony", available: true, prerequisites: [] },
   { id: "phase1.contracts", available: false, prerequisites: ["phase1.colony"] },
   { id: "phase1.spawn", available: false, prerequisites: ["phase1.colony"] },
   { id: "phase1.movement", available: false, prerequisites: [] },

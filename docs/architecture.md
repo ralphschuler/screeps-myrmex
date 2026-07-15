@@ -12,9 +12,11 @@ contributors extend one bot instead of creating competing frameworks.
 
 The Phase 0 substrate is executable: state, kernel, CPU admission, heap cache, world observation,
 intent arbitration/execution contracts, telemetry, deterministic replay, and architecture checks are
-implemented. Systems assigned to later roadmap phases remain normative targets. Their absence is an
-implementation task, not permission to invent a different boundary. If a requirement cannot fit this
-architecture, write an ADR before changing the architecture.
+implemented. Phase 1 also implements validated runtime configuration, fail-closed configured
+relations, the owned-room survival lifecycle, and the local budget ledger. Systems assigned to later
+roadmap gates remain normative targets. Their absence is an implementation task, not permission to
+invent a different boundary. If a requirement cannot fit this architecture, write an ADR before
+changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -73,6 +75,8 @@ one bundle, one composition root, one tick loop, and internal modules with stric
     MUST NOT authorize an action that can target or harm them.
 19. Every remote, claim, trade, and military operation has a budget, success condition, timeout, and
     exit condition.
+20. `ColonyDirector` is the sole owned-room lifecycle authority and `BudgetLedger` is the sole local
+    energy, spawn-time, and abstract-CPU reservation authority.
 
 Adding a second authority for any item above is an architecture defect, even if the duplicate is
 described as temporary.
@@ -103,7 +107,8 @@ The complete flow for a normal tick is:
 4. Activate requested segments and ingest available external data.
 5. Observe visible game state once.
 6. Evaluate immediate survival threats.
-7. Update strategic and operational objectives at their admitted cadence.
+7. Update strategic and operational objectives at their admitted cadence, with colony survival
+   posture and local reservations preceding downstream capability demand.
 8. Produce capability contracts and typed action intents.
 9. Arbitrate intents deterministically.
 10. Execute accepted intents through narrow command adapters.
@@ -153,6 +158,7 @@ interface TickContext {
   readonly intel: IntelView;
   readonly config: RuntimeConfig;
   readonly configResolution: RuntimeConfigResolutionMetadata;
+  readonly colony: ColonyPlanningResult;
   readonly budgets: BudgetView;
   readonly buffers: TickBuffers;
   readonly services: RuntimeServices;
@@ -161,10 +167,12 @@ interface TickContext {
 
 The executable `TickContext` began in Phase 0 with tick, shard, memory status, detached state view,
 immutable snapshot, sealed arbitration result, reconcile result, and bounded tick telemetry. Phase 1
-adds the resolved `RuntimeConfig` view. The context contains neither `Game`, mutable `Memory`, nor
-the raw operational candidate. Later fields enter only with the roadmap system that owns them. The
-aggregate `StateView` also redacts the raw `config` owner; config consumers use only
-`TickContext.config`.
+adds the resolved `RuntimeConfig` and immutable colony-plan views. The context contains neither
+`Game`, mutable `Memory`, nor the raw operational candidate. Later fields enter only with the
+roadmap system that owns them. The aggregate `StateView` also redacts the raw `config` and
+`colonies` owners; consumers use only `TickContext.config` and `TickContext.colony`. A later planner
+consumes the explicit colony-plan output rather than depending on a staged `colonies` mutation that
+is invisible in the beginning-of-tick state view.
 
 `RuntimeServices` contains narrow interfaces, not concrete systems. It exposes state transactions,
 cache lookup, segment requests, deterministic IDs, and telemetry. Gameplay planners MUST NOT receive
@@ -259,6 +267,11 @@ Each planner reads the same snapshot revision. No planner may depend on another 
 mutated hidden state earlier in the phase. Required inputs must be persistent views or explicit
 outputs in a typed buffer.
 
+`ColonyDirector` is mandatory Plan work at cadence one because bootstrapping, threat exit, and
+recovery cannot wait for optional admission. It still obeys the kernel-provided hard CPU ceiling.
+When the feature gate is disabled or the owner is unavailable, malformed, or from a future schema,
+it emits a bounded fail-closed status and authorizes no new work.
+
 ### 6.5 Execute
 
 Execute processes safety-remaining and normal intent buffers in fixed authority order. Each arbiter:
@@ -287,6 +300,10 @@ long-term policy.
 - stages the next tick's segment activation requests;
 - commits all validated changes through `MemoryManager`.
 
+The colony system may prepare and stage only its `colonies` owner transaction. A system fault or
+post-run CPU overrun discards that transaction and its tick-local plan. Reconcile remains the sole
+normal path that publishes the complete root.
+
 A failed command is evidence, not an exception. Expected game return codes become typed result
 reasons. Unexpected exceptions are handled by the owning system's fault boundary.
 
@@ -304,7 +321,7 @@ they form the tick result. A future durable ring MUST be prepared before Reconci
 through `SegmentManager`; it MUST NOT add a second `Memory.myrmex` assignment after the reconcile
 commit.
 
-### 6.8 Phase 0 composition
+### 6.8 Executable composition
 
 The executable foundation registers these systems explicitly in `runtime/tick.ts`:
 
@@ -313,7 +330,7 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `core.boot`           | Boot      | mandatory, recovery-safe        |         0.05 |
 | `world.observe`       | Observe   | mandatory, recovery-safe        |         1.00 |
 | `safety.foundation`   | Safety    | mandatory, recovery-safe        |         0.10 |
-| `planning.foundation` | Plan      | economic                        |         0.10 |
+| `colony.director`     | Plan      | mandatory, recovery-safe        |         1.50 |
 | `cache.sweep`         | Plan      | surplus maintenance, cadence 25 |         0.25 |
 | `execution.arbitrate` | Execute   | mandatory tail                  |         0.50 |
 | `state.reconcile`     | Reconcile | mandatory tail                  |         1.00 |
@@ -321,8 +338,8 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 
 Memory opening is a bounded preflight because recovery status is an input to CPU-mode selection. It
 may perform only the documented migration step budget. `RuntimeKernel` remains the sole scheduled
-phase orchestrator. Phase 1 replaces foundation markers with survival policy systems; it does not
-add another loop.
+phase orchestrator. The Phase 1 colony outcome replaces `planning.foundation` with
+`colony.director`; later outcomes replace their own foundation markers without adding another loop.
 
 `runTick` captures CPU before that Memory preflight and passes the baseline into the kernel. The
 kernel's final reading follows mandatory telemetry work and report collection preparation. Thus
@@ -453,6 +470,12 @@ Schema v3 contains every listed owner. The v2-to-v3 migration adds `config` with
 other owner payloads. A persisted, interrupted historical v1-to-v2 cursor remains valid: the runtime
 completes it, transitions to the separate v2-to-v3 cursor, and then finishes schema v3. Every later
 subtree still requires an owner and migration before its first field is added.
+
+The existing `colonies` owner uses owner-local schema v1 once the Phase 1 colony gate is active. It
+contains canonical colony records and the latest bounded ledger entry for each issuer. Exact `{}` is
+its only initialization shorthand. A non-empty malformed or future owner is preserved unchanged and
+authorizes no objective or reservation. This owner-local initialization does not change the root
+schema because schema v3 already reserved the owner.
 
 Memory access uses typed repositories:
 
@@ -633,6 +656,26 @@ Planners request reservations. The owning director grants, reduces, or rejects t
 consume against accepted reservations; reconciliation records actual cost and releases unused
 amounts. A priority is not authorization to overspend.
 
+The Phase 1 local ledger implements energy, exact spawn-time intervals, and abstract CPU units. Its
+canonical category order is emergency spawning, defense, replacement, harvesting/filling, controller
+survival, critical maintenance, then optional growth. Existing commitments and new requests compete
+together by category, deadline or expiry, colony ID, issuer, and revision. Every normalized request
+receives one grant, retained result, or denial with a bounded reason.
+
+Energy capacity is current spawn/extension energy, not storage or expected future income. Only
+emergency, defense, and replacement commitments may consume the configured protected spawn-energy
+tranche. Harvesting/filling, controller survival, critical maintenance, and optional growth must
+leave its remaining balance intact. Spawn reservations are half-open intervals, include the observed
+live spawning interval, and never overlap on one spawn. CPU values are integer milli-CPU derived
+from the system's admitted `CpuBudget`; they partition that admission and never become a second
+scheduler.
+
+Consumption uses cumulative totals, so retrying the same consume, release, expiry, or reconciliation
+is idempotent. Visible colony loss releases active local reservations. Observation-unknown colonies
+retain durable ledger bytes unchanged but expose no live authorization or totals; expiry is
+reconciled when current ownership becomes known again. Exact owner shape, limits, operation
+semantics, and proof cases are recorded in [`phase1-colony-evidence.md`](phase1-colony-evidence.md).
+
 ## 11. Capability Contracts and Creep Control
 
 MYRMEX does not run a parallel code path for every named creep role. It models work as capability
@@ -694,6 +737,7 @@ The following table is the canonical ownership map.
 | `RuntimeConfigAuthority` | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners  |
 | `EmpireDirector`         | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands    |
 | `ColonyDirector`         | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache      |
+| `BudgetLedger`           | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend    |
 | `EconomyPlanner`         | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps            |
 | `SpawnBroker`            | spawn queue and body selection                 | demands, energy, deadlines                | accepted spawn intents                   | call `spawnCreep` directly        |
 | `WorkforceAllocator`     | creep-to-contract leases                       | capabilities, contracts, travel estimates | assignments                              | create strategic objectives       |
@@ -718,10 +762,24 @@ Each owned room belongs to one colony state machine:
 
 `discovering → bootstrapping → developing → mature → threatened → recovering`
 
-`abandoning` and `lost` are explicit terminal paths. A colony may move between mature/developing,
+`lost` is the Phase 1 terminal path; a later portfolio may add an explicit abandoning operation
+without taking lifecycle ownership from the director. A colony may move between mature/developing,
 threatened, and recovering only through defined evidence-based transitions. The director owns the
 colony's reserve policy, RCL priorities, donor/receiver status, and which local objectives are
 active.
+
+A legal recovery worker is one non-spawning owned creep with active `WORK`, `CARRY`, and `MOVE`.
+Mature evidence is an owned RCL8 controller, an owned spawn, a legal worker, no controller downgrade
+risk, and no active threat. Current unowned creeps become threat evidence only after configured
+self/ally/NAP exclusions are applied and active offensive parts meet policy. A bootstrapping or
+recovering colony with an owned spawn but no legal worker derives one deterministic
+restore-workforce objective; the ledger funds it only when its atomic minimum fits.
+
+Threat clears into recovering for at least the transition tick. Recovery exits only after mandatory
+capability and the protected energy floor are restored. Optional growth is preempted during
+bootstrapping, threat, recovery, or brownout. A visible room with no owned controller becomes lost
+and releases active local reservations. A room absent from the current snapshot is unknown, never
+proof of loss, and authorizes no new live commitment.
 
 A colony is a planning boundary, not a separate kernel. All colonies share the same global
 scheduler, caches, movement authority, diplomacy ledger, and executors.
@@ -1009,12 +1067,16 @@ known source-available gate. For gate `g`:
 
 Activation fields do not exist in the override schema and are rejected as unknown. An unavailable
 gate therefore remains unavailable, and a gate with a closed prerequisite reports prerequisite
-blocking. Issue #36 leaves all Phase 1 gameplay gates source-unavailable; the change that proves a
-later outcome enables its own gate. Secrets never enter source, Memory, telemetry, Wiki, or
-committed config.
+blocking. Issue #37 makes only `phase1.colony` source-available under `runtime-config-source-v2`;
+every downstream gameplay gate remains unavailable until its own outcome is proved. Operational
+Memory may disable the colony gate but cannot activate another gate. A source-v1 receipt is
+incompatible and is reissued only after a present candidate revalidates; an incompatible receipt
+with no candidate falls back to source defaults without rewriting operator bytes. Secrets never
+enter source, Memory, telemetry, Wiki, or committed config.
 
-The versioned policy fields, limits, statuses, gates, and deterministic matrix are recorded in
-[`phase1-config-evidence.md`](phase1-config-evidence.md).
+The versioned policy fields, limits, statuses, gates, and deterministic matrices are recorded in
+[`phase1-config-evidence.md`](phase1-config-evidence.md) and
+[`phase1-colony-evidence.md`](phase1-colony-evidence.md).
 
 ## 15. Observability and Explainability
 
@@ -1022,7 +1084,9 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrix a
 
 - per-phase and per-system CPU with admission/skip reason;
 - cache and segment health;
-- colony state and reserves;
+- colony planning status, owner revision, and fixed-cardinality state and budget-reason counts;
+- objective, active-reservation, and pending-reservation counts;
+- total reserved energy, spawn ticks, and abstract CPU;
 - spawn utilization and unmet capability demand;
 - contract counts, age, completion, failure, and lease churn;
 - energy/source/logistics outcome metrics;
@@ -1035,6 +1099,10 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrix a
 Structured diagnostics use bounded codes and stable entity IDs. Free-form logs are for concise human
 context, not machine state. Each major decision includes a `reasonCode` and references its
 objective, contract, budget, or operation when applicable.
+
+General metrics MUST NOT use room names, issuers, objective IDs, reservation IDs, or request
+payloads as unbounded labels. Detailed immutable tick results may retain those stable IDs for direct
+consumers and tests.
 
 The runtime status surface MUST answer:
 
@@ -1050,21 +1118,22 @@ The runtime status surface MUST answer:
 | Failure                         | Required behavior                                                                  |
 | ------------------------------- | ---------------------------------------------------------------------------------- |
 | global heap reset               | rebuild all services/caches; continue from persistent contracts                    |
-| empty Memory                    | initialize schema; enter bootstrap; create no duplicate commitments                |
+| empty Memory                    | initialize owners; derive one bootstrap objective; create no duplicate commitments |
 | incomplete migration            | enter recovery mode and resume bounded migration                                   |
 | malformed/future config owner   | preserve owner; source-defaults with bounded malformed/future reason               |
+| malformed/future colonies owner | preserve owner; authorize no objective or reservation; report bounded reason       |
 | invalid config candidate        | reject atomically; revalidate compatible last-valid or use source defaults         |
 | unavailable/prerequisite gate   | keep work disabled and report its source or prerequisite reason                    |
 | missing/corrupt cache           | treat as miss and rebuild within budget                                            |
 | unavailable segment             | defer optional consumer or use explicitly lower-confidence fallback                |
 | corrupt segment                 | quarantine generation; load previous valid generation or rebuild                   |
-| stale vision                    | request vision or defer; never treat stale as current                              |
+| stale/unknown colony vision     | preserve durable state; authorize no new live commitment; never infer room loss    |
 | planner exception               | discard its writes; quarantine optional system; continue mandatory phases          |
 | expected command error          | record typed result; reconcile and retry/retire by policy                          |
 | executor exception              | fail intent, isolate adapter, preserve reconcile/telemetry budget                  |
 | CPU pressure                    | stop optional admissions; preserve safety, essential execute, reconcile, telemetry |
 | lost creep/structure            | expire leases/reservations and replan from observation                             |
-| lost room                       | enter colony lost/recovery path; revoke unsafe local commitments                   |
+| visibly lost owned room         | enter terminal colony lost path; release active local reservations                 |
 | stale/malformed reputation      | treat as neutral; never weaken configured self/ally/NAP exclusions                 |
 | operation timeout/budget breach | stop new spending and transition to withdrawal/abort                               |
 
@@ -1140,6 +1209,14 @@ Every system contract is verified at the cheapest useful layer:
 7. **Private-server gates** measure long-running survival, progression, profitability, and CPU
    before roadmap exits.
 
+The Phase 1 colony gate additionally proves its survival lifecycle edges, exact-empty owner
+initialization, malformed/future preservation, configured threat exclusions, protected energy
+floors, elastic energy/CPU conservation, half-open spawn intervals, cumulative consumption,
+idempotent terminal operations, published persistent/request/interval cap boundaries, and
+byte-equivalent output under reordered input and heap reconstruction. The transition ceiling is
+greater than the maximum reachable work from all other bounded valid inputs; tests do not fabricate
+an invalid owner merely to reach it.
+
 Required architecture assertions include:
 
 - only state code references `Memory.myrmex`;
@@ -1149,6 +1226,8 @@ Required architecture assertions include:
 - only executors call command methods;
 - all cache namespaces are registered centrally;
 - every persistent subtree and state transition has one owner;
+- `ColonyDirector` and `BudgetLedger` each have one canonical declaration;
+- raw `colonies` owner transactions occur only in the runtime state adapter;
 - all arbitration has a stable final tie-breaker;
 - global reset does not change correctness;
 - optional system failure does not prevent mandatory tail phases.
@@ -1182,21 +1261,27 @@ The versioned Phase 0 matrix and its exact limits are recorded in
 migration, malformed optional state, planner/commit fault, CPU pressure, cache reset, command
 results, and reordered observations.
 
+The versioned Phase 1 colony matrix is recorded in
+[`phase1-colony-evidence.md`](phase1-colony-evidence.md). Its replay covers discovery, zero-creep
+bootstrap, stable development, threat entry and exit, brownout, replacement versus growth, unknown
+vision, visible room loss, collection reordering, and heap reset while asserting complete resource
+accounting every tick.
+
 ## 19. Roadmap Activation
 
 The architecture is implemented in dependency order, but later systems stay disabled until their
 roadmap gate.
 
-| Roadmap phase | Architecture activated                                                                   |
-| ------------- | ---------------------------------------------------------------------------------------- |
-| Phase 0       | kernel, scheduler contract, state schema/migrations, snapshot, telemetry, scenario DSL   |
-| Phase 1       | validated config/gates/relations, contracts, workforce, spawn, economy, movement/defense |
-| Phase 2       | colony lifecycle, layouts, complete structures, stock policy, industry foundations       |
-| Phase 3       | segment intel, scouting, route costing, remote portfolio                                 |
-| Phase 4       | empire graph, expansion portfolio, bootstrap operations                                  |
-| Phase 5       | diplomacy evidence, full threat model, reinforcements, boosts, hard-target defense       |
-| Phase 6       | market, MMO deployment/canary policy, richer operational telemetry                       |
-| Phases 7–8    | authorized offensive operations, formations, power projection, cross-shard handoff       |
+| Roadmap phase | Architecture activated                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| Phase 0       | kernel, scheduler contract, state schema/migrations, snapshot, telemetry, scenario DSL     |
+| Phase 1       | config/relations, survival lifecycle/ledger, contracts, workforce, spawn, economy, defense |
+| Phase 2       | complete-colony layouts, structures, stock policy, industry, and RCL8 optimization         |
+| Phase 3       | segment intel, scouting, route costing, remote portfolio                                   |
+| Phase 4       | empire graph, expansion portfolio, bootstrap operations                                    |
+| Phase 5       | diplomacy evidence, full threat model, reinforcements, boosts, hard-target defense         |
+| Phase 6       | market, MMO deployment/canary policy, richer operational telemetry                         |
+| Phases 7–8    | authorized offensive operations, formations, power projection, cross-shard handoff         |
 
 Describing a future system here does not authorize implementing it early. The earliest incomplete
 roadmap gate remains the work selector.

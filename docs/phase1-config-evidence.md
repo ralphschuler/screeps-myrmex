@@ -1,17 +1,19 @@
 # Phase 1 Runtime Configuration Evidence
 
-Evidence version: `phase1-config-v1`
+Evidence version: `phase1-config-v2`
 
-Roadmap foundation: [issue #36](https://github.com/ralphschuler/screeps-myrmex/issues/36)
+Roadmap foundation: [issue #36](https://github.com/ralphschuler/screeps-myrmex/issues/36), with the
+first outcome activation in [issue #37](https://github.com/ralphschuler/screeps-myrmex/issues/37)
 
 This document is the versioned evidence contract for survival policy, roadmap feature gates, and
-fail-closed player exclusions. CI is authoritative for the referenced commit. No gameplay gate is
-made source-available by this foundation change.
+fail-closed player exclusions. CI is authoritative for the referenced commit. No gameplay gate can
+be made available by operational Memory; issue #37 makes only the proved `phase1.colony` outcome
+source-available.
 
 ## Authority and revision contract
 
 `RuntimeConfigAuthority` is the sole interpreter of `Memory.myrmex.config`. Source defaults use
-`runtime-config-source-v1`; the owner-local schema is version 1. The owner contains an
+`runtime-config-source-v2`; the owner-local schema is version 1. The owner contains an
 operator-owned `candidate` and a bot-owned `lastValid` acceptance receipt. Exact `{}` is the only
 initialization shorthand.
 
@@ -39,6 +41,11 @@ candidate-revision high-water remain active and the owner is not rewritten. An i
 null with incompatible evidence uses source defaults without opportunistically rewriting the
 receipt. Null is not rollback; rollback requires a newer candidate containing the complete prior
 override or `overrides: {}` for source defaults.
+
+The source-v2 gate manifest intentionally invalidates source-v1 `lastValid` receipts. A present
+candidate is revalidated and receives a v2 receipt when valid. If `candidate` is null and only an
+incompatible v1 receipt exists, source defaults apply and the owner is not opportunistically
+rewritten.
 
 The full config `revision` and survival `policyRevision` are stable compact identities over their
 respective canonical values. Equivalent key order and identity input therefore resolve to the same
@@ -129,21 +136,21 @@ duplicate, or activation field rejects the entire candidate. For every gate `g`:
 
 `effective(g) = available(g) && !disabled(g) && every prerequisite is effective`
 
-All source availability values are `false` in issue #36.
+Issue #37 makes only `phase1.colony` source-available. Every other gate remains source-unavailable.
 
-| Gate                          | Prerequisites                                          |
-| ----------------------------- | ------------------------------------------------------ |
-| `phase1.colony`               | none                                                   |
-| `phase1.contracts`            | `phase1.colony`                                        |
-| `phase1.spawn`                | `phase1.colony`                                        |
-| `phase1.movement`             | none                                                   |
-| `phase1.agents`               | `phase1.colony`, `phase1.contracts`, `phase1.movement` |
-| `phase1.economy`              | `phase1.agents`, `phase1.spawn`                        |
-| `phase1.recovery`             | `phase1.economy`                                       |
-| `phase1.growth`               | `phase1.recovery`                                      |
-| `phase1.safety`               | `phase1.colony`, `phase1.movement`                     |
-| `phase1.telemetry`            | `phase1.agents`, `phase1.spawn`                        |
-| `phase1.critical-maintenance` | `phase1.economy`, `phase1.recovery`                    |
+| Gate                          | Availability | Prerequisites                                          |
+| ----------------------------- | ------------ | ------------------------------------------------------ |
+| `phase1.colony`               | available    | none                                                   |
+| `phase1.contracts`            | unavailable  | `phase1.colony`                                        |
+| `phase1.spawn`                | unavailable  | `phase1.colony`                                        |
+| `phase1.movement`             | unavailable  | none                                                   |
+| `phase1.agents`               | unavailable  | `phase1.colony`, `phase1.contracts`, `phase1.movement` |
+| `phase1.economy`              | unavailable  | `phase1.agents`, `phase1.spawn`                        |
+| `phase1.recovery`             | unavailable  | `phase1.economy`                                       |
+| `phase1.growth`               | unavailable  | `phase1.recovery`                                      |
+| `phase1.safety`               | unavailable  | `phase1.colony`, `phase1.movement`                     |
+| `phase1.telemetry`            | unavailable  | `phase1.agents`, `phase1.spawn`                        |
+| `phase1.critical-maintenance` | unavailable  | `phase1.economy`, `phase1.recovery`                    |
 
 Each decision is `enabled`, `source-unavailable`, `operator-disabled`, or `prerequisite-blocked`; a
 prerequisite-blocked decision names one deterministic blocker. An operational override can never
@@ -184,7 +191,9 @@ threat evidence and area-effect safety.
 | Malformed or future ready-state owner         | owner preserved; source defaults; malformed/future reason                   |
 | Recovery or unsupported root state            | source defaults; `owner-unavailable` status and reason                      |
 | Heap/JSON reset                               | byte-equivalent resolved values, decisions, and revisions                   |
-| Unavailable, disabled, or blocked gate        | gate cannot become effective; deterministic reason and blocker              |
+| Available colony gate                         | enabled by default; operational override may only disable it                |
+| Unavailable, disabled, or blocked gate        | cannot bypass source/prerequisites; deterministic reason and blocker        |
+| Source-v1 receipt under source v2             | revalidate present candidate or use defaults without opportunistic rewrite  |
 | Configured self/ally/NAP                      | `excluded` with absent, stale, malformed, future, or conflicting reputation |
 | Malformed observed username                   | `excluded`; optional reputation not consulted                               |
 | Valid unconfigured username                   | at most `local-defense`; never `authorized-operation`                       |
@@ -193,7 +202,9 @@ threat evidence and area-effect safety.
 | Future root schema                            | no downgrade and no mutation                                                |
 
 Evidence is provided by focused config, relation, persistent-state migration, runtime context,
-telemetry, architecture-boundary, and scenario tests. The repository gate remains `npm run check`.
+telemetry, architecture-boundary, and scenario tests. Colony-gate outcome evidence is maintained in
+[`phase1-colony-evidence.md`](phase1-colony-evidence.md). The repository gate remains
+`npm run check`.
 
 ## Screeps mechanics foundation
 

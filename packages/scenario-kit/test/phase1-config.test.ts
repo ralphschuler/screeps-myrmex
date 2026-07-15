@@ -118,7 +118,11 @@ describe("Phase 1 runtime config scenario", () => {
     );
     expect(
       reset.outcomes.every((outcome) =>
-        outcome.gates.every(({ enabled, reason }) => !enabled && reason === "source-unavailable"),
+        outcome.gates.every(({ id, enabled, reason }) =>
+          id === "phase1.colony"
+            ? enabled && reason === "enabled"
+            : !enabled && reason === "source-unavailable",
+        ),
       ),
     ).toBe(true);
   });
