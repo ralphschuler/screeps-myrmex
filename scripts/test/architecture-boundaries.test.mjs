@@ -49,12 +49,41 @@ describe("runtime architecture boundaries", () => {
     ["persistent-root-outside-state", "economy/planner.ts", 'Memory["myrmex"] = {};'],
     ["live-world-read-outside-observer", "colony/planner.ts", 'const rooms = Game["rooms"];'],
     ["cpu-source-outside-runtime", "colony/planner.ts", "const cpu = Game.cpu;"],
-    ["game-command-outside-executor", "colony/planner.ts", 'creep["harvest"](source);'],
+    ["game-command-outside-executor", "colony/planner.ts", 'creep["attack"](source);'],
     ["per-creep-task-memory", "agents/worker.ts", 'creep.memory["task"] = "harvest";'],
     ["raw-memory-outside-segment-owner", "world/observe.ts", "RawMemory.setActiveSegments([]);"],
     ["inter-shard-memory-outside-shard-owner", "world/observe.ts", "InterShardMemory.getLocal();"],
   ])("detects %s", (rule, path, contents) => {
     expect(findArchitectureViolations([{ contents, path }])).toEqual([{ path, rule }]);
+  });
+
+  it("restricts movement and primary creep actions to their sole executors through aliases", () => {
+    for (const [rule, contents] of [
+      [
+        "move-command-outside-movement-executor",
+        "const move = creep.move; move.call(creep, RIGHT);",
+      ],
+      ["movement-shortcut-forbidden", "const route = creep.moveTo.bind(creep); route(target);"],
+      ["movement-shortcut-forbidden", 'creep["moveByPath"].apply(creep, [path]);'],
+      [
+        "creep-action-command-outside-action-executor",
+        "const { harvest } = creep; harvest.call(creep, source);",
+      ],
+      [
+        "creep-action-command-outside-action-executor",
+        "const action = creep.transfer; action.apply(creep, [sink, RESOURCE_ENERGY]);",
+      ],
+    ]) {
+      expect(findArchitectureViolations([{ path: "colony/planner.ts", contents }])).toContainEqual({
+        path: "colony/planner.ts",
+        rule,
+      });
+    }
+    expect(
+      findArchitectureViolations([
+        { path: "movement/executor.ts", contents: "creep.move(RIGHT); creep.harvest(source);" },
+      ]),
+    ).toEqual([]);
   });
 
   it("rejects direct, transitive, and destructured per-creep task memory aliases", () => {
@@ -500,7 +529,9 @@ describe("runtime architecture boundaries", () => {
 
   it("rejects command calls from non-executor files inside execution", () => {
     expect(
-      findArchitectureViolations([{ path: "execution/arbiter.ts", contents: "creep.move(1);" }]),
+      findArchitectureViolations([
+        { path: "execution/arbiter.ts", contents: "creep.attack(target);" },
+      ]),
     ).toEqual([{ path: "execution/arbiter.ts", rule: "game-command-outside-executor" }]);
   });
 

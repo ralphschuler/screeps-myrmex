@@ -63,6 +63,8 @@ const ROOT_COMMIT_METHODS = new Set(["commitReconciliation"]);
 
 const SPAWN_BROKER_PATH = "spawn/spawn-broker.ts";
 const SPAWN_EXECUTOR_PATH = "spawn/spawn-executor.ts";
+const MOVEMENT_EXECUTOR_PATH = "movement/executor.ts";
+const CREEP_ACTION_EXECUTOR_PATH = "movement/executor.ts";
 const COLONY_AUTHORITY_PATH = "colony/director.ts";
 const RUNTIME_COMPOSITION_PATH = "runtime/tick.ts";
 
@@ -269,6 +271,34 @@ function inspectSource(contents, path) {
         addUnlessAllowed("game-command-outside-executor", isExecutorPath(path));
         if (commandMethodCall.methods.has("spawnCreep")) {
           addUnlessAllowed("spawn-command-outside-spawn-executor", path === SPAWN_EXECUTOR_PATH);
+        }
+        if (commandMethodCall.methods.has("move")) {
+          addUnlessAllowed(
+            "move-command-outside-movement-executor",
+            path === MOVEMENT_EXECUTOR_PATH,
+          );
+        }
+        if (
+          commandMethodCall.methods.has("moveTo") ||
+          commandMethodCall.methods.has("moveByPath")
+        ) {
+          rules.add("movement-shortcut-forbidden");
+        }
+        if (
+          [
+            "harvest",
+            "transfer",
+            "withdraw",
+            "pickup",
+            "upgradeController",
+            "build",
+            "repair",
+          ].some((method) => commandMethodCall.methods.has(method))
+        ) {
+          addUnlessAllowed(
+            "creep-action-command-outside-action-executor",
+            path === CREEP_ACTION_EXECUTOR_PATH,
+          );
         }
       }
       const ownerMethodCall = ownerMethodCalls.resolve(node);
