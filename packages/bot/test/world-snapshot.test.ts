@@ -49,6 +49,7 @@ describe("WorldSnapshot", () => {
       { amount: 200, resourceType: "energy" },
       { amount: 3, resourceType: "power" },
     ]);
+    expect(forward.rooms[0]?.ownedSpawns[0]?.active).toBe(true);
     expect(forward.stats.entities.total).toBe(14);
 
     const payload = {
@@ -314,6 +315,7 @@ function makeOwnedRoom(
       name: "Spawn1",
       owner: { username: "Myrmex" },
       pos: new LivePosition(23, 25, "W1N1"),
+      isActive: () => true,
       spawning: null,
       store: liveSpawnStore,
       structureType: "spawn",

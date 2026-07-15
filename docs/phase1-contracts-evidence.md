@@ -1,8 +1,10 @@
 # Phase 1 Contract Foundation Evidence
 
-Evidence version: `phase1-contracts-v3`
+Evidence version: `phase1-contracts-v4`
 
-Primary slice: [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23)
+Primary slice: [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23), with spawn
+settlement ordering integrated by
+[issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24)
 
 This document is the evidence contract for persistent capability contracts and bounded workforce
 allocation. CI is authoritative for the referenced commit. This slice enables later Phase 1 economy,
@@ -34,6 +36,7 @@ zero-creep recovery exit condition by itself.
 | Warm and heap-reset runs preserve contract outcomes        | `phase1-contracts.test.ts`                                                  |
 | Only the ledger stages the contracts owner transaction     | `architecture-boundaries.test.mjs`, bundle and dependency checks in `check` |
 | Contract reconcile precedes the one mandatory root commit  | `tick.test.ts`, kernel order and mandatory-tail tests                       |
+| Mandatory-tail spawn settlement precedes contract funding  | `tick.test.ts`, kernel deterministic system order                           |
 | Skip, stage discard, or root rejection preserves honesty   | `tick.test.ts`                                                              |
 | Disabled and prerequisite-blocked gates preserve the owner | `runtime-config.test.ts`, `tick.test.ts`, `phase1-config.test.ts`           |
 
@@ -65,6 +68,10 @@ across warm, reset, and reordered-input runs while allowing reset telemetry to d
 - Missing, pending, consumed, released, or expired authorization rejects funding. Known
   authorization loss suspends funded work and removes a lease. Unknown colony observation authorizes
   no new assignment but preserves the durable commitment.
+- Exact recovery-spawn authorization is settled before contract reconciliation. Its scheduled path
+  is consumed and released, while a rejected command is released without consumption; neither
+  terminal entry can be mistaken for current active contract funding. Contract reconciliation does
+  not proceed unless mandatory-tail `spawn.settle` staged that tick's colony result.
 - `deadline` is inclusive. Contract `expiresAt` and lease `expiresAt` are the first invalid tick.
 - A lost or invalid lease records suspension and renewed funding before reassignment only while the
   matching current authorization remains active.
@@ -102,7 +109,7 @@ across warm, reset, and reordered-input runs while allowing reset telemetry to d
 - Safe-idle output is a bounded data record. It does not move, park, recycle, or command an actor.
 - Pathfinding and travel modeling remain owned by
   [issue #25](https://github.com/ralphschuler/screeps-myrmex/issues/25). Replacement deadlines and
-  spawn timing remain owned by
+  proactive replacement timing remain owned by
   [issue #27](https://github.com/ralphschuler/screeps-myrmex/issues/27).
 
 ## Hard budgets
@@ -133,11 +140,13 @@ per-tick bounds.
 
 ## Feature activation and ownership
 
-Issue #23 advances the source revision to `runtime-config-source-v3`. Exactly `phase1.colony` and
-`phase1.contracts` are source-available; contracts are prerequisite-blocked when colony planning is
-disabled. Operational Memory may disable either available gate but cannot activate later work. A
-source-v2 receipt is incompatible: a present candidate must revalidate, while a null candidate does
-not cause the bot to rewrite stale operator evidence.
+Issue #23 advanced the source revision to `runtime-config-source-v3` and made `phase1.contracts`
+available. Issue #24 advances current source to `runtime-config-source-v4` and adds `phase1.spawn`.
+Exactly `phase1.colony`, `phase1.contracts`, and `phase1.spawn` are now source-available; contracts
+and spawn are prerequisite-blocked when colony planning is disabled. Operational Memory may disable
+an available gate but cannot activate later work. A source-v3 receipt is incompatible under v4: a
+present candidate must revalidate, while a null candidate does not cause the bot to rewrite stale
+operator evidence.
 
 Raw `config`, `colonies`, and `contracts` subtrees are absent from the aggregate `StateView`.
 `runtime/tick.ts` alone adapts detached authority-owned views, `ContractLedger` alone stages the
@@ -163,7 +172,8 @@ The implementation and boundary tests were constrained by these sources:
   deliberately stores the durable task in `ContractLedger`, not per-creep Memory.
 - [Screeps Wiki: RenewCreep vs SpawnCreep](https://wiki.screepspl.us/RenewCreep_vs_SpawnCreep/)
   describes finite creep lifetime, spawn occupancy, and pre-spawn replacement. This slice checks
-  remaining-life feasibility but leaves replacement and spawn policy to issue #27.
+  remaining-life feasibility; issue #24 adds emergency recovery spawning, while proactive
+  replacement remains with issue #27.
 - [Screeps Wiki: Combat](https://wiki.screepspl.us/Combat/) likewise documents that a body part only
   contributes while its individual hit points remain above zero.
 

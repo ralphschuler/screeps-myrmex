@@ -1,20 +1,21 @@
 # Phase 1 Runtime Configuration Evidence
 
-Evidence version: `phase1-config-v3`
+Evidence version: `phase1-config-v4`
 
 Roadmap foundation: [issue #36](https://github.com/ralphschuler/screeps-myrmex/issues/36), with the
-first outcome activation in [issue #37](https://github.com/ralphschuler/screeps-myrmex/issues/37)
-and contract activation in [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23)
+first outcome activation in [issue #37](https://github.com/ralphschuler/screeps-myrmex/issues/37),
+contract activation in [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23), and
+spawn activation in [issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24)
 
 This document is the versioned evidence contract for survival policy, roadmap feature gates, and
 fail-closed player exclusions. CI is authoritative for the referenced commit. No gameplay gate can
-be made available by operational Memory; source v3 makes only the proved `phase1.colony` and
-`phase1.contracts` outcomes available.
+be made available by operational Memory; source v4 makes only the proved `phase1.colony`,
+`phase1.contracts`, and `phase1.spawn` outcomes available.
 
 ## Authority and revision contract
 
 `RuntimeConfigAuthority` is the sole interpreter of `Memory.myrmex.config`. Source defaults use
-`runtime-config-source-v3`; the owner-local schema is version 1. The owner contains an
+`runtime-config-source-v4`; the owner-local schema is version 1. The owner contains an
 operator-owned `candidate` and a bot-owned `lastValid` acceptance receipt. Exact `{}` is the only
 initialization shorthand.
 
@@ -43,9 +44,9 @@ null with incompatible evidence uses source defaults without opportunistically r
 receipt. Null is not rollback; rollback requires a newer candidate containing the complete prior
 override or `overrides: {}` for source defaults.
 
-The source-v3 gate manifest intentionally invalidates source-v2 `lastValid` receipts. A present
-candidate is revalidated and receives a v3 receipt when valid. If `candidate` is null and only an
-incompatible v2 receipt exists, source defaults apply and the owner is not opportunistically
+The source-v4 gate manifest intentionally invalidates source-v3 `lastValid` receipts. A present
+candidate is revalidated and receives a v4 receipt when valid. If `candidate` is null and only an
+incompatible v3 receipt exists, source defaults apply and the owner is not opportunistically
 rewritten.
 
 The full config `revision` and survival `policyRevision` are stable compact identities over their
@@ -137,14 +138,15 @@ duplicate, or activation field rejects the entire candidate. For every gate `g`:
 
 `effective(g) = available(g) && !disabled(g) && every prerequisite is effective`
 
-Issue #37 made `phase1.colony` available under source v2. Issue #23 adds only `phase1.contracts`
-under source v3. Every later gate remains source-unavailable.
+Issue #37 made `phase1.colony` available under source v2. Issue #23 added `phase1.contracts` under
+source v3. Issue #24 adds only `phase1.spawn` under source v4. Every later gate remains
+source-unavailable.
 
 | Gate                          | Availability | Prerequisites                                          |
 | ----------------------------- | ------------ | ------------------------------------------------------ |
 | `phase1.colony`               | available    | none                                                   |
 | `phase1.contracts`            | available    | `phase1.colony`                                        |
-| `phase1.spawn`                | unavailable  | `phase1.colony`                                        |
+| `phase1.spawn`                | available    | `phase1.colony`                                        |
 | `phase1.movement`             | unavailable  | none                                                   |
 | `phase1.agents`               | unavailable  | `phase1.colony`, `phase1.contracts`, `phase1.movement` |
 | `phase1.economy`              | unavailable  | `phase1.agents`, `phase1.spawn`                        |
@@ -176,37 +178,37 @@ threat evidence and area-effect safety.
 
 ## Deterministic proof matrix
 
-| Variant                                       | Required outcome                                                                  |
-| --------------------------------------------- | --------------------------------------------------------------------------------- |
-| Source defaults                               | canonical immutable config and stable source/config/policy revisions              |
-| Valid and key-reordered override              | identical canonical policy, gates, relation view, and revisions                   |
-| Unknown key or mixed valid/invalid field      | whole candidate rejected; no partially applied value                              |
-| Unsafe range or cross-field constraint        | whole candidate rejected                                                          |
-| Malformed, duplicate, or overlapping identity | whole candidate rejected; configured exclusions preserved                         |
-| Same revision with changed canonical content  | revision reuse rejected; compatible last-valid retained                           |
-| Lower candidate revision                      | stale candidate rejected; compatible last-valid retained                          |
-| Invalid candidate plus compatible receipt     | receipt revalidated and retained                                                  |
-| Source-revision mismatch or bad receipt       | receipt rejected; source defaults used                                            |
-| Null candidate plus compatible receipt        | last-valid config/receipt retained byte-equivalently across heap reset            |
-| Initial or incompatible null candidate        | source defaults; owner bytes remain unchanged                                     |
-| Exact empty owner                             | owner schema initialized without inventing an override                            |
-| Malformed or future ready-state owner         | owner preserved; source defaults; malformed/future reason                         |
-| Recovery or unsupported root state            | source defaults; `owner-unavailable` status and reason                            |
-| Heap/JSON reset                               | byte-equivalent resolved values, decisions, and revisions                         |
-| Available colony and contracts gates          | enabled by default; either may be disabled, contracts may be prerequisite-blocked |
-| Unavailable, disabled, or blocked gate        | cannot bypass source/prerequisites; deterministic reason and blocker              |
-| Source-v2 receipt under source v3             | revalidate present candidate or use defaults without opportunistic rewrite        |
-| Configured self/ally/NAP                      | `excluded` with absent, stale, malformed, future, or conflicting reputation       |
-| Malformed observed username                   | `excluded`; optional reputation not consulted                                     |
-| Valid unconfigured username                   | at most `local-defense`; never `authorized-operation`                             |
-| Valid v2 root                                 | one bounded v2-to-v3 step adds exact empty config owner                           |
-| Interrupted historical v1-to-v2 cursor        | resume, transition to v2-to-v3, finish v3 across resets                           |
-| Future root schema                            | no downgrade and no mutation                                                      |
+| Variant                                       | Required outcome                                                                 |
+| --------------------------------------------- | -------------------------------------------------------------------------------- |
+| Source defaults                               | canonical immutable config and stable source/config/policy revisions             |
+| Valid and key-reordered override              | identical canonical policy, gates, relation view, and revisions                  |
+| Unknown key or mixed valid/invalid field      | whole candidate rejected; no partially applied value                             |
+| Unsafe range or cross-field constraint        | whole candidate rejected                                                         |
+| Malformed, duplicate, or overlapping identity | whole candidate rejected; configured exclusions preserved                        |
+| Same revision with changed canonical content  | revision reuse rejected; compatible last-valid retained                          |
+| Lower candidate revision                      | stale candidate rejected; compatible last-valid retained                         |
+| Invalid candidate plus compatible receipt     | receipt revalidated and retained                                                 |
+| Source-revision mismatch or bad receipt       | receipt rejected; source defaults used                                           |
+| Null candidate plus compatible receipt        | last-valid config/receipt retained byte-equivalently across heap reset           |
+| Initial or incompatible null candidate        | source defaults; owner bytes remain unchanged                                    |
+| Exact empty owner                             | owner schema initialized without inventing an override                           |
+| Malformed or future ready-state owner         | owner preserved; source defaults; malformed/future reason                        |
+| Recovery or unsupported root state            | source defaults; `owner-unavailable` status and reason                           |
+| Heap/JSON reset                               | byte-equivalent resolved values, decisions, and revisions                        |
+| Available colony, contracts, and spawn gates  | enabled by default; each may be disabled; dependents may be prerequisite-blocked |
+| Unavailable, disabled, or blocked gate        | cannot bypass source/prerequisites; deterministic reason and blocker             |
+| Source-v3 receipt under source v4             | revalidate present candidate or use defaults without opportunistic rewrite       |
+| Configured self/ally/NAP                      | `excluded` with absent, stale, malformed, future, or conflicting reputation      |
+| Malformed observed username                   | `excluded`; optional reputation not consulted                                    |
+| Valid unconfigured username                   | at most `local-defense`; never `authorized-operation`                            |
+| Valid v2 root                                 | one bounded v2-to-v3 step adds exact empty config owner                          |
+| Interrupted historical v1-to-v2 cursor        | resume, transition to v2-to-v3, finish v3 across resets                          |
+| Future root schema                            | no downgrade and no mutation                                                     |
 
 Evidence is provided by focused config, relation, persistent-state migration, runtime context,
 telemetry, architecture-boundary, and scenario tests. Colony-gate outcome evidence is maintained in
-[`phase1-colony-evidence.md`](phase1-colony-evidence.md). The repository gate remains
-`npm run check`.
+[`phase1-colony-evidence.md`](phase1-colony-evidence.md), with spawn activation evidence in
+[`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). The repository gate remains `npm run check`.
 
 ## Screeps mechanics foundation
 

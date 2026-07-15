@@ -492,6 +492,7 @@ function snapshotFor(tick: number, stage: ColonyStage, reverse: boolean): WorldS
 function spawn(energy: number): OwnedSpawnSnapshot {
   const stored = Math.min(300, energy);
   return {
+    active: true,
     id: SPAWN_ID,
     name: "Spawn1",
     pos: position(24, 25),

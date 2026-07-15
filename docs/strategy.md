@@ -51,6 +51,16 @@ spawn time, and kernel-admitted CPU are conserved before priority is considered.
 spawning, defense, and replacement may consume protected spawn energy; every later category must
 leave the remaining tranche intact.
 
+Spawn decisions use one deterministic broker across every eligible local spawn. Emergency recovery
+precedes replacement, which precedes upgrading and construction; stable deadline, body-cost, and
+identity tie-breakers remove observation-order accidents. Multiple spawns share the room's one
+current spawn/extension energy pool. At the default 300-energy recovery budget, MYRMEX schedules one
+200-energy `WORK,CARRY,MOVE` survivor and releases the unused 100 instead of treating the grant as
+actual cost. A scheduled command is remembered through the colony ledger until observation confirms
+the exact generated creep name or a bounded expectation expires, so a heap reset cannot immediately
+duplicate the order. Recovery names are stable across attempts and never suffixed; only explicit
+caller-selected name bases use bounded suffix retries.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

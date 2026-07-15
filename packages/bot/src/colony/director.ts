@@ -7,11 +7,13 @@ import {
   BUDGET_CATEGORIES,
   MAX_BUDGET_REQUESTS_PER_TICK,
   MAX_COLONIES,
+  MAX_SPAWN_INTERVAL_TICKS,
   RECOVERY_OBJECTIVE_CPU_UNITS,
   type BudgetDecision,
   type BudgetLedgerCapacity,
   type BudgetLedgerResult,
   type BudgetRequest,
+  type ColoniesOwnerV1,
   type ColonyDirectorResult,
   type ColonyObjective,
   type ColonyPlanReason,
@@ -21,6 +23,7 @@ import {
   type ColonyTransitionReason,
   type ColonyView,
   type LedgerEntry,
+  type LedgerTransition,
   type SpawnBudgetCapacity,
 } from "./contracts";
 import { canonicalColoniesOwner, coloniesOwnerEquals, resolveColoniesOwner } from "./persistence";
@@ -33,6 +36,38 @@ export interface ColonyDirectorInput {
   readonly cpuMode: CpuMode;
   readonly cpuBudget: CpuBudget;
   readonly requests?: readonly BudgetRequest[];
+  /** Undefined requests a provisional energy/CPU view; an array requests exact spawn authorization. */
+  readonly recoverySpawnSelections?: readonly RecoverySpawnSelection[];
+  /** Stable objective IDs already represented by an observed or durable expected creep. */
+  readonly satisfiedRecoveryObjectiveIds?: readonly string[];
+}
+
+export interface RecoverySpawnSelection {
+  readonly objectiveId: string;
+  readonly colonyId: string;
+  readonly energyCost: number;
+  readonly spawn: {
+    readonly spawnId: string;
+    readonly startTick: number;
+    readonly endTick: number;
+  };
+}
+
+export type ColonySpawnCommandSettlement =
+  | {
+      readonly reservationId: string;
+      readonly status: "scheduled";
+      readonly energyCost: number;
+    }
+  | {
+      readonly reservationId: string;
+      readonly status: "not-scheduled";
+    };
+
+interface AuthorizedRecoverySpawn {
+  readonly reservationId: string;
+  readonly energyCost: number;
+  readonly spawn: RecoverySpawnSelection["spawn"];
 }
 
 interface ColonyEvidence {
@@ -65,25 +100,43 @@ const EMPTY_TOTALS = Object.freeze({
  */
 export class ColonyDirector {
   plan(input: ColonyDirectorInput): ColonyDirectorResult {
+    if (
+      input.recoverySpawnSelections !== undefined ||
+      input.satisfiedRecoveryObjectiveIds !== undefined
+    ) {
+      throw new TypeError("exact recovery planning requires a tick-local ColonyDirector session");
+    }
+    return this.begin(input).settle(input.tick, []);
+  }
+
+  begin(input: ColonyDirectorInput): ColonyDirectorSession {
     assertTick(input.tick);
     if (!isFeatureEnabled(input.config, "phase1.colony")) {
-      return emptyResult("disabled", "feature-disabled");
+      return emptySession(emptyResult("disabled", "feature-disabled"), input.tick);
     }
     if (input.owner === null || input.owner === undefined) {
-      return emptyResult("owner-unavailable", "owner-unavailable");
+      return emptySession(emptyResult("owner-unavailable", "owner-unavailable"), input.tick);
     }
 
     const resolved = resolveColoniesOwner(input.owner);
     if (resolved.owner === null) {
       const reason =
         resolved.status === "future-schema" ? "owner-future-schema" : "owner-malformed";
-      return emptyResult(reason, reason);
+      return emptySession(emptyResult(reason, reason), input.tick);
     }
     if ((input.requests?.length ?? 0) > MAX_BUDGET_REQUESTS_PER_TICK * 2) {
       throw new RangeError(
         `raw colony requests exceed the bounded input cap of ${String(MAX_BUDGET_REQUESTS_PER_TICK * 2)}`,
       );
     }
+    const exactRecoveryMode = input.recoverySpawnSelections !== undefined;
+    const recoverySelections = normalizeRecoverySelections(
+      input.recoverySpawnSelections ?? [],
+      input,
+    );
+    const satisfiedRecoveryObjectives = normalizeSatisfiedObjectiveIds(
+      input.satisfiedRecoveryObjectiveIds ?? [],
+    );
 
     const currentOwner = resolved.owner;
     const visibleRooms = new Map(input.snapshot.rooms.map((room) => [room.name, room]));
@@ -149,6 +202,10 @@ export class ColonyDirector {
       preDecisions.push(deniedDecision(request, "request-cap-exceeded"));
     }
     for (const request of validExternalRequests.slice(0, MAX_BUDGET_REQUESTS_PER_TICK)) {
+      if (request.issuer === recoveryObjectiveId(request.colonyId)) {
+        preDecisions.push(deniedDecision(request, "invalid-request"));
+        continue;
+      }
       const record = recordByName.get(request.colonyId);
       const facts = evidence.get(request.colonyId);
       const denial = requestDenial(record, facts, request, input.cpuMode);
@@ -163,7 +220,9 @@ export class ColonyDirector {
     const objectiveRecords: Array<{
       readonly record: ColonyRecord;
       readonly request: BudgetRequest;
+      readonly admitted: boolean;
     }> = [];
+    const usedRecoverySelections = new Set<string>();
     for (const record of records) {
       const facts = evidence.get(record.roomName);
       if (
@@ -175,9 +234,26 @@ export class ColonyDirector {
       ) {
         continue;
       }
-      const request = recoveryRequest(record, knownLedger, input);
-      objectiveRequests.push(request);
-      objectiveRecords.push({ record, request });
+      const objectiveId = recoveryObjectiveId(record.roomName);
+      if (satisfiedRecoveryObjectives.has(objectiveId)) {
+        continue;
+      }
+      const selection = recoverySelections.get(objectiveId) ?? null;
+      if (selection !== null) {
+        if (selection.colonyId !== record.roomName) {
+          throw new TypeError("recovery spawn selection colony does not match its objective");
+        }
+        usedRecoverySelections.add(objectiveId);
+      }
+      const request = recoveryRequest(record, knownLedger, input, selection);
+      const admitted = !exactRecoveryMode || selection !== null;
+      if (admitted) {
+        objectiveRequests.push(request);
+      }
+      objectiveRecords.push({ record, request, admitted });
+    }
+    if (usedRecoverySelections.size !== recoverySelections.size) {
+      throw new TypeError("recovery spawn selection does not match an active colony objective");
     }
 
     const ledger = new BudgetLedger(knownLedger);
@@ -186,8 +262,8 @@ export class ColonyDirector {
       capacity: ledgerCapacity(records, evidence, input),
       requests: [...eligibleRequests, ...objectiveRequests],
     });
-    const objectives = objectiveRecords.map(({ record, request }) =>
-      objectiveFor(record, request, ledgerResult),
+    const objectives = objectiveRecords.map(({ record, request, admitted }) =>
+      objectiveFor(record, request, ledgerResult, admitted),
     );
     const combinedLedger = [...ledgerResult.entries, ...unknownLedger];
     const candidateAtCurrentRevision = canonicalColoniesOwner(
@@ -205,7 +281,7 @@ export class ColonyDirector {
       : currentOwner;
     const mustInitialize = resolved.status === "initialized";
 
-    return deepFreeze({
+    const result: ColonyDirectorResult = deepFreeze({
       status: "planned",
       reasonCode: "planned",
       ownerRevision: replacement.revision,
@@ -217,11 +293,271 @@ export class ColonyDirector {
       totals: ledgerResult.totals,
       replacementOwner: ownerChanged || mustInitialize ? replacement : null,
     });
+    const authorizedRecoverySpawns = objectives.flatMap((objective) => {
+      if (objective.reservationId === null) {
+        return [];
+      }
+      const selection = recoverySelections.get(objective.id);
+      return selection === undefined
+        ? []
+        : [
+            {
+              reservationId: objective.reservationId,
+              energyCost: selection.energyCost,
+              spawn: selection.spawn,
+            },
+          ];
+    });
+    return new ColonyDirectorSession(
+      result,
+      currentOwner,
+      replacement,
+      mustInitialize,
+      authorizedRecoverySpawns,
+      input.tick,
+    );
+  }
+}
+
+/**
+ * Tick-local continuation owned by ColonyDirector. It keeps the one authoritative ledger draft
+ * private until irreversible spawn results can be settled before the owner is staged.
+ */
+export class ColonyDirectorSession {
+  public readonly result: ColonyDirectorResult;
+  private readonly draftResult: ColonyDirectorResult;
+  private settlementKey: string | null = null;
+  private settledResult: ColonyDirectorResult | null = null;
+
+  public constructor(
+    result: ColonyDirectorResult,
+    private readonly baseOwner: ColoniesOwnerV1 | null,
+    private readonly draftOwner: ColoniesOwnerV1 | null,
+    private readonly mustInitialize: boolean,
+    private readonly authorizedRecoverySpawns: readonly AuthorizedRecoverySpawn[],
+    private readonly plannedAt = 0,
+  ) {
+    this.draftResult = result;
+    this.result =
+      result.replacementOwner === null ? result : deepFreeze({ ...result, replacementOwner: null });
+    Object.freeze(this.authorizedRecoverySpawns);
+  }
+
+  public settle(
+    tick: number,
+    settlements: readonly ColonySpawnCommandSettlement[],
+  ): ColonyDirectorResult {
+    assertTick(tick);
+    if (tick !== this.plannedAt) {
+      throw new TypeError("spawn settlement tick must equal its colony plan tick");
+    }
+    const validatedSettlements = validateSpawnSettlements(settlements);
+
+    const authorized = new Map(
+      this.authorizedRecoverySpawns.map((entry) => [entry.reservationId, entry]),
+    );
+    const byReservation = new Map<string, ColonySpawnCommandSettlement>();
+    for (const settlement of validatedSettlements) {
+      if (byReservation.has(settlement.reservationId)) {
+        throw new TypeError("duplicate spawn settlement reservation id");
+      }
+      if (!authorized.has(settlement.reservationId)) {
+        throw new TypeError("spawn settlement references an unauthorized reservation");
+      }
+      byReservation.set(
+        settlement.reservationId,
+        settlement.status === "scheduled"
+          ? {
+              reservationId: settlement.reservationId,
+              status: "scheduled",
+              energyCost: settlement.energyCost,
+            }
+          : { reservationId: settlement.reservationId, status: "not-scheduled" },
+      );
+    }
+    const normalized = [...byReservation.values()].sort((left, right) =>
+      compareStrings(left.reservationId, right.reservationId),
+    );
+    const settlementKey = JSON.stringify([tick, normalized]);
+    if (this.settlementKey !== null) {
+      if (this.settlementKey !== settlementKey || this.settledResult === null) {
+        throw new TypeError("ColonyDirector session was already settled differently");
+      }
+      return this.settledResult;
+    }
+    if (
+      this.baseOwner === null ||
+      this.draftOwner === null ||
+      this.draftResult.status !== "planned"
+    ) {
+      if (normalized.length > 0) {
+        throw new TypeError("spawn results cannot settle without a planned colonies owner");
+      }
+      this.settlementKey = settlementKey;
+      this.settledResult = this.draftResult;
+      return this.draftResult;
+    }
+
+    if (this.authorizedRecoverySpawns.length === 0) {
+      this.settlementKey = settlementKey;
+      this.settledResult = this.draftResult;
+      return this.draftResult;
+    }
+    const ledger = new BudgetLedger(this.draftOwner.ledger);
+    const settlementTransitions: LedgerTransition[] = [];
+    for (const authorization of [...this.authorizedRecoverySpawns].sort((left, right) =>
+      compareStrings(left.reservationId, right.reservationId),
+    )) {
+      const settlement = byReservation.get(authorization.reservationId);
+      if (settlement?.status !== "scheduled") {
+        const released = ledger.release(authorization.reservationId, tick);
+        settlementTransitions.push(...released.transitions);
+        continue;
+      }
+      if (settlement.energyCost !== authorization.energyCost) {
+        throw new TypeError("scheduled spawn settlement changed its authorized energy cost");
+      }
+      const entry = ledger
+        .snapshot()
+        .entries.find(({ reservationId }) => reservationId === authorization.reservationId);
+      if (
+        entry === undefined ||
+        entry.grant.spawn === null ||
+        !spawnClaimsEqual(entry.grant.spawn, authorization.spawn) ||
+        authorization.energyCost > entry.grant.energy
+      ) {
+        throw new TypeError("scheduled spawn settlement exceeds its atomic grant");
+      }
+      const consumed = ledger.consume(
+        authorization.reservationId,
+        {
+          energy: authorization.energyCost,
+          cpu: entry.grant.cpu,
+          spawn: true,
+        },
+        tick,
+      );
+      settlementTransitions.push(...consumed.transitions);
+      const consumedEntry = consumed.entries.find(
+        ({ reservationId }) => reservationId === authorization.reservationId,
+      );
+      if (
+        !consumed.transitions.some(
+          (transition) =>
+            transition.reservationId === authorization.reservationId &&
+            transition.action === "consume" &&
+            transition.reasonCode === "consumed",
+        ) ||
+        consumedEntry === undefined ||
+        consumedEntry.consumed.energy !== authorization.energyCost ||
+        consumedEntry.consumed.cpu !== entry.grant.cpu ||
+        !consumedEntry.consumed.spawn
+      ) {
+        throw new TypeError("scheduled spawn settlement was not consumed atomically");
+      }
+      if (consumedEntry.status === "active") {
+        const released = ledger.release(authorization.reservationId, tick);
+        settlementTransitions.push(...released.transitions);
+      }
+    }
+
+    const ownerLedger = ledger.snapshot().entries;
+    const candidateAtBaseRevision = canonicalColoniesOwner(
+      this.baseOwner.revision,
+      this.draftOwner.colonies,
+      ownerLedger,
+    );
+    const ownerChanged = !coloniesOwnerEquals(this.baseOwner, candidateAtBaseRevision);
+    const replacement = ownerChanged
+      ? canonicalColoniesOwner(
+          checkedIncrement(this.baseOwner.revision, "colonies owner revision"),
+          this.draftOwner.colonies,
+          ownerLedger,
+        )
+      : this.baseOwner;
+    const visibleColonyIds = new Set(
+      this.draftResult.colonies
+        .filter(({ visibility }) => visibility === "visible")
+        .map(({ id }) => id),
+    );
+    const visibleReservations = ownerLedger.filter(({ colonyId }) =>
+      visibleColonyIds.has(colonyId),
+    );
+    const visibleSnapshot = new BudgetLedger(visibleReservations).snapshot();
+
+    const result: ColonyDirectorResult = deepFreeze({
+      ...this.draftResult,
+      ownerRevision: replacement.revision,
+      reservations: visibleSnapshot.entries,
+      transitions: [...this.draftResult.transitions, ...settlementTransitions],
+      totals: visibleSnapshot.totals,
+      replacementOwner: ownerChanged || this.mustInitialize ? replacement : null,
+    });
+    this.settlementKey = settlementKey;
+    this.settledResult = result;
+    return result;
   }
 }
 
 export function emptyColonyPlanningResult(): ColonyDirectorResult {
   return emptyResult("not-run", "not-run");
+}
+
+function emptySession(result: ColonyDirectorResult, tick: number): ColonyDirectorSession {
+  return new ColonyDirectorSession(result, null, null, false, [], tick);
+}
+
+function normalizeRecoverySelections(
+  selections: readonly RecoverySpawnSelection[],
+  input: ColonyDirectorInput,
+): ReadonlyMap<string, RecoverySpawnSelection> {
+  if (selections.length > MAX_COLONIES) {
+    throw new RangeError("recovery spawn selections exceed the colony cap");
+  }
+  const normalized = new Map<string, RecoverySpawnSelection>();
+  for (const selection of selections) {
+    if (
+      !isBoundedIdentifier(selection.objectiveId, 128) ||
+      !isBoundedIdentifier(selection.colonyId, 64) ||
+      !isNonNegativeSafeInteger(selection.energyCost) ||
+      selection.energyCost === 0 ||
+      selection.energyCost > input.config.policy.spawn.maximumBodyEnergy ||
+      !isBoundedIdentifier(selection.spawn.spawnId, 128) ||
+      selection.spawn.startTick !== input.tick ||
+      !isNonNegativeSafeInteger(selection.spawn.endTick) ||
+      selection.spawn.endTick <= selection.spawn.startTick ||
+      selection.spawn.endTick - selection.spawn.startTick > MAX_SPAWN_INTERVAL_TICKS
+    ) {
+      throw new TypeError("invalid exact recovery spawn selection");
+    }
+    if (normalized.has(selection.objectiveId)) {
+      throw new TypeError("duplicate recovery spawn selection objective id");
+    }
+    normalized.set(
+      selection.objectiveId,
+      deepFreeze({
+        objectiveId: selection.objectiveId,
+        colonyId: selection.colonyId,
+        energyCost: selection.energyCost,
+        spawn: { ...selection.spawn },
+      }),
+    );
+  }
+  return normalized;
+}
+
+function normalizeSatisfiedObjectiveIds(values: readonly string[]): ReadonlySet<string> {
+  if (values.length > MAX_COLONIES) {
+    throw new RangeError("satisfied recovery objective IDs exceed the colony cap");
+  }
+  const normalized = new Set<string>();
+  for (const value of values) {
+    if (!isBoundedIdentifier(value, 128) || normalized.has(value)) {
+      throw new TypeError("invalid or duplicate satisfied recovery objective id");
+    }
+    normalized.add(value);
+  }
+  return normalized;
 }
 
 function emptyResult(status: ColonyPlanStatus, reasonCode: ColonyPlanReason): ColonyDirectorResult {
@@ -450,8 +786,15 @@ function recoveryRequest(
   record: ColonyRecord,
   ledger: readonly LedgerEntry[],
   input: ColonyDirectorInput,
+  selection: RecoverySpawnSelection | null,
 ): BudgetRequest {
-  const issuer = `colony/${record.roomName}/restore-workforce`;
+  const issuer = recoveryObjectiveId(record.roomName);
+  const minimumEnergy = selection?.energyCost ?? 200;
+  const desiredEnergy = Math.max(
+    minimumEnergy,
+    input.config.policy.recovery.emergencyWorkerEnergyBudget,
+  );
+  const spawn = selection?.spawn ?? null;
   const existing = ledger.find(
     (entry) =>
       entry.colonyId === record.roomName &&
@@ -462,12 +805,11 @@ function recoveryRequest(
     existing !== undefined && (existing.status === "active" || existing.status === "pending");
   const claimsChanged =
     existing !== undefined &&
-    (existing.request.energy?.minimum !== 200 ||
-      existing.request.energy.desired !==
-        input.config.policy.recovery.emergencyWorkerEnergyBudget ||
+    (existing.request.energy?.minimum !== minimumEnergy ||
+      existing.request.energy.desired !== desiredEnergy ||
       existing.request.cpu?.minimum !== RECOVERY_OBJECTIVE_CPU_UNITS ||
       existing.request.cpu.desired !== RECOVERY_OBJECTIVE_CPU_UNITS ||
-      existing.request.spawn !== null);
+      !spawnClaimsEqual(existing.request.spawn, spawn));
   const renewalDue =
     existing !== undefined &&
     existing.request.expiresAt - input.tick <= input.config.policy.leases.renewalWindowTicks;
@@ -491,12 +833,30 @@ function recoveryRequest(
     revision,
     expiresAt,
     energy: {
-      minimum: 200,
-      desired: input.config.policy.recovery.emergencyWorkerEnergyBudget,
+      minimum: minimumEnergy,
+      desired: desiredEnergy,
     },
     cpu: { minimum: RECOVERY_OBJECTIVE_CPU_UNITS, desired: RECOVERY_OBJECTIVE_CPU_UNITS },
-    spawn: null,
+    spawn,
   });
+}
+
+function recoveryObjectiveId(roomName: string): string {
+  return `colony/${roomName}/restore-workforce`;
+}
+
+function spawnClaimsEqual(
+  left: RecoverySpawnSelection["spawn"] | null,
+  right: RecoverySpawnSelection["spawn"] | null,
+): boolean {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      left.spawnId === right.spawnId &&
+      left.startTick === right.startTick &&
+      left.endTick === right.endTick)
+  );
 }
 
 function ledgerCapacity(
@@ -556,14 +916,17 @@ function objectiveFor(
   record: ColonyRecord,
   request: BudgetRequest,
   result: BudgetLedgerResult,
+  admitted = true,
 ): ColonyObjective {
-  const decision = result.decisions.find(
-    (candidate) =>
-      candidate.colonyId === request.colonyId &&
-      candidate.category === request.category &&
-      candidate.issuer === request.issuer &&
-      candidate.revision === request.revision,
-  );
+  const decision = admitted
+    ? result.decisions.find(
+        (candidate) =>
+          candidate.colonyId === request.colonyId &&
+          candidate.category === request.category &&
+          candidate.issuer === request.issuer &&
+          candidate.revision === request.revision,
+      )
+    : undefined;
   const reservationId =
     decision !== undefined && (decision.status === "granted" || decision.status === "retained")
       ? decision.reservationId
@@ -577,7 +940,7 @@ function objectiveFor(
     revision: request.revision,
     reasonCode: "recovery-workforce-missing",
     status: funded ? "funded" : "blocked",
-    budgetReasonCode: decision?.reasonCode ?? "invalid-request",
+    budgetReasonCode: decision?.reasonCode ?? (admitted ? "invalid-request" : "spawn-not-observed"),
     reservationId,
     demand: { kind: "recovery-worker", work: 1, carry: 1, move: 1 },
   });
@@ -661,6 +1024,52 @@ function validDecisionText(value: unknown, maximumLength: number): string | null
   return typeof value === "string" && value.length > 0 && value.length <= maximumLength
     ? value
     : null;
+}
+
+function validateSpawnSettlements(input: unknown): readonly ColonySpawnCommandSettlement[] {
+  if (!Array.isArray(input)) {
+    throw new TypeError("spawn settlements must be an array");
+  }
+  const rawSettlements: readonly unknown[] = input;
+  if (rawSettlements.length > MAX_BUDGET_REQUESTS_PER_TICK) {
+    throw new RangeError("spawn settlement input exceeds the bounded reservation cap");
+  }
+
+  return rawSettlements.map((value) => {
+    if (!isRecord(value)) {
+      throw new TypeError("invalid spawn settlement");
+    }
+    const settlement = value;
+    const reservationId = settlement["reservationId"];
+    if (typeof reservationId !== "string") {
+      throw new TypeError("invalid spawn settlement reservation id");
+    }
+    const status = settlement["status"];
+    if (status !== "scheduled" && status !== "not-scheduled") {
+      throw new TypeError("invalid spawn settlement status");
+    }
+    if (status === "not-scheduled") {
+      return { reservationId, status };
+    }
+    const energyCost = settlement["energyCost"];
+    if (!isNonNegativeSafeInteger(energyCost) || energyCost === 0) {
+      throw new TypeError("spawn settlement energy cost must be a positive safe integer");
+    }
+    return { reservationId, status, energyCost };
+  });
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null;
+}
+
+function isBoundedIdentifier(value: unknown, maximumLength: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximumLength &&
+    value === value.trim()
+  );
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {

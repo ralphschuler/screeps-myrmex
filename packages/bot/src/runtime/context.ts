@@ -3,6 +3,7 @@ import type { ColonyPlanningResult } from "../colony";
 import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
 import type { ContractReconciliationResult } from "../contracts";
 import type { MemoryCommitResult } from "../state/memory";
+import type { SpawnRuntimeResult } from "../spawn";
 import type { StateView } from "../state/schema";
 import type { TickTelemetry } from "../telemetry/metrics";
 import type { WorldSnapshot } from "../world/snapshot";
@@ -17,6 +18,8 @@ export interface RuntimeGame {
   /** Authoritative name-keyed collection of every owned creep on this shard. */
   readonly creeps: Readonly<Record<string, Creep>>;
   readonly rooms: Readonly<Record<string, Room>>;
+  /** Narrow live-object lookup handed only to command executors. */
+  readonly getObjectById?: (id: string) => unknown;
   readonly shard: {
     readonly name: string;
   };
@@ -40,6 +43,8 @@ export interface TickContext {
   /** Immutable tick-local contract reconciliation and workforce-allocation view. */
   readonly contracts: ContractReconciliationResult | null;
   readonly execution: ArbitrationBatch | null;
+  /** Tick-local spawn arbitration and command evidence. */
+  readonly spawn: SpawnRuntimeResult;
   readonly stateCommit: MemoryCommitResult | null;
   readonly telemetry: TickTelemetry | null;
 }

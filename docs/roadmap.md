@@ -33,15 +33,21 @@ merged.
   evidence is tracked in [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23) and
   [`phase1-contracts-evidence.md`](phase1-contracts-evidence.md); this slice alone does not satisfy
   the phase exit.
-- Bootstrap harvesting, spawn demand, filling, upgrading, and construction.
-- Replacement deadlines and recovery from zero creeps.
-- Minimal movement arbitration and deterministic body construction.
+- Deterministic body construction, exclusive spawn-slot arbitration, narrow command execution, and
+  atomic budget settlement are tracked by
+  [issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24) and
+  [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). This schedules the zero-worker recovery
+  body without adding a second ledger or persistent spawn queue.
+- Bootstrap harvesting, filling, upgrading, and construction demand.
+- Proactive replacement deadlines plus worker execution for end-to-end zero-creep recovery.
+- Minimal movement arbitration.
 
 The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`
-available under `runtime-config-source-v3`. Every later gate remains source-unavailable. Each
-subsequent outcome change may mark only its own gate available after its prerequisites and outcome
-test exist. Operational Memory may disable available work but can never activate an unfinished gate.
+available under `runtime-config-source-v3`; issue #24 makes `phase1.spawn` available under
+`runtime-config-source-v4`. Every later gate remains source-unavailable. Each subsequent outcome
+change may mark only its own gate available after its prerequisites and outcome test exist.
+Operational Memory may disable available work but can never activate an unfinished gate.
 
 **Exit:** recover from empty Memory and zero creeps without console intervention.
 

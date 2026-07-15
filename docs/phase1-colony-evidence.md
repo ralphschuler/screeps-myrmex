@@ -1,13 +1,16 @@
 # Phase 1 Colony Lifecycle and Budget Evidence
 
-Evidence version: `phase1-colony-v1`
+Evidence version: `phase1-colony-v2`
 
-Roadmap outcome: [issue #37](https://github.com/ralphschuler/screeps-myrmex/issues/37)
+Roadmap outcome: [issue #37](https://github.com/ralphschuler/screeps-myrmex/issues/37), with exact
+spawn settlement integrated by [issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24)
 
 This document is the versioned evidence contract for the Phase 1 `ColonyDirector`, its durable
 lifecycle, and the authoritative local `BudgetLedger`. CI is authoritative for the referenced
-commit. The outcome creates explicit objective-funding decisions and reservations; it does not
-execute spawning, creep actions, movement, construction, or combat.
+commit. The director creates explicit objective-funding decisions and reservations but never calls a
+Screeps command. Issue #24 adds a separate broker/executor path that can schedule the recovery body
+and settle its actual cost back through this owner; creep actions, movement, construction, and
+combat remain outside this authority.
 
 ## Authority and integration
 
@@ -24,9 +27,14 @@ The director reads only:
 - the `CpuMode` and `CpuBudget` supplied by `RuntimeKernel`.
 
 It does not read `Game`, `Memory`, or `Game.cpu`, maintain a room cache, call another planner, or
-issue a Screeps command. The runtime composition stages at most the `colonies` owner from the
-director result. `state.reconcile` performs the one normal `Memory.myrmex` commit. A kernel fault or
-overrun discards both the staged owner and the tick-local view.
+issue a Screeps command. For spawn integration, a tick-local director session first exposes only a
+provisional immutable view. After `SpawnBroker` selects a body and interval, a fresh exact session
+re-arbitrates that selection as one energy/spawn/CPU bundle. Its replacement owner remains private
+until `SpawnExecutor` results reach mandatory Execute-tail `spawn.settle`. That system stages at
+most one `colonies` transaction before contract reconciliation, and `state.reconcile` performs the
+one normal `Memory.myrmex` commit. Even when `spawn.execute` overruns after an irreversible `OK`,
+its private result remains available to mandatory settlement. A settlement discard or rejected root
+commit clears both the staged owner and the tick-local colony/spawn views.
 
 The output is recursively immutable and uses sorted arrays, stable IDs, bounded reason codes, and
 one decision for every normalized request. A planner later in the phase must consume that explicit
@@ -65,19 +73,20 @@ replacement. Validation is exact and all-or-nothing:
 
 ### Structural limits
 
-| Area                         | Limit                                   |
-| ---------------------------- | --------------------------------------- |
-| Colonies per owner           | 64                                      |
-| Normalized requests per tick | 256                                     |
-| Raw request inputs per tick  | 512                                     |
-| Active reservations          | 256                                     |
-| Latest issuer entries        | 512                                     |
-| Ledger transitions per tick  | 1,024                                   |
-| Claims per request           | 3: energy, spawn time, and abstract CPU |
-| Room or colony ID length     | 64 UTF-16 code units                    |
-| Issuer or spawn ID length    | 128 UTF-16 code units                   |
-| Deterministic reservation ID | 384 UTF-16 code units                   |
-| One requested spawn interval | 150 ticks                               |
+| Area                          | Limit                                   |
+| ----------------------------- | --------------------------------------- |
+| Colonies per owner            | 64                                      |
+| Normalized requests per tick  | 256                                     |
+| Raw request inputs per tick   | 512                                     |
+| Active reservations           | 256                                     |
+| Latest issuer entries         | 512                                     |
+| Ledger transitions per tick   | 1,024                                   |
+| Spawn settlements per session | 256                                     |
+| Claims per request            | 3: energy, spawn time, and abstract CPU |
+| Room or colony ID length      | 64 UTF-16 code units                    |
+| Issuer or spawn ID length     | 128 UTF-16 code units                   |
+| Deterministic reservation ID  | 384 UTF-16 code units                   |
+| One requested spawn interval  | 150 ticks                               |
 
 An owner beyond a persistent cap is malformed and preserved fail-closed. Within the 512-item raw
 input boundary, tick-local requests are canonically ordered and every valid request beyond the 256
@@ -156,13 +165,18 @@ tick-local objective:
 | Desired energy | `emergencyWorkerEnergyBudget`            |
 | Reason         | `recovery-workforce-missing`             |
 
-At the default policy and 300 available room energy, this objective receives one 300-energy grant.
-Below 200 energy it remains exactly one blocked objective with `insufficient-energy`. The objective
-is derived rather than appended to persistent history, so JSON round trips and heap reset cannot
-duplicate it.
+At the default policy and 300 available room energy, the provisional objective receives one
+300-energy grant. Below 200 energy it remains exactly one blocked objective with
+`insufficient-energy`. The objective is derived rather than appended to persistent history, so JSON
+round trips and heap reset cannot duplicate it.
 
-The director does not select a body or spawn slot. Those remain the later `SpawnBroker` authority.
-The ledger nevertheless supports exact spawn intervals requested by that authority.
+The director does not select a body or spawn slot. `SpawnBroker` owns those decisions. The broker's
+chosen body cost and exact interval return through a same-tick director session; only the matching
+atomic ledger grant authorizes a command intent. For the canonical `WORK,CARRY,MOVE` body, an `OK`
+result records 200 energy, the nine-tick spawn use, and the CPU grant as consumed, then releases the
+unused part of the 300-energy grant. A command that does not schedule releases the exact grant with
+zero energy and spawn consumption. The detailed command and reset contract is in
+[`phase1-spawn-evidence.md`](phase1-spawn-evidence.md).
 
 ## Budget arbitration
 
@@ -234,6 +248,13 @@ hard ceiling, or authorize future system admission.
 - `expire` terminates commitments whose expiry has passed.
 - `reconcile` records final cumulative actual cost and releases unused capacity.
 
+Exact spawn settlement validates the complete same-tick result set before applying any mutation. A
+scheduled result must match the authorized reservation, energy cost, and spawn interval; it consumes
+energy, CPU, and spawn use atomically before releasing unused grant. A missing or non-scheduled
+result releases the exact reservation. An identical settlement replay returns the same result, while
+a different second settlement or a later-tick settlement fails closed. Runtime composition performs
+this operation in mandatory-tail `spawn.settle`, not in an optional Reconcile system.
+
 Repeating any operation with the same valid evidence returns a stable result. Reusing an issuer
 revision for changed canonical content is rejected; lower revisions are stale. Capacity shrink
 re-arbitrates existing and new commitments together and removes the lowest-priority active work
@@ -270,14 +291,15 @@ posture, energy, spawn time, then CPU. This keeps explanations invariant under e
 
 At issue #37's merge, the source revision advanced to `runtime-config-source-v2` and only
 `phase1.colony` became available. Issue #23 subsequently advances current source to
-`runtime-config-source-v3` and adds only `phase1.contracts`, with the colony gate as its
-prerequisite. Operational config may disable available work; no operational value can activate a
-later gate. `phase1.spawn` and every later Phase 1 gate remain source-unavailable until their own
-outcome is proved.
+`runtime-config-source-v3` and adds `phase1.contracts`, with the colony gate as its prerequisite.
+Issue #24 advances current source to `runtime-config-source-v4` and adds `phase1.spawn`, also with
+the colony gate as its prerequisite. Operational config may disable available work; no operational
+value can activate a later gate. Every remaining Phase 1 gate remains source-unavailable until its
+own outcome is proved.
 
 The same receipt rule applies at each source boundary. A present valid candidate is revalidated and
-receives a current receipt. With `candidate: null` and only an incompatible source-v1 or source-v2
-receipt, source defaults apply without rewriting operator-owned bytes.
+receives a current receipt. With `candidate: null` and only an incompatible earlier-source receipt,
+source defaults apply without rewriting operator-owned bytes.
 
 ## Bounded telemetry
 
@@ -298,7 +320,7 @@ labels.
 
 | Variant                                          | Required outcome                                             |
 | ------------------------------------------------ | ------------------------------------------------------------ |
-| Empty owner, spawn, and 300 energy               | bootstrapping; one funded 300-energy recovery objective      |
+| Empty owner, idle spawn, and 300 energy          | one exact WCM command; consume 200 and release unused 100    |
 | Same input after JSON/global reset               | identical owner, objective, grant, denial, and reasons       |
 | Reordered request/entity arrays and request keys | canonical-equivalent output and durable owner                |
 | Stable legal workforce                           | developing; no duplicate recovery objective                  |
@@ -312,6 +334,7 @@ labels.
 | Existing and requested spawn intervals           | no overlap; touching boundaries accepted                     |
 | CPU claims exceed admitted milli-CPU             | reduced/denied grants conserve admitted capacity             |
 | Repeated lifecycle/ledger operation              | stable result and no duplicate/double accounting             |
+| Same spawn settlement or different second result | identical retry; conflicting retry rejected before mutation  |
 | Unknown room observation                         | state preserved; no new live authorization                   |
 | Visible controller loss                          | terminal lost; all local active reservations released        |
 | Malformed or future non-empty owner              | owner preserved; no objective/grant; bounded reason          |
