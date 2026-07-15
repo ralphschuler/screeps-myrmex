@@ -13,10 +13,10 @@ contributors extend one bot instead of creating competing frameworks.
 The Phase 0 substrate is executable: state, kernel, CPU admission, heap cache, world observation,
 intent arbitration/execution contracts, telemetry, deterministic replay, and architecture checks are
 implemented. Phase 1 also implements validated runtime configuration, fail-closed configured
-relations, the owned-room survival lifecycle, and the local budget ledger. Systems assigned to later
-roadmap gates remain normative targets. Their absence is an implementation task, not permission to
-invent a different boundary. If a requirement cannot fit this architecture, write an ADR before
-changing the architecture.
+relations, the owned-room survival lifecycle, the local budget ledger, the persistent contract
+ledger, and bounded workforce allocation. Systems assigned to later roadmap gates remain normative
+targets. Their absence is an implementation task, not permission to invent a different boundary. If
+a requirement cannot fit this architecture, write an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -159,6 +159,7 @@ interface TickContext {
   readonly config: RuntimeConfig;
   readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly colony: ColonyPlanningResult;
+  readonly contracts: ContractReconciliationResult | null;
   readonly budgets: BudgetView;
   readonly buffers: TickBuffers;
   readonly services: RuntimeServices;
@@ -167,12 +168,13 @@ interface TickContext {
 
 The executable `TickContext` began in Phase 0 with tick, shard, memory status, detached state view,
 immutable snapshot, sealed arbitration result, reconcile result, and bounded tick telemetry. Phase 1
-adds the resolved `RuntimeConfig` and immutable colony-plan views. The context contains neither
-`Game`, mutable `Memory`, nor the raw operational candidate. Later fields enter only with the
-roadmap system that owns them. The aggregate `StateView` also redacts the raw `config` and
-`colonies` owners; consumers use only `TickContext.config` and `TickContext.colony`. A later planner
-consumes the explicit colony-plan output rather than depending on a staged `colonies` mutation that
-is invisible in the beginning-of-tick state view.
+adds the resolved `RuntimeConfig`, immutable colony-plan view, and contract-reconciliation view. The
+context contains neither `Game`, mutable `Memory`, nor the raw operational candidate. Later fields
+enter only with the roadmap system that owns them. The aggregate `StateView` also redacts the raw
+`config`, `colonies`, and `contracts` owners; consumers use only `TickContext.config`,
+`TickContext.colony`, and `TickContext.contracts`. A later planner consumes the explicit colony-plan
+output rather than depending on a staged `colonies` mutation that is invisible in the
+beginning-of-tick state view.
 
 `RuntimeServices` contains narrow interfaces, not concrete systems. It exposes state transactions,
 cache lookup, segment requests, deterministic IDs, and telemetry. Gameplay planners MUST NOT receive
@@ -333,13 +335,25 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `colony.director`     | Plan      | mandatory, recovery-safe        |         1.50 |
 | `cache.sweep`         | Plan      | surplus maintenance, cadence 25 |         0.25 |
 | `execution.arbitrate` | Execute   | mandatory tail                  |         0.50 |
+| `contracts.reconcile` | Reconcile | operational, recovery-safe      |         0.50 |
 | `state.reconcile`     | Reconcile | mandatory tail                  |         1.00 |
 | `telemetry.minimum`   | Telemetry | mandatory tail                  |         0.50 |
 
 Memory opening is a bounded preflight because recovery status is an input to CPU-mode selection. It
 may perform only the documented migration step budget. `RuntimeKernel` remains the sole scheduled
 phase orchestrator. The Phase 1 colony outcome replaces `planning.foundation` with
-`colony.director`; later outcomes replace their own foundation markers without adding another loop.
+`colony.director`. When admitted, operational `contracts.reconcile` stages its owner transaction
+before mandatory-tail `state.reconcile`; only the latter commits the `Memory.myrmex` root. Later
+outcomes replace their own foundation markers without adding another loop.
+
+`contracts.reconcile` runs only when the effective `phase1.contracts` gate is enabled and the
+current colony result can supply a bounded authorization view. A disabled or prerequisite-blocked
+gate does not parse or initialize the contracts owner. An unavailable colony result publishes no
+contract action and preserves owner bytes; per-colony unknown visibility similarly quarantines its
+commitments from assignment without treating lost vision as revocation. If a staged contracts result
+is discarded at its CPU boundary, the runtime clears the tick-local publication as well as the owner
+transaction. A final atomic root-commit rejection likewise clears the contract publication, so
+diagnostics never claim a lease that did not reach the single root commit.
 
 `runTick` captures CPU before that Memory preflight and passes the baseline into the kernel. The
 kernel's final reading follows mandatory telemetry work and report collection preparation. Thus
@@ -501,6 +515,11 @@ fail closed without downgrade. Config candidate validation has intentionally sma
 remains independent of these root-storage limits; those exact limits are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md).
 
+The reserved `contracts` owner uses owner-local schema v1 once the contract gate is active. Exact
+`{}` is its only initialization shorthand. Malformed v1 content and future owner-local schema
+versions are preserved byte-for-byte and authorize no transition or assignment; they are never
+opportunistically rewritten or downgraded.
+
 ### 8.2 CacheManager
 
 `CacheManager` replaces ad hoc module globals and duplicate caches. It owns all reusable heap data
@@ -609,6 +628,11 @@ The snapshot has stable maps and sorted ID lists for deterministic traversal. It
 unknown from absent. If a room is not visible, its current structures and creeps are unknown; an
 older intel record MUST NOT be presented as current truth.
 
+`Game.creeps` is the canonical inventory of owned creep actors. The observer validates its
+name-keyed entries and projects them into the appropriate room snapshots; room-local creep searches
+are not a competing owned-actor registry. Capability counts are derived from each body part's
+current hit points, so fully damaged parts do not satisfy a contract.
+
 ### 9.2 IntelRepository
 
 `IntelRepository` is the read interface over current observation plus segment-backed history.
@@ -679,45 +703,162 @@ semantics, and proof cases are recorded in [`phase1-colony-evidence.md`](phase1-
 ## 11. Capability Contracts and Creep Control
 
 MYRMEX does not run a parallel code path for every named creep role. It models work as capability
-contracts and treats creep body designs as archetypes.
+contracts and treats creep body designs as archetypes. Contract state is persistent; allocation is a
+pure, reconstructible policy decision over the current immutable world snapshot.
 
 ### 11.1 WorkContract
 
 A persistent contract has:
 
 - stable contract ID and revision;
-- issuer and owning colony or operation;
+- issuer, monotonic issuer sequence, issuer-local key, and owning colony or operation;
 - capability kind and required body capabilities;
 - target room, object, position, or route;
 - quantity or completion condition;
 - priority, earliest start, deadline, and expiry;
-- energy, spawn, CPU, and loss budget references;
+- a stable BudgetLedger category and issuer binding under the owning colony;
 - freshness and safety preconditions;
 - success, cancellation, suspension, and failure conditions;
 - assignment/lease policy;
 - state and bounded outcome history.
 
-The state machine is:
+The complete legal transition table is:
 
-`proposed → funded → assigned → active → completed`
+| From        | Allowed next states                                        |
+| ----------- | ---------------------------------------------------------- |
+| `proposed`  | `funded`, `cancelled`, `expired`                           |
+| `funded`    | `assigned`, `suspended`, `cancelled`, `expired`            |
+| `assigned`  | `active`, `suspended`, `cancelled`, `expired`, `failed`    |
+| `active`    | `completed`, `suspended`, `cancelled`, `expired`, `failed` |
+| `suspended` | `funded`, `cancelled`, `expired`, `failed`                 |
 
-Terminal alternatives are `cancelled`, `expired`, and `failed`; `funded`, `assigned`, or `active`
-may become `suspended` and later return to `funded`. Transitions not in the table are invalid.
+`completed`, `cancelled`, `expired`, and `failed` are terminal. `assigned` and `active` require a
+lease; every other active state forbids one. Lease loss is an explicit
+`assigned|active → suspended → funded` sequence before optional reassignment only while current
+BudgetLedger authorization remains valid. Authorization loss stops at `suspended`. Transitions not
+in the table are invalid.
+
+`deadline` is inclusive: modeled travel and work may finish on that tick. `expiresAt` is exclusive
+and names the first tick on which unfinished work is invalid. A lease's `expiresAt` has the same
+exclusive meaning. Issuers retry with the same `(issuer, issuerSequence, issuerKey)` tuple;
+`ContractLedger` derives a collision-free, length-prefixed contract ID. Identical terms are
+idempotent, while changed terms under the same identity are an explicit conflict. Each issuer owns a
+strictly increasing sequence. Its persistent retirement frontier rejects every coordinate at or
+below the highest terminal sequence even after the compact outcome record is evicted, so heap reset
+or bounded-history eviction cannot resurrect completed work. Skipped or late lower coordinates fail
+closed; producers advance rather than recycle a sequence.
 
 Tick-local trivial work MAY use an ephemeral contract, but anything requiring spawn time,
 replacement, multiple ticks, resource reservation, or outcome accounting MUST be persistent.
 
 ### 11.2 ContractLedger
 
-`ContractLedger` is the sole contract state authority. It deduplicates issuer keys, expires leases,
-validates transitions, and exposes indexed read views. Issuers describe desired outcomes; only the
-ledger creates the canonical ID and state.
+`ContractLedger` is the sole contract state-machine and persistence authority. It deduplicates
+issuer coordinates, maintains bounded retirement frontiers, creates canonical IDs, validates
+transitions, assigns, releases, and expires leases, retires terminal outcomes, and exposes immutable
+read views. Issuers describe desired outcomes and propose transitions through a bounded tick-local
+channel; they never mutate contract records. A producer batch reserves aggregate channel capacity
+atomically when its staged system result commits. If it would overflow either cap, that producer
+fails without publishing a prefix; earlier committed work remains available and contract lifecycle
+reconciliation still runs. Fixed phase/system order places safety producers before optional planning
+producers.
+
+The persistent root remains Memory schema v3. Inside its `contracts` owner, the ledger owns this
+independent owner-local schema v1:
+
+```ts
+interface ContractLedgerStateV1 {
+  readonly schemaVersion: 1;
+  readonly active: readonly WorkContractRecord[];
+  readonly issuerFrontiers: readonly ContractIssuerFrontier[];
+  readonly outcomes: readonly ContractOutcome[];
+}
+```
+
+Exact `{}` is the only initialization sentinel. A valid v1 subtree is preserved and advanced only
+through ledger operations. Malformed content or any future owner-local version fails closed, leaves
+the subtree unchanged, and produces a bounded system fault. The ledger stages its complete validated
+draft with `MemoryManager`; it never assigns `Memory.myrmex`, and `state.reconcile` remains the only
+root commit.
+
+Retained terminal request signatures are parsed as exact canonical contract requests when the owner
+opens. Their issuer, sequence, and issuer key must match the terminal outcome identity; malformed,
+non-canonical, or mismatched signatures invalidate the owner instead of becoming trusted idempotency
+evidence.
+
+Funding is current authorization, not a producer-owned state label. A contract persists the stable
+BudgetLedger issuer key `(owner colony, category, budget issuer)`. The runtime adapter maps the
+current `ColonyDirector` result into a bounded funding view; the rotating reservation ID and
+revision remain tick-local and outside the immutable contract signature. A requested transition to
+`funded` is accepted only for an exact, active, unexpired reservation belonging to a currently
+visible owner colony. One stable grant identity may authorize at most one active contract; a second
+contract using the same binding is rejected until the first becomes terminal. Missing, pending,
+consumed, released, or expired entries deny funding. Known authorization loss moves
+`funded|assigned|active` work to `suspended` and removes any lease without automatic refunding.
+Unknown colony observation authorizes no funding or assignment but preserves the commitment because
+absence of vision is not revocation evidence.
+
+General systems cannot inspect raw `config`, `colonies`, or `contracts` owner bytes through
+`StateView`. The composition adapter alone reads detached owner views; `ContractLedger` alone stages
+the contracts transaction.
+
+Hard bounds are part of the schema and runtime contract:
+
+| Resource                             | Limit |
+| ------------------------------------ | ----: |
+| Active contracts                     |   256 |
+| Terminal outcomes                    |   128 |
+| Persistent issuer frontiers          |   128 |
+| Transition history per active record |    16 |
+| Issuer requests per tick             |   128 |
+| Requested transitions per tick       |   128 |
+| Active contracts per budget binding  |     1 |
+
+When the terminal-outcome ring is full, the oldest terminal records are evicted deterministically.
+The monotonic issuer frontier remains, so an evicted identity cannot re-enter the active set. Active
+contracts are never silently evicted. Request and transition counters advance by tick and reset only
+when the ledger moves to a later tick; reusing one heap object does not turn per-tick quotas into
+object-lifetime quotas, and repeated reconciliation of the same tick cannot reset them.
 
 ### 11.3 WorkforceAllocator and creep agents
 
-`WorkforceAllocator` matches available creep capabilities to funded contracts. It owns assignment
-leases but not spawn order or movement. Assignment considers feasibility, travel time, remaining
-life, opportunity cost, and switching cost.
+`WorkforceAllocator` is a pure, bounded policy that proposes matches between owned creep
+capabilities and funded contracts. It receives plain immutable records plus an injected travel
+estimate and has no access to `MemoryManager`, live Screeps objects, spawn order, movement commands,
+or contract persistence. `ContractLedger` alone turns accepted proposals into leases.
+
+The allocator canonicalizes inputs before applying limits. It considers at most 64 contracts, 64
+actors, and 4,096 contract-actor pairs per pass, and emits at most 64 data-only safe-idle
+dispositions. Contract order is priority class, `harvest` then `fill` then remaining work-kind rank,
+higher numeric priority, earlier deadline, and finally contract ID. Actor bids prefer, in order:
+
+1. lower switching cost;
+2. shorter known travel;
+3. the smallest sufficient capability surplus;
+4. the smallest sufficient remaining-life slack; and
+5. actor ID.
+
+Actors come from the snapshot derived from canonical `Game.creeps`. Only active body parts count. A
+spawning actor or one with null `ticksToLive` is ineligible. For a known travel estimate, a bid is
+viable only when:
+
+```text
+remainingModeledTicks = travelTicks + estimatedWorkTicks
+tick + remainingModeledTicks <= deadline
+ticksToLive - 1 - remainingModeledTicks >= ttlSafetyMargin
+```
+
+The one-tick subtraction is required because assignment occurs in Reconcile after Execute, so the
+current observed lifetime cannot supply a new action. For an incumbent lease, elapsed modeled
+travel/work opportunities reduce `remainingModeledTicks`. Its travel estimate comes from the
+pre-Execute Observe snapshot, so reconciliation applies one modeled current Execute opportunity
+before comparing that evidence with the post-Execute lease schedule; only worse aligned evidence
+adds a detected delay. Equality is viable at both boundaries, and an exact-boundary lease therefore
+remains feasible as its lifetime and modeled work decrease together. Unknown travel fails closed.
+Issue [#25](https://github.com/ralphschuler/screeps-myrmex/issues/25) owns pathfinding and movement
+estimates; this foundation does not approximate a route. Issue
+[#27](https://github.com/ralphschuler/screeps-myrmex/issues/27) owns replacement deadlines and spawn
+timing. No task or lease is mirrored into per-creep Memory.
 
 A creep agent reads its lease and emits at most:
 
@@ -726,35 +867,37 @@ A creep agent reads its lease and emits at most:
 - bounded supporting intents explicitly allowed by the contract.
 
 It does not select empire strategy. If its contract is invalid or unavailable, it requests a new
-assignment or follows a safe recycle/parking policy.
+assignment or follows an executor-owned safe disposition. The current `safeIdle` output is data
+only; it does not itself park, recycle, move, or issue another command.
 
 ## 12. Core Gameplay Authorities
 
 The following table is the canonical ownership map.
 
-| System                   | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                        |
-| ------------------------ | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | --------------------------------- |
-| `RuntimeConfigAuthority` | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners  |
-| `EmpireDirector`         | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands    |
-| `ColonyDirector`         | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache      |
-| `BudgetLedger`           | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend    |
-| `EconomyPlanner`         | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps            |
-| `SpawnBroker`            | spawn queue and body selection                 | demands, energy, deadlines                | accepted spawn intents                   | call `spawnCreep` directly        |
-| `WorkforceAllocator`     | creep-to-contract leases                       | capabilities, contracts, travel estimates | assignments                              | create strategic objectives       |
-| `LogisticsPlanner`       | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly         |
-| `MovementArbiter`        | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels        |
-| `LayoutPlanner`          | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites         |
-| `ConstructionPlanner`    | build/repair/dismantle priorities              | layout, structures, reserves              | construction and work intents            | modify layout ownership           |
-| `DefenseDirector`        | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war           |
-| `DiplomacyLedger`        | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions      |
-| `RemotePortfolio`        | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly        |
-| `ExpansionDirector`      | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets       |
-| `IndustryDirector`       | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls |
-| `MarketPlanner`          | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly      |
-| `OperationsController`   | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies          |
-| `ExecutorRegistry`       | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices            |
-| `Reconciler`             | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands               |
-| `TelemetryService`       | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store       |
+| System                   | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                         |
+| ------------------------ | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | ---------------------------------- |
+| `RuntimeConfigAuthority` | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners   |
+| `EmpireDirector`         | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands     |
+| `ColonyDirector`         | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache       |
+| `BudgetLedger`           | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend     |
+| `ContractLedger`         | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands     |
+| `EconomyPlanner`         | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps             |
+| `SpawnBroker`            | spawn queue and body selection                 | demands, energy, deadlines                | accepted spawn intents                   | call `spawnCreep` directly         |
+| `WorkforceAllocator`     | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands |
+| `LogisticsPlanner`       | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly          |
+| `MovementArbiter`        | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels         |
+| `LayoutPlanner`          | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites          |
+| `ConstructionPlanner`    | build/repair/dismantle priorities              | layout, structures, reserves              | construction and work intents            | modify layout ownership            |
+| `DefenseDirector`        | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war            |
+| `DiplomacyLedger`        | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions       |
+| `RemotePortfolio`        | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly         |
+| `ExpansionDirector`      | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets        |
+| `IndustryDirector`       | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls  |
+| `MarketPlanner`          | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly       |
+| `OperationsController`   | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies           |
+| `ExecutorRegistry`       | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices             |
+| `Reconciler`             | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                |
+| `TelemetryService`       | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store        |
 
 ### 12.1 ColonyDirector
 
@@ -1067,16 +1210,18 @@ known source-available gate. For gate `g`:
 
 Activation fields do not exist in the override schema and are rejected as unknown. An unavailable
 gate therefore remains unavailable, and a gate with a closed prerequisite reports prerequisite
-blocking. Issue #37 makes only `phase1.colony` source-available under `runtime-config-source-v2`;
-every downstream gameplay gate remains unavailable until its own outcome is proved. Operational
-Memory may disable the colony gate but cannot activate another gate. A source-v1 receipt is
-incompatible and is reissued only after a present candidate revalidates; an incompatible receipt
-with no candidate falls back to source defaults without rewriting operator bytes. Secrets never
-enter source, Memory, telemetry, Wiki, or committed config.
+blocking. Issue `#37` made `phase1.colony` source-available under `runtime-config-source-v2`; issue
+`#23` makes `phase1.contracts` source-available under `runtime-config-source-v3`, with the colony
+gate as its prerequisite. Every later gameplay gate remains unavailable until its own outcome is
+proved. Operational Memory may disable an available gate but cannot activate another gate. A
+source-v2 receipt is incompatible under v3 and is reissued only after a present candidate
+revalidates; an incompatible receipt with no candidate falls back to source defaults without
+rewriting operator bytes. Secrets never enter source, Memory, telemetry, Wiki, or committed config.
 
 The versioned policy fields, limits, statuses, gates, and deterministic matrices are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md) and
-[`phase1-colony-evidence.md`](phase1-colony-evidence.md).
+[`phase1-colony-evidence.md`](phase1-colony-evidence.md), with current contract-gate integration in
+[`phase1-contracts-evidence.md`](phase1-contracts-evidence.md).
 
 ## 15. Observability and Explainability
 
@@ -1228,6 +1373,9 @@ Required architecture assertions include:
 - every persistent subtree and state transition has one owner;
 - `ColonyDirector` and `BudgetLedger` each have one canonical declaration;
 - raw `colonies` owner transactions occur only in the runtime state adapter;
+- `ContractLedger` and `WorkforceAllocator` each have one canonical declaration;
+- raw `contracts` owner reads occur only in the runtime adapter and writes only in `ContractLedger`;
+- funding and assignment require the tick-local BudgetLedger authorization view;
 - all arbitration has a stable final tie-breaker;
 - global reset does not change correctness;
 - optional system failure does not prevent mandatory tail phases.
@@ -1266,6 +1414,11 @@ The versioned Phase 1 colony matrix is recorded in
 bootstrap, stable development, threat entry and exit, brownout, replacement versus growth, unknown
 vision, visible room loss, collection reordering, and heap reset while asserting complete resource
 accounting every tick.
+
+The Phase 1 contract and workforce matrix is recorded in
+[`phase1-contracts-evidence.md`](phase1-contracts-evidence.md). It proves the contract/lease
+foundation only; the Phase 1 zero-creep recovery exit remains gated on the economy, spawn,
+replacement, movement, and construction slices that consume it.
 
 ## 19. Roadmap Activation
 

@@ -55,6 +55,16 @@ Remote and claim decisions use full-cost accounting. Energy delivered is reduced
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.
 
+Work enters execution as an idempotent capability contract with an owner, stable BudgetLedger
+binding, success condition, deadline, expiry, and lease policy. A matching current active
+reservation must authorize funding and assignment, and one binding backs at most one active
+contract; a released, consumed, expired, or missing grant suspends known work and removes its lease.
+Grant revision renewal preserves the same logical contract. Unknown vision authorizes no new
+assignment but does not pretend that a commitment was revoked. A bounded central allocator prefers
+survival work and the smallest sufficient actor while accounting for travel, remaining lifetime, and
+switching cost. Contract state survives creep death and heap reset; it is not duplicated as a
+permanent per-creep role or task.
+
 Claims are scarce portfolio slots. A room must improve energy potential, graph connectivity,
 defensibility, mineral coverage, or strategic reach enough to repay bootstrap and defense cost.
 

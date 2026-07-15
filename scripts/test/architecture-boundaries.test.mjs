@@ -40,18 +40,127 @@ describe("runtime architecture boundaries", () => {
     ["live-world-read-outside-observer", "colony/planner.ts", 'const rooms = Game["rooms"];'],
     ["cpu-source-outside-runtime", "colony/planner.ts", "const cpu = Game.cpu;"],
     ["game-command-outside-executor", "colony/planner.ts", 'creep["harvest"](source);'],
+    ["per-creep-task-memory", "agents/worker.ts", 'creep.memory["task"] = "harvest";'],
     ["raw-memory-outside-segment-owner", "world/observe.ts", "RawMemory.setActiveSegments([]);"],
     ["inter-shard-memory-outside-shard-owner", "world/observe.ts", "InterShardMemory.getLocal();"],
   ])("detects %s", (rule, path, contents) => {
     expect(findArchitectureViolations([{ contents, path }])).toEqual([{ path, rule }]);
   });
 
-  it("detects duplicate canonical authority declarations", () => {
+  it("rejects direct, transitive, and destructured per-creep task memory aliases", () => {
+    for (const contents of [
+      'const memory = creep.memory; memory.task = "harvest";',
+      'const memory = creep["memory"]; const alias = memory; alias["contractId"] = "c1";',
+      "const first = creep.memory; const second = first; const third = second; third.lease = null;",
+      "const { task: assignedTask } = creep.memory; void assignedTask;",
+      "const memory = creep.memory; const { role } = memory; void role;",
+      'const { memory } = creep; memory.task = "harvest";',
+      "const { memory: { contractId } } = creep; void contractId;",
+      'let memory; memory = creep.memory; const alias = memory; alias.role = "worker";',
+      "let task; const memory = creep.memory; ({ task } = memory);",
+    ]) {
+      expect(findArchitectureViolations([{ path: "agents/worker.ts", contents }])).toEqual([
+        { path: "agents/worker.ts", rule: "per-creep-task-memory" },
+      ]);
+    }
+  });
+
+  it("does not treat unrelated task objects or shadowed bindings as creep memory", () => {
+    for (const contents of [
+      'const details = config.details; const alias = details; alias.task = "harvest";',
+      "const { task } = job; void task;",
+      "const memory = creep.memory; function inspect(memory) { return memory.task; }",
+      'const memory = creep.memory; { const memory = cache; memory.role = "reader"; }',
+      'const { memory: metadata } = cache; metadata.label = "snapshot";',
+    ]) {
+      expect(findArchitectureViolations([{ path: "agents/worker.ts", contents }])).toEqual([]);
+    }
+  });
+
+  it.each([
+    ["CacheManager", "economy/cache.ts"],
+    ["ContractLedger", "economy/contracts.ts"],
+    ["WorkforceAllocator", "colony/workforce.ts"],
+  ])("detects a duplicate %s authority declaration", (authority, path) => {
+    expect(
+      findArchitectureViolations([{ path, contents: `export class ${authority} {}` }]),
+    ).toEqual([{ path, rule: `duplicate-authority:${authority}` }]);
+  });
+
+  it("rejects contracts-owner writes outside ContractLedger", () => {
+    for (const contents of [
+      'manager.transaction("contracts");',
+      'manager["transaction"](`contracts`);',
+      'const { transaction: edit } = manager; edit("contracts");',
+      'const edit = manager.transaction; const alias = edit; alias("contracts");',
+      'const edit = manager.transaction.bind(manager); edit("contracts");',
+      'manager.transaction.call(manager, "contracts");',
+      'manager["transaction"].apply(manager, ["contracts"]);',
+      'const edit = manager.transaction; edit.call(manager, "contracts");',
+      'let edit; edit = manager.transaction; edit("contracts");',
+      'let edit; ({ transaction: edit } = manager); edit("contracts");',
+    ]) {
+      expect(
+        findArchitectureViolations([{ path: "contracts/workforce-allocator.ts", contents }]),
+      ).toEqual([
+        {
+          path: "contracts/workforce-allocator.ts",
+          rule: "contracts-state-write-outside-ledger",
+        },
+      ]);
+    }
+  });
+
+  it("rejects raw contracts-owner reads outside the runtime adapter", () => {
+    for (const contents of [
+      'manager.ownerView("contracts");',
+      'manager["ownerView"](`contracts`);',
+      'const { ownerView: read } = manager; read("contracts");',
+      'const read = manager.ownerView; const alias = read; alias("contracts");',
+      'const read = manager.ownerView.bind(manager); read("contracts");',
+      'manager.ownerView.call(manager, "contracts");',
+      'manager["ownerView"].apply(manager, ["contracts"]);',
+      'const read = manager.ownerView; read.apply(manager, ["contracts"]);',
+      'let read; read = manager.ownerView; read("contracts");',
+      'let read; ({ ownerView: read } = manager); read("contracts");',
+    ]) {
+      expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([
+        { path: "economy/planner.ts", rule: "contracts-owner-read-outside-runtime" },
+      ]);
+    }
     expect(
       findArchitectureViolations([
-        { path: "economy/cache.ts", contents: "export class CacheManager {}" },
+        { path: "runtime/tick.ts", contents: 'manager.ownerView("contracts");' },
       ]),
-    ).toEqual([{ path: "economy/cache.ts", rule: "duplicate-authority:CacheManager" }]);
+    ).toEqual([]);
+  });
+
+  it("respects lexical shadowing for owner method aliases and invocation helpers", () => {
+    for (const contents of [
+      'const edit = manager.transaction; function run(edit) { edit("contracts"); }',
+      'const read = manager.ownerView; function run(read) { read.call(null, "contracts"); }',
+      'const edit = manager.transaction.bind(manager); { const edit = callback; edit("contracts"); }',
+      'function run(transaction) { transaction("contracts"); }',
+      'function run(ownerView) { ownerView.apply(null, ["contracts"]); }',
+    ]) {
+      expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([]);
+    }
+  });
+
+  it("allows the canonical contract authorities and ledger-owned transaction", () => {
+    expect(
+      findArchitectureViolations([
+        {
+          path: "contracts/contract-ledger.ts",
+          contents:
+            'export class ContractLedger { reconcile(manager) { manager.transaction("contracts"); } }',
+        },
+        {
+          path: "contracts/workforce-allocator.ts",
+          contents: "export class WorkforceAllocator {}",
+        },
+      ]),
+    ).toEqual([]);
   });
 
   it("keeps RuntimeConfigAuthority at its canonical declaration", () => {
@@ -165,6 +274,8 @@ describe("runtime architecture boundaries", () => {
       'const { transaction: editOwner } = manager; editOwner("config");',
       'const readOwner = context.manager.ownerView; const alias = readOwner; alias("config");',
       'context.manager.ownerView("config");',
+      'manager.ownerView.call(manager, "config");',
+      'const editOwner = manager.transaction.bind(manager); editOwner("config");',
     ]) {
       expect(findArchitectureViolations([{ path: "defense/planner.ts", contents }])).toEqual([
         { path: "defense/planner.ts", rule: "config-owner-access-outside-runtime" },
@@ -183,6 +294,8 @@ describe("runtime architecture boundaries", () => {
       'manager.ownerView("colonies"); manager.transaction("colonies");',
       'const { ownerView } = manager; ownerView("colonies");',
       'context.manager["transaction"](`colonies`);',
+      'manager["ownerView"].apply(manager, ["colonies"]);',
+      'let edit; edit = manager.transaction; edit("colonies");',
     ]) {
       expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([
         { path: "economy/planner.ts", rule: "colonies-owner-access-outside-runtime" },

@@ -16,7 +16,7 @@ export interface FeatureGateDefinition {
 /** Source availability is advanced only with a complete, tested gameplay slice. */
 export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze([
   { id: "phase1.colony", available: true, prerequisites: [] },
-  { id: "phase1.contracts", available: false, prerequisites: ["phase1.colony"] },
+  { id: "phase1.contracts", available: true, prerequisites: ["phase1.colony"] },
   { id: "phase1.spawn", available: false, prerequisites: ["phase1.colony"] },
   { id: "phase1.movement", available: false, prerequisites: [] },
   {

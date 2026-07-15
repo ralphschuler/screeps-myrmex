@@ -35,9 +35,10 @@ metadata has a separate narrow transient allowance, but every projected final ro
 normal persistent cap; diagnostic evidence never displaces valid owner state.
 
 Feature availability and prerequisites are source-controlled. Operational Memory may only disable a
-known gate, never activate incomplete work. Only the proved `phase1.colony` gate is available under
-source v2; downstream gates remain unavailable. Configured self, ally, and NAP identities are
-checked before optional reputation and always remain excluded from targeting.
+known gate, never activate incomplete work. The proved `phase1.colony` and `phase1.contracts` gates
+are available under source v3, with contracts depending on colony; later gates remain unavailable.
+Configured self, ally, and NAP identities are checked before optional reputation and always remain
+excluded from targeting.
 
 The schema-v3 `colonies` owner has an exact owner-local schema for durable lifecycle and bounded
 ledger commitments. Exact `{}` initializes it. Malformed or future non-empty owners are preserved
@@ -49,6 +50,38 @@ admission, mandatory Execute/Reconcile/Telemetry tail systems, typed arbitration
 CacheManager, and a bounded deterministic replay matrix. Its versioned evidence is maintained in
 `docs/phase0-evidence.md`; the Phase 1 config and colony contracts are in
 `docs/phase1-config-evidence.md` and `docs/phase1-colony-evidence.md` in the repository.
+
+## Phase 1 contract foundation
+
+Persistent work now has one owner: `ContractLedger`. It creates idempotent contract IDs from a
+monotonic issuer sequence and issuer-local key, validates the lifecycle, owns assignment leases,
+terminal outcomes, and bounded issuer retirement frontiers, and stages the `contracts` Memory
+subtree. The root stays schema v3 while that owner uses its own schema v1. Only an exact empty
+object initializes it; malformed or future owner data is preserved and faults closed. Evicting
+compact outcome history cannot resurrect a retired issuance after heap reset.
+
+Each contract keeps a stable BudgetLedger binding for its owner colony, category, and budget issuer.
+The reconciler validates the current active reservation before funding or assignment; rotating
+reservation revisions do not change contract identity, and one binding may back only one active
+contract. Missing or terminal authorization suspends known work and removes a lease. Unknown colony
+vision authorizes no new assignment while preserving the commitment. Disabled or
+prerequisite-blocked contract gates do not parse or initialize the contracts owner.
+
+`WorkforceAllocator` is a separate pure policy. It compares snapshot-derived active body parts,
+known travel, deadlines, remaining life, and switching cost, then proposes deterministic matches for
+the ledger to persist. It considers at most 64 contracts, 64 owned creeps, and 4,096 pairs per pass.
+`Game.creeps` is the canonical owned-actor inventory, and no lease or task is mirrored into
+per-creep Memory. New leases account for Reconcile occurring after Execute, while incumbent
+feasibility deducts elapsed modeled work instead of recharging the full estimate each tick.
+Pre-Execute travel observations are advanced by the modeled current Execute opportunity before
+comparison with the lease schedule. Unknown travel is deferred until the movement slice supplies an
+estimate.
+
+The contract reconciler is operational work in the Reconcile phase. When admitted, it runs before
+the mandatory state reconciler; the latter remains the only root Memory commit. This foundation is
+one Phase 1 foundation slice—bootstrap economy, spawning, replacement, movement, and zero-creep
+recovery remain separate roadmap outcomes. Its evidence is maintained in
+`docs/phase1-contracts-evidence.md`.
 
 Gameplay domains never call each other as hidden control flow. They coordinate through typed,
 tick-local buffers and persistent contracts with explicit owners. Global heap resets, unavailable

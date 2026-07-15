@@ -16,6 +16,12 @@ exactly one recovery objective, which the ledger explicitly funds or blocks. Thr
 preempt growth. Unknown vision preserves durable state without authorizing new work, while current
 visible ownership loss releases local commitments.
 
+Capability contracts bind to a stable BudgetLedger issuer key and must see the matching current
+active reservation before funding or assignment. One grant binding backs at most one active
+contract. Grant renewal preserves contract identity; released, consumed, expired, or missing
+authorization suspends known work and removes its lease. Unknown vision authorizes no new assignment
+without inventing revocation evidence.
+
 Diplomacy follows observable states and an escalation ladder. Offensive operations require fresh
 intelligence, a positive strategic margin, a complete resource budget, retreat conditions, and
 diplomatic authorization.

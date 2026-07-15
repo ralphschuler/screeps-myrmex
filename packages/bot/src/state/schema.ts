@@ -161,8 +161,8 @@ export type MigratingMyrmexMemory = {
 } & Partial<PersistentOwnerState>;
 
 export type MyrmexMemoryRoot = MyrmexMemory | MigratingMyrmexMemory;
-/** General consumers cannot inspect authority-owned raw config or colony persistence. */
-export type StateView = DeepReadonly<Omit<MyrmexMemory, "config" | "colonies">>;
+/** General consumers cannot inspect raw persistence owned by dedicated runtime authorities. */
+export type StateView = DeepReadonly<Omit<MyrmexMemory, "config" | "colonies" | "contracts">>;
 export type OwnerStateView = DeepReadonly<JsonObject>;
 
 declare global {

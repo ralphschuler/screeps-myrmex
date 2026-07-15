@@ -268,13 +268,15 @@ posture, energy, spawn time, then CPU. This keeps explanations invariant under e
 
 ## Feature gate and source revision
 
-Issue #37 advances the source revision to `runtime-config-source-v2`. Only `phase1.colony` is
-source-available. Operational config may disable it; no operational value can activate another gate.
-`phase1.contracts`, `phase1.spawn`, and every later Phase 1 gate remain source-unavailable until
-their own outcome is proved.
+At issue #37's merge, the source revision advanced to `runtime-config-source-v2` and only
+`phase1.colony` became available. Issue #23 subsequently advances current source to
+`runtime-config-source-v3` and adds only `phase1.contracts`, with the colony gate as its
+prerequisite. Operational config may disable available work; no operational value can activate a
+later gate. `phase1.spawn` and every later Phase 1 gate remain source-unavailable until their own
+outcome is proved.
 
-An acceptance receipt from source v1 is incompatible by design. A present valid candidate is
-revalidated against v2 and receives a new receipt. With `candidate: null` and only an incompatible
+The same receipt rule applies at each source boundary. A present valid candidate is revalidated and
+receives a current receipt. With `candidate: null` and only an incompatible source-v1 or source-v2
 receipt, source defaults apply without rewriting operator-owned bytes.
 
 ## Bounded telemetry

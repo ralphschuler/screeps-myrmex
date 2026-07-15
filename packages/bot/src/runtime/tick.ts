@@ -1,8 +1,21 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
 import { getRuntimeCacheManager, type CacheManager } from "../cache";
 import { ColonyDirector, emptyColonyPlanningResult, type ColonyPlanningResult } from "../colony";
-import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
+import {
+  isFeatureEnabled,
+  type RuntimeConfig,
+  type RuntimeConfigResolutionMetadata,
+} from "../config";
 import { RuntimeConfigAuthority, type RuntimeConfigResolution } from "../config/authority";
+import {
+  ContractLedger,
+  createContractRequestChannel,
+  inRangeOrUnknownTravel,
+  workforceActorFromCreep,
+  type ContractFundingView,
+  type ContractReconciliationResult,
+  type ContractRequestChannel,
+} from "../contracts";
 import {
   openMyrmexMemory,
   type MemoryCommitResult,
@@ -44,6 +57,7 @@ export interface TickOutcome {
   readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly snapshot: WorldSnapshot;
   readonly colony: ColonyPlanningResult;
+  readonly contracts: ContractReconciliationResult | null;
   readonly execution: ArbitrationBatch | null;
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
@@ -56,6 +70,8 @@ interface TickRuntimeControl {
   publishSnapshot(snapshot: WorldSnapshot): void;
   publishColony(colony: ColonyPlanningResult): void;
   clearColony(): void;
+  publishContracts(result: ContractReconciliationResult): void;
+  clearContracts(): void;
   publishExecution(batch: ArbitrationBatch): void;
   publishStateCommit(result: MemoryCommitResult): void;
   publishTelemetry(telemetry: TickTelemetry): void;
@@ -94,14 +110,16 @@ export function runTick(input: TickInput): TickOutcome {
     maximumBudget: 1_000_000,
     overloadPolicy: "defer",
   });
+  const contractChannel = createContractRequestChannel();
 
-  const systems = composePhaseZeroSystems({
+  const systems = composeRuntimeSystems({
     game: input.game,
     manager,
     cacheManager,
     runtime,
     intentChannel,
     configReplacement: configResolution.replacementOwner,
+    contractChannel,
     onPhase: input.onPhase,
     getKernel: () => kernel,
   });
@@ -125,6 +143,7 @@ export function runTick(input: TickInput): TickOutcome {
     configResolution: runtime.context.configResolution,
     snapshot: runtime.context.snapshot,
     colony: runtime.context.colony,
+    contracts: runtime.context.contracts,
     execution: runtime.context.execution,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
@@ -139,14 +158,82 @@ interface CompositionInput {
   readonly runtime: TickRuntimeControl;
   readonly intentChannel: IntentChannel;
   readonly configReplacement: RuntimeConfigResolution["replacementOwner"];
+  readonly contractChannel: ContractRequestChannel;
   readonly onPhase: ((phase: TickPhase) => void) | undefined;
   readonly getKernel: () => RuntimeKernel<TickContext>;
 }
 
-/** Static, explicit Phase 0 composition. Gameplay systems replace the no-op policy stages later. */
-function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<TickContext>[] {
+/** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
+function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<TickContext>[] {
   return Object.freeze([
     configBootSystem(input),
+    {
+      descriptor: {
+        id: "contracts.reconcile",
+        phase: "reconcile",
+        criticality: "operational",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: true,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase1.contracts")) {
+          input.contractChannel.seal();
+          return staged(() => undefined);
+        }
+        if (input.manager === null || context.state === null) {
+          input.contractChannel.seal();
+          return staged(() => undefined);
+        }
+        const manager = input.manager;
+        const funding = contractFundingView(context.colony);
+        if (funding.status === "unavailable") {
+          input.contractChannel.seal();
+          return staged(() => undefined);
+        }
+        const opened = ContractLedger.open(manager.ownerView("contracts"));
+        if (opened.status === "invalid") {
+          throw new Error(
+            `contracts-owner-invalid:${opened.error.code}:${opened.error.path}`.slice(0, 256),
+          );
+        }
+        if (opened.status === "unsupported") {
+          throw new Error(
+            `contracts-owner-unsupported:${String(opened.foundSchemaVersion)}`.slice(0, 256),
+          );
+        }
+
+        const batch = input.contractChannel.seal();
+        const actors = context.snapshot.rooms
+          .flatMap((room) => room.ownedCreeps)
+          .map(workforceActorFromCreep);
+        const reconciliation = opened.ledger.reconcile({
+          actors,
+          funding,
+          requests: batch.requests,
+          tick: context.tick,
+          transitions: batch.transitions,
+          travel: inRangeOrUnknownTravel,
+        });
+
+        return staged(
+          () => {
+            if (opened.ledger.changed) {
+              const stagedContracts = opened.ledger.stage(manager);
+              if (!stagedContracts.staged) {
+                throw new Error(stagedContracts.fault?.message ?? "contracts state staging failed");
+              }
+            }
+            input.runtime.publishContracts(reconciliation);
+          },
+          () => {
+            manager.discard("contracts");
+            input.runtime.clearContracts();
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "world.observe",
@@ -222,26 +309,35 @@ function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<T
       run: ({ mode }) => {
         input.onPhase?.("reconcile");
         const persistentKernelState = serializeKernelState(input.getKernel(), mode);
-        return staged(() => {
-          if (input.manager === null) {
-            return;
-          }
-          const transaction = input.manager.transaction("kernel");
-          transaction.mutate((draft) => {
-            draft.runtime = persistentKernelState;
-          });
-          const stagedResult = transaction.stage();
-          if (!stagedResult.staged) {
-            throw new Error(stagedResult.fault?.message ?? "kernel state staging failed");
-          }
-          const commit = input.manager.commitReconciliation();
-          input.runtime.publishStateCommit(commit);
-          if (!commit.committed) {
-            throw new Error(
-              commit.faults.map(({ code, owner }) => `${owner ?? "root"}:${code}`).join(","),
-            );
-          }
-        });
+        let rootCommitted = false;
+        return staged(
+          () => {
+            if (input.manager === null) {
+              return;
+            }
+            const transaction = input.manager.transaction("kernel");
+            transaction.mutate((draft) => {
+              draft.runtime = persistentKernelState;
+            });
+            const stagedResult = transaction.stage();
+            if (!stagedResult.staged) {
+              throw new Error(stagedResult.fault?.message ?? "kernel state staging failed");
+            }
+            const commit = input.manager.commitReconciliation();
+            input.runtime.publishStateCommit(commit);
+            if (!commit.committed) {
+              throw new Error(
+                commit.faults.map(({ code, owner }) => `${owner ?? "root"}:${code}`).join(","),
+              );
+            }
+            rootCommitted = true;
+          },
+          () => {
+            if (!rootCommitted) {
+              input.runtime.clearContracts();
+            }
+          },
+        );
       },
     },
     {
@@ -335,6 +431,39 @@ function colonyPlanningView(result: ReturnType<ColonyDirector["plan"]>): ColonyP
   });
 }
 
+function contractFundingView(colony: ColonyPlanningResult): ContractFundingView {
+  if (colony.status !== "planned") {
+    const reason =
+      colony.status === "owner-future-schema"
+        ? "colony-owner-future-schema"
+        : colony.status === "owner-malformed"
+          ? "colony-owner-malformed"
+          : colony.status === "owner-unavailable"
+            ? "colony-owner-unavailable"
+            : "colony-planning-not-run";
+    return Object.freeze({ reason, status: "unavailable" });
+  }
+  return Object.freeze({
+    authorizations: Object.freeze(
+      colony.reservations.map((entry) =>
+        Object.freeze({
+          category: entry.category,
+          colonyId: entry.colonyId,
+          expiresAt: entry.request.expiresAt,
+          issuer: entry.issuer,
+          reservationId: entry.reservationId,
+          revision: entry.revision,
+          status: entry.status,
+        }),
+      ),
+    ),
+    owners: Object.freeze(
+      colony.colonies.map(({ id, visibility }) => Object.freeze({ id, visibility })),
+    ),
+    status: "ready",
+  });
+}
+
 function configBootSystem(input: CompositionInput): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -409,6 +538,7 @@ function createTickRuntime(
 ): TickRuntimeControl {
   let snapshot = emptyWorldSnapshot(game.time, game.shard.name);
   let colony: ColonyPlanningResult = emptyColonyPlanningResult();
+  let contracts: ContractReconciliationResult | null = null;
   let execution: ArbitrationBatch | null = null;
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
@@ -424,6 +554,9 @@ function createTickRuntime(
     },
     get colony(): ColonyPlanningResult {
       return colony;
+    },
+    get contracts(): ContractReconciliationResult | null {
+      return contracts;
     },
     get execution(): ArbitrationBatch | null {
       return execution;
@@ -446,6 +579,12 @@ function createTickRuntime(
     },
     clearColony(): void {
       colony = emptyColonyPlanningResult();
+    },
+    publishContracts(value: ContractReconciliationResult): void {
+      contracts = value;
+    },
+    clearContracts(): void {
+      contracts = null;
     },
     publishExecution(value: ArbitrationBatch): void {
       execution = value;

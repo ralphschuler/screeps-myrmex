@@ -156,6 +156,7 @@ export function readonlyStateView(value: MyrmexMemory): StateView {
   const clone = cloneJson(value) as Record<string, unknown>;
   delete clone.config;
   delete clone.colonies;
+  delete clone.contracts;
   return freezeJson(clone) as StateView;
 }
 
