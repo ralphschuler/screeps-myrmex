@@ -5,6 +5,16 @@ import { ScreepsClient } from "./lib/screeps-client.mjs";
 const ROOM_SIZE = 50;
 const INTERIOR_MIN = 4;
 const INTERIOR_MAX = ROOM_SIZE - 5;
+const RESPAWN_COOLDOWN_MS = 180_000;
+const STATUS_POLL_INTERVAL_MS = 15_000;
+const TARGET_LOCAL_PLACEMENT_ERRORS = new Set(["invalid location", "invalid room", "room busy"]);
+const ACCOUNT_PLACEMENT_REASONS = new Map([
+  ["already playing", "account-already-playing"],
+  ["blocked", "account-blocked"],
+  ["invalid params", "request-invalid"],
+  ["no cpu", "account-cpu-unavailable"],
+  ["too soon after last respawn", "respawn-cooldown"],
+]);
 
 function roomCount(payload) {
   const shards = payload?.shards;
@@ -55,6 +65,37 @@ function positionKey(x, y) {
 
 function respawnRoomKey(target) {
   return `${target.shard}/${target.room}`;
+}
+
+function respawnTargetKey(target) {
+  return `${respawnRoomKey(target)}/${target.x}/${target.y}`;
+}
+
+function uniqueTargets(targets) {
+  const seen = new Set();
+
+  return targets.filter((target) => {
+    const key = respawnTargetKey(target);
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function fatalPlacementReason(result) {
+  if (result?.ok !== 0) {
+    return "unclassified-api-rejection";
+  }
+
+  if (TARGET_LOCAL_PLACEMENT_ERRORS.has(result.error)) {
+    return undefined;
+  }
+
+  return ACCOUNT_PLACEMENT_REASONS.get(result?.error) ?? "unclassified-api-rejection";
 }
 
 function prohibitedRoomKeys(payload) {
@@ -285,13 +326,14 @@ async function waitForEmptyStatus(client, { polls, wait }) {
       throw new Error("Screeps returned to normal state before spawn placement.");
     }
 
-    await wait();
+    await wait(STATUS_POLL_INTERVAL_MS);
   }
 
   throw new Error("Screeps did not enter empty respawn state before the timeout.");
 }
 
 export async function ensureRespawn({
+  allowEmptyPlacement = false,
   client,
   enabled,
   dryRun = false,
@@ -300,7 +342,8 @@ export async function ensureRespawn({
   spawnNamePrefix = "Myrmex",
   now = () => Date.now(),
   polls = 24,
-  wait = () => new Promise((resolvePromise) => setTimeout(resolvePromise, 15_000)),
+  wait = (milliseconds) =>
+    new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)),
 }) {
   const [worldStatus, shardsPayload, roomsPayload] = await Promise.all([
     client.get("user/world-status"),
@@ -329,18 +372,26 @@ export async function ensureRespawn({
     return { action: "would-respawn", ownedRooms, status };
   }
 
+  if (status === "empty" && !allowEmptyPlacement) {
+    throw new Error("Spawn placement stopped: manual-empty-placement-required.");
+  }
+
   if (status !== "empty") {
     await client.post("user/respawn", {});
     await waitForEmptyStatus(client, { polls, wait });
+    await wait(RESPAWN_COOLDOWN_MS);
   }
 
   const prohibitedPayload = await client.get("user/respawn-prohibited-rooms");
   const prohibited = prohibitedRoomKeys(prohibitedPayload);
-  const targets = configuredTargets.filter(
+  const configuredCandidates = configuredTargets.filter(
     (target) => shards.includes(target.shard) && !prohibited.has(respawnRoomKey(target)),
   );
   const dynamicTargets = await discoverDynamicTargets(client, shards);
-  targets.push(...dynamicTargets.filter((target) => !prohibited.has(respawnRoomKey(target))));
+  const targets = uniqueTargets([
+    ...configuredCandidates,
+    ...dynamicTargets.filter((target) => !prohibited.has(respawnRoomKey(target))),
+  ]);
 
   if (targets.length === 0) {
     throw new Error("No permitted respawn target is available.");
@@ -365,6 +416,12 @@ export async function ensureRespawn({
 
       return { action: "respawned" };
     }
+
+    const fatalReason = fatalPlacementReason(result);
+
+    if (fatalReason !== undefined) {
+      throw new Error(`Screeps rejected spawn placement: ${fatalReason}.`);
+    }
   }
 
   throw new Error("Screeps rejected every permitted respawn target.");
@@ -382,6 +439,7 @@ if (isMainModule()) {
   });
   const configuredTargets = parseConfiguredTargets(process.env.SCREEPS_RESPAWN_TARGETS);
   const result = await ensureRespawn({
+    allowEmptyPlacement: process.env.SCREEPS_RESPAWN_ALLOW_EMPTY_PLACEMENT === "true",
     client,
     configuredTargets,
     dryRun: process.env.SCREEPS_RESPAWN_DRY_RUN === "true",

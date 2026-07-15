@@ -41,6 +41,7 @@ jobs:
         env:
           SCREEPS_API_BASE_URL: ${{ vars.SCREEPS_API_BASE_URL || 'https://screeps.com/api' }}
           SCREEPS_AUTO_RESPAWN_ENABLED: ${{ vars.SCREEPS_AUTO_RESPAWN_ENABLED }}
+          SCREEPS_RESPAWN_ALLOW_EMPTY_PLACEMENT: ${{ github.event_name == 'workflow_dispatch' }}
           SCREEPS_RESPAWN_DRY_RUN:
             ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
           SCREEPS_RESPAWN_NAME: ${{ vars.SCREEPS_RESPAWN_NAME || 'Myrmex' }}

@@ -91,6 +91,8 @@ Foundation references:
 - [Screeps authentication tokens](https://docs.screeps.com/auth-tokens.html);
 - [committing scripts through the Screeps API](https://docs.screeps.com/commit.html);
 - [Screeps respawning behavior](https://docs.screeps.com/respawn.html);
+- [Screeps backend spawn-placement guard](https://github.com/screeps/backend-local/blob/9d079282303ec04e577ac2bb97f64312b25e4ccd/lib/game/api/game.js#L328-L417);
+- [Screeps Wiki source-code guidance](https://wiki.screepspl.us/Source_Code_Reference/);
 - [Screeps Wiki code-pushing guidance](https://wiki.screepspl.us/Pushing_code_to_Screeps/);
 - [GitHub Packages npm registry](https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-npm-registry).
 
@@ -114,13 +116,33 @@ validated commit to the same branch or activation of a separately maintained las
 3. Optionally configure private fallback targets.
 4. Set `SCREEPS_RESPAWN_ON_ZERO_ROOMS=true` only when a normal account state with zero reported
    rooms should be treated as terminal loss.
-5. Set `SCREEPS_AUTO_RESPAWN_ENABLED=true` to authorize scheduled mutation.
+5. For a controlled canary, set `SCREEPS_AUTO_RESPAWN_ENABLED=true` immediately before manually
+   dispatching one run with dry-run disabled. A manual dispatch is the only invocation allowed to
+   place a spawn when the account was already `empty`.
+6. Leave mutation enabled for unattended recovery only after the canary succeeds. Restore it to
+   `false` immediately after any failure.
 
 Healthy accounts are read-only. A `lost` account, or an explicitly authorized zero-room account, is
-moved through respawn and polled until it becomes `empty`. An `empty` account skips the destructive
-respawn call and proceeds directly to placement. After `place-spawn`, the action requires
-`world-status=normal`. Unknown states, malformed shard or room data, exhausted targets, or changed
-API responses fail without additional account mutation.
+moved through respawn and polled until it becomes `empty`. The workflow then waits the documented
+180-second respawn cooldown before placement. If the API still returns
+`too soon after last respawn`, the run reports the sanitized `respawn-cooldown` reason and stops
+after the first candidate instead of repeating an account-level rejection across every target. Only
+documented target-local rejections may advance to another distinct candidate; duplicate,
+account-level, malformed, and unknown rejections stop with sanitized reasons.
+
+A scheduled invocation that starts with an `empty` account reports `manual-empty-placement-required`
+before target discovery or placement. This one-shot rule prevents subsequent schedules from
+replaying the candidate set after an unsuccessful placement run. A manual workflow dispatch supplies
+the narrow override needed for the monitored canary or deliberate recovery. After `place-spawn`, the
+action requires `world-status=normal`. Unknown states, malformed shard or room data, exhausted
+targets, or changed API responses fail without further account mutation.
+
+A controlled run on 2026-07-15 reached `empty` and attempted placement about three seconds after
+calling respawn, so every candidate was rejected. Mutation was rolled back by setting
+`SCREEPS_AUTO_RESPAWN_ENABLED=false`. Keep that rollback active until this cooldown handling is on
+`main`, a manual dry-run still reports `would-respawn`, and an operator is ready to monitor one
+manual non-dry-run canary. Re-enable scheduled mutation only after that canary reports `respawned`
+and the script verifies `world-status=normal`; restore the variable to `false` after any failure.
 
 Auto-respawn is disaster recovery, not expansion strategy. Once the initial spawn exists, the
 runtime's cold-boot and colony systems own all further decisions.
