@@ -18,7 +18,8 @@ Bootstrap phase. The repository currently provides:
 - strict TypeScript, lint, formatting, test, documentation, and bundle gates;
 - a deterministic seven-phase tick skeleton;
 - versioned persistent-memory initialization;
-- GitHub Actions for CI, security review, dependency updates, and Wiki synchronization.
+- GitHub Actions for CI, security review, package publishing, Screeps deployment, terminal-loss
+  respawn recovery, dependency updates, and Wiki synchronization.
 
 No gameplay feature is considered complete until it passes a deterministic scenario and a
 private-server outcome gate.
@@ -33,6 +34,10 @@ npm run check
 ```
 
 The Screeps bundle is written to `dist/main.js`.
+
+Release tags publish the same bundle as `@ralphschuler/screeps-myrmex` on GitHub Packages. Live
+deployment and auto-respawn remain disabled until the `screeps-production` environment is configured
+as described in [the development guide](docs/development.md).
 
 ## Repository Shape
 

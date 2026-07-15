@@ -1,0 +1,55 @@
+name: Deploy to Screeps
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Existing Screeps code branch to replace
+        required: true
+        default: default
+        type: string
+
+concurrency:
+  group: screeps-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Validate and deploy bundle
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: screeps-production
+      url: https://screeps.com/a/#!/account
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run repository gate
+        run: npm run check
+
+      - name: Build commit-marked bundle
+        env:
+          MYRMEX_BUILD_SHA: ${{ github.sha }}
+        run: npm run build
+
+      - name: Upload and verify Screeps module
+        env:
+          SCREEPS_API_BASE_URL: ${{ vars.SCREEPS_API_BASE_URL || 'https://screeps.com/api' }}
+          SCREEPS_BRANCH: ${{ inputs.branch }}
+          SCREEPS_TOKEN: ${{ secrets.SCREEPS_TOKEN }}
+        run: node scripts/deploy-screeps.mjs

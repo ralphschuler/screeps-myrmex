@@ -1,0 +1,51 @@
+name: Auto Respawn
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Detect and report without mutating the Screeps account
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: screeps-production-respawn
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Detect terminal loss and recover
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: screeps-production
+      url: https://screeps.com/a/#!/account
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check account and recover when authorized
+        env:
+          SCREEPS_API_BASE_URL: ${{ vars.SCREEPS_API_BASE_URL || 'https://screeps.com/api' }}
+          SCREEPS_AUTO_RESPAWN_ENABLED: ${{ vars.SCREEPS_AUTO_RESPAWN_ENABLED }}
+          SCREEPS_RESPAWN_DRY_RUN:
+            ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          SCREEPS_RESPAWN_NAME: ${{ vars.SCREEPS_RESPAWN_NAME || 'Myrmex' }}
+          SCREEPS_RESPAWN_ON_ZERO_ROOMS: ${{ vars.SCREEPS_RESPAWN_ON_ZERO_ROOMS }}
+          SCREEPS_RESPAWN_TARGETS: ${{ secrets.SCREEPS_RESPAWN_TARGETS }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_TOKEN: ${{ secrets.SCREEPS_TOKEN }}
+        run: node scripts/auto-respawn.mjs

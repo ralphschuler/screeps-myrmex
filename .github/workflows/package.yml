@@ -1,0 +1,75 @@
+name: Publish GitHub Package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer to publish, for example 0.1.0-rc.1
+        required: true
+        type: string
+
+concurrency:
+  group: package-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Build and publish bot package
+    if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js and GitHub Packages
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+          scope: "@ralphschuler"
+
+      - name: Resolve package version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          source_version="${RELEASE_TAG:-${INPUT_VERSION:-}}"
+          version="${source_version#v}"
+          if [[ -z "$version" ]]; then
+            echo "A package version is required." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run repository gate
+        run: npm run check
+
+      - name: Build release bundle
+        env:
+          MYRMEX_BUILD_SHA: ${{ github.sha }}
+        run: npm run build
+
+      - name: Stage publishable package
+        run: npm run package:bot -- "${{ steps.version.outputs.version }}"
+
+      - name: Inspect package contents
+        run: npm pack --dry-run ./dist/package
+
+      - name: Publish to GitHub Packages
+        run: npm publish ./dist/package
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}

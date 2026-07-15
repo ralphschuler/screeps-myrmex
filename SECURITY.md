@@ -8,3 +8,8 @@ reporting feature. Never open a public issue containing a token or secret. Rotat
 credential immediately.
 
 Only the current `main` branch receives security fixes during bootstrap.
+
+Screeps automation uses a dedicated token stored only in the protected `screeps-production` GitHub
+environment. Scope it to the documented deployment and recovery endpoints where Screeps token
+controls allow. Respawn target rooms and coordinates belong in the `SCREEPS_RESPAWN_TARGETS` secret,
+never repository variables or public workflow logs.

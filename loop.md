@@ -188,6 +188,18 @@ Read, in order:
 6. the most recent relevant ADRs;
 7. this file.
 
+For every run, also consult both foundation sources:
+
+- [official Screeps documentation](https://docs.screeps.com/), including the API reference for any
+  game object or command involved;
+- [Screeps Wiki](https://wiki.screepspl.us/) for established community terminology, algorithms,
+  operational edge cases, and links to engine evidence.
+
+Do not rely on remembered Screeps mechanics. Open the relevant pages for the selected slice and
+record the pages that materially constrain the implementation. Official documentation and current
+engine source override the Wiki when they conflict; a conflict is evidence to test, not permission
+to choose the more convenient behavior.
+
 ### 6.2 Inspect repository state
 
 Inspect:
@@ -275,18 +287,22 @@ Avoid vague titles such as “Improve spawning” or “Refactor runtime.” Pre
 - `[phase-3][remotes] Suspend a remote whose full-cost return stays negative`
 - `[phase-5][diplomacy] Reject allied targets before combat intent arbitration`
 
-## 8. Research Only What the Slice Needs
+## 8. Ground Every Slice in Screeps Documentation
 
-Research is mandatory when the implementation depends on current or uncertain mechanics,
-dependencies, security advice, or external APIs. It is not mandatory for a purely internal change
-whose contract is already authoritative in the repository.
+Every run MUST use the official Screeps documentation and Screeps Wiki as foundation information.
+For gameplay, strategy, simulation, deployment, or account automation, open the specific relevant
+pages even when the mechanic appears familiar. For a purely internal repository change, review the
+foundation indexes and then focus deeper research on the internal contract being changed.
+
+Additional research is mandatory when the implementation depends on current or uncertain mechanics,
+dependencies, security advice, or external APIs.
 
 Prefer sources in this order:
 
 1. current official Screeps documentation and official Screeps repositories;
-2. official package documentation and release notes;
-3. source code of maintained public bots, used as comparative evidence only;
-4. high-quality Screeps community documentation;
+2. the Screeps Wiki, checking its engine/source links and freshness;
+3. official package documentation and release notes;
+4. source code of maintained public bots, used as comparative evidence only;
 5. forum and secondary discussion.
 
 Research questions should be specific:
@@ -298,13 +314,15 @@ Research questions should be specific:
 - What can be tested deterministically?
 - Does public documentation of the finding expose live tactical intelligence?
 
-Do not browse broadly every run. Stop when primary sources answer the implementation question.
+Do not browse broadly after completing the required docs-and-Wiki grounding. Stop when primary
+sources and the relevant Wiki guidance answer the implementation question.
 
 Never copy public-bot code blindly. Treat other bots as design comparisons, verify licenses, and
 write MYRMEX behavior independently.
 
-Record material findings and links in the issue or pull request. Distinguish official mechanics,
-repository decisions, and strategic inference.
+Record the consulted official documentation and Wiki links plus material findings in the issue or
+pull request. Distinguish official mechanics, community guidance, repository decisions, and
+strategic inference.
 
 ## 9. Write the Executable Outcome First
 
@@ -559,8 +577,9 @@ After merge:
 
 During bootstrap, a green bundle is not authorization to deploy.
 
-Deployment becomes available only when the repository contains an approved deployment document and
-workflow that define:
+Deployment is implemented by `.github/workflows/deploy-screeps.yml` and the operational contract in
+`docs/development.md`. Its existence is not authorization to deploy an arbitrary change. The gate
+requires:
 
 - target Screeps code branch and shard strategy;
 - protected GitHub environment;
@@ -574,6 +593,12 @@ workflow that define:
 
 Once configured, deploy only a validated merged commit. Never print credentials. Never claim a
 deployment unless screeps.com accepted the upload and the deployed version marker matches.
+
+`.github/workflows/auto-respawn.yml` is separately authorized only when
+`SCREEPS_AUTO_RESPAWN_ENABLED=true` in the protected environment. Do not weaken its
+recognized-state, zero-room opt-in, target secrecy, placement verification, or fail-closed behavior.
+Auto-respawn is account disaster recovery and does not count as a gameplay feature or expansion
+decision.
 
 After deployment, immediately inspect available evidence for:
 
