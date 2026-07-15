@@ -154,11 +154,49 @@ export interface ContractLeasePolicy {
   readonly ttlSafetyMargin: number;
 }
 
+/** Versioned, data-only authorization for one scoped primary creep action. */
+export const CONTRACT_EXECUTION_TERM_VERSION = 1 as const;
+
+export const CONTRACT_EXECUTION_ACTIONS = [
+  "build",
+  "harvest",
+  "pickup",
+  "repair",
+  "transfer",
+  "upgrade-controller",
+  "withdraw",
+] as const;
+
+export type ContractExecutionAction = (typeof CONTRACT_EXECUTION_ACTIONS)[number];
+
+export const CONTRACT_EXECUTION_DISPOSITIONS = [
+  "continuous",
+  "target-depleted",
+  "target-full",
+  "work-complete",
+] as const;
+
+export type ContractExecutionDisposition = (typeof CONTRACT_EXECUTION_DISPOSITIONS)[number];
+
+/**
+ * Terms a lease agent may consume. `targetId` remains the primary action target; `counterpartId`
+ * identifies the other endpoint of a source/sink relationship when a later agent needs it.
+ */
+export interface ContractExecutionTerms {
+  readonly action: ContractExecutionAction;
+  readonly completion: ContractExecutionDisposition;
+  readonly counterpartId: string | null;
+  readonly resourceType: ResourceConstant | null;
+  readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION;
+}
+
 export interface WorkContractRequest {
   readonly budgetBinding: ContractBudgetBinding;
   readonly conditions: ContractConditionRefs;
   /** Inclusive last tick on which travel and modeled work may finish. */
   readonly deadline: number;
+  /** Absent only for legacy contracts that predate executable lease terms. */
+  readonly execution?: ContractExecutionTerms;
   readonly earliestStart: number;
   readonly estimatedWorkTicks: number;
   /** First tick on which unfinished work must become expired. */
@@ -204,6 +242,33 @@ export interface WorkContractRecord extends WorkContractRequest {
   readonly requestSignature: string;
   readonly revision: number;
   readonly state: ActiveWorkContractState;
+}
+
+/** A bounded projection of a leased record; raw contract-owner bytes never leave the authority. */
+export interface LeasedWorkExecution {
+  readonly actorId: string;
+  readonly actorName: string;
+  readonly contractId: string;
+  readonly deadline: number;
+  readonly execution: ContractExecutionTerms;
+  readonly expiresAt: number;
+  readonly leaseExpiresAt: number;
+  readonly quantity: number;
+  readonly range: number;
+  readonly revision: number;
+  readonly target: PositionSnapshot;
+  readonly targetId: string;
+}
+
+export interface ContractExecutionView {
+  readonly leases: readonly LeasedWorkExecution[];
+  readonly status: "ready" | "unavailable";
+}
+
+export function emptyContractExecutionView(
+  status: ContractExecutionView["status"] = "unavailable",
+): ContractExecutionView {
+  return Object.freeze({ leases: Object.freeze([]), status });
 }
 
 export interface ContractOutcome {
@@ -334,11 +399,16 @@ export function normalizeContractRequest(request: WorkContractRequest): WorkCont
   const failure = nullableBoundedString(request.conditions.failure, "$.conditions.failure", 128);
   const target = normalizePosition(request.target, "$.target");
   const targetId = nullableBoundedString(request.targetId, "$.targetId", 128);
+  const execution =
+    request.execution === undefined
+      ? undefined
+      : normalizeExecutionTerms(request.execution, request.kind, targetId);
 
   return deepFreeze({
     budgetBinding,
     conditions: { cancellation, failure, success },
     deadline,
+    ...(execution === undefined ? {} : { execution }),
     earliestStart,
     estimatedWorkTicks: positiveInteger(request.estimatedWorkTicks, "$.estimatedWorkTicks"),
     expiresAt,
@@ -475,6 +545,99 @@ function normalizePosition(value: PositionSnapshot, path: string): PositionSnaps
     x: integerInRange(value.x, `${path}.x`, 0, 49),
     y: integerInRange(value.y, `${path}.y`, 0, 49),
   };
+}
+
+function normalizeExecutionTerms(
+  value: Readonly<{
+    readonly action: unknown;
+    readonly completion: unknown;
+    readonly counterpartId: unknown;
+    readonly resourceType: unknown;
+    readonly version: unknown;
+  }>,
+  kind: WorkContractKind,
+  targetId: string | null,
+): ContractExecutionTerms {
+  if (targetId === null) {
+    invalid("execution-target-required", "$.targetId", "must identify the action target");
+  }
+  if (
+    typeof value.action !== "string" ||
+    !CONTRACT_EXECUTION_ACTIONS.includes(value.action as ContractExecutionAction)
+  ) {
+    invalid("invalid-execution-action", "$.execution.action", "must be a supported action");
+  }
+  const action = value.action as ContractExecutionAction;
+  if (
+    typeof value.completion !== "string" ||
+    !CONTRACT_EXECUTION_DISPOSITIONS.includes(value.completion as ContractExecutionDisposition)
+  ) {
+    invalid(
+      "invalid-execution-completion",
+      "$.execution.completion",
+      "must be a supported disposition",
+    );
+  }
+  if (value.version !== CONTRACT_EXECUTION_TERM_VERSION) {
+    invalid("invalid-execution-version", "$.execution.version", "must equal 1");
+  }
+  if (!actionMatchesContractKind(action, kind)) {
+    invalid("execution-kind-mismatch", "$.execution.action", "is not authorized by contract kind");
+  }
+  const completion = value.completion as ContractExecutionDisposition;
+  const counterpartId = nullableBoundedString(
+    value.counterpartId,
+    "$.execution.counterpartId",
+    128,
+  );
+  const resourceType =
+    value.resourceType === null
+      ? null
+      : (validateBoundedString(
+          value.resourceType,
+          "$.execution.resourceType",
+          1,
+          64,
+        ) as ResourceConstant);
+  const resourceRequired = action === "transfer" || action === "withdraw";
+  if (resourceRequired !== (resourceType !== null)) {
+    invalid(
+      "execution-resource-mismatch",
+      "$.execution.resourceType",
+      resourceRequired ? "is required for this action" : "must be null for this action",
+    );
+  }
+  return {
+    action,
+    completion,
+    counterpartId,
+    resourceType,
+    version: 1,
+  };
+}
+
+function actionMatchesContractKind(
+  action: ContractExecutionAction,
+  kind: WorkContractKind,
+): boolean {
+  switch (kind) {
+    case "harvest":
+      return action === "harvest";
+    case "fill":
+      return action === "transfer";
+    case "haul":
+      return action === "pickup" || action === "transfer" || action === "withdraw";
+    case "repair":
+      return action === "repair";
+    case "build":
+      return action === "build";
+    case "upgrade":
+      return action === "upgrade-controller";
+    case "defend":
+    case "scout":
+    case "other":
+      return false;
+  }
 }
 
 function normalizeStringSet(value: unknown, path: string, maximum: number): readonly string[] {

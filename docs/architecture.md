@@ -921,6 +921,16 @@ It does not select empire strategy. If its contract is invalid or unavailable, i
 assignment or follows an executor-owned safe disposition. The current `safeIdle` output is data
 only; it does not itself park, recycle, move, or issue another command.
 
+Before an agent is admitted, runtime composition receives `ContractLedger.executionView()`: a
+bounded immutable projection of only leased records that carry explicit execution terms. A term
+specifies one scoped primary action, its completion disposition, optional source/sink counterpart,
+and resource type where required. It includes contract revision, target/range, amount, and
+deadlines, but never raw contract-owner bytes, live objects, budget authority, role state,
+occupancy, or command capabilities. Records without explicit terms, including legacy contracts, fail
+closed to no command. Issue [#114](https://github.com/ralphschuler/screeps-myrmex/issues/114) owns
+this projection; issue [#38](https://github.com/ralphschuler/screeps-myrmex/issues/38) consumes it
+as a pure producer.
+
 ## 12. Core Gameplay Authorities
 
 The following table is the canonical ownership map.

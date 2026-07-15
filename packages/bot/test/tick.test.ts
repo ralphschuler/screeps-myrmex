@@ -46,6 +46,7 @@ describe("tick lifecycle", () => {
       submissions: [],
       transitions: [],
     });
+    expect(initialized.contractExecution).toEqual({ leases: [], status: "ready" });
     expect(initialized.movement).toEqual({
       actionDecisions: [],
       actionExecution: [],

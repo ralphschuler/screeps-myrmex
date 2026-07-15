@@ -32,7 +32,8 @@ merged.
 - Persistent capability contracts and bounded deterministic workforce allocation. Foundation
   evidence is tracked in [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23) and
   [`phase1-contracts-evidence.md`](phase1-contracts-evidence.md); this slice alone does not satisfy
-  the phase exit.
+  the phase exit. Executable leased-work terms and the immutable agent projection are tracked by
+  [issue #114](https://github.com/ralphschuler/screeps-myrmex/issues/114).
 - Deterministic body construction, exclusive spawn-slot arbitration, narrow command execution, and
   atomic budget settlement are tracked by
   [issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24) and
