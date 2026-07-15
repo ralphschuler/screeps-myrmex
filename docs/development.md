@@ -99,6 +99,8 @@ Foundation references:
 - [Screeps respawning behavior](https://docs.screeps.com/respawn.html);
 - [Screeps shard CPU allocation](https://docs.screeps.com/api/#Game.cpu.setShardLimits);
 - [Screeps Wiki code-pushing guidance](https://wiki.screepspl.us/Pushing_code_to_Screeps/);
+- [Screeps backend initial-spawn validation](https://github.com/screeps/backend-local/blob/9d079282303ec04e577ac2bb97f64312b25e4ccd/lib/game/api/game.js#L328-L375),
+  used as maintained primary evidence for sanitized placement rejection classes;
 - [TooAngel respawner reference](https://github.com/TooAngel/screeps/blob/master/utils/respawner.js),
   used as comparative operational evidence rather than copied implementation;
 - [GitHub Packages npm registry](https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-npm-registry).
@@ -131,12 +133,15 @@ override `normal`.
 
 A `lost` account has game objects but no valid spawn and is moved through respawn even if it still
 owns a controller. Immediately before `POST /user/respawn`, the script re-reads world status and
-returns without mutation if a valid spawn appeared. An `empty` account skips the destructive respawn
-call and proceeds to placement. After an accepted respawn, the workflow waits 185 seconds, covering
-the documented 180-second timeout plus a five-second buffer, and re-reads account state before
-discovery. If placement still reports the global cooldown, it waits 185 seconds and retries the same
-candidate once without consuming the remaining candidates. After `place-spawn`, the action requires
-`world-status=normal`.
+returns without mutation if a valid spawn appeared. If that run completes the transition from `lost`
+to `empty` after its own accepted `POST /user/respawn`, it may continue to placement. Otherwise a
+manual workflow dispatch is required, including when a preflight reread changes from `lost` to
+`empty`; a schedule stops with `manual-empty-placement-required` before target discovery. This
+prevents an all-candidate failure from being replayed unchanged by the next schedule. After an
+accepted respawn, the workflow waits 185 seconds, covering the documented 180-second timeout plus a
+five-second buffer, and re-reads account state before discovery. If placement still reports the
+global cooldown, it waits 185 seconds and retries the same candidate once without consuming the
+remaining candidates. After `place-spawn`, the action requires `world-status=normal`.
 
 When CPU allocation is enabled, candidates on an already funded shard are preferred. After
 placement, the workflow uses `Game.cpu.setShardLimits` through the console endpoint and polls
@@ -149,6 +154,24 @@ Screeps placement rules and are logged without room or coordinate data.
 
 Auto-respawn is disaster recovery, not expansion strategy. Once the initial spawn exists, the
 runtime's cold-boot and colony systems own all further decisions.
+
+### 2026-07-15 recovery incident and re-enable evidence
+
+Scheduled run [29418973234](https://github.com/ralphschuler/screeps-myrmex/actions/runs/29418973234)
+completed the destructive respawn transition but attempted placement before the global cooldown was
+known to be clear; all candidates were rejected and no target data was logged. Mutation was rolled
+back, and read-only run
+[29419237571](https://github.com/ralphschuler/screeps-myrmex/actions/runs/29419237571) confirmed the
+terminal state without changing the account.
+
+The corrected controlled run
+[29424387831](https://github.com/ralphschuler/screeps-myrmex/actions/runs/29424387831) classified
+the cooldown, waited 185 seconds, rejected four candidates with sanitized reason classes, accepted a
+later independently validated nearby candidate, and returned `respawned` only after
+`world-status=normal`. Mutation was then left enabled; scheduled runs
+[29426083857](https://github.com/ralphschuler/screeps-myrmex/actions/runs/29426083857) and
+[29429032010](https://github.com/ralphschuler/screeps-myrmex/actions/runs/29429032010) both reported
+`healthy`. No additional live mutation is required to validate the manual-only replay gate.
 
 ## Scenario Rules
 

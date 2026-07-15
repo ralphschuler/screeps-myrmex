@@ -40,6 +40,7 @@ jobs:
       - name: Check account and recover when authorized
         env:
           SCREEPS_API_BASE_URL: ${{ vars.SCREEPS_API_BASE_URL || 'https://screeps.com/api' }}
+          SCREEPS_ALLOW_INITIAL_EMPTY_PLACEMENT: ${{ github.event_name == 'workflow_dispatch' }}
           SCREEPS_AUTO_ALLOCATE_CPU: ${{ vars.SCREEPS_AUTO_ALLOCATE_CPU || 'true' }}
           SCREEPS_AUTO_RESPAWN_ENABLED: ${{ vars.SCREEPS_AUTO_RESPAWN_ENABLED }}
           SCREEPS_RESPAWN_DRY_RUN:

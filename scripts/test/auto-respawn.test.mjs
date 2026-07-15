@@ -6,6 +6,7 @@ import {
   parseShards,
   selectSpawnPosition,
 } from "../auto-respawn.mjs";
+import { ScreepsClient } from "../lib/screeps-client.mjs";
 
 const shardInfo = { ok: 1, shards: [{ name: "shard3" }] };
 
@@ -113,6 +114,50 @@ describe("Screeps auto-respawn", () => {
     expect(client.post).not.toHaveBeenCalled();
   });
 
+  it("requires a manual dispatch before placement when a run starts empty", async () => {
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "empty" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }),
+      post: vi.fn(),
+    };
+
+    await expect(ensureRespawn({ client, enabled: true })).rejects.toThrow(
+      "manual-empty-placement-required",
+    );
+    expect(client.get).toHaveBeenCalledTimes(3);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  it("requires a manual dispatch when preflight changes from lost to empty", async () => {
+    const statuses = ["lost", "empty"];
+    const wait = vi.fn();
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") {
+          return { ok: 1, status: statuses.shift() };
+        }
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }),
+      post: vi.fn(),
+    };
+
+    await expect(ensureRespawn({ client, enabled: true, wait })).rejects.toThrow(
+      "manual-empty-placement-required",
+    );
+    expect(wait).toHaveBeenCalledTimes(1);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
   it("moves a lost account through respawn before placement", async () => {
     const statuses = ["lost", "lost", "empty", "empty", "normal"];
     const waitForRespawnCooldown = vi.fn();
@@ -150,6 +195,65 @@ describe("Screeps auto-respawn", () => {
     expect(result).toEqual({ action: "respawned" });
     expect(client.post).toHaveBeenNthCalledWith(1, "user/respawn", {});
     expect(waitForRespawnCooldown).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves sanitized placement failures through the HTTP adapter", async () => {
+    const statuses = ["empty", "empty"];
+    let placementAttempts = 0;
+    const fetchImplementation = vi.fn(async (url) => {
+      const endpoint = new URL(url).pathname.replace(/^\/api\//, "");
+      let payload;
+
+      if (endpoint === "user/world-status") {
+        payload = { ok: 1, status: statuses.shift() };
+      } else if (endpoint === "game/shards/info") {
+        payload = shardInfo;
+      } else if (endpoint === "user/rooms") {
+        payload = { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+      } else if (endpoint === "user/respawn-prohibited-rooms") {
+        payload = { ok: 1, rooms: [] };
+      } else if (endpoint === "user/world-start-room") {
+        payload = { ok: 0, error: "unavailable" };
+      } else if (endpoint === "game/place-spawn") {
+        placementAttempts += 1;
+        payload =
+          placementAttempts === 1
+            ? { ok: 0, error: "too soon after last respawn" }
+            : { ok: 0, error: "room busy" };
+      } else {
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }
+
+      return new Response(JSON.stringify(payload), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    });
+    const client = new ScreepsClient({ fetchImplementation, token: "test-token" });
+    const report = vi.fn();
+    const waitForRespawnCooldown = vi.fn();
+
+    await expect(
+      ensureRespawn({
+        allowInitialEmptyPlacement: true,
+        client,
+        configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
+        enabled: true,
+        now: () => 1,
+        report,
+        waitForRespawnCooldown,
+      }),
+    ).rejects.toThrow("room-busy");
+
+    const placementRequests = fetchImplementation.mock.calls.filter(([url]) =>
+      new URL(url).pathname.endsWith("/game/place-spawn"),
+    );
+    expect(placementRequests).toHaveLength(2);
+    expect(waitForRespawnCooldown).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls.flat().join(" ")).toContain("cooldown");
+    expect(report.mock.calls.flat().join(" ")).toContain("room-busy");
+    expect(report.mock.calls.flat().join(" ")).not.toContain("W1N1");
+    expect(report.mock.calls.flat().join(" ")).not.toContain("shard3");
   });
 
   it("stops before destructive mutation when a valid spawn appears during preflight", async () => {
@@ -209,6 +313,7 @@ describe("Screeps auto-respawn", () => {
     const target = { room: "W1N1", shard: "shard3", x: 20, y: 20 };
 
     const result = await ensureRespawn({
+      allowInitialEmptyPlacement: true,
       client,
       configuredTargets: [target],
       enabled: true,
@@ -246,6 +351,7 @@ describe("Screeps auto-respawn", () => {
 
     await expect(
       ensureRespawn({
+        allowInitialEmptyPlacement: true,
         client,
         configuredTargets: [
           { room: "W1N1", shard: "shard3", x: 20, y: 20 },
@@ -288,6 +394,7 @@ describe("Screeps auto-respawn", () => {
     };
 
     const result = await ensureRespawn({
+      allowInitialEmptyPlacement: true,
       allocateCpu: true,
       client,
       configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
@@ -328,6 +435,7 @@ describe("Screeps auto-respawn", () => {
     };
 
     await ensureRespawn({
+      allowInitialEmptyPlacement: true,
       allocateCpu: true,
       client,
       configuredTargets: [
@@ -412,6 +520,7 @@ describe("Screeps auto-respawn", () => {
     };
 
     const result = await ensureRespawn({
+      allowInitialEmptyPlacement: true,
       client,
       configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
       enabled: true,
@@ -451,6 +560,7 @@ describe("Screeps auto-respawn", () => {
     };
 
     const result = await ensureRespawn({
+      allowInitialEmptyPlacement: true,
       client,
       configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
       enabled: true,
@@ -478,6 +588,7 @@ describe("Screeps auto-respawn", () => {
 
     await expect(
       ensureRespawn({
+        allowInitialEmptyPlacement: true,
         client,
         configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
         enabled: true,
@@ -486,6 +597,39 @@ describe("Screeps auto-respawn", () => {
     ).rejects.toThrow("invalid-location");
     expect(wait).toHaveBeenCalledTimes(2);
     expect(client.post).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["invalid room", "invalid-room"],
+    ["not supported", "unsupported-room"],
+    ["out of borders", "out-of-borders"],
+    ["room busy", "room-busy"],
+  ])("classifies the backend placement rejection %s as %s", async (error, category) => {
+    const report = vi.fn();
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "empty" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+        if (endpoint === "user/respawn-prohibited-rooms") return { ok: 1, rooms: [] };
+        throw new Error("dynamic target unavailable");
+      }),
+      post: vi.fn(async () => ({ error, ok: 0 })),
+    };
+
+    await expect(
+      ensureRespawn({
+        allowInitialEmptyPlacement: true,
+        client,
+        configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
+        enabled: true,
+        report,
+      }),
+    ).rejects.toThrow(category);
+    expect(client.post).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls.flat().join(" ")).not.toContain("W1N1");
   });
 
   it("treats an unqualified legacy prohibited room as prohibited on every shard", async () => {
@@ -508,6 +652,7 @@ describe("Screeps auto-respawn", () => {
 
     await expect(
       ensureRespawn({
+        allowInitialEmptyPlacement: true,
         client,
         configuredTargets: [
           { room: "W1N1", shard: "shard1", x: 20, y: 20 },
@@ -547,6 +692,7 @@ describe("Screeps auto-respawn", () => {
     };
 
     await ensureRespawn({
+      allowInitialEmptyPlacement: true,
       client,
       configuredTargets: [
         { room: "W1N1", shard: "shard3", x: 20, y: 20 },
@@ -593,13 +739,13 @@ describe("Screeps auto-respawn", () => {
       post: vi.fn(),
     };
 
-    await expect(ensureRespawn({ client, enabled: true })).rejects.toThrow(
-      "No permitted respawn target is available.",
-    );
+    await expect(
+      ensureRespawn({ allowInitialEmptyPlacement: true, client, enabled: true }),
+    ).rejects.toThrow("No permitted respawn target is available.");
     expect(client.post).not.toHaveBeenCalled();
   });
 
-  it("falls back from an invalid start anchor to a valid nearby room", async () => {
+  it("falls back from a reserved start anchor to a valid nearby room", async () => {
     let statusCalls = 0;
     const validObjects = [
       { type: "source", x: 10, y: 10 },
@@ -621,7 +767,19 @@ describe("Screeps auto-respawn", () => {
         if (endpoint === "game/room-objects") {
           return {
             ok: 1,
-            objects: query.room === "W1N1" ? validObjects : [{ type: "source", x: 10, y: 10 }],
+            objects:
+              query.room === "W1N1"
+                ? validObjects
+                : [
+                    { type: "source", x: 10, y: 10 },
+                    { type: "source", x: 40, y: 40 },
+                    {
+                      type: "controller",
+                      x: 25,
+                      y: 25,
+                      reservation: { user: "another-player" },
+                    },
+                  ],
           };
         }
         if (endpoint === "game/room-terrain") {
@@ -632,7 +790,12 @@ describe("Screeps auto-respawn", () => {
       post: vi.fn(async () => ({ ok: 1 })),
     };
 
-    await ensureRespawn({ client, enabled: true, now: () => 1 });
+    await ensureRespawn({
+      allowInitialEmptyPlacement: true,
+      client,
+      enabled: true,
+      now: () => 1,
+    });
 
     expect(client.post).toHaveBeenCalledWith(
       "game/place-spawn",
@@ -759,7 +922,12 @@ describe("Screeps auto-respawn", () => {
       post: vi.fn(async () => ({ ok: 1 })),
     };
 
-    await ensureRespawn({ client, enabled: true, now: () => 1 });
+    await ensureRespawn({
+      allowInitialEmptyPlacement: true,
+      client,
+      enabled: true,
+      now: () => 1,
+    });
 
     expect(client.post).toHaveBeenCalledWith(
       "game/place-spawn",
