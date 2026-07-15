@@ -142,8 +142,11 @@ function collectTargetIds(snapshot: WorldSnapshot): ReadonlySet<string> {
       ...room.ownedExtensions,
       ...room.ownedSpawns,
       ...room.ownedTowers,
+      ...(room.droppedResources ?? []),
+      ...(room.ruins ?? []),
       ...room.sources,
       ...room.storedStructures,
+      ...(room.tombstones ?? []),
     ])
       ids.add(item.id);
   }

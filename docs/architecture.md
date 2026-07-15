@@ -931,6 +931,11 @@ closed to no command. Issue [#114](https://github.com/ralphschuler/screeps-myrme
 this projection; issue [#38](https://github.com/ralphschuler/screeps-myrmex/issues/38) consumes it
 as a pure producer.
 
+Lease agents retain no task or role Memory. They correlate each proposal with contract ID and
+revision; the runtime's Reconcile phase feeds typed executor evidence through the existing contract
+request channel, while only `ContractLedger` validates and persists a transition. Current snapshot
+facts—not a successful command return—prove target completion. ADR 0008 records this boundary.
+
 ## 12. Core Gameplay Authorities
 
 The following table is the canonical ownership map.

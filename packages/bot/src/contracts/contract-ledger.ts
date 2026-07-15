@@ -185,9 +185,11 @@ export class ContractLedger {
         execution: { ...record.execution },
         expiresAt: record.expiresAt,
         leaseExpiresAt: record.lease.expiresAt,
+        priority: { ...record.priority },
         quantity: record.quantity,
         range: record.range,
         revision: record.revision,
+        state: record.state === "assigned" ? "assigned" : "active",
         target: { ...record.target },
         targetId: record.targetId,
       });

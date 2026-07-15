@@ -8,6 +8,7 @@ import {
   type ConstructionSiteSnapshot,
   type ControllerSnapshot,
   type CreepSnapshot,
+  type DroppedResourceSnapshot,
   type OwnedExtensionSnapshot,
   type OwnedRoomSnapshot,
   type OwnedSpawnSnapshot,
@@ -15,10 +16,12 @@ import {
   type PositionSnapshot,
   type RoomSnapshot,
   type RoomVisibilitySnapshot,
+  type RuinSnapshot,
   type SnapshotEntityCounts,
   type SourceSnapshot,
   type StoredStructureSnapshot,
   type StoreSnapshot,
+  type TombstoneSnapshot,
   type WorldSnapshot,
 } from "./snapshot";
 
@@ -90,6 +93,10 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
   const structures = room.find(FIND_STRUCTURES);
   const creeps = room.find(FIND_CREEPS);
   const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+  const droppedResources =
+    typeof FIND_DROPPED_RESOURCES === "undefined" ? [] : room.find(FIND_DROPPED_RESOURCES);
+  const ruins = typeof FIND_RUINS === "undefined" ? [] : room.find(FIND_RUINS);
+  const tombstones = typeof FIND_TOMBSTONES === "undefined" ? [] : room.find(FIND_TOMBSTONES);
   const traversal = snapshotTraversal(room, structures, constructionSites);
 
   return {
@@ -97,6 +104,7 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     controller: room.controller === undefined ? null : snapshotController(room.controller),
     energyAvailable: room.energyAvailable,
     energyCapacityAvailable: room.energyCapacityAvailable,
+    droppedResources: droppedResources.map(snapshotDroppedResource).sort(compareById),
     hostileCreeps: creeps
       .filter((creep) => !creep.my)
       .map(snapshotCreep)
@@ -116,8 +124,10 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
       .filter((structure) => isMyStructureOfType(structure, "tower"))
       .map((structure) => snapshotTower(structure as StructureTower))
       .sort(compareById),
+    ruins: ruins.map(snapshotRuin).sort(compareById),
     sources: room.find(FIND_SOURCES).map(snapshotSource).sort(compareById),
     storedStructures: structures.filter(hasStore).map(snapshotStoredStructure).sort(compareById),
+    tombstones: tombstones.map(snapshotTombstone).sort(compareById),
     ...(traversal === undefined ? {} : { traversal }),
   };
 }
@@ -257,6 +267,27 @@ function snapshotConstructionSite(site: ConstructionSite): ConstructionSiteSnaps
     progressTotal: site.progressTotal,
     structureType: site.structureType,
   };
+}
+
+function snapshotDroppedResource(resource: Resource): DroppedResourceSnapshot {
+  return {
+    amount: resource.amount,
+    id: String(resource.id),
+    pos: snapshotPosition(resource.pos),
+    resourceType: resource.resourceType,
+  };
+}
+
+function snapshotTombstone(tombstone: Tombstone): TombstoneSnapshot {
+  return {
+    id: String(tombstone.id),
+    pos: snapshotPosition(tombstone.pos),
+    store: snapshotStore(tombstone.store),
+  };
+}
+
+function snapshotRuin(ruin: Ruin): RuinSnapshot {
+  return { id: String(ruin.id), pos: snapshotPosition(ruin.pos), store: snapshotStore(ruin.store) };
 }
 
 function snapshotCreep(creep: Creep): CreepSnapshot {
@@ -430,14 +461,17 @@ function countEntities(rooms: readonly RoomSnapshot[]): SnapshotEntityCounts {
   const counts = {
     constructionSites: sum(rooms, (room) => room.constructionSites.length),
     controllers: sum(rooms, (room) => (room.controller === null ? 0 : 1)),
+    droppedResources: sum(rooms, (room) => room.droppedResources?.length ?? 0),
     hostileCreeps: sum(rooms, (room) => room.hostileCreeps.length),
     ownedCreeps: sum(rooms, (room) => room.ownedCreeps.length),
     ownedExtensions: sum(rooms, (room) => room.ownedExtensions.length),
     ownedSpawns: sum(rooms, (room) => room.ownedSpawns.length),
     ownedTowers: sum(rooms, (room) => room.ownedTowers.length),
     rooms: rooms.length,
+    ruins: sum(rooms, (room) => room.ruins?.length ?? 0),
     sources: sum(rooms, (room) => room.sources.length),
     storedStructures: sum(rooms, (room) => room.storedStructures.length),
+    tombstones: sum(rooms, (room) => room.tombstones?.length ?? 0),
   };
 
   return {
@@ -445,8 +479,11 @@ function countEntities(rooms: readonly RoomSnapshot[]): SnapshotEntityCounts {
     total:
       counts.rooms +
       counts.controllers +
+      counts.droppedResources +
       counts.sources +
       counts.storedStructures +
+      counts.ruins +
+      counts.tombstones +
       counts.constructionSites +
       counts.ownedCreeps +
       counts.hostileCreeps,

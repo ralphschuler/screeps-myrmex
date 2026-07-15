@@ -125,6 +125,25 @@ export interface ConstructionSiteSnapshot {
   readonly structureType: string;
 }
 
+export interface DroppedResourceSnapshot {
+  readonly amount: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly resourceType: ResourceConstant;
+}
+
+export interface TombstoneSnapshot {
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
+export interface RuinSnapshot {
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
 export interface CreepSnapshot {
   readonly body: BodyCapabilitiesSnapshot;
   readonly fatigue: number;
@@ -151,6 +170,7 @@ export interface RoomSnapshot {
   readonly controller: ControllerSnapshot | null;
   readonly energyAvailable: number;
   readonly energyCapacityAvailable: number;
+  readonly droppedResources?: readonly DroppedResourceSnapshot[];
   readonly hostileCreeps: readonly CreepSnapshot[];
   readonly name: string;
   readonly observedAt: number;
@@ -158,8 +178,10 @@ export interface RoomSnapshot {
   readonly ownedExtensions: readonly OwnedExtensionSnapshot[];
   readonly ownedSpawns: readonly OwnedSpawnSnapshot[];
   readonly ownedTowers: readonly OwnedTowerSnapshot[];
+  readonly ruins?: readonly RuinSnapshot[];
   readonly sources: readonly SourceSnapshot[];
   readonly storedStructures: readonly StoredStructureSnapshot[];
+  readonly tombstones?: readonly TombstoneSnapshot[];
   /** Absent only when an adapter cannot supply static terrain; path planning then fails closed. */
   readonly traversal?: StaticTraversalSnapshot;
 }
@@ -186,14 +208,17 @@ export interface VisibilitySnapshot {
 export interface SnapshotEntityCounts {
   readonly constructionSites: number;
   readonly controllers: number;
+  readonly droppedResources?: number;
   readonly hostileCreeps: number;
   readonly ownedCreeps: number;
   readonly ownedExtensions: number;
   readonly ownedSpawns: number;
   readonly ownedTowers: number;
   readonly rooms: number;
+  readonly ruins?: number;
   readonly sources: number;
   readonly storedStructures: number;
+  readonly tombstones?: number;
   readonly total: number;
 }
 
@@ -285,14 +310,17 @@ function emptyEntityCounts(): SnapshotEntityCounts {
   return {
     constructionSites: 0,
     controllers: 0,
+    droppedResources: 0,
     hostileCreeps: 0,
     ownedCreeps: 0,
     ownedExtensions: 0,
     ownedSpawns: 0,
     ownedTowers: 0,
     rooms: 0,
+    ruins: 0,
     sources: 0,
     storedStructures: 0,
+    tombstones: 0,
     total: 0,
   };
 }

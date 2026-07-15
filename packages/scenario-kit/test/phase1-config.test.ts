@@ -91,7 +91,7 @@ describe("Phase 1 runtime config scenario", () => {
     expect(reset.outcomes[4]?.configRevision).toBe(reset.outcomes[1]?.configRevision);
     expect(reset.outcomes[5]?.configBytes).toBe(reset.outcomes[0]?.configBytes);
     expect(
-      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v5"),
+      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v6"),
     ).toBe(true);
 
     for (const outcome of reset.outcomes.slice(1, 5)) {
@@ -126,7 +126,8 @@ describe("Phase 1 runtime config scenario", () => {
           id === "phase1.colony" ||
           id === "phase1.contracts" ||
           id === "phase1.spawn" ||
-          id === "phase1.movement"
+          id === "phase1.movement" ||
+          id === "phase1.agents"
             ? enabled && reason === "enabled"
             : !enabled && reason === "source-unavailable",
         ),

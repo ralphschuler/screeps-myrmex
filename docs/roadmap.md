@@ -47,12 +47,15 @@ merged.
   [issue #112](https://github.com/ralphschuler/screeps-myrmex/issues/112). Runtime-owned local path
   service composition is tracked by
   [issue #115](https://github.com/ralphschuler/screeps-myrmex/issues/115).
+- Generic lease-to-intent translation and typed action-result reconciliation are tracked by
+  [issue #38](https://github.com/ralphschuler/screeps-myrmex/issues/38).
 
 The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`
 available under `runtime-config-source-v3`; issue #24 makes `phase1.spawn` available under
 `runtime-config-source-v4`; issue #25 makes `phase1.movement` available under
-`runtime-config-source-v5`. Every later gate remains source-unavailable. Each subsequent outcome
+`runtime-config-source-v5`; issue #38 makes `phase1.agents` available under
+`runtime-config-source-v6`. Every later gate remains source-unavailable. Each subsequent outcome
 change may mark only its own gate available after its prerequisites and outcome test exist.
 Operational Memory may disable available work but can never activate an unfinished gate.
 

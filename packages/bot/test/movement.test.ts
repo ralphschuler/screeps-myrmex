@@ -13,6 +13,8 @@ const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
 function moveIntent(overrides: Partial<MovementIntent> = {}): MovementIntent {
   return {
     actorId: "creep-a",
+    contractId: null,
+    contractRevision: null,
     deadline: 10,
     destination: position(11, 10),
     direction: 3,
@@ -29,6 +31,8 @@ function actionIntent(overrides: Partial<CreepActionIntent> = {}): CreepActionIn
   return {
     actorId: "creep-a",
     amount: null,
+    contractId: null,
+    contractRevision: null,
     deadline: 10,
     id: "action-a",
     kind: "harvest",

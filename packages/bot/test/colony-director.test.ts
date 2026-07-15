@@ -667,7 +667,10 @@ function bootstrapSnapshot(
     ownedCreeps,
     hostileCreeps,
     constructionSites: [],
+    droppedResources: [],
     storedStructures: [],
+    ruins: [],
+    tombstones: [],
   };
   return freezeWorldSnapshot({
     schemaVersion: 1,
@@ -684,14 +687,17 @@ function bootstrapSnapshot(
       entities: {
         constructionSites: 0,
         controllers: 1,
+        droppedResources: 0,
         hostileCreeps: hostileCreeps.length,
         ownedCreeps: ownedCreeps.length,
         ownedExtensions: 0,
         ownedSpawns: 1,
         ownedTowers: 0,
         rooms: 1,
+        ruins: 0,
         sources: 0,
         storedStructures: 0,
+        tombstones: 0,
         total: 3 + hostileCreeps.length + ownedCreeps.length,
       },
       estimatedPayloadBytes: 0,
