@@ -11,3 +11,9 @@
 9. Endgame and cross-shard operations
 
 Every phase ends in a private-server or MMO outcome gate. Feature count is not progress.
+
+Phase 1 begins with one validated survival-policy authority, immutable planner config, a
+source-controlled feature-gate DAG, and fail-closed self/ally/NAP exclusions. This foundation leaves
+all Phase 1 gameplay gates source-unavailable. Each later change enables only the gate for an
+outcome it proves, after all prerequisite outcomes exist. Operational Memory may disable available
+work but can never activate an unfinished gate.

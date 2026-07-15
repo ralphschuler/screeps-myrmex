@@ -18,6 +18,64 @@
 | `npm run package:bot -- 0.1.0` | stage a GitHub Packages payload in `dist/package` |
 | `npm run clean`                | remove generated output                           |
 
+## Runtime configuration overrides
+
+`Memory.myrmex.config` is a versioned operational control surface, not a planner-owned settings bag.
+The runtime owns schema interpretation and `lastValid`; operators own only `candidate`. Planners
+never read this Memory subtree directly.
+
+After a new schema-v3 root or migration, allow one tick for exact `{}` to become the owner-local
+schema. Then set only `Memory.myrmex.config.candidate`. A copy-accurate example is:
+
+```js
+Memory.myrmex.config.candidate = {
+  revision: 12,
+  overrides: {
+    policy: {
+      recovery: { protectedSpawnEnergy: 400 },
+      safeMode: { enabled: true },
+    },
+    relations: {
+      self: ["MyUser"],
+      allies: ["AllyA"],
+      naps: ["NapA"],
+    },
+    features: { disabled: ["phase1.growth"] },
+  },
+};
+```
+
+Follow this procedure:
+
+1. Inspect the current candidate and bot-owned `lastValid`; keep a private copy outside repository
+   logs.
+2. Build one complete desired override. Omitted fields return to source defaults; a candidate does
+   not merge with the previously accepted override.
+3. Use a nonnegative safe-integer revision. Increase it whenever the canonical override changes.
+   Reusing an accepted revision with different content is rejected, and lower revisions are stale.
+4. Assign `candidate` once. Do not edit `schemaVersion` or `lastValid`, and do not expose
+   operational identities or values in logs, issues, telemetry, or committed files.
+5. Confirm the bounded config status/reason and the new config/policy revisions before depending on
+   the policy. Unknown keys, invalid values, and malformed or overlapping identities reject the
+   whole candidate; no field applies partially.
+6. Roll back by publishing the previous override—or `overrides: {}` for source defaults—under a
+   newer revision. Do not restore an old revision number.
+
+Setting `candidate: null` is not rollback. It means no new proposal and keeps a compatible
+`lastValid` policy plus its revision high-water active. Only a null candidate without compatible
+evidence uses source defaults.
+
+Operational feature overrides can only disable known source-available gates. They cannot enable a
+gate, change prerequisites, or bypass an incomplete roadmap outcome. Exact identity matching is
+case-sensitive; self, ally, and NAP arrays must contain distinct canonical names with no overlap.
+
+If the owner itself is malformed or from a future owner schema, the runtime preserves it and uses
+source defaults. Diagnose and save the value privately before an explicit operator reset to exact
+`{}`; the bot will not silently downgrade or repair non-empty owner data.
+
+The complete defaults, bounds, validation budgets, gate DAG, failure matrix, and mechanics sources
+are in [`phase1-config-evidence.md`](phase1-config-evidence.md).
+
 ## Automation
 
 | Workflow                 | Trigger                              | Authority                                            |

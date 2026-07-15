@@ -1,4 +1,6 @@
 import {
+  LEGACY_MEMORY_MIGRATION_ID,
+  LEGACY_MEMORY_MIGRATION_STEP_COUNT,
   LEGACY_MEMORY_SCHEMA_VERSION,
   MEMORY_CURRENT_SCHEMA_VERSION,
   MEMORY_MIGRATION_ID,
@@ -6,19 +8,25 @@ import {
   MEMORY_TARGET_SCHEMA_VERSION,
   MAX_MEMORY_DIAGNOSTICS,
   PERSISTENT_STATE_OWNERS,
+  PREVIOUS_MEMORY_SCHEMA_VERSION,
+  PREVIOUS_PERSISTENT_STATE_OWNERS,
   type JsonObject,
-  type MemoryRecoveryReason,
+  type LegacyMigratingMyrmexMemoryMeta,
   type MemoryDiagnostic,
+  type MemoryRecoveryReason,
   type MigratingMyrmexMemory,
   type MyrmexMemory,
   type MyrmexMemoryRoot,
   type PersistentStateOwner,
+  type PreviousPersistentStateOwner,
 } from "./schema";
 import {
   cloneJsonObject,
   isCurrentMyrmexMemory,
   isJsonObject,
   isMigratingMyrmexMemory,
+  isPreviousMyrmexMemory,
+  selectMigrationFinalState,
 } from "./validation";
 
 const CORE_OWNERS = ["kernel", "empire", "colonies", "contracts"] as const;
@@ -32,7 +40,6 @@ export interface MigrationAdvanceResult {
 
 export function createCurrentMyrmexMemory(gameTime: number, shard: string): MyrmexMemory {
   const tick = normalizeTick(gameTime);
-  const state = emptyOwnerState();
 
   return {
     meta: {
@@ -46,13 +53,13 @@ export function createCurrentMyrmexMemory(gameTime: number, shard: string): Myrm
       migration: null,
       recovery: null,
     },
-    ...state,
+    ...emptyOwnerState(),
   };
 }
 
 /**
- * Replaces a legacy or invalid root with a minimal recovery envelope. Copying only validated boot
- * metadata makes this operation restartable and prevents legacy tick snapshots from surviving.
+ * Starts the historical v1-to-v2 recovery protocol. Its persisted literals intentionally remain
+ * unchanged so a cursor written by the deployed schema-2 bot can be resumed by schema 3.
  */
 export function beginMyrmexMigration(
   memory: Memory,
@@ -63,19 +70,66 @@ export function beginMyrmexMigration(
 ): MigratingMyrmexMemory {
   const tick = normalizeTick(gameTime);
   const boot = extractBootMetadata(source, tick, shard);
-  const salvagedOwners = salvageAuthorityState(source);
-  const migration: MigratingMyrmexMemory = {
+  const minimal: MigratingMyrmexMemory = {
     meta: {
       schemaVersion: LEGACY_MEMORY_SCHEMA_VERSION,
-      targetSchemaVersion: MEMORY_TARGET_SCHEMA_VERSION,
+      targetSchemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
       revision: 0,
       firstTick: boot.firstTick,
       lastTick: Math.max(boot.lastTick, tick),
       shard: boot.shard,
       diagnostics: [diagnostic("recovery-start", tick, reason)],
       migration: {
-        id: MEMORY_MIGRATION_ID,
+        id: LEGACY_MEMORY_MIGRATION_ID,
         fromVersion: LEGACY_MEMORY_SCHEMA_VERSION,
+        targetVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+        nextStep: 0,
+        stepCount: LEGACY_MEMORY_MIGRATION_STEP_COUNT,
+        startedAt: tick,
+        updatedAt: tick,
+      },
+      recovery: {
+        active: true,
+        lastProgressTick: tick,
+        reason,
+        sinceTick: tick,
+      },
+    },
+  };
+  const base: MigratingMyrmexMemory = carriesMigrationId(source, LEGACY_MEMORY_MIGRATION_ID)
+    ? { ...minimal, ...emptyPreviousOwnerState() }
+    : minimal;
+  const migration = fitRecognizedAuthorityState(source, base);
+
+  memory.myrmex = migration;
+  return migration;
+}
+
+/** Starts the bounded v2-to-v3 config-owner migration or repairs a malformed known root. */
+export function beginCurrentMyrmexMigration(
+  memory: Memory,
+  source: unknown,
+  gameTime: number,
+  shard: string,
+  reason: MemoryRecoveryReason,
+): MigratingMyrmexMemory {
+  const tick = normalizeTick(gameTime);
+  const boot = extractBootMetadata(source, tick, shard);
+  const previous = isPreviousMyrmexMemory(source) ? source : undefined;
+  const start = diagnostic("recovery-start", tick, reason);
+  const base: MigratingMyrmexMemory = {
+    meta: {
+      schemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+      targetSchemaVersion: MEMORY_TARGET_SCHEMA_VERSION,
+      revision: previous?.meta.revision ?? 0,
+      firstTick: boot.firstTick,
+      lastTick: Math.max(boot.lastTick, tick),
+      shard: boot.shard,
+      diagnostics:
+        previous === undefined ? [start] : appendDiagnostic(previous.meta.diagnostics, start),
+      migration: {
+        id: MEMORY_MIGRATION_ID,
+        fromVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
         targetVersion: MEMORY_TARGET_SCHEMA_VERSION,
         nextStep: 0,
         stepCount: MEMORY_MIGRATION_STEP_COUNT,
@@ -89,8 +143,9 @@ export function beginMyrmexMigration(
         sinceTick: tick,
       },
     },
-    ...salvagedOwners,
+    ...emptyOwnerState(),
   };
+  const migration = fitRecognizedAuthorityState(source, base);
 
   memory.myrmex = migration;
   return migration;
@@ -107,45 +162,57 @@ export function advanceMyrmexMigration(
   }
 
   const tick = normalizeTick(gameTime);
-  const step = root.meta.migration.nextStep;
+  const migration = root.meta.migration;
 
-  switch (step) {
+  if (migration.id === MEMORY_MIGRATION_ID) {
+    if (migration.nextStep !== 0) {
+      throw new Error(`Unsupported MYRMEX v2-to-v3 migration step: ${String(migration.nextStep)}`);
+    }
+    return finalizeCurrentMigration(memory, root, tick);
+  }
+
+  switch (migration.nextStep) {
     case 0:
-      return persistStep(memory, root, tick, CORE_OWNERS);
+      return persistLegacyStep(memory, root, tick, CORE_OWNERS);
     case 1:
-      return persistStep(memory, root, tick, STRATEGY_OWNERS);
+      return persistLegacyStep(memory, root, tick, STRATEGY_OWNERS);
     case 2:
-      return persistStep(memory, root, tick, SERVICE_OWNERS);
+      return persistLegacyStep(memory, root, tick, SERVICE_OWNERS);
     case 3:
-      return finalizeMigration(memory, root, tick);
+      return transitionLegacyMigration(memory, root, tick);
     default:
-      throw new Error(`Unsupported MYRMEX migration step: ${String(step)}`);
+      throw new Error(`Unsupported MYRMEX v1-to-v2 migration step: ${String(migration.nextStep)}`);
   }
 }
 
-function persistStep(
+function persistLegacyStep(
   memory: Memory,
   root: MigratingMyrmexMemory,
   tick: number,
-  owners: readonly PersistentStateOwner[],
+  owners: readonly PreviousPersistentStateOwner[],
 ): MigrationAdvanceResult {
-  const nextStep = root.meta.migration.nextStep + 1;
+  if (root.meta.migration.id !== LEGACY_MEMORY_MIGRATION_ID) {
+    throw new Error("Cannot apply a legacy step to the current migration cursor");
+  }
+
+  const meta = root.meta as LegacyMigratingMyrmexMemoryMeta;
+  const nextStep = meta.migration.nextStep + 1;
   const additions = Object.fromEntries(
     owners.map((owner) => [owner, root[owner] ?? {}]),
-  ) as Partial<Record<PersistentStateOwner, Record<string, never>>>;
+  ) as Partial<Record<PreviousPersistentStateOwner, JsonObject>>;
   const next: MigratingMyrmexMemory = {
     ...root,
     ...additions,
     meta: {
-      ...root.meta,
-      lastTick: Math.max(root.meta.lastTick, tick),
+      ...meta,
+      lastTick: Math.max(meta.lastTick, tick),
       migration: {
-        ...root.meta.migration,
+        ...meta.migration,
         nextStep,
         updatedAt: tick,
       },
       recovery: {
-        ...root.meta.recovery,
+        ...meta.recovery,
         lastProgressTick: tick,
       },
     },
@@ -161,33 +228,59 @@ function persistStep(
   return { completed: false, root: next };
 }
 
-function finalizeMigration(
+/** Atomically leaves the historical cursor and persists the next supported migration cursor. */
+function transitionLegacyMigration(
   memory: Memory,
   root: MigratingMyrmexMemory,
   tick: number,
 ): MigrationAdvanceResult {
-  const ownerState = Object.fromEntries(
-    PERSISTENT_STATE_OWNERS.map((owner) => [owner, root[owner]]),
-  ) as Record<PersistentStateOwner, Record<string, never>>;
-  const current: MyrmexMemory = {
+  if (root.meta.migration.id !== LEGACY_MEMORY_MIGRATION_ID) {
+    throw new Error("Cannot transition a non-legacy migration cursor");
+  }
+
+  const base: MigratingMyrmexMemory = {
     meta: {
-      schemaVersion: MEMORY_CURRENT_SCHEMA_VERSION,
+      schemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
       targetSchemaVersion: MEMORY_TARGET_SCHEMA_VERSION,
       revision: root.meta.revision,
       firstTick: root.meta.firstTick,
       lastTick: Math.max(root.meta.lastTick, tick),
-      diagnostics: appendDiagnostic(
-        root.meta.diagnostics,
-        diagnostic("migration-complete", tick, root.meta.recovery.reason),
-      ),
       shard: root.meta.shard,
-      migration: null,
-      recovery: null,
+      diagnostics: root.meta.diagnostics,
+      migration: {
+        id: MEMORY_MIGRATION_ID,
+        fromVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+        targetVersion: MEMORY_TARGET_SCHEMA_VERSION,
+        nextStep: 0,
+        stepCount: MEMORY_MIGRATION_STEP_COUNT,
+        startedAt: tick,
+        updatedAt: tick,
+      },
+      recovery: {
+        ...root.meta.recovery,
+        lastProgressTick: tick,
+      },
     },
-    ...ownerState,
+    ...emptyOwnerState(),
   };
+  const next = fitRecognizedAuthorityState(root, base);
 
-  if (!isCurrentMyrmexMemory(current)) {
+  memory.myrmex = next;
+  return { completed: false, root: next };
+}
+
+function finalizeCurrentMigration(
+  memory: Memory,
+  root: MigratingMyrmexMemory,
+  tick: number,
+): MigrationAdvanceResult {
+  if (root.meta.migration.id !== MEMORY_MIGRATION_ID) {
+    throw new Error("Cannot finalize current memory from a legacy migration cursor");
+  }
+
+  const current = selectMigrationFinalState(root, tick);
+
+  if (current === null || !isCurrentMyrmexMemory(current)) {
     throw new Error("MYRMEX migration finalization produced invalid current state");
   }
 
@@ -202,16 +295,82 @@ function emptyOwnerState(): Record<PersistentStateOwner, Record<string, never>> 
   >;
 }
 
-function salvageAuthorityState(source: unknown): Partial<Record<PersistentStateOwner, JsonObject>> {
-  if (!isRecord(source) || !isRecord(source.meta) || source.meta.schemaVersion !== 2) {
-    return {};
+function emptyPreviousOwnerState(): Record<PreviousPersistentStateOwner, Record<string, never>> {
+  return Object.fromEntries(PREVIOUS_PERSISTENT_STATE_OWNERS.map((owner) => [owner, {}])) as Record<
+    PreviousPersistentStateOwner,
+    Record<string, never>
+  >;
+}
+
+/**
+ * Greedily preserves recognized owner payloads in canonical priority order. Every choice validates
+ * the complete persisted envelope, so individually valid subtrees cannot overflow aggregate limits.
+ */
+function fitRecognizedAuthorityState(
+  source: unknown,
+  base: MigratingMyrmexMemory,
+): MigratingMyrmexMemory {
+  if (!isRecord(source)) {
+    return base;
   }
 
-  return Object.fromEntries(
-    PERSISTENT_STATE_OWNERS.flatMap((owner) => {
-      const candidate = source[owner];
-      return isJsonObject(candidate) ? [[owner, cloneJsonObject(candidate)] as const] : [];
-    }),
+  const recognized = recognizedAuthorityOwners(source);
+  let fitted = base;
+  for (const owner of PERSISTENT_STATE_OWNERS) {
+    if (!recognized.includes(owner)) {
+      continue;
+    }
+
+    const candidate = source[owner];
+    if (!isJsonObject(candidate)) {
+      continue;
+    }
+
+    const next: MigratingMyrmexMemory = {
+      ...fitted,
+      [owner]: cloneJsonObject(candidate),
+    };
+    if (isMigratingMyrmexMemory(next)) {
+      fitted = next;
+    }
+  }
+
+  return fitted;
+}
+
+function recognizedAuthorityOwners(
+  source: Record<string, unknown>,
+): readonly PersistentStateOwner[] {
+  if (!isRecord(source.meta)) {
+    return [];
+  }
+
+  const meta = source.meta;
+  const migrationId = isRecord(meta.migration) ? meta.migration.id : null;
+  if (
+    meta.schemaVersion === MEMORY_CURRENT_SCHEMA_VERSION ||
+    meta.targetSchemaVersion === MEMORY_CURRENT_SCHEMA_VERSION ||
+    migrationId === MEMORY_MIGRATION_ID
+  ) {
+    return PERSISTENT_STATE_OWNERS;
+  }
+
+  if (
+    meta.schemaVersion === PREVIOUS_MEMORY_SCHEMA_VERSION ||
+    migrationId === LEGACY_MEMORY_MIGRATION_ID
+  ) {
+    return PREVIOUS_PERSISTENT_STATE_OWNERS;
+  }
+
+  return [];
+}
+
+function carriesMigrationId(source: unknown, id: string): boolean {
+  return (
+    isRecord(source) &&
+    isRecord(source.meta) &&
+    isRecord(source.meta.migration) &&
+    source.meta.migration.id === id
   );
 }
 

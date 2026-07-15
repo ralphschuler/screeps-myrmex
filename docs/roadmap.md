@@ -20,9 +20,17 @@ merged.
 
 ## Phase 1 — Survival Kernel
 
+- Validated survival policy, immutable planner configuration, source-controlled feature gates, and
+  fail-closed self/ally/NAP exclusions form the Phase 1 foundation. The contract and deterministic
+  proof matrix are tracked by [issue #36](https://github.com/ralphschuler/screeps-myrmex/issues/36)
+  and [`phase1-config-evidence.md`](phase1-config-evidence.md).
 - Bootstrap harvesting, spawn demand, filling, upgrading, and construction.
 - Replacement deadlines and recovery from zero creeps.
 - Minimal movement arbitration and deterministic body construction.
+
+Issue #36 intentionally leaves every Phase 1 gameplay gate source-unavailable. Each subsequent
+outcome change may mark only its own source gate available after its prerequisites and outcome test
+exist; operational Memory may disable that work but can never activate it.
 
 **Exit:** recover from empty Memory and zero creeps without console intervention.
 

@@ -1,16 +1,22 @@
 import { MemoryManager } from "./manager";
 import {
   advanceMyrmexMigration,
+  beginCurrentMyrmexMigration,
   beginMyrmexMigration,
   createCurrentMyrmexMemory,
 } from "./migrations";
 import {
   MEMORY_TARGET_SCHEMA_VERSION,
+  PREVIOUS_MEMORY_SCHEMA_VERSION,
   type DeepReadonly,
   type MemoryMigrationCursor,
   type MemoryRecoveryMarker,
 } from "./schema";
-import { isCurrentMyrmexMemory, isMigratingMyrmexMemory } from "./validation";
+import {
+  isCurrentMyrmexMemory,
+  isMigratingMyrmexMemory,
+  isPreviousMyrmexMemory,
+} from "./validation";
 
 export const DEFAULT_MIGRATION_STEP_BUDGET = 1 as const;
 export const MAX_MIGRATION_STEP_BUDGET = 4 as const;
@@ -74,27 +80,37 @@ export function openMyrmexMemory(
   }
 
   const declaredVersion = readDeclaredSchemaVersion(raw);
-  if (declaredVersion !== null && declaredVersion > MEMORY_TARGET_SCHEMA_VERSION) {
+  const maximumDeclaredVersion = readMaximumDeclaredSchemaVersion(raw);
+  if (maximumDeclaredVersion !== null && maximumDeclaredVersion > MEMORY_TARGET_SCHEMA_VERSION) {
     return {
       status: "unsupported",
-      foundSchemaVersion: declaredVersion,
+      foundSchemaVersion: maximumDeclaredVersion,
       targetSchemaVersion: MEMORY_TARGET_SCHEMA_VERSION,
       migrationStepsApplied: 0,
     };
   }
 
   let stepsApplied = 0;
-  let migrating = isMigratingMyrmexMemory(raw)
-    ? raw
-    : beginMyrmexMigration(
-        memory,
-        raw,
-        gameTime,
-        shard,
-        isLegacyV1(raw) ? "schema-migration" : "corrupt-root",
-      );
-
-  if (!isMigratingMyrmexMemory(raw)) {
+  let migrating: ReturnType<typeof beginMyrmexMigration>;
+  if (isMigratingMyrmexMemory(raw)) {
+    migrating = raw;
+  } else if (isPreviousMyrmexMemory(raw)) {
+    migrating = beginCurrentMyrmexMigration(memory, raw, gameTime, shard, "schema-migration");
+    stepsApplied += 1;
+  } else if (
+    declaredVersion === PREVIOUS_MEMORY_SCHEMA_VERSION ||
+    declaredVersion === MEMORY_TARGET_SCHEMA_VERSION
+  ) {
+    migrating = beginCurrentMyrmexMigration(memory, raw, gameTime, shard, "corrupt-root");
+    stepsApplied += 1;
+  } else {
+    migrating = beginMyrmexMigration(
+      memory,
+      raw,
+      gameTime,
+      shard,
+      isLegacyV1(raw) ? "schema-migration" : "corrupt-root",
+    );
     stepsApplied += 1;
   }
 
@@ -145,10 +161,6 @@ function readDeclaredSchemaVersion(value: unknown): number | null {
     return null;
   }
 
-  if (typeof value.schema === "number" && Number.isSafeInteger(value.schema)) {
-    return value.schema;
-  }
-
   if (
     isRecord(value.meta) &&
     typeof value.meta.schemaVersion === "number" &&
@@ -157,7 +169,31 @@ function readDeclaredSchemaVersion(value: unknown): number | null {
     return value.meta.schemaVersion;
   }
 
+  if (typeof value.schema === "number" && Number.isSafeInteger(value.schema)) {
+    return value.schema;
+  }
+
   return null;
+}
+
+function readMaximumDeclaredSchemaVersion(value: unknown): number | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const candidates: unknown[] = [value.schema];
+  if (isRecord(value.meta)) {
+    candidates.push(value.meta.schemaVersion, value.meta.targetSchemaVersion);
+    if (isRecord(value.meta.migration)) {
+      candidates.push(value.meta.migration.fromVersion, value.meta.migration.targetVersion);
+    }
+  }
+
+  const versions = candidates.filter(
+    (candidate): candidate is number =>
+      typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0,
+  );
+  return versions.length === 0 ? null : Math.max(...versions);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -24,6 +24,7 @@ describe("MYRMEX memory", () => {
     expect(Object.keys(memory.myrmex ?? {}).sort()).toEqual(
       ["meta", ...PERSISTENT_STATE_OWNERS].sort(),
     );
+    expect(memory.myrmex?.config).toEqual({});
     expect(JSON.stringify(memory.myrmex)).not.toContain('"world"');
   });
 });

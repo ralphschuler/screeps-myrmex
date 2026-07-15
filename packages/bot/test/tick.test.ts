@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { CacheManager } from "../src/cache";
+import { FEATURE_GATE_IDS } from "../src/config";
 import { runTick } from "../src/runtime/tick";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
 
@@ -9,7 +10,7 @@ describe("tick lifecycle", () => {
     const getUsed = vi.fn(() => 1.25);
     const memory = {} as Memory;
 
-    runTick({
+    const outcome = runTick({
       game: {
         cpu: { bucket: 9_000, limit: 20, tickLimit: 500, getUsed },
         rooms: {},
@@ -25,6 +26,11 @@ describe("tick lifecycle", () => {
     expect(memory.myrmex?.meta.lastTick).toBe(42);
     expect(memory.myrmex?.meta.revision).toBe(1);
     expect(memory.myrmex).toMatchObject({
+      config: {
+        schemaVersion: 1,
+        candidate: null,
+        lastValid: null,
+      },
       kernel: {
         runtime: {
           schemaVersion: 1,
@@ -32,6 +38,23 @@ describe("tick lifecycle", () => {
         },
       },
     });
+    expect(outcome.configResolution).toEqual({
+      status: "source-defaults",
+      reasonCode: "owner-initialized",
+      candidateRevision: null,
+      acceptedCandidateRevision: null,
+    });
+    expect(Object.isFrozen(outcome.config)).toBe(true);
+    expect(Object.isFrozen(outcome.config.policy.recovery)).toBe(true);
+    expect(outcome.telemetry).toMatchObject({
+      configSourceRevision: outcome.config.sourceRevision,
+      configRevision: outcome.config.revision,
+      policyRevision: outcome.config.policyRevision,
+      configStatus: "source-defaults",
+      configReasonCode: "owner-initialized",
+    });
+    expect(outcome.telemetry?.featureGates.map(({ id }) => id)).toEqual(FEATURE_GATE_IDS);
+    expect(outcome.telemetry?.featureGates.every(({ enabled }) => !enabled)).toBe(true);
   });
 
   it("contains an optional planning fault and still executes the mandatory tail", () => {
@@ -68,6 +91,75 @@ describe("tick lifecycle", () => {
     expect(outcome.stateCommit).toMatchObject({ committed: true });
     expect(outcome.kernel.faults).toHaveLength(1);
     expect(outcome.telemetry).toMatchObject({ memoryStatus: "ready", ownedRooms: 0 });
+  });
+
+  it("activates one valid candidate and retains it after an atomic rejection", () => {
+    const memory = {} as Memory;
+    const gameAt = (time: number) => ({
+      cpu: { bucket: 8_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+      rooms: {},
+      shard: { name: "shard3" },
+      time,
+    });
+
+    runTick({ game: gameAt(60), memory });
+    const owner = memory.myrmex?.config as unknown as {
+      candidate: unknown;
+      lastValid: { candidateRevision: number } | null;
+    };
+    owner.candidate = {
+      revision: 91_001,
+      overrides: {
+        policy: { recovery: { protectedSpawnEnergy: 450 } },
+        relations: { self: ["Myrmex"], allies: ["Friendly"], naps: ["Pact"] },
+      },
+    };
+
+    const accepted = runTick({ game: gameAt(61), memory });
+
+    expect(accepted.configResolution).toEqual({
+      status: "candidate-accepted",
+      reasonCode: "candidate-valid",
+      candidateRevision: 91_001,
+      acceptedCandidateRevision: 91_001,
+    });
+    expect(accepted.config.policy.recovery.protectedSpawnEnergy).toBe(450);
+    expect(accepted.config.relations).toEqual({
+      self: ["Myrmex"],
+      allies: ["Friendly"],
+      naps: ["Pact"],
+    });
+    const acceptedOwner = memory.myrmex?.config as unknown as {
+      candidate: unknown;
+      lastValid: { candidateRevision: number } | null;
+    };
+    expect(acceptedOwner.lastValid?.candidateRevision).toBe(91_001);
+    expect(accepted.stateCommit).toMatchObject({ committed: true, owners: ["config", "kernel"] });
+
+    acceptedOwner.candidate = {
+      revision: 91_002,
+      overrides: {
+        policy: { recovery: { protectedSpawnEnergy: 500 } },
+        unknownPolicy: true,
+      },
+    };
+    const rejected = runTick({ game: gameAt(62), memory });
+
+    expect(rejected.configResolution).toEqual({
+      status: "last-valid-retained",
+      reasonCode: "candidate-invalid",
+      candidateRevision: 91_002,
+      acceptedCandidateRevision: 91_001,
+    });
+    expect(rejected.config).toEqual(accepted.config);
+    expect(rejected.telemetry).toMatchObject({
+      configStatus: "last-valid-retained",
+      configReasonCode: "candidate-invalid",
+      configRevision: accepted.config.revision,
+      policyRevision: accepted.config.policyRevision,
+    });
+    expect(rejected.stateCommit).toMatchObject({ committed: true, owners: ["kernel"] });
+    expect(memory.myrmex?.config?.candidate).toMatchObject({ revision: 91_002 });
   });
 
   it("accounts Memory preflight as overhead and cache telemetry inside its system", () => {
@@ -269,5 +361,15 @@ describe("tick lifecycle", () => {
     );
     expect(outcome.stateCommit).toBeNull();
     expect(memory.myrmex).not.toHaveProperty("world");
+    expect(outcome.configResolution).toMatchObject({
+      status: "owner-unavailable",
+      reasonCode: "owner-unavailable",
+    });
+    expect(outcome.telemetry).toMatchObject({
+      configStatus: "owner-unavailable",
+      configReasonCode: "owner-unavailable",
+      configRevision: outcome.config.revision,
+      policyRevision: outcome.config.policyRevision,
+    });
   });
 });

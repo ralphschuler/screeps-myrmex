@@ -67,9 +67,11 @@ one bundle, one composition root, one tick loop, and internal modules with stric
 15. All ordering and tie-breaking is deterministic. Random behavior uses an explicitly seeded PRNG.
 16. An empty heap cache, missing segment, or unavailable optional planner MUST reduce quality, never
     correctness or basic survival.
-17. Ally exclusion is fail-closed: unknown or stale diplomacy data MUST NOT authorize an offensive
-    action against a configured ally.
-18. Every remote, claim, trade, and military operation has a budget, success condition, timeout, and
+17. Runtime configuration has one authority. Planners consume its detached immutable view and MUST
+    NOT parse, retain, or mutate the operational candidate.
+18. Configured self, ally, and NAP identities are fail-closed exclusions: optional relation data
+    MUST NOT authorize an action that can target or harm them.
+19. Every remote, claim, trade, and military operation has a budget, success condition, timeout, and
     exit condition.
 
 Adding a second authority for any item above is an architecture defect, even if the duplicate is
@@ -96,16 +98,17 @@ planner and call it. Shared decisions are represented as data owned by the appro
 The complete flow for a normal tick is:
 
 1. Load and validate persistent state.
-2. Establish CPU mode and admitted work.
-3. Activate requested segments and ingest available external data.
-4. Observe visible game state once.
-5. Evaluate immediate survival threats.
-6. Update strategic and operational objectives at their admitted cadence.
-7. Produce capability contracts and typed action intents.
-8. Arbitrate intents deterministically.
-9. Execute accepted intents through narrow command adapters.
-10. Reconcile command results and observations into staged state changes.
-11. Commit persistent changes, invalidate affected caches, and emit bounded telemetry.
+2. Resolve one immutable runtime configuration and its feature-gate view.
+3. Establish CPU mode and admitted work.
+4. Activate requested segments and ingest available external data.
+5. Observe visible game state once.
+6. Evaluate immediate survival threats.
+7. Update strategic and operational objectives at their admitted cadence.
+8. Produce capability contracts and typed action intents.
+9. Arbitrate intents deterministically.
+10. Execute accepted intents through narrow command adapters.
+11. Reconcile command results and observations into staged state changes.
+12. Commit persistent changes, invalidate affected caches, and emit bounded telemetry.
 
 There are no hidden control paths. A system that needs work performed emits a contract or intent; it
 does not command a creep, spawn, structure, or other system directly.
@@ -114,14 +117,14 @@ does not command a creep, spawn, structure, or other system directly.
 
 Every datum belongs to exactly one lifetime. Choosing the wrong lifetime is a defect.
 
-| Lifetime    | Owner                | Suitable data                                                                    | Forbidden data                                 |
-| ----------- | -------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Tick        | `TickContext`        | snapshot, intent buffers, results, budgets, diagnostics                          | anything needed after the tick                 |
-| Heap        | `CacheManager`       | derived indexes, routes, static cost matrices, compiled layouts                  | strategic commitments or sole copies of facts  |
-| Persistent  | `MemoryManager`      | schema version, policies, contracts, operation state, reputation, recovery state | live game objects, paths, duplicated snapshots |
-| Segment     | `SegmentManager`     | large room intel, matrix payloads, bounded telemetry history                     | boot-critical state or unindexed commitments   |
-| Cross-shard | `InterShardManager`  | heartbeats and idempotent handoff envelopes                                      | shared mutable state or locks                  |
-| Source      | typed config modules | defaults, invariant thresholds, feature gates                                    | secrets and frequently changing observations   |
+| Lifetime    | Owner                | Suitable data                                                                   | Forbidden data                                 |
+| ----------- | -------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Tick        | `TickContext`        | snapshot, intent buffers, results, budgets, diagnostics                         | anything needed after the tick                 |
+| Heap        | `CacheManager`       | derived indexes, routes, static cost matrices, compiled layouts                 | strategic commitments or sole copies of facts  |
+| Persistent  | `MemoryManager`      | schema version, config candidate/receipt, contracts, reputation, recovery state | live game objects, paths, duplicated snapshots |
+| Segment     | `SegmentManager`     | large room intel, matrix payloads, bounded telemetry history                    | boot-critical state or unindexed commitments   |
+| Cross-shard | `InterShardManager`  | heartbeats and idempotent handoff envelopes                                     | shared mutable state or locks                  |
+| Source      | typed config modules | defaults, invariant thresholds, feature gates                                   | secrets and frequently changing observations   |
 
 Rules:
 
@@ -149,16 +152,19 @@ interface TickContext {
   readonly state: StateView;
   readonly intel: IntelView;
   readonly config: RuntimeConfig;
+  readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly budgets: BudgetView;
   readonly buffers: TickBuffers;
   readonly services: RuntimeServices;
 }
 ```
 
-The Phase 0 `TickContext` is the intentionally smaller executable subset: tick, shard, memory
-status, detached state view, immutable snapshot, sealed arbitration result, reconcile result, and
-bounded tick telemetry. It contains neither `Game` nor mutable `Memory`. Later fields enter only
-with the roadmap system that owns them.
+The executable `TickContext` began in Phase 0 with tick, shard, memory status, detached state view,
+immutable snapshot, sealed arbitration result, reconcile result, and bounded tick telemetry. Phase 1
+adds the resolved `RuntimeConfig` view. The context contains neither `Game`, mutable `Memory`, nor
+the raw operational candidate. Later fields enter only with the roadmap system that owns them. The
+aggregate `StateView` also redacts the raw `config` owner; config consumers use only
+`TickContext.config`.
 
 `RuntimeServices` contains narrow interfaces, not concrete systems. It exposes state transactions,
 cache lookup, segment requests, deterministic IDs, and telemetry. Gameplay planners MUST NOT receive
@@ -199,14 +205,18 @@ Boot MUST:
 1. Detect first execution after a heap reset.
 2. Load `Memory.myrmex` through `MemoryManager`.
 3. Validate and, if required, advance schema migrations.
-4. Rebuild service objects and empty heap indexes.
-5. Determine CPU mode and reserve CPU for safety, execution, reconcile, and telemetry.
-6. Read active segment payloads and cross-shard envelopes without blocking.
-7. Mark interrupted operations or expired leases for reconciliation.
+4. Resolve source defaults and the accepted operational config into one immutable planner view.
+5. Rebuild service objects and empty heap indexes.
+6. Determine CPU mode and reserve CPU for safety, execution, reconcile, and telemetry.
+7. Read active segment payloads and cross-shard envelopes without blocking.
+8. Mark interrupted operations or expired leases for reconciliation.
 
 If a migration is incomplete, the bot enters `recovery` mode. Only migration work, observation,
 defense, essential spawning, and essential logistics are admitted. Migrations MUST be idempotent and
-bounded; progress is persisted after every step.
+bounded; progress is persisted after every step. Config resolution never authorizes owner repair
+during Boot. A malformed/future ready-state owner is preserved and uses source defaults; recovery or
+unsupported root state reports the owner unavailable. Both paths expose only bounded status/reason
+codes for telemetry.
 
 ### 6.2 Observe
 
@@ -423,23 +433,26 @@ serialization hygiene. No other module reads or writes that root directly.
 
 The persistent root is divided by authority, not convenience:
 
-| Subtree      | Owner                  | Contents                                                           |
-| ------------ | ---------------------- | ------------------------------------------------------------------ |
-| `meta`       | `MemoryManager`        | schema, migration cursor, first/last tick, shard, recovery status  |
-| `kernel`     | `RuntimeKernel`        | system health, due ticks, resumable job headers, CPU estimates     |
-| `empire`     | `EmpireDirector`       | objectives, budgets, colony registry, strategic policy revisions   |
-| `colonies`   | `ColonyDirector`       | per-colony state machines, reserves, layout revision, local policy |
-| `contracts`  | `ContractLedger`       | persistent work contracts, leases, deadlines, outcomes             |
-| `diplomacy`  | `DiplomacyLedger`      | configured relations, evidence, confidence, reputation state       |
-| `remotes`    | `RemotePortfolio`      | candidates, active commitments, ledgers, suspension state          |
-| `expansion`  | `ExpansionDirector`    | claim candidates and bootstrap operation state                     |
-| `operations` | `OperationsController` | authorized military and strategic operation state machines         |
-| `industry`   | `IndustryDirector`     | stock targets, production commitments, market risk limits          |
-| `segments`   | `SegmentManager`       | manifest, generations, activation requests, corruption markers     |
-| `telemetry`  | `TelemetryService`     | bounded counters, last status, ring metadata                       |
+| Subtree      | Owner                    | Contents                                                           |
+| ------------ | ------------------------ | ------------------------------------------------------------------ |
+| `meta`       | `MemoryManager`          | schema, migration cursor, first/last tick, shard, recovery status  |
+| `config`     | `RuntimeConfigAuthority` | candidate, accepted canonical override, source/resolved revisions  |
+| `kernel`     | `RuntimeKernel`          | system health, due ticks, resumable job headers, CPU estimates     |
+| `empire`     | `EmpireDirector`         | objectives, budgets, colony registry, strategic policy revisions   |
+| `colonies`   | `ColonyDirector`         | per-colony state machines, reserves, layout revision, local policy |
+| `contracts`  | `ContractLedger`         | persistent work contracts, leases, deadlines, outcomes             |
+| `diplomacy`  | `DiplomacyLedger`        | observed evidence, confidence, and optional reputation state       |
+| `remotes`    | `RemotePortfolio`        | candidates, active commitments, ledgers, suspension state          |
+| `expansion`  | `ExpansionDirector`      | claim candidates and bootstrap operation state                     |
+| `operations` | `OperationsController`   | authorized military and strategic operation state machines         |
+| `industry`   | `IndustryDirector`       | stock targets, production commitments, market risk limits          |
+| `segments`   | `SegmentManager`         | manifest, generations, activation requests, corruption markers     |
+| `telemetry`  | `TelemetryService`       | bounded counters, last status, ring metadata                       |
 
-The existing Phase 0 schema may be migrated toward this root incrementally. A new subtree still
-requires an owner before its first field is added.
+Schema v3 contains every listed owner. The v2-to-v3 migration adds `config` without rewriting the
+other owner payloads. A persisted, interrupted historical v1-to-v2 cursor remains valid: the runtime
+completes it, transitions to the separate v2-to-v3 cursor, and then finishes schema v3. Every later
+subtree still requires an owner and migration before its first field is added.
 
 Memory access uses typed repositories:
 
@@ -453,11 +466,17 @@ Memory access uses typed repositories:
 Migrations are sequential, idempotent, downgrade-aware only when an ADR requires rollback, and
 tested from every supported schema version. Destructive migration requires a recovery strategy.
 
-The current state substrate applies these hard limits before commit: depth 64, 50,000 JSON nodes,
-1,500,000 combined string/key code units, 10,000 array items, 10,000 object keys, 1,024 code units
-per key, and 16 recovery diagnostics. A malformed optional authority subtree is rebuilt while valid
-authority subtrees and valid boot identity are salvaged. Future schema versions fail closed without
-downgrade.
+The state substrate applies these hard limits before commit: depth 64, 50,000 JSON nodes, 1,500,000
+combined string/key code units, 10,000 array items, 10,000 object keys, 1,024 code units per key,
+and 16 recovery diagnostics. A recovery cursor may exceed only the first two limits by the exact
+fixed cursor overhead: 11 nodes and 248 code units. Such a cursor is valid only when its projected
+schema-v3 root passes the original limits; completion diagnostics are omitted at the boundary rather
+than displacing a valid owner payload. During root recovery, a malformed optional authority subtree
+is rebuilt while valid authority subtrees and valid boot identity are salvaged. This does not
+authorize repairing a malformed config owner in an otherwise valid v3 root. Future schema versions
+fail closed without downgrade. Config candidate validation has intentionally smaller budgets and
+remains independent of these root-storage limits; those exact limits are recorded in
+[`phase1-config-evidence.md`](phase1-config-evidence.md).
 
 ### 8.2 CacheManager
 
@@ -670,27 +689,28 @@ assignment or follows a safe recycle/parking policy.
 
 The following table is the canonical ownership map.
 
-| System                 | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                        |
-| ---------------------- | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | --------------------------------- |
-| `EmpireDirector`       | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands    |
-| `ColonyDirector`       | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache      |
-| `EconomyPlanner`       | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps            |
-| `SpawnBroker`          | spawn queue and body selection                 | demands, energy, deadlines                | accepted spawn intents                   | call `spawnCreep` directly        |
-| `WorkforceAllocator`   | creep-to-contract leases                       | capabilities, contracts, travel estimates | assignments                              | create strategic objectives       |
-| `LogisticsPlanner`     | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly         |
-| `MovementArbiter`      | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels        |
-| `LayoutPlanner`        | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites         |
-| `ConstructionPlanner`  | build/repair/dismantle priorities              | layout, structures, reserves              | construction and work intents            | modify layout ownership           |
-| `DefenseDirector`      | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war           |
-| `DiplomacyLedger`      | player relation and reputation state           | configured allies, observed evidence      | relation view, transitions               | infer identity from creep names   |
-| `RemotePortfolio`      | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly        |
-| `ExpansionDirector`    | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets       |
-| `IndustryDirector`     | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls |
-| `MarketPlanner`        | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly      |
-| `OperationsController` | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies          |
-| `ExecutorRegistry`     | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices            |
-| `Reconciler`           | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands               |
-| `TelemetryService`     | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store       |
+| System                   | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                        |
+| ------------------------ | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | --------------------------------- |
+| `RuntimeConfigAuthority` | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners  |
+| `EmpireDirector`         | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands    |
+| `ColonyDirector`         | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache      |
+| `EconomyPlanner`         | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps            |
+| `SpawnBroker`            | spawn queue and body selection                 | demands, energy, deadlines                | accepted spawn intents                   | call `spawnCreep` directly        |
+| `WorkforceAllocator`     | creep-to-contract leases                       | capabilities, contracts, travel estimates | assignments                              | create strategic objectives       |
+| `LogisticsPlanner`       | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly         |
+| `MovementArbiter`        | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels        |
+| `LayoutPlanner`          | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites         |
+| `ConstructionPlanner`    | build/repair/dismantle priorities              | layout, structures, reserves              | construction and work intents            | modify layout ownership           |
+| `DefenseDirector`        | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war           |
+| `DiplomacyLedger`        | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions      |
+| `RemotePortfolio`        | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly        |
+| `ExpansionDirector`      | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets       |
+| `IndustryDirector`       | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls |
+| `MarketPlanner`          | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly      |
+| `OperationsController`   | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies          |
+| `ExecutorRegistry`       | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices            |
+| `Reconciler`             | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands               |
+| `TelemetryService`       | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store       |
 
 ### 12.1 ColonyDirector
 
@@ -791,9 +811,19 @@ Relations are `self`, `ally`, `nap`, `neutral`, `trespasser`, `hostile`, or `war
 ally, and NAP identities are authoritative policy inputs. Observation creates evidence with source,
 tick, room, severity, confidence, and decay.
 
-Only the ledger changes relation state. Consumers receive a read-only decision containing state,
-confidence, policy revision, and permitted response ceiling. Unknown identity defaults to neutral
-for ordinary interaction and forbidden for irreversible offensive action until authorization.
+The relation resolver checks configured exclusions before consulting optional reputation. Self,
+ally, and NAP map to the `excluded` targeting ceiling regardless of empty, stale, malformed,
+future-version, future-assessed, or contradictory optional data. A malformed observed identity is
+also excluded. Valid unconfigured identities are neutral when optional evidence is unavailable and
+have at most the `local-defense` ceiling during Phase 1. Fresh optional evidence may reduce a
+ceiling; it cannot raise one or change a configured exclusion.
+
+`local-defense` is a ceiling, not authorization. A later defense authority must also prove fresh
+owned-room threat evidence before issuing a targeted action. Irreversible offense requires an
+authorized operation. Area-effect intents must prove that no configured exclusion can be harmed.
+`FIND_HOSTILE_*` means “not owned” in the Screeps API; it is observation input, never diplomatic
+authorization. Consumers receive a read-only decision containing relation, evidence status, policy
+revision, and targeting ceiling.
 
 ### 12.8 RemotePortfolio
 
@@ -930,18 +960,61 @@ transitions.
 
 ## 14. Configuration
 
-`RuntimeConfig` is constructed once from source defaults plus a strictly validated, allowlisted
-operational override subtree. Configuration ownership is centralized under `config/`.
+`RuntimeConfigAuthority` constructs one `RuntimeConfig` from source defaults plus a strictly
+validated, allowlisted operational override document. It alone reads and interprets the `config`
+owner. Planners receive only its detached, recursively immutable typed view through `TickContext`.
+Thresholds and priorities MUST NOT be scattered as anonymous literals or independently parsed in
+consumers.
 
-- Invariant safety policy and schema versions are source-controlled and cannot be overridden at
-  runtime.
-- Tunable thresholds have type, bounds, unit, default, and documentation.
-- A config revision is recorded in decisions and telemetry.
-- Invalid overrides are rejected as a whole and the last valid configuration remains active.
-- Feature gates activate roadmap systems only after their outcome gate exists.
-- Secrets never enter source, Memory, telemetry, Wiki, or committed config.
+The owner-local schema is version 1. It separates an operator-owned candidate from a bot-owned
+acceptance receipt:
 
-Thresholds and priorities MUST NOT be scattered as anonymous literals through planners.
+- `candidate` is null or contains a safe-integer revision and one complete override document;
+- `lastValid` is null or records the matching source revision, candidate revision, canonical
+  accepted override, and resolved revision; and
+- exact `{}` is the only shorthand that may be initialized into the owner-local schema.
+
+The bot never rewrites candidate bytes. It may create the owner schema from exact `{}` and may stage
+a new `lastValid` receipt through the config owner's transaction before the sole Reconcile commit. A
+malformed non-empty or future owner is preserved and resolves with `source-defaults` plus the
+bounded reason `owner-malformed` or `owner-future-schema`. `owner-unavailable` is reserved for
+recovery or unsupported root state. Unknown keys, malformed identities, mixed valid/invalid fields,
+and unsafe values reject the entire candidate. A rejected candidate may use `lastValid` only when
+its source revision is compatible and its canonical override still passes current validation;
+otherwise source defaults apply.
+
+A null candidate is the absence of a new operator proposal. It keeps compatible `lastValid` policy
+and revision evidence active without rewriting the owner; only an initial or incompatible receipt
+falls back to source defaults. Null is not a rollback mechanism. Rollback publishes the complete
+desired override, including `{}` for source defaults, under a newer candidate revision.
+
+Resolution obeys these invariants:
+
+- invariant game constraints, source availability, prerequisite edges, schemas, units, bounds, and
+  safety ceilings are source-controlled and cannot be overridden at runtime;
+- tunable thresholds have a name, type, unit, inclusive bound, source default, and outcome consumer;
+- canonical binary key/identity ordering makes equivalent input byte-equivalent across JSON and
+  global-heap round trips;
+- the output and nested collections are recursively immutable;
+- canonical accepted data remains the equality evidence; a compact revision is never trusted alone;
+- candidate validation is bounded and is rerun only after global reset or candidate-revision change;
+  and
+- diagnostics and telemetry expose bounded status/reason and source/config/policy revisions, never
+  identities, override values, or candidate content.
+
+Feature gates are a source-controlled prerequisite DAG. An operational override may only disable a
+known source-available gate. For gate `g`:
+
+`effective(g) = available(g) && !disabled(g) && every prerequisite is effective`
+
+Activation fields do not exist in the override schema and are rejected as unknown. An unavailable
+gate therefore remains unavailable, and a gate with a closed prerequisite reports prerequisite
+blocking. Issue #36 leaves all Phase 1 gameplay gates source-unavailable; the change that proves a
+later outcome enables its own gate. Secrets never enter source, Memory, telemetry, Wiki, or
+committed config.
+
+The versioned policy fields, limits, statuses, gates, and deterministic matrix are recorded in
+[`phase1-config-evidence.md`](phase1-config-evidence.md).
 
 ## 15. Observability and Explainability
 
@@ -957,7 +1030,7 @@ Thresholds and priorities MUST NOT be scattered as anonymous literals through pl
 - threat, defense response, and safe-mode decisions;
 - operation budget, losses, state, and exit reason;
 - intent arbitration and command-result summaries;
-- schema, build, config, and policy revisions.
+- schema, build, source/config/policy revisions, config status/reason, and gate reason/blocker.
 
 Structured diagnostics use bounded codes and stable entity IDs. Free-form logs are for concise human
 context, not machine state. Each major decision includes a `reasonCode` and references its
@@ -979,6 +1052,9 @@ The runtime status surface MUST answer:
 | global heap reset               | rebuild all services/caches; continue from persistent contracts                    |
 | empty Memory                    | initialize schema; enter bootstrap; create no duplicate commitments                |
 | incomplete migration            | enter recovery mode and resume bounded migration                                   |
+| malformed/future config owner   | preserve owner; source-defaults with bounded malformed/future reason               |
+| invalid config candidate        | reject atomically; revalidate compatible last-valid or use source defaults         |
+| unavailable/prerequisite gate   | keep work disabled and report its source or prerequisite reason                    |
 | missing/corrupt cache           | treat as miss and rebuild within budget                                            |
 | unavailable segment             | defer optional consumer or use explicitly lower-confidence fallback                |
 | corrupt segment                 | quarantine generation; load previous valid generation or rebuild                   |
@@ -989,7 +1065,7 @@ The runtime status surface MUST answer:
 | CPU pressure                    | stop optional admissions; preserve safety, essential execute, reconcile, telemetry |
 | lost creep/structure            | expire leases/reservations and replan from observation                             |
 | lost room                       | enter colony lost/recovery path; revoke unsafe local commitments                   |
-| stale diplomacy                 | fail closed for offense and refresh evidence                                       |
+| stale/malformed reputation      | treat as neutral; never weaken configured self/ally/NAP exclusions                 |
 | operation timeout/budget breach | stop new spending and transition to withdrawal/abort                               |
 
 Recovery MUST be automatic and idempotent. Console intervention may aid diagnosis but cannot be a
@@ -1111,16 +1187,16 @@ results, and reordered observations.
 The architecture is implemented in dependency order, but later systems stay disabled until their
 roadmap gate.
 
-| Roadmap phase | Architecture activated                                                                  |
-| ------------- | --------------------------------------------------------------------------------------- |
-| Phase 0       | kernel, scheduler contract, state schema/migrations, snapshot, telemetry, scenario DSL  |
-| Phase 1       | contracts, workforce, spawn, economy, logistics, movement, minimal construction/defense |
-| Phase 2       | colony lifecycle, layouts, complete structures, stock policy, industry foundations      |
-| Phase 3       | segment intel, scouting, route costing, remote portfolio                                |
-| Phase 4       | empire graph, expansion portfolio, bootstrap operations                                 |
-| Phase 5       | diplomacy evidence, full threat model, reinforcements, boosts, hard-target defense      |
-| Phase 6       | market, MMO deployment/canary policy, richer operational telemetry                      |
-| Phases 7–8    | authorized offensive operations, formations, power projection, cross-shard handoff      |
+| Roadmap phase | Architecture activated                                                                   |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| Phase 0       | kernel, scheduler contract, state schema/migrations, snapshot, telemetry, scenario DSL   |
+| Phase 1       | validated config/gates/relations, contracts, workforce, spawn, economy, movement/defense |
+| Phase 2       | colony lifecycle, layouts, complete structures, stock policy, industry foundations       |
+| Phase 3       | segment intel, scouting, route costing, remote portfolio                                 |
+| Phase 4       | empire graph, expansion portfolio, bootstrap operations                                  |
+| Phase 5       | diplomacy evidence, full threat model, reinforcements, boosts, hard-target defense       |
+| Phase 6       | market, MMO deployment/canary policy, richer operational telemetry                       |
+| Phases 7–8    | authorized offensive operations, formations, power projection, cross-shard handoff       |
 
 Describing a future system here does not authorize implementing it early. The earliest incomplete
 roadmap gate remains the work selector.

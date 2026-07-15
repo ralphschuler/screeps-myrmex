@@ -13,7 +13,7 @@ for the referenced commit; counts below are refreshed before the gate PR is merg
 | ----------------------------------------- | ----------------------------------------------------------------------- |
 | Empty Memory and normal tick              | `memory.test.ts`, `tick.test.ts`                                        |
 | Warm boot and heap-reset equivalence      | `phase0-runtime.test.ts`, cache reset-equivalence test                  |
-| Valid v1 and interrupted migration        | `state-migrations.test.ts`, `phase0-runtime.test.ts`                    |
+| Supported v1/v2 and interrupted migration | chained migration tests in `state-migrations` and `phase0-runtime`      |
 | Malformed optional state                  | valid authority salvage and optional-subtree rebuild migration test     |
 | Optional planner and staged commit fault  | tick/kernel fault-isolation tests and deterministic replay              |
 | Normal/emergency/recovery CPU pressure    | kernel boundary tests and mandatory-tail CPU replay                     |
@@ -39,6 +39,10 @@ for the referenced commit; counts below are refreshed before the gate PR is merg
 | World creep body      | 50 parts summarized into fixed-width capability counters        |
 | Scenario runner       | 10,000 ticks; value 1,000,000; transcript 10,000,000 code units |
 
+Migration cursors may use only their fixed transient overhead of 11 nodes and 248 code units above
+the persistent JSON row. The projected final root must still pass the published cap, and a
+completion diagnostic is best-effort when recording it would otherwise evict valid owner state.
+
 Snapshot bytes, cache entries/namespaces, system/phase CPU, kernel overhead, estimate error,
 overrun, skip reason, fault count, and CPU mode are bounded fields in the Phase 0 tick result. The
 full-tick CPU total is the sum of system CPU and overhead; overhead includes bounded Memory
@@ -48,8 +52,10 @@ reserved `telemetry.minimum` system boundary.
 ## Failure invariants
 
 - Future schemas are never downgraded or mutated.
-- Recovery migrations are restartable and persist one cursor step at a time.
-- Invalid optional owner state is rebuilt without erasing valid authority-owned commitments.
+- Recovery migrations are restartable and persist one cursor step at a time; a historical v1-to-v2
+  cursor completes before the v2-to-v3 config-owner migration.
+- During root recovery, invalid optional owner state is rebuilt without erasing valid
+  authority-owned commitments.
 - Tick systems receive detached state and immutable snapshots, never mutable Memory.
 - A failed optional system cannot suppress accepted-safe Execute, Reconcile, or Telemetry tail work.
 - Rejected or deferred intents cannot reach a command adapter.
