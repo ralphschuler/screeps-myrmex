@@ -55,6 +55,8 @@ const RAW_MEMORY_SEGMENT_MEMBERS = new Set([
   "setPublicSegments",
 ]);
 
+const PER_CREEP_TASK_MEMORY_MEMBERS = new Set(["contractId", "lease", "role", "task"]);
+
 const CONFIG_OWNER_METHODS = new Set(["ownerView", "transaction"]);
 
 const CONFIG_PUBLIC_MODULES = new Set(["", "index"]);
@@ -140,10 +142,12 @@ const AUTHORITY_DECLARATIONS = new Map([
   ["BudgetLedger", "colony/budget-ledger.ts"],
   ["CacheManager", "cache/cache-manager.ts"],
   ["ColonyDirector", "colony/director.ts"],
+  ["ContractLedger", "contracts/contract-ledger.ts"],
   ["CpuScheduler", "runtime/kernel/cpu-scheduler.ts"],
   ["MemoryManager", "state/manager.ts"],
   ["RuntimeConfigAuthority", "config/authority.ts"],
   ["RuntimeKernel", "runtime/kernel/runtime-kernel.ts"],
+  ["WorkforceAllocator", "contracts/workforce-allocator.ts"],
 ]);
 
 export function findArchitectureViolations(sources) {
@@ -173,7 +177,8 @@ function inspectSource(contents, path) {
   );
   const rules = new Set();
   const numericLiteralBindings = collectNumericLiteralBindings(source);
-  const configOwnerMethodAliases = collectConfigOwnerMethodAliases(source);
+  const ownerMethodCalls = collectOwnerMethodCallAnalysis(source);
+  const perCreepTaskMemory = collectPerCreepTaskMemoryAnalysis(source);
 
   function addUnlessAllowed(rule, allowed) {
     if (!allowed) {
@@ -218,24 +223,28 @@ function inspectSource(contents, path) {
       if (calledMember !== null && COMMAND_METHODS.has(calledMember.member)) {
         addUnlessAllowed("game-command-outside-executor", isExecutorPath(path));
       }
-      const calledConfigOwnerMethod = terminalMemberName(node.expression);
-      const calledConfigOwnerAlias = ts.isIdentifier(node.expression)
-        ? configOwnerMethodAliases.has(node.expression.text)
-        : false;
+      const ownerMethodCall = ownerMethodCalls.resolve(node);
+      const calledOwnerView = ownerMethodCall?.methods.has("ownerView") === true;
+      const calledTransaction = ownerMethodCall?.methods.has("transaction") === true;
+      const ownerArgument = ownerMethodCall?.ownerArgument;
       if (
-        ((calledConfigOwnerMethod !== null && CONFIG_OWNER_METHODS.has(calledConfigOwnerMethod)) ||
-          calledConfigOwnerAlias) &&
-        (stringLiteralValue(node.arguments[0]) === "config" ||
-          stringLiteralValue(node.arguments[0]) === null)
+        ownerMethodCall !== null &&
+        (stringLiteralValue(ownerArgument) === "config" ||
+          stringLiteralValue(ownerArgument) === null)
       ) {
         addUnlessAllowed("config-owner-access-outside-runtime", path === "runtime/tick.ts");
       }
-      if (
-        ((calledConfigOwnerMethod !== null && CONFIG_OWNER_METHODS.has(calledConfigOwnerMethod)) ||
-          calledConfigOwnerAlias) &&
-        stringLiteralValue(node.arguments[0]) === "colonies"
-      ) {
+      if (ownerMethodCall !== null && stringLiteralValue(ownerArgument) === "colonies") {
         addUnlessAllowed("colonies-owner-access-outside-runtime", path === "runtime/tick.ts");
+      }
+      if (calledOwnerView && stringLiteralValue(ownerArgument) === "contracts") {
+        addUnlessAllowed("contracts-owner-read-outside-runtime", path === "runtime/tick.ts");
+      }
+      if (calledTransaction && stringLiteralValue(ownerArgument) === "contracts") {
+        addUnlessAllowed(
+          "contracts-state-write-outside-ledger",
+          path === "contracts/contract-ledger.ts",
+        );
       }
     }
 
@@ -309,6 +318,9 @@ function inspectSource(contents, path) {
           path.startsWith("intershard/") || path.startsWith("shards/"),
         );
       }
+    }
+    if (isPerCreepTaskMemoryAccess(node, perCreepTaskMemory)) {
+      rules.add("per-creep-task-memory");
     }
 
     if (ts.isClassDeclaration(node) && node.name !== undefined) {
@@ -413,35 +425,78 @@ function collectNumericLiteralBindings(source) {
   return bindings;
 }
 
-function collectConfigOwnerMethodAliases(source) {
-  const aliases = new Set(CONFIG_OWNER_METHODS);
-  const identifierAliases = [];
-  const visit = (node) => {
-    if (ts.isVariableDeclaration(node)) {
-      if (ts.isObjectBindingPattern(node.name)) {
-        for (const element of node.name.elements) {
-          const sourceName = element.propertyName ?? element.name;
-          const method =
-            ts.isIdentifier(sourceName) || ts.isStringLiteralLike(sourceName)
-              ? sourceName.text
-              : null;
-          if (
-            method !== null &&
-            CONFIG_OWNER_METHODS.has(method) &&
-            ts.isIdentifier(element.name)
-          ) {
-            aliases.add(element.name.text);
-          }
-        }
-      } else if (ts.isIdentifier(node.name) && node.initializer !== undefined) {
-        const member = terminalMemberName(node.initializer);
-        if (member !== null && CONFIG_OWNER_METHODS.has(member)) {
-          aliases.add(node.name.text);
-        } else if (ts.isIdentifier(node.initializer)) {
-          identifierAliases.push({ alias: node.name.text, source: node.initializer.text });
+function collectOwnerMethodCallAnalysis(source) {
+  const resolveBinding = createBindingResolver(source);
+  const methodsByBinding = new Map();
+  const aliasEdges = [];
+
+  const addMethod = (binding, method) => {
+    let methods = methodsByBinding.get(binding);
+    if (methods === undefined) {
+      methods = new Set();
+      methodsByBinding.set(binding, methods);
+    }
+    methods.add(method);
+  };
+
+  const addSource = (target, expression) => {
+    const sourceValue = ownerMethodSource(expression, resolveBinding);
+    if (sourceValue?.method !== undefined) {
+      addMethod(target, sourceValue.method);
+    } else if (sourceValue?.binding !== undefined) {
+      aliasEdges.push({ source: sourceValue.binding, target });
+    }
+  };
+
+  const addBindingPattern = (pattern) => {
+    for (const element of pattern.elements) {
+      const method = propertyName(element.propertyName ?? element.name);
+      if (method !== null && CONFIG_OWNER_METHODS.has(method) && ts.isIdentifier(element.name)) {
+        addMethod(element.name, method);
+      }
+    }
+  };
+
+  const addAssignmentPattern = (pattern) => {
+    for (const property of pattern.properties) {
+      if (ts.isSpreadAssignment(property)) {
+        continue;
+      }
+      const method = propertyName(property.name);
+      const target = assignmentTarget(property);
+      if (method !== null && CONFIG_OWNER_METHODS.has(method) && target !== null) {
+        const binding = resolveBinding(target);
+        if (binding !== null) {
+          addMethod(binding, method);
         }
       }
     }
+  };
+
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      if (ts.isIdentifier(node.name) && node.initializer !== undefined) {
+        addSource(node.name, node.initializer);
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        addBindingPattern(node.name);
+      }
+    }
+
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const target = identifierExpression(node.left);
+      if (target !== null) {
+        const targetBinding = resolveBinding(target);
+        if (targetBinding !== null) {
+          addSource(targetBinding, node.right);
+        }
+      } else {
+        const pattern = objectAssignmentPattern(node.left);
+        if (pattern !== null) {
+          addAssignmentPattern(pattern);
+        }
+      }
+    }
+
     ts.forEachChild(node, visit);
   };
   visit(source);
@@ -449,14 +504,101 @@ function collectConfigOwnerMethodAliases(source) {
   let changed = true;
   while (changed) {
     changed = false;
-    for (const binding of identifierAliases) {
-      if (aliases.has(binding.source) && !aliases.has(binding.alias)) {
-        aliases.add(binding.alias);
+    for (const edge of aliasEdges) {
+      const sourceMethods = methodsByBinding.get(edge.source);
+      if (sourceMethods === undefined) {
+        continue;
+      }
+      for (const method of sourceMethods) {
+        const targetMethods = methodsByBinding.get(edge.target);
+        if (targetMethods?.has(method) === true) {
+          continue;
+        }
+        addMethod(edge.target, method);
         changed = true;
       }
     }
   }
-  return aliases;
+
+  const callableMethods = (expression) => {
+    const sourceValue = ownerMethodSource(expression, resolveBinding);
+    if (sourceValue?.method !== undefined) {
+      return new Set([sourceValue.method]);
+    }
+    if (sourceValue?.binding !== undefined) {
+      return new Set(methodsByBinding.get(sourceValue.binding) ?? []);
+    }
+    return new Set();
+  };
+
+  return {
+    resolve(call) {
+      const calledExpression = unwrapExpression(call.expression);
+      if (
+        ts.isPropertyAccessExpression(calledExpression) ||
+        ts.isElementAccessExpression(calledExpression)
+      ) {
+        const helper = terminalMemberName(calledExpression);
+        if (helper === "bind") {
+          return null;
+        }
+        if (helper === "call" || helper === "apply") {
+          const methods = callableMethods(calledExpression.expression);
+          if (methods.size === 0) {
+            return null;
+          }
+          return {
+            methods,
+            ownerArgument:
+              helper === "call"
+                ? call.arguments[1]
+                : firstStaticallyAppliedArgument(call.arguments[1]),
+          };
+        }
+      }
+
+      const methods = callableMethods(calledExpression);
+      return methods.size === 0 ? null : { methods, ownerArgument: call.arguments[0] };
+    },
+  };
+}
+
+function ownerMethodSource(node, resolveBinding) {
+  const expression = unwrapExpression(node);
+  if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
+    const method = terminalMemberName(expression);
+    return method !== null && CONFIG_OWNER_METHODS.has(method) ? { method } : null;
+  }
+  if (ts.isIdentifier(expression)) {
+    const binding = resolveBinding(expression);
+    if (binding !== null) {
+      return { binding };
+    }
+    return CONFIG_OWNER_METHODS.has(expression.text) ? { method: expression.text } : null;
+  }
+  if (ts.isCallExpression(expression)) {
+    const calledExpression = unwrapExpression(expression.expression);
+    if (
+      (ts.isPropertyAccessExpression(calledExpression) ||
+        ts.isElementAccessExpression(calledExpression)) &&
+      terminalMemberName(calledExpression) === "bind"
+    ) {
+      return ownerMethodSource(calledExpression.expression, resolveBinding);
+    }
+  }
+  return null;
+}
+
+function firstStaticallyAppliedArgument(node) {
+  if (node === undefined) {
+    return undefined;
+  }
+  const expression = unwrapExpression(node);
+  if (!ts.isArrayLiteralExpression(expression) || expression.elements.length === 0) {
+    return undefined;
+  }
+  const first = expression.elements[0];
+  return ts.isSpreadElement(first) || ts.isOmittedExpression(first) ? undefined : first;
 }
 
 function configModuleEntry(moduleName) {
@@ -544,6 +686,337 @@ function terminalMemberName(node) {
     return stringLiteralValue(node.argumentExpression);
   }
   return null;
+}
+
+function collectPerCreepTaskMemoryAnalysis(source) {
+  const resolveBinding = createBindingResolver(source);
+  const aliases = new Set();
+  const aliasEdges = [];
+
+  const addAliasEdge = (target, initializer) => {
+    const sourceIdentifier = identifierExpression(initializer);
+    const sourceBinding = sourceIdentifier === null ? null : resolveBinding(sourceIdentifier);
+    if (sourceBinding !== null) {
+      aliasEdges.push({ source: sourceBinding, target });
+    }
+  };
+
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      if (ts.isIdentifier(node.name) && node.initializer !== undefined) {
+        if (isDirectMemoryExpression(node.initializer)) {
+          aliases.add(node.name);
+        } else {
+          addAliasEdge(node.name, node.initializer);
+        }
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        collectDestructuredMemoryBindings(node.name, aliases);
+      }
+    }
+
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const targetIdentifier = identifierExpression(node.left);
+      if (targetIdentifier !== null) {
+        const targetBinding = resolveBinding(targetIdentifier);
+        if (targetBinding !== null) {
+          if (isDirectMemoryExpression(node.right)) {
+            aliases.add(targetBinding);
+          } else {
+            addAliasEdge(targetBinding, node.right);
+          }
+        }
+      } else {
+        const assignmentPattern = objectAssignmentPattern(node.left);
+        if (assignmentPattern !== null) {
+          collectAssignedMemoryBindings(assignmentPattern, aliases, resolveBinding);
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of aliasEdges) {
+      if (aliases.has(edge.source) && !aliases.has(edge.target)) {
+        aliases.add(edge.target);
+        changed = true;
+      }
+    }
+  }
+
+  return { aliases, resolveBinding };
+}
+
+function createBindingResolver(source) {
+  const bindingsByScope = new WeakMap();
+
+  const register = (scope, name) => {
+    if (scope === null) {
+      return;
+    }
+    let bindings = bindingsByScope.get(scope);
+    if (bindings === undefined) {
+      bindings = new Map();
+      bindingsByScope.set(scope, bindings);
+    }
+    bindings.set(name.text, name);
+  };
+
+  const registerPattern = (scope, pattern) => {
+    if (ts.isIdentifier(pattern)) {
+      register(scope, pattern);
+      return;
+    }
+    for (const element of pattern.elements) {
+      if (!ts.isOmittedExpression(element)) {
+        registerPattern(scope, element.name);
+      }
+    }
+  };
+
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      registerPattern(variableBindingScope(node, source), node.name);
+    } else if (ts.isParameter(node)) {
+      registerPattern(nearestFunctionScope(node, source), node.name);
+    } else if (
+      (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+      node.name !== undefined
+    ) {
+      register(nearestLexicalScope(node, source), node.name);
+    } else if (
+      (ts.isFunctionExpression(node) || ts.isClassExpression(node)) &&
+      node.name !== undefined
+    ) {
+      register(node, node.name);
+    } else if (ts.isImportClause(node) && node.name !== undefined) {
+      register(source, node.name);
+    } else if (ts.isImportSpecifier(node) || ts.isNamespaceImport(node)) {
+      register(source, node.name);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+
+  return (identifier) => {
+    let current = identifier.parent;
+    while (current !== undefined) {
+      const binding = bindingsByScope.get(current)?.get(identifier.text);
+      if (binding !== undefined) {
+        return binding;
+      }
+      current = current.parent;
+    }
+    return null;
+  };
+}
+
+function variableBindingScope(declaration, source) {
+  if (ts.isCatchClause(declaration.parent)) {
+    return declaration.parent;
+  }
+  const declarationList = declaration.parent;
+  if (
+    ts.isVariableDeclarationList(declarationList) &&
+    (declarationList.flags & ts.NodeFlags.BlockScoped) === 0
+  ) {
+    return nearestFunctionScope(declaration, source);
+  }
+  return nearestLexicalScope(declaration, source);
+}
+
+function nearestFunctionScope(node, source) {
+  let current = node.parent;
+  while (current !== undefined) {
+    if (isFunctionScope(current) || ts.isSourceFile(current)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return source;
+}
+
+function nearestLexicalScope(node, source) {
+  let current = node.parent;
+  while (current !== undefined) {
+    if (
+      ts.isBlock(current) ||
+      ts.isCaseBlock(current) ||
+      ts.isCatchClause(current) ||
+      ts.isForStatement(current) ||
+      ts.isForInStatement(current) ||
+      ts.isForOfStatement(current) ||
+      ts.isSourceFile(current)
+    ) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return source;
+}
+
+function isFunctionScope(node) {
+  return (
+    ts.isArrowFunction(node) ||
+    ts.isConstructorDeclaration(node) ||
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node)
+  );
+}
+
+function collectDestructuredMemoryBindings(pattern, aliases) {
+  for (const element of pattern.elements) {
+    const member = propertyName(element.propertyName ?? element.name);
+    if (member === "memory" && ts.isIdentifier(element.name)) {
+      aliases.add(element.name);
+    }
+    if (ts.isObjectBindingPattern(element.name)) {
+      collectDestructuredMemoryBindings(element.name, aliases);
+    }
+  }
+}
+
+function collectAssignedMemoryBindings(pattern, aliases, resolveBinding) {
+  for (const property of pattern.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      continue;
+    }
+    const member = propertyName(property.name);
+    const target = assignmentTarget(property);
+    if (member === "memory" && target !== null) {
+      const binding = resolveBinding(target);
+      if (binding !== null) {
+        aliases.add(binding);
+      }
+    }
+    const nested = ts.isPropertyAssignment(property)
+      ? objectAssignmentPattern(property.initializer)
+      : null;
+    if (nested !== null) {
+      collectAssignedMemoryBindings(nested, aliases, resolveBinding);
+    }
+  }
+}
+
+function isPerCreepTaskMemoryAccess(node, analysis) {
+  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+    const member = terminalMemberName(node);
+    return (
+      member !== null &&
+      PER_CREEP_TASK_MEMORY_MEMBERS.has(member) &&
+      isMemoryExpression(node.expression, analysis)
+    );
+  }
+
+  if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)) {
+    return bindingPatternAccessesTaskMemory(
+      node.name,
+      node.initializer !== undefined && isMemoryExpression(node.initializer, analysis),
+    );
+  }
+
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    const pattern = objectAssignmentPattern(node.left);
+    return (
+      pattern !== null &&
+      assignmentPatternAccessesTaskMemory(pattern, isMemoryExpression(node.right, analysis))
+    );
+  }
+
+  return false;
+}
+
+function isMemoryExpression(node, analysis) {
+  if (isDirectMemoryExpression(node)) {
+    return true;
+  }
+  const identifier = identifierExpression(node);
+  if (identifier === null) {
+    return false;
+  }
+  const binding = analysis.resolveBinding(identifier);
+  return binding !== null && analysis.aliases.has(binding);
+}
+
+function isDirectMemoryExpression(node) {
+  const expression = unwrapExpression(node);
+  return (
+    (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) &&
+    terminalMemberName(expression) === "memory"
+  );
+}
+
+function bindingPatternAccessesTaskMemory(pattern, sourceIsMemory) {
+  for (const element of pattern.elements) {
+    const member = propertyName(element.propertyName ?? element.name);
+    if (sourceIsMemory && member !== null && PER_CREEP_TASK_MEMORY_MEMBERS.has(member)) {
+      return true;
+    }
+    if (
+      ts.isObjectBindingPattern(element.name) &&
+      bindingPatternAccessesTaskMemory(element.name, member === "memory")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assignmentPatternAccessesTaskMemory(pattern, sourceIsMemory) {
+  for (const property of pattern.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      continue;
+    }
+    const member = propertyName(property.name);
+    if (sourceIsMemory && member !== null && PER_CREEP_TASK_MEMORY_MEMBERS.has(member)) {
+      return true;
+    }
+    const nested = ts.isPropertyAssignment(property)
+      ? objectAssignmentPattern(property.initializer)
+      : null;
+    if (nested !== null && assignmentPatternAccessesTaskMemory(nested, member === "memory")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assignmentTarget(property) {
+  if (ts.isShorthandPropertyAssignment(property)) {
+    return property.name;
+  }
+  return ts.isPropertyAssignment(property) ? identifierExpression(property.initializer) : null;
+}
+
+function objectAssignmentPattern(node) {
+  const expression = unwrapExpression(node);
+  return ts.isObjectLiteralExpression(expression) ? expression : null;
+}
+
+function identifierExpression(node) {
+  const expression = unwrapExpression(node);
+  return ts.isIdentifier(expression) ? expression : null;
+}
+
+function unwrapExpression(node) {
+  let expression = node;
+  while (
+    ts.isAsExpression(expression) ||
+    ts.isNonNullExpression(expression) ||
+    ts.isParenthesizedExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isTypeAssertionExpression(expression)
+  ) {
+    expression = expression.expression;
+  }
+  return expression;
 }
 
 function isExecutorPath(path) {

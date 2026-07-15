@@ -311,6 +311,41 @@ describe("RuntimeConfigAuthority", () => {
     expect(future.replacementOwner).toBeNull();
   });
 
+  it("revalidates a candidate but never revives a null receipt from source revision v2", () => {
+    const accepted = new RuntimeConfigAuthority().resolve(
+      owner(7, { policy: { recovery: { protectedSpawnEnergy: 500 } } }),
+      1,
+    );
+    const persisted = jsonClone(accepted.replacementOwner);
+    if (persisted === null || persisted.lastValid === null) {
+      throw new Error("expected accepted config evidence");
+    }
+    const v2Receipt = {
+      ...persisted,
+      lastValid: { ...persisted.lastValid, sourceRevision: "runtime-config-source-v2" },
+    };
+
+    const revalidated = new RuntimeConfigAuthority().resolve(v2Receipt, 2);
+    expect(revalidated.metadata).toMatchObject({
+      status: "candidate-accepted",
+      reasonCode: "candidate-valid",
+      acceptedCandidateRevision: 7,
+    });
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v3");
+    expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
+      "runtime-config-source-v3",
+    );
+
+    const noCandidate = new RuntimeConfigAuthority().resolve({ ...v2Receipt, candidate: null }, 2);
+    expect(noCandidate.metadata).toEqual({
+      status: "source-defaults",
+      reasonCode: "no-candidate",
+      candidateRevision: null,
+      acceptedCandidateRevision: null,
+    });
+    expect(noCandidate.replacementOwner).toBeNull();
+  });
+
   it("rejects stale candidate revisions without reactivating their bytes", () => {
     const accepted = new RuntimeConfigAuthority().resolve(
       owner(5, { policy: { recovery: { protectedSpawnEnergy: 500 } } }),
@@ -556,15 +591,32 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("makes only the completed colony slice source-available", () => {
+  it("makes only the completed colony and contract slices source-available under v3", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
+    expect(config.sourceRevision).toBe("runtime-config-source-v3");
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
+    expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(
-      FEATURE_GATE_IDS.filter((id) => id !== "phase1.colony").every(
+      FEATURE_GATE_IDS.filter((id) => id !== "phase1.colony" && id !== "phase1.contracts").every(
         (id) => !isFeatureEnabled(config, id),
       ),
     ).toBe(true);
     expect(config.features.gates["phase1.growth"].reason).toBe("source-unavailable");
+
+    const contractsDisabled = buildRuntimeConfig({
+      features: { disabled: ["phase1.contracts"] },
+    });
+    expect(contractsDisabled.features.gates["phase1.contracts"]).toEqual({
+      blockedBy: null,
+      enabled: false,
+      reason: "operator-disabled",
+    });
+    const colonyDisabled = buildRuntimeConfig({ features: { disabled: ["phase1.colony"] } });
+    expect(colonyDisabled.features.gates["phase1.contracts"]).toEqual({
+      blockedBy: "phase1.colony",
+      enabled: false,
+      reason: "prerequisite-blocked",
+    });
   });
 
   it("cannot pass a disabled or incomplete prerequisite in an available test manifest", () => {

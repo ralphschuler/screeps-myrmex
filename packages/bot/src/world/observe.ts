@@ -52,8 +52,9 @@ export interface ObserveWorldOptions {
 }
 
 export function observeWorld(game: RuntimeGame, options: ObserveWorldOptions = {}): WorldSnapshot {
+  const ownedCreepsByRoom = groupOwnedCreeps(game);
   const rooms = Object.values(game.rooms)
-    .map((room) => observeRoom(room, game.time))
+    .map((room) => observeRoom(room, game.time, ownedCreepsByRoom.get(room.name) ?? []))
     .sort(compareByName);
   const ownedRooms = rooms.filter(isOwnedRoomSnapshot);
   const visibility = buildVisibility(rooms, options.requestedRoomNames ?? [], game.time);
@@ -85,7 +86,7 @@ export function observeWorld(game: RuntimeGame, options: ObserveWorldOptions = {
   });
 }
 
-function observeRoom(room: Room, observedAt: number): RoomSnapshot {
+function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep[]): RoomSnapshot {
   const structures = room.find(FIND_STRUCTURES);
   const creeps = room.find(FIND_CREEPS);
 
@@ -103,10 +104,7 @@ function observeRoom(room: Room, observedAt: number): RoomSnapshot {
       .sort(compareById),
     name: room.name,
     observedAt,
-    ownedCreeps: creeps
-      .filter((creep) => creep.my)
-      .map(snapshotCreep)
-      .sort(compareById),
+    ownedCreeps: ownedCreeps.map(snapshotCreep).sort(compareById),
     ownedExtensions: structures
       .filter((structure) => isMyStructureOfType(structure, "extension"))
       .map((structure) => snapshotExtension(structure as StructureExtension))
@@ -122,6 +120,35 @@ function observeRoom(room: Room, observedAt: number): RoomSnapshot {
     sources: room.find(FIND_SOURCES).map(snapshotSource).sort(compareById),
     storedStructures: structures.filter(hasStore).map(snapshotStoredStructure).sort(compareById),
   };
+}
+
+function groupOwnedCreeps(game: RuntimeGame): ReadonlyMap<string, readonly Creep[]> {
+  const grouped = new Map<string, Creep[]>();
+  const seenIds = new Set<string>();
+  for (const [name, creep] of Object.entries(game.creeps).sort(([left], [right]) =>
+    compareStrings(left, right),
+  )) {
+    if (creep.name !== name) {
+      throw new Error("Game.creeps key does not match the owned creep name");
+    }
+    if (!creep.my) {
+      throw new Error("Game.creeps contains a creep not owned by the player");
+    }
+    const id = String(creep.id);
+    if (seenIds.has(id)) {
+      throw new Error("Game.creeps contains a duplicate owned creep id");
+    }
+    seenIds.add(id);
+    const roomName = creep.pos.roomName;
+    if (game.rooms[roomName] === undefined) {
+      throw new Error("Game.creeps contains an owned creep outside the visible room set");
+    }
+    const roomCreeps = grouped.get(roomName) ?? [];
+    roomCreeps.push(creep);
+    grouped.set(roomName, roomCreeps);
+  }
+
+  return grouped;
 }
 
 function snapshotController(controller: StructureController): ControllerSnapshot {

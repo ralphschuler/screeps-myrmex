@@ -41,6 +41,7 @@ interface GateOutcome {
 interface ConfigOutcome {
   readonly configBytes: string;
   readonly configRevision: string;
+  readonly sourceRevision: string;
   readonly policyRevision: string;
   readonly metadata: RuntimeConfigResolutionMetadata;
   readonly gates: readonly GateOutcome[];
@@ -89,6 +90,9 @@ describe("Phase 1 runtime config scenario", () => {
     expect(reset.outcomes[3]?.configRevision).toBe(reset.outcomes[1]?.configRevision);
     expect(reset.outcomes[4]?.configRevision).toBe(reset.outcomes[1]?.configRevision);
     expect(reset.outcomes[5]?.configBytes).toBe(reset.outcomes[0]?.configBytes);
+    expect(
+      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v3"),
+    ).toBe(true);
 
     for (const outcome of reset.outcomes.slice(1, 5)) {
       expect(outcome.relations.self).toMatchObject({
@@ -119,7 +123,7 @@ describe("Phase 1 runtime config scenario", () => {
     expect(
       reset.outcomes.every((outcome) =>
         outcome.gates.every(({ id, enabled, reason }) =>
-          id === "phase1.colony"
+          id === "phase1.colony" || id === "phase1.contracts"
             ? enabled && reason === "enabled"
             : !enabled && reason === "source-unavailable",
         ),
@@ -217,6 +221,7 @@ function runtimeConfigScenario(
         outcome: {
           configBytes: canonicalSerialize(resolution.config),
           configRevision: resolution.config.revision,
+          sourceRevision: resolution.config.sourceRevision,
           policyRevision: resolution.config.policyRevision,
           metadata: resolution.metadata,
           gates: FEATURE_GATE_IDS.map((id) => ({

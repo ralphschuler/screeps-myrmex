@@ -29,15 +29,19 @@ merged.
   [`phase1-colony-evidence.md`](phase1-colony-evidence.md). They derive one deterministic recovery
   objective and explicitly fund or block it without taking over spawn selection or command
   execution.
+- Persistent capability contracts and bounded deterministic workforce allocation. Foundation
+  evidence is tracked in [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23) and
+  [`phase1-contracts-evidence.md`](phase1-contracts-evidence.md); this slice alone does not satisfy
+  the phase exit.
 - Bootstrap harvesting, spawn demand, filling, upgrading, and construction.
 - Replacement deadlines and recovery from zero creeps.
 - Minimal movement arbitration and deterministic body construction.
 
-The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 makes
-only `phase1.colony` available under `runtime-config-source-v2`; every downstream gate remains
-source-unavailable. Each subsequent outcome change may mark only its own gate available after its
-prerequisites and outcome test exist. Operational Memory may disable available work but can never
-activate an unfinished gate.
+The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
+`phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`
+available under `runtime-config-source-v3`. Every later gate remains source-unavailable. Each
+subsequent outcome change may mark only its own gate available after its prerequisites and outcome
+test exist. Operational Memory may disable available work but can never activate an unfinished gate.
 
 **Exit:** recover from empty Memory and zero creeps without console intervention.
 

@@ -19,7 +19,11 @@ CPU reservation ledger. A bootstrapping or recovering colony with a spawn but no
 derives exactly one recovery objective and explicitly funds or blocks it; threat and recovery
 preempt optional growth.
 
-Only `phase1.colony` is source-available under runtime-config source v2. Every downstream Phase 1
-gate remains unavailable. Each later change enables only the gate for an outcome it proves, after
-all prerequisite outcomes exist. Operational Memory may disable available work but can never
-activate an unfinished gate.
+The next foundation outcome adds persistent capability contracts and bounded deterministic workforce
+allocation. Contract funding and assignment consume the current colony BudgetLedger authorization;
+they do not create another reserve authority or per-creep role registry.
+
+`phase1.colony` and its dependent `phase1.contracts` gate are source-available under runtime-config
+source v3. Every later Phase 1 gate remains unavailable. Each later change enables only the gate for
+an outcome it proves, after all prerequisite outcomes exist. Operational Memory may disable
+available work but can never activate an unfinished gate.

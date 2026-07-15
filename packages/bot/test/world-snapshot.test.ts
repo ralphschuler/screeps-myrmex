@@ -148,6 +148,62 @@ describe("WorldSnapshot", () => {
     ]);
   });
 
+  it("uses Game.creeps as the canonical owned-actor inventory", () => {
+    const fixture = makeOwnedRoom(false);
+    const liveCreeps = fixture.room.find(FIND_CREEPS_VALUE);
+    const worker = liveCreeps.find((creep) => creep.my);
+    if (worker === undefined) {
+      throw new Error("owned worker fixture is unavailable");
+    }
+    const hostilesOnly = {
+      ...(fixture.room as unknown as Record<string, unknown>),
+      find: (findType: number): unknown[] =>
+        findType === FIND_CREEPS_VALUE
+          ? liveCreeps.filter((creep) => !creep.my)
+          : fixture.room.find(findType as FindConstant),
+    } as unknown as Room;
+    const base = makeGameWithRooms({ W1N1: hostilesOnly });
+    const snapshot = observeWorld({ ...base, creeps: { [worker.name]: worker } });
+
+    expect(snapshot.rooms[0]?.ownedCreeps.map(({ id }) => id)).toEqual(["creep-b"]);
+    expect(snapshot.rooms[0]?.hostileCreeps.map(({ id }) => id)).toEqual(["creep-a"]);
+  });
+
+  it.each([
+    ["name key mismatch", "Game.creeps key does not match"],
+    ["non-owned entry", "not owned"],
+    ["duplicate ID", "duplicate owned creep id"],
+    ["invisible room", "outside the visible room set"],
+  ] as const)("fails closed on a %s in canonical Game.creeps", (variant, message) => {
+    const base = makeGame(false);
+    const worker = base.creeps["worker-1"];
+    const room = base.rooms.W1N1;
+    if (worker === undefined || room === undefined) {
+      throw new Error("owned worker fixture is unavailable");
+    }
+    const hostiles = room.find(FIND_CREEPS_VALUE).filter((creep) => !creep.my);
+    const hostile = hostiles[0];
+    let creeps: Readonly<Record<string, Creep>>;
+    if (variant === "name key mismatch") {
+      creeps = { wrong: worker };
+    } else if (variant === "non-owned entry") {
+      if (hostile === undefined) {
+        throw new Error("hostile fixture is unavailable");
+      }
+      creeps = { [hostile.name]: hostile };
+    } else if (variant === "duplicate ID") {
+      const duplicate = creepVariant(worker, { name: "worker-duplicate" });
+      creeps = { [worker.name]: worker, [duplicate.name]: duplicate };
+    } else {
+      const invisible = creepVariant(worker, {
+        pos: new LivePosition(worker.pos.x, worker.pos.y, "W9N9"),
+      });
+      creeps = { [invisible.name]: invisible };
+    }
+
+    expect(() => observeWorld({ ...base, creeps })).toThrow(message);
+  });
+
   it("produces the same result from fresh objects after a simulated heap reset", () => {
     const beforeReset = JSON.stringify(observeWorld(makeGame(false)));
     const afterReset = JSON.stringify(observeWorld(makeGame(false)));
@@ -187,8 +243,15 @@ function makeGame(reversed: boolean): RuntimeGame {
 }
 
 function makeGameWithRooms(rooms: Readonly<Record<string, Room>>): RuntimeGame {
+  const creeps = Object.fromEntries(
+    Object.values(rooms)
+      .flatMap((room) => room.find(FIND_CREEPS_VALUE))
+      .filter((creep) => creep.my)
+      .map((creep) => [creep.name, creep]),
+  );
   return {
     cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+    creeps,
     rooms,
     shard: { name: "shard3" },
     time: 500,
@@ -427,6 +490,26 @@ function withoutFindResults(room: Room, omittedFindType: number): Room {
     find: (findType: number): unknown[] =>
       findType === omittedFindType ? [] : mock.find(findType),
   } as unknown as Room;
+}
+
+function creepVariant(
+  creep: Creep,
+  overrides: { readonly name?: string; readonly pos?: LivePosition },
+): Creep {
+  return {
+    body: creep.body,
+    fatigue: creep.fatigue,
+    hits: creep.hits,
+    hitsMax: creep.hitsMax,
+    id: creep.id,
+    my: creep.my,
+    name: overrides.name ?? creep.name,
+    owner: creep.owner,
+    pos: overrides.pos ?? creep.pos,
+    spawning: creep.spawning,
+    store: creep.store,
+    ticksToLive: creep.ticksToLive,
+  } as unknown as Creep;
 }
 
 function assertPlainAndFrozen(value: unknown): void {

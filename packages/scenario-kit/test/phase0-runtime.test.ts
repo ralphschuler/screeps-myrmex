@@ -727,6 +727,7 @@ function makeObservationGame(gameTime: number, reversed: boolean): RuntimeGame {
   const cpu = { bucket: 10_000, limit: 20, tickLimit: 100, getUsed: () => 0 };
   return {
     cpu,
+    creeps: {},
     rooms,
     shard: { name: "shard3" },
     time: gameTime,
