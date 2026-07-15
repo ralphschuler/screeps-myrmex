@@ -1,6 +1,12 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
 import { getRuntimeCacheManager, type CacheManager } from "../cache";
 import {
+  MovementRuntime,
+  emptyMovementRuntimeResult,
+  getMovementPathCache,
+  type MovementRuntimeResult,
+} from "../movement";
+import {
   ColonyDirector,
   emptyColonyPlanningResult,
   resolveColoniesOwner,
@@ -81,6 +87,7 @@ export interface TickOutcome {
   readonly colony: ColonyPlanningResult;
   readonly contracts: ContractReconciliationResult | null;
   readonly execution: ArbitrationBatch | null;
+  readonly movement: MovementRuntimeResult;
   readonly spawn: SpawnRuntimeResult;
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
@@ -96,6 +103,8 @@ interface TickRuntimeControl {
   publishContracts(result: ContractReconciliationResult): void;
   clearContracts(): void;
   publishExecution(batch: ArbitrationBatch): void;
+  publishMovement(result: MovementRuntimeResult): void;
+  clearMovement(): void;
   publishSpawn(result: SpawnRuntimeResult): void;
   clearSpawn(): void;
   publishStateCommit(result: MemoryCommitResult): void;
@@ -115,6 +124,7 @@ export function runTick(input: TickInput): TickOutcome {
   const tickStartedAtCpu = input.game.cpu.getUsed();
   const opened = openMyrmexMemory(input.memory, input.game.time, input.game.shard.name);
   const cacheManager = getRuntimeCacheManager();
+  getMovementPathCache(cacheManager);
   const manager = opened.status === "ready" ? opened.manager : null;
   const state = manager?.view() ?? null;
   const configResolution = runtimeConfigAuthority.resolve(
@@ -122,12 +132,14 @@ export function runTick(input: TickInput): TickOutcome {
     input.game.time,
   );
   const restored = restoreKernelState(state);
+  const movementRuntime = new MovementRuntime();
   const runtime = createTickRuntime(
     input.game,
     opened.status,
     state,
     configResolution.config,
     configResolution.metadata,
+    movementRuntime.channels,
   );
   const intentChannel = createIntentChannel({
     maximumSubmitted: 512,
@@ -143,6 +155,7 @@ export function runTick(input: TickInput): TickOutcome {
     cacheManager,
     runtime,
     intentChannel,
+    movementRuntime,
     configReplacement: configResolution.replacementOwner,
     contractChannel,
     onPhase: input.onPhase,
@@ -170,6 +183,7 @@ export function runTick(input: TickInput): TickOutcome {
     colony: runtime.context.colony,
     contracts: runtime.context.contracts,
     execution: runtime.context.execution,
+    movement: runtime.context.movement,
     spawn: runtime.context.spawn,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
@@ -183,6 +197,7 @@ interface CompositionInput {
   readonly cacheManager: CacheManager;
   readonly runtime: TickRuntimeControl;
   readonly intentChannel: IntentChannel;
+  readonly movementRuntime: MovementRuntime;
   readonly configReplacement: RuntimeConfigResolution["replacementOwner"];
   readonly contractChannel: ContractRequestChannel;
   readonly onPhase: ((phase: TickPhase) => void) | undefined;
@@ -371,6 +386,33 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           () => {
             input.runtime.clearColony();
             input.runtime.clearSpawn();
+          },
+        );
+      },
+    },
+    {
+      descriptor: {
+        id: "movement.arbitrate-execute",
+        phase: "execute",
+        criticality: "mandatory",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: true,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        const result = isFeatureEnabled(context.config, "phase1.movement")
+          ? input.movementRuntime.execute(context.snapshot, context.tick, {
+              resolveActor: (actorId) => resolveLiveObject(input.game, actorId),
+              resolveTarget: (targetId) => resolveLiveObject(input.game, targetId),
+            })
+          : input.movementRuntime.disabled();
+        return staged(
+          () => {
+            input.runtime.publishMovement(result);
+          },
+          () => {
+            input.runtime.clearMovement();
           },
         );
       },
@@ -787,8 +829,12 @@ function settleSpawnDraft(
 }
 
 function resolveLiveSpawn(game: RuntimeGame, spawnId: string): unknown {
+  return resolveLiveObject(game, spawnId);
+}
+
+function resolveLiveObject(game: RuntimeGame, objectId: string): unknown {
   const resolver = game.getObjectById;
-  return resolver === undefined ? null : resolver.call(game, spawnId);
+  return resolver === undefined ? null : resolver.call(game, objectId);
 }
 
 function resetSpawnDraft(draft: SpawnTickDraft): void {
@@ -909,11 +955,13 @@ function createTickRuntime(
   state: StateView | null,
   config: RuntimeConfig,
   configResolution: RuntimeConfigResolutionMetadata,
+  movementChannels: TickContext["movementChannels"],
 ): TickRuntimeControl {
   let snapshot = emptyWorldSnapshot(game.time, game.shard.name);
   let colony: ColonyPlanningResult = emptyColonyPlanningResult();
   let contracts: ContractReconciliationResult | null = null;
   let execution: ArbitrationBatch | null = null;
+  let movement: MovementRuntimeResult = emptyMovementRuntimeResult();
   let spawn: SpawnRuntimeResult = spawnRuntimeResult("not-run");
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
@@ -935,6 +983,10 @@ function createTickRuntime(
     },
     get execution(): ArbitrationBatch | null {
       return execution;
+    },
+    movementChannels,
+    get movement(): MovementRuntimeResult {
+      return movement;
     },
     get spawn(): SpawnRuntimeResult {
       return spawn;
@@ -966,6 +1018,12 @@ function createTickRuntime(
     },
     publishExecution(value: ArbitrationBatch): void {
       execution = value;
+    },
+    publishMovement(value: MovementRuntimeResult): void {
+      movement = value;
+    },
+    clearMovement(): void {
+      movement = emptyMovementRuntimeResult();
     },
     publishSpawn(value: SpawnRuntimeResult): void {
       spawn = value;

@@ -40,7 +40,10 @@ merged.
   body without adding a second ledger or persistent spawn queue.
 - Bootstrap harvesting, filling, upgrading, and construction demand.
 - Proactive replacement deadlines plus worker execution for end-to-end zero-creep recovery.
-- Minimal movement arbitration.
+- Deterministic movement/primary-action authority is tracked by
+  [issue #25](https://github.com/ralphschuler/screeps-myrmex/issues/25); bounded runtime channels,
+  cache-backed local path admission, and executor composition are tracked by
+  [issue #112](https://github.com/ralphschuler/screeps-myrmex/issues/112).
 
 The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`

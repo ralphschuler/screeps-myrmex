@@ -4,6 +4,7 @@ import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
 import type { ContractReconciliationResult } from "../contracts";
 import type { MemoryCommitResult } from "../state/memory";
 import type { SpawnRuntimeResult } from "../spawn";
+import type { MovementRuntimeChannels, MovementRuntimeResult } from "../movement";
 import type { StateView } from "../state/schema";
 import type { TickTelemetry } from "../telemetry/metrics";
 import type { WorldSnapshot } from "../world/snapshot";
@@ -43,6 +44,10 @@ export interface TickContext {
   /** Immutable tick-local contract reconciliation and workforce-allocation view. */
   readonly contracts: ContractReconciliationResult | null;
   readonly execution: ArbitrationBatch | null;
+  /** Bounded data-only channels for admitted movement and primary-action planners. */
+  readonly movementChannels: MovementRuntimeChannels;
+  /** Tick-local movement/action arbitration and command evidence. */
+  readonly movement: MovementRuntimeResult;
   /** Tick-local spawn arbitration and command evidence. */
   readonly spawn: SpawnRuntimeResult;
   readonly stateCommit: MemoryCommitResult | null;

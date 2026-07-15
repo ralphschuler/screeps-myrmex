@@ -46,6 +46,18 @@ describe("tick lifecycle", () => {
       submissions: [],
       transitions: [],
     });
+    expect(initialized.movement).toEqual({
+      actionDecisions: [],
+      actionExecution: [],
+      actionSubmitted: 0,
+      movementDecisions: [],
+      movementExecution: [],
+      movementSubmitted: 0,
+      status: "executed",
+    });
+    expect(initialized.kernel.systems).toContainEqual(
+      expect.objectContaining({ systemId: "movement.arbitrate-execute", status: "completed" }),
+    );
     expect(initialized.stateCommit).toEqual({
       committed: true,
       owners: ["config", "kernel", "colonies", "contracts"],
@@ -852,7 +864,7 @@ describe("tick lifecycle", () => {
     expect(outcome.kernel.cpuUsed).toBe(2.75);
     expect(outcome.kernel.overheadCpu).toBe(2);
     expect(phaseCpu + outcome.kernel.overheadCpu).toBe(outcome.kernel.cpuUsed);
-    expect(outcome.telemetry).toMatchObject({ cacheEntries: 0, cacheNamespaces: 0 });
+    expect(outcome.telemetry).toMatchObject({ cacheEntries: 0, cacheNamespaces: 2 });
   });
 
   it("returns the kernel report when the mandatory telemetry system itself faults", () => {

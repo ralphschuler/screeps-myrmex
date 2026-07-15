@@ -1054,6 +1054,14 @@ Every creep movement request is a `MovementIntent` with actor ID, desired positi
 priority class, avoid policy, formation ID if any, and contract ID. Only `MovementExecutor` calls
 `move`, and no module calls `moveTo` as a bypass.
 
+Planning systems receive only bounded tick-local movement/action proposal channels and a local path
+service. The path service accepts only same-room positions and a static-matrix builder, applies the
+configured operation and cost ceilings to its narrow search adapter, and refuses a cold rebuild or
+search when the enclosing system's `CpuScheduler` budget is insufficient. Static matrices and local
+direction lists are reconstructible heap-cache values; live objects, creep occupancy, reservations,
+and task state are never cached. The Execute-phase arbiter overlays current-tick occupancy and
+reservations only after cache lookup.
+
 The arbiter:
 
 - validates the actor and goal;

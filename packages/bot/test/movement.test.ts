@@ -107,6 +107,23 @@ describe("MovementArbiter", () => {
     expect(executed[0]).toMatchObject({ status: "executed", reason: "accepted" });
     expect(faulted[0]).toMatchObject({ status: "failed", reason: "adapter-fault" });
   });
+
+  it("converts a live-actor resolver fault into a stale actor result", () => {
+    const decision = new MovementArbiter().arbitrate(
+      1,
+      [{ fatigue: 0, id: "creep-a", pos: position(10, 10) }],
+      [moveIntent()],
+    );
+
+    expect(
+      new MovementExecutor().execute(decision, () => {
+        throw new Error("lookup failed");
+      })[0],
+    ).toMatchObject({
+      status: "rejected",
+      reason: "stale-actor",
+    });
+  });
 });
 
 describe("CreepActionArbiter", () => {

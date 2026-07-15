@@ -7,10 +7,10 @@ import type {
   MovementExecutionResult,
 } from "./contracts";
 
-interface MoveActor {
+export interface MoveActor {
   move(direction: DirectionConstant): number;
 }
-interface ActionActor {
+export interface ActionActor {
   build(target: ConstructionSite): number;
   harvest(target: Source | Mineral | Deposit): number;
   pickup(target: Resource): number;
@@ -48,7 +48,7 @@ export class MovementExecutor {
         reason: decision.reason,
         status: "rejected",
       });
-    const actor = resolveActor(decision.intent.actorId);
+    const actor = safelyResolve(resolveActor, decision.intent.actorId);
     if (actor === null || decision.intent.direction === null)
       return Object.freeze({
         intent: decision.intent,
@@ -104,8 +104,8 @@ export class CreepActionExecutor {
         reason: decision.reason === "stale-target" ? "stale-target" : "stale-actor",
         status: "rejected",
       });
-    const actor = resolveActor(decision.intent.actorId);
-    const target = resolveTarget(decision.intent.targetId);
+    const actor = safelyResolve(resolveActor, decision.intent.actorId);
+    const target = safelyResolve(resolveTarget, decision.intent.targetId);
     if (actor === null)
       return Object.freeze({
         intent: decision.intent,
@@ -181,4 +181,12 @@ function actionReason(
   if (outcome.name === "ERR_NOT_IN_RANGE") return "out-of-range";
   if (outcome.name === "ERR_TIRED") return "tired";
   return "unexpected-game-rejection";
+}
+
+function safelyResolve<T>(resolver: (id: string) => T | null, id: string): T | null {
+  try {
+    return resolver(id);
+  } catch {
+    return null;
+  }
 }
