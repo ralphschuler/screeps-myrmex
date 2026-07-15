@@ -39,6 +39,18 @@ exclusions.
 
 ## Economy
 
+Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
+colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
+objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;
+losing vision preserves state but authorizes no new work, while current visible ownership loss ends
+the colony and releases its local commitments.
+
+Local spending follows a fixed survival order: emergency spawning, defense, replacement,
+harvesting/filling, controller survival, critical maintenance, then optional growth. Current energy,
+spawn time, and kernel-admitted CPU are conserved before priority is considered. Only emergency
+spawning, defense, and replacement may consume protected spawn energy; every later category must
+leave the remaining tranche intact.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.
@@ -51,6 +63,10 @@ defensibility, mineral coverage, or strategic reach enough to repay bootstrap an
 Defense is layered: vision, threat scoring, evacuation, ramparts, tower focus, local defenders,
 regional reinforcement, boosts, and safe mode. MYRMEX preserves terminal and spawn energy reserves
 before optional industry or upgrading.
+
+Current unowned creeps are not automatically threats. Configured exclusions are applied first, then
+fresh local offensive capability may move a colony into threatened posture. Clearing that evidence
+enters recovery before optional growth resumes.
 
 ## Military Operations
 

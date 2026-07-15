@@ -54,10 +54,20 @@ describe("tick lifecycle", () => {
       configReasonCode: "owner-initialized",
     });
     expect(outcome.telemetry?.featureGates.map(({ id }) => id)).toEqual(FEATURE_GATE_IDS);
-    expect(outcome.telemetry?.featureGates.every(({ enabled }) => !enabled)).toBe(true);
+    expect(outcome.telemetry?.featureGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "phase1.colony", enabled: true, reason: "enabled" }),
+      ]),
+    );
+    expect(outcome.colony).toMatchObject({ status: "planned", colonies: [], objectives: [] });
+    expect(outcome.telemetry?.colony).toMatchObject({
+      status: "planned",
+      activeReservations: 0,
+      objectives: 0,
+    });
   });
 
-  it("contains an optional planning fault and still executes the mandatory tail", () => {
+  it("contains a colony planning fault and still executes the mandatory tail", () => {
     const observed: TickPhase[] = [];
     const memory = {} as Memory;
 
@@ -78,7 +88,7 @@ describe("tick lifecycle", () => {
     });
 
     expect(outcome.kernel.faults).toEqual([
-      expect.objectContaining({ systemId: "planning.foundation", stage: "run" }),
+      expect.objectContaining({ systemId: "colony.director", stage: "run" }),
     ]);
     expect(observed).toEqual(TICK_PHASES);
     expect(outcome.kernel.systems).toEqual(
@@ -259,7 +269,7 @@ describe("tick lifecycle", () => {
   it("continues boot with retired, duplicate, or malformed persisted kernel health", () => {
     const memory = {} as Memory;
     const gameAt = (time: number) => ({
-      cpu: { bucket: 8_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+      cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
       rooms: {},
       shard: { name: "shard3" },
       time,
@@ -277,13 +287,13 @@ describe("tick lifecycle", () => {
           nextProbeTick: null,
         },
         {
-          systemId: "planning.foundation",
+          systemId: "cache.sweep",
           consecutiveFailures: 2,
           lastSuccessfulTick: 40,
           nextProbeTick: 100,
         },
         {
-          systemId: "planning.foundation",
+          systemId: "cache.sweep",
           consecutiveFailures: 3,
           lastSuccessfulTick: 41,
           nextProbeTick: 200,
@@ -296,7 +306,7 @@ describe("tick lifecycle", () => {
     expect(restored.kernel.systems).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          systemId: "planning.foundation",
+          systemId: "cache.sweep",
           status: "skipped",
           skipReason: "quarantined",
           nextEligibleTick: 100,
@@ -311,7 +321,7 @@ describe("tick lifecycle", () => {
       cpuMode: "normal",
       health: [
         {
-          systemId: "planning.foundation",
+          systemId: "cache.sweep",
           consecutiveFailures: -1,
           lastSuccessfulTick: 40,
           nextProbeTick: null,
@@ -323,7 +333,7 @@ describe("tick lifecycle", () => {
 
     expect(recovered.kernel.systems).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ systemId: "planning.foundation", status: "completed" }),
+        expect.objectContaining({ systemId: "cache.sweep", status: "completed" }),
         expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
       ]),
     );
@@ -353,7 +363,7 @@ describe("tick lifecycle", () => {
     expect(outcome.kernel.mode).toBe("recovery");
     expect(outcome.kernel.systems).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ systemId: "planning.foundation", skipReason: "cpu-mode" }),
+        expect.objectContaining({ systemId: "colony.director", status: "completed" }),
         expect.objectContaining({ systemId: "execution.arbitrate", status: "completed" }),
         expect.objectContaining({ systemId: "state.reconcile", status: "completed" }),
         expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
@@ -370,6 +380,7 @@ describe("tick lifecycle", () => {
       configReasonCode: "owner-unavailable",
       configRevision: outcome.config.revision,
       policyRevision: outcome.config.policyRevision,
+      colony: { status: "owner-unavailable" },
     });
   });
 });

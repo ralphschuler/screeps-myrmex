@@ -49,7 +49,7 @@ describe("MemoryManager transactions", () => {
     expect(memory.myrmex?.empire).toEqual({});
   });
 
-  it("keeps raw operator config out of the aggregate state view", () => {
+  it("keeps authority-owned config and colony state out of the aggregate state view", () => {
     const memory = {} as Memory;
     const manager = readyManager(memory, 25);
     manager
@@ -62,6 +62,7 @@ describe("MemoryManager transactions", () => {
       candidate: { revision: 1, overrides: { survival: { reserve: 8_000 } } },
     });
     expect(manager.view()).not.toHaveProperty("config");
+    expect(manager.view()).not.toHaveProperty("colonies");
   });
 
   it("atomically rejects every staged owner when one owner is not JSON-safe", () => {

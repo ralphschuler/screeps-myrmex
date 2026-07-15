@@ -1,5 +1,6 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
 import { getRuntimeCacheManager, type CacheManager } from "../cache";
+import { ColonyDirector, emptyColonyPlanningResult, type ColonyPlanningResult } from "../colony";
 import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
 import { RuntimeConfigAuthority, type RuntimeConfigResolution } from "../config/authority";
 import {
@@ -27,6 +28,7 @@ import type { TickPhase } from "./phases";
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
 const runtimeConfigAuthority = new RuntimeConfigAuthority();
+const colonyDirector = new ColonyDirector();
 
 export interface TickInput {
   readonly game: RuntimeGame;
@@ -41,6 +43,7 @@ export interface TickOutcome {
   readonly config: RuntimeConfig;
   readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly snapshot: WorldSnapshot;
+  readonly colony: ColonyPlanningResult;
   readonly execution: ArbitrationBatch | null;
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
@@ -51,6 +54,8 @@ export interface TickOutcome {
 interface TickRuntimeControl {
   readonly context: TickContext;
   publishSnapshot(snapshot: WorldSnapshot): void;
+  publishColony(colony: ColonyPlanningResult): void;
+  clearColony(): void;
   publishExecution(batch: ArbitrationBatch): void;
   publishStateCommit(result: MemoryCommitResult): void;
   publishTelemetry(telemetry: TickTelemetry): void;
@@ -119,6 +124,7 @@ export function runTick(input: TickInput): TickOutcome {
     config: runtime.context.config,
     configResolution: runtime.context.configResolution,
     snapshot: runtime.context.snapshot,
+    colony: runtime.context.colony,
     execution: runtime.context.execution,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
@@ -163,7 +169,7 @@ function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<T
       },
     },
     phaseMarker("safety.foundation", "safety", true, false, 0.1, input.onPhase),
-    phaseMarker("planning.foundation", "plan", false, false, 0.1, input.onPhase),
+    colonyDirectorSystem(input),
     {
       descriptor: {
         id: "cache.sweep",
@@ -259,6 +265,7 @@ function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<T
           cache: input.cacheManager.metrics(),
           config: context.config,
           configResolution: context.configResolution,
+          colony: context.colony,
         });
         return staged(() => {
           input.runtime.publishTelemetry(telemetry);
@@ -266,6 +273,66 @@ function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<T
       },
     },
   ]);
+}
+
+function colonyDirectorSystem(input: CompositionInput): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "colony.director",
+      phase: "plan",
+      criticality: "mandatory",
+      cadence: 1,
+      estimate: 1.5,
+      admitInRecovery: true,
+      mandatoryTail: false,
+    },
+    run: ({ context, mode, budget }) => {
+      input.onPhase?.("plan");
+      const result = colonyDirector.plan({
+        tick: context.tick,
+        snapshot: context.snapshot,
+        config: context.config,
+        owner: input.manager?.ownerView("colonies") ?? null,
+        cpuMode: mode,
+        cpuBudget: budget,
+      });
+      const planningView = colonyPlanningView(result);
+      if (result.replacementOwner !== null) {
+        if (input.manager === null) {
+          throw new Error("colony owner replacement requires a ready Memory manager");
+        }
+        const transaction = input.manager.transaction("colonies");
+        transaction.replace(result.replacementOwner);
+        const stagedResult = transaction.stage();
+        if (!stagedResult.staged) {
+          throw new Error(stagedResult.fault?.message ?? "colony state staging failed");
+        }
+      }
+      return staged(
+        () => {
+          input.runtime.publishColony(planningView);
+        },
+        () => {
+          input.manager?.discard("colonies");
+          input.runtime.clearColony();
+        },
+      );
+    },
+  };
+}
+
+function colonyPlanningView(result: ReturnType<ColonyDirector["plan"]>): ColonyPlanningResult {
+  return Object.freeze({
+    status: result.status,
+    reasonCode: result.reasonCode,
+    ownerRevision: result.ownerRevision,
+    colonies: result.colonies,
+    objectives: result.objectives,
+    decisions: result.decisions,
+    reservations: result.reservations,
+    transitions: result.transitions,
+    totals: result.totals,
+  });
 }
 
 function configBootSystem(input: CompositionInput): TickSystem<TickContext> {
@@ -341,6 +408,7 @@ function createTickRuntime(
   configResolution: RuntimeConfigResolutionMetadata,
 ): TickRuntimeControl {
   let snapshot = emptyWorldSnapshot(game.time, game.shard.name);
+  let colony: ColonyPlanningResult = emptyColonyPlanningResult();
   let execution: ArbitrationBatch | null = null;
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
@@ -353,6 +421,9 @@ function createTickRuntime(
     state,
     get snapshot(): WorldSnapshot {
       return snapshot;
+    },
+    get colony(): ColonyPlanningResult {
+      return colony;
     },
     get execution(): ArbitrationBatch | null {
       return execution;
@@ -369,6 +440,12 @@ function createTickRuntime(
     context,
     publishSnapshot(value: WorldSnapshot): void {
       snapshot = value;
+    },
+    publishColony(value: ColonyPlanningResult): void {
+      colony = value;
+    },
+    clearColony(): void {
+      colony = emptyColonyPlanningResult();
     },
     publishExecution(value: ArbitrationBatch): void {
       execution = value;

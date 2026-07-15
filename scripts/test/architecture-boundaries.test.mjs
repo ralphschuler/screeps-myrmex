@@ -66,6 +66,15 @@ describe("runtime architecture boundaries", () => {
   });
 
   it.each([
+    ["BudgetLedger", "economy/budget.ts", "duplicate-authority:BudgetLedger"],
+    ["ColonyDirector", "economy/colony.ts", "duplicate-authority:ColonyDirector"],
+  ])("keeps %s at its canonical declaration", (authority, path, rule) => {
+    expect(
+      findArchitectureViolations([{ path, contents: `export class ${authority} {}` }]),
+    ).toEqual([{ path, rule }]);
+  });
+
+  it.each([
     [
       "config-internal-import-outside-config",
       "economy/planner.ts",
@@ -165,6 +174,26 @@ describe("runtime architecture boundaries", () => {
     expect(
       findArchitectureViolations([
         { path: "economy/planner.ts", contents: 'database.transaction("orders");' },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("rejects raw colony-owner access outside the runtime adapter", () => {
+    for (const contents of [
+      'manager.ownerView("colonies"); manager.transaction("colonies");',
+      'const { ownerView } = manager; ownerView("colonies");',
+      'context.manager["transaction"](`colonies`);',
+    ]) {
+      expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([
+        { path: "economy/planner.ts", rule: "colonies-owner-access-outside-runtime" },
+      ]);
+    }
+    expect(
+      findArchitectureViolations([
+        {
+          path: "runtime/tick.ts",
+          contents: 'manager.ownerView("colonies"); manager.transaction("colonies");',
+        },
       ]),
     ).toEqual([]);
   });

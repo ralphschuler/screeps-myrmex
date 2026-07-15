@@ -1,4 +1,5 @@
 import type { ArbitrationBatch } from "../execution";
+import type { ColonyPlanningResult } from "../colony";
 import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
 import type { MemoryCommitResult } from "../state/memory";
 import type { StateView } from "../state/schema";
@@ -31,6 +32,8 @@ export interface TickContext {
   readonly state: StateView | null;
   /** The current tick's immutable observation, or an explicit empty value before Observe commits. */
   readonly snapshot: WorldSnapshot;
+  /** Immutable tick-local colony lifecycle and budget authorization view. */
+  readonly colony: ColonyPlanningResult;
   readonly execution: ArbitrationBatch | null;
   readonly stateCommit: MemoryCommitResult | null;
   readonly telemetry: TickTelemetry | null;

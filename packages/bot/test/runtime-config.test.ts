@@ -556,9 +556,14 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("keeps every Phase 1 gate unavailable in the #36 source manifest", () => {
+  it("makes only the completed colony slice source-available", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(FEATURE_GATE_IDS.every((id) => !isFeatureEnabled(config, id))).toBe(true);
+    expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
+    expect(
+      FEATURE_GATE_IDS.filter((id) => id !== "phase1.colony").every(
+        (id) => !isFeatureEnabled(config, id),
+      ),
+    ).toBe(true);
     expect(config.features.gates["phase1.growth"].reason).toBe("source-unavailable");
   });
 

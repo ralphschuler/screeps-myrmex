@@ -155,6 +155,7 @@ export function readonlyOwnerView(value: JsonObject): OwnerStateView {
 export function readonlyStateView(value: MyrmexMemory): StateView {
   const clone = cloneJson(value) as Record<string, unknown>;
   delete clone.config;
+  delete clone.colonies;
   return freezeJson(clone) as StateView;
 }
 
