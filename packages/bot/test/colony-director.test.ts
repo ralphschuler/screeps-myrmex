@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ColonyDirector } from "../src/colony";
+import { BudgetLedger, ColonyDirector } from "../src/colony";
 import {
   MAX_COLONIES,
   MAX_BUDGET_REQUESTS_PER_TICK,
@@ -152,6 +152,309 @@ describe("ColonyDirector owner boundary", () => {
       revision: 2,
       grant: { energy: 400 },
     });
+  });
+
+  it("keeps exact spawn authorization tick-local until one settlement revision", () => {
+    const director = new ColonyDirector();
+    const session = director.begin({
+      tick: 100,
+      snapshot: bootstrapSnapshot(100, 300),
+      config: buildRuntimeConfig(),
+      owner: {},
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+      recoverySpawnSelections: [
+        {
+          objectiveId: "colony/W1N1/restore-workforce",
+          colonyId: "W1N1",
+          energyCost: 200,
+          spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
+        },
+      ],
+    });
+    const reservationId = session.result.objectives[0]?.reservationId;
+    if (reservationId === null || reservationId === undefined) {
+      throw new Error("exact recovery fixture was not funded");
+    }
+    expect(session.result.replacementOwner).toBeNull();
+    expect(() =>
+      director.plan({
+        tick: 100,
+        snapshot: bootstrapSnapshot(100, 300),
+        config: buildRuntimeConfig(),
+        owner: {},
+        cpuMode: "normal",
+        cpuBudget: CPU_BUDGET,
+        recoverySpawnSelections: [],
+      }),
+    ).toThrow(/tick-local ColonyDirector session/u);
+
+    expect(session.result.reservations[0]).toMatchObject({
+      grant: {
+        energy: 300,
+        cpu: 100,
+        spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
+      },
+      consumed: { energy: 0, cpu: 0, spawn: false },
+      status: "active",
+    });
+
+    const settled = session.settle(100, [{ reservationId, status: "scheduled", energyCost: 200 }]);
+    expect(settled.ownerRevision).toBe(1);
+    expect(settled.replacementOwner?.revision).toBe(1);
+    expect(settled.reservations[0]).toMatchObject({
+      consumed: { energy: 200, cpu: 100, spawn: true },
+      status: "released",
+    });
+    expect(settled.totals).toMatchObject({
+      active: 0,
+      energyReserved: 0,
+      cpuReserved: 0,
+      spawnTicksReserved: 0,
+    });
+    expect(settled.transitions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "consume", reservationId }),
+        expect.objectContaining({ action: "release", reservationId }),
+      ]),
+    );
+    expect(session.settle(100, [{ reservationId, status: "scheduled", energyCost: 200 }])).toBe(
+      settled,
+    );
+    expect(() => session.settle(100, [])).toThrow(/already settled differently/u);
+    expect(() =>
+      session.settle(101, [{ reservationId, status: "scheduled", energyCost: 200 }]),
+    ).toThrow(/must equal/u);
+  });
+
+  it("releases an exact reservation when no spawn command is scheduled", () => {
+    const director = new ColonyDirector();
+    const session = director.begin({
+      tick: 100,
+      snapshot: bootstrapSnapshot(100, 300),
+      config: buildRuntimeConfig(),
+      owner: {},
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+      recoverySpawnSelections: [
+        {
+          objectiveId: "colony/W1N1/restore-workforce",
+          colonyId: "W1N1",
+          energyCost: 200,
+          spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
+        },
+      ],
+    });
+    const reservationId = session.result.objectives[0]?.reservationId;
+    if (reservationId === null || reservationId === undefined) {
+      throw new Error("exact recovery fixture was not funded");
+    }
+
+    const settled = session.settle(100, []);
+    expect(settled.reservations[0]).toMatchObject({
+      reservationId,
+      consumed: { energy: 0, cpu: 0, spawn: false },
+      status: "released",
+    });
+  });
+
+  it("validates the complete spawn settlement set before touching the ledger", () => {
+    const makeSession = () =>
+      new ColonyDirector().begin({
+        tick: 100,
+        snapshot: bootstrapSnapshot(100, 300),
+        config: buildRuntimeConfig(),
+        owner: {},
+        cpuMode: "normal",
+        cpuBudget: CPU_BUDGET,
+        recoverySpawnSelections: [
+          {
+            objectiveId: "colony/W1N1/restore-workforce",
+            colonyId: "W1N1",
+            energyCost: 200,
+            spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
+          },
+        ],
+      });
+    const session = makeSession();
+    const reservationId = session.result.objectives[0]?.reservationId;
+    if (reservationId === null || reservationId === undefined) {
+      throw new Error("exact recovery fixture was not funded");
+    }
+    const scheduled = { reservationId, status: "scheduled" as const, energyCost: 200 };
+
+    expect(() => session.settle(100, {} as never)).toThrow(/must be an array/u);
+    expect(() => session.settle(100, [scheduled, scheduled])).toThrow(/duplicate/u);
+    expect(() =>
+      session.settle(100, [{ reservationId: "unknown", status: "scheduled", energyCost: 200 }]),
+    ).toThrow(/unauthorized/u);
+    expect(() => session.settle(100, [{ reservationId, status: "scheduled" } as never])).toThrow(
+      /positive safe integer/u,
+    );
+    expect(() =>
+      session.settle(100, [{ reservationId, status: "invalid", energyCost: 200 } as never]),
+    ).toThrow(/invalid spawn settlement status/u);
+    expect(() => session.settle(100, [{ ...scheduled, energyCost: 201 }])).toThrow(
+      /changed its authorized energy cost/u,
+    );
+
+    expect(session.settle(100, [scheduled]).reservations[0]).toMatchObject({
+      consumed: { energy: 200, spawn: true },
+    });
+  });
+
+  it("releases an unselected exact-mode objective when an external request spoofs its issuer", () => {
+    const director = new ColonyDirector();
+    const provisional = director.plan({
+      tick: 99,
+      snapshot: bootstrapSnapshot(99, 300),
+      config: buildRuntimeConfig(),
+      owner: {},
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+    });
+    if (provisional.replacementOwner === null) {
+      throw new Error("provisional recovery fixture did not produce a colonies owner");
+    }
+    const priorReservation = provisional.reservations[0];
+    if (priorReservation === undefined) {
+      throw new Error("provisional recovery fixture did not reserve a budget");
+    }
+    const spoof: BudgetRequest = {
+      colonyId: "W1N1",
+      category: "emergency-spawn",
+      issuer: "colony/W1N1/restore-workforce",
+      revision: 1,
+      expiresAt: 150,
+      energy: { minimum: 200, desired: 300 },
+      cpu: { minimum: 100, desired: 100 },
+      spawn: null,
+    };
+    const session = director.begin({
+      tick: 100,
+      snapshot: bootstrapSnapshot(100, 300),
+      config: buildRuntimeConfig(),
+      owner: provisional.replacementOwner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+      requests: [spoof],
+      recoverySpawnSelections: [],
+    });
+
+    expect(session.result.objectives[0]).toMatchObject({
+      status: "blocked",
+      budgetReasonCode: "spawn-not-observed",
+      reservationId: null,
+    });
+    expect(session.result.decisions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ reasonCode: "invalid-request" })]),
+    );
+    expect(session.result.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reservationId: priorReservation.reservationId,
+          consumed: { energy: 0, cpu: 0, spawn: false },
+          status: "released",
+          reasonCode: "objective-satisfied",
+        }),
+      ]),
+    );
+    expect(session.settle(100, []).replacementOwner).toMatchObject({
+      revision: provisional.replacementOwner.revision + 1,
+      ledger: [
+        expect.objectContaining({
+          reservationId: priorReservation.reservationId,
+          status: "released",
+        }),
+      ],
+    });
+  });
+
+  it("preserves an unknown-room ledger entry through exact spawn settlement", () => {
+    const config = buildRuntimeConfig();
+    const unknownRequest: BudgetRequest = {
+      colonyId: "W9N9",
+      category: "optional-growth",
+      issuer: "economy/remote-upgrade",
+      revision: 4,
+      expiresAt: 200,
+      energy: { minimum: 25, desired: 25 },
+      cpu: null,
+      spawn: null,
+    };
+    const unknownEntry = new BudgetLedger().reconcile({
+      tick: 90,
+      capacity: {
+        energy: [{ colonyId: "W9N9", available: 25, protected: 0 }],
+        cpu: 0,
+        spawns: [],
+      },
+      requests: [unknownRequest],
+    }).entries[0];
+    if (unknownEntry === undefined) {
+      throw new Error("unknown-room fixture did not produce a ledger entry");
+    }
+    const owner = canonicalColoniesOwner(
+      7,
+      [
+        {
+          roomName: "W1N1",
+          state: "bootstrapping",
+          stateSince: 80,
+          revision: 1,
+          policyRevision: config.policyRevision,
+          reasonCode: "spawn-without-workforce",
+        },
+        {
+          roomName: "W9N9",
+          state: "developing",
+          stateSince: 70,
+          revision: 3,
+          policyRevision: config.policyRevision,
+          reasonCode: "survival-capability-restored",
+        },
+      ],
+      [unknownEntry],
+    );
+    const session = new ColonyDirector().begin({
+      tick: 100,
+      snapshot: bootstrapSnapshot(100, 300),
+      config,
+      owner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+      recoverySpawnSelections: [
+        {
+          objectiveId: "colony/W1N1/restore-workforce",
+          colonyId: "W1N1",
+          energyCost: 200,
+          spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
+        },
+      ],
+    });
+    const reservationId = session.result.objectives[0]?.reservationId;
+    if (reservationId === null || reservationId === undefined) {
+      throw new Error("exact recovery fixture was not funded");
+    }
+
+    const settled = session.settle(100, [{ reservationId, status: "scheduled", energyCost: 200 }]);
+    expect(settled.ownerRevision).toBe(8);
+    expect(settled.replacementOwner?.revision).toBe(8);
+    expect(settled.replacementOwner?.ledger).toEqual(
+      expect.arrayContaining([
+        unknownEntry,
+        expect.objectContaining({
+          reservationId,
+          consumed: { energy: 200, cpu: 100, spawn: true },
+          status: "released",
+        }),
+      ]),
+    );
+    expect(
+      settled.replacementOwner?.ledger.find(
+        ({ reservationId: candidate }) => candidate === unknownEntry.reservationId,
+      ),
+    ).toEqual(unknownEntry);
   });
 
   it("preserves every persisted colony before admitting a newly observed room at the cap", () => {
@@ -344,6 +647,7 @@ function bootstrapSnapshot(
     sources: [],
     ownedSpawns: [
       {
+        active: true,
         id: "spawn-1",
         name: "Spawn1",
         pos: { roomName, x: 24, y: 25 },

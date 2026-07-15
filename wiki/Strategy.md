@@ -11,6 +11,15 @@ growth. Current energy, spawn time, and kernel-admitted CPU are conserved before
 emergency spawning, defense, and replacement may consume protected spawn energy; every later
 category must leave the remaining tranche intact.
 
+One spawn broker orders emergency recovery before replacement, upgrading, and construction, then
+uses stable deadline, body-cost, and identity tie-breakers. All local spawns share one current room
+energy balance. With the default 300-energy grant, the canonical `WORK,CARRY,MOVE` recovery body
+costs 200 and the unused 100 is released after the command schedules. Durable bounded expectations
+rederive the exact stable recovery name and prevent a heap reset from immediately ordering it again
+while its spawn result is not yet visible. A matching live creep must retain the required active
+capabilities; a damaged same-name creep remains a bounded collision. Generated recovery names are
+never suffixed; bounded suffix attempts apply only to explicit caller-selected bases.
+
 A bootstrapping or recovering colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives
 exactly one recovery objective, which the ledger explicitly funds or blocks. Threat and recovery
 preempt growth. Unknown vision preserves durable state without authorizing new work, while current

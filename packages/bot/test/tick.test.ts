@@ -158,19 +158,115 @@ describe("tick lifecycle", () => {
     expect(JSON.stringify(memory.myrmex.contracts)).toBe(malformedBytes);
   });
 
-  it("uses the current ColonyDirector reservation before assigning and commits once", () => {
+  it("settles the recovery spawn before contract funding and commits once", () => {
     const memory = {} as Memory;
-    const first = runTick({ game: fundedContractGame(70), memory });
+    const spawnCreep = vi.fn(() => 0);
+    const first = runTick({
+      game: fundedContractGame(70, { includeCreep: false, spawnCreep }),
+      memory,
+    });
     const reservation = first.colony.reservations[0];
     expect(reservation).toMatchObject({
       category: "emergency-spawn",
       colonyId: "W1N1",
+      consumed: { cpu: 100, energy: 200, spawn: true },
+      grant: { cpu: 100, energy: 300 },
       issuer: "colony/W1N1/restore-workforce",
-      status: "active",
+      reasonCode: "released",
+      status: "released",
     });
-    if (memory.myrmex === undefined || reservation === undefined) {
+    expect(first.spawn).toMatchObject({
+      status: "planned",
+      execution: [
+        {
+          status: "scheduled",
+          reason: "scheduled",
+          returnCode: 0,
+          command: {
+            body: ["work", "carry", "move"],
+            colonyId: "W1N1",
+            energyCost: 200,
+            scheduledTick: 70,
+            spawnId: "spawn-budget",
+            spawnName: "Spawn1",
+            spawnTicks: 9,
+          },
+        },
+      ],
+    });
+    expect(first.stateCommit).toEqual({
+      committed: true,
+      owners: ["config", "kernel", "colonies", "contracts"],
+      revision: 1,
+    });
+    const scheduledName = first.spawn.execution[0]?.command.name;
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+    expect(spawnCreep).toHaveBeenCalledWith(["work", "carry", "move"], scheduledName);
+    if (
+      memory.myrmex === undefined ||
+      reservation === undefined ||
+      typeof scheduledName !== "string"
+    ) {
       throw new Error("expected initialized runtime funding fixture");
     }
+
+    const persistedAfterSchedule = JSON.stringify(memory);
+    const presentMemory = JSON.parse(persistedAfterSchedule) as Memory;
+    const presentSpawnCreep = vi.fn(() => 0);
+    const observed = runTick({
+      game: fundedContractGame(120, {
+        creepName: scheduledName,
+        includeCreep: true,
+        legalCreep: true,
+        spawnCreep: presentSpawnCreep,
+      }),
+      memory: presentMemory,
+    });
+    expect(presentSpawnCreep).not.toHaveBeenCalled();
+    expect(observed.colony.objectives).toEqual([]);
+    expect(observed.spawn.execution).toEqual([]);
+
+    const damagedMemory = JSON.parse(persistedAfterSchedule) as Memory;
+    const damagedSpawnCreep = vi.fn(() => 0);
+    const damaged = runTick({
+      game: fundedContractGame(80, {
+        creepName: scheduledName,
+        includeCreep: true,
+        legalCreep: false,
+        spawnCreep: damagedSpawnCreep,
+      }),
+      memory: damagedMemory,
+    });
+    expect(damagedSpawnCreep).not.toHaveBeenCalled();
+    expect(damaged.spawn.execution).toEqual([]);
+    expect(damaged.spawn.broker?.decisions).toEqual([
+      expect.objectContaining({
+        demandId: "colony/W1N1/restore-workforce",
+        reason: "name-collision-exhausted",
+        status: "deferred",
+      }),
+    ]);
+    expect(damaged.colony.objectives).toEqual([
+      expect.objectContaining({
+        id: "colony/W1N1/restore-workforce",
+        status: "blocked",
+      }),
+    ]);
+
+    const absentMemory = JSON.parse(persistedAfterSchedule) as Memory;
+    const absentSpawnCreep = vi.fn(() => 0);
+    const retried = runTick({
+      game: fundedContractGame(120, {
+        includeCreep: false,
+        spawnCreep: absentSpawnCreep,
+      }),
+      memory: absentMemory,
+    });
+    expect(absentSpawnCreep).toHaveBeenCalledTimes(1);
+    expect(absentSpawnCreep).toHaveBeenCalledWith(["work", "carry", "move"], scheduledName);
+    expect(retried.spawn.execution).toEqual([
+      expect.objectContaining({ reason: "scheduled", status: "scheduled" }),
+    ]);
 
     const opened = ContractLedger.open({});
     if (opened.status !== "ready") {
@@ -197,34 +293,125 @@ describe("tick lifecycle", () => {
       ],
       travel: { estimate: () => 0 },
     });
-    expect(prepared.transitions[0]).toMatchObject({ accepted: true, to: "funded" });
+    expect(prepared.transitions[0]).toMatchObject({
+      accepted: false,
+      reason: "funding-reservation-inactive",
+    });
+    expect(opened.ledger.view().active[0]?.state).toBe("proposed");
     (memory.myrmex as unknown as { contracts: unknown }).contracts = serializeContractLedgerState(
       opened.ledger.view(),
     );
 
-    const assigned = runTick({ game: fundedContractGame(71), memory });
-    expect(assigned.contracts?.funding).toEqual([
+    const next = runTick({
+      game: fundedContractGame(71, { includeCreep: false }),
+      memory,
+    });
+    expect(next.spawn.execution).toEqual([]);
+    expect(next.spawn.broker?.decisions).toEqual([
       expect.objectContaining({
-        contractId: submitted.contractId,
-        reason: "authorized",
-        status: "authorized",
+        demandId: "colony/W1N1/restore-workforce",
+        reason: "expectation-pending",
+        status: "deferred",
       }),
     ]);
-    expect(assigned.contracts?.allocation.assignments).toEqual([
-      expect.objectContaining({ actorId: "creep-budget", contractId: submitted.contractId }),
+    expect(next.contracts?.funding).toEqual([
+      expect.objectContaining({
+        contractId: submitted.contractId,
+        reason: "reservation-inactive",
+        status: "denied",
+      }),
     ]);
-    expect(assigned.stateCommit).toMatchObject({
-      committed: true,
-      owners: ["kernel", "contracts"],
-      revision: 2,
-    });
-    const systemIds = assigned.kernel.systems.map(({ systemId }) => systemId);
-    expect(systemIds.indexOf("colony.director")).toBeLessThan(
+    expect(next.contracts?.allocation.assignments).toEqual([]);
+    expect(next.stateCommit).toMatchObject({ committed: true, revision: 2 });
+    const systemIds = next.kernel.systems.map(({ systemId }) => systemId);
+    expect(systemIds.indexOf("colony.director")).toBeLessThan(systemIds.indexOf("spawn.execute"));
+    expect(systemIds.indexOf("spawn.execute")).toBeLessThan(systemIds.indexOf("spawn.settle"));
+    expect(systemIds.indexOf("spawn.settle")).toBeLessThan(
       systemIds.indexOf("contracts.reconcile"),
     );
     expect(systemIds.indexOf("contracts.reconcile")).toBeLessThan(
       systemIds.indexOf("state.reconcile"),
     );
+  });
+
+  it("preserves the one-short recovery denial without staging an exact spawn grant", () => {
+    const memory = {} as Memory;
+    const spawnCreep = vi.fn(() => 0);
+
+    const outcome = runTick({
+      game: fundedContractGame(72, {
+        energy: 199,
+        energyCapacity: 300,
+        includeCreep: false,
+        spawnCreep,
+      }),
+      memory,
+    });
+
+    expect(spawnCreep).not.toHaveBeenCalled();
+    expect(outcome.spawn.execution).toEqual([]);
+    expect(outcome.spawn.broker?.decisions).toEqual([]);
+    expect(outcome.colony.objectives).toEqual([
+      expect.objectContaining({
+        budgetReasonCode: "insufficient-energy",
+        id: "colony/W1N1/restore-workforce",
+        reservationId: null,
+        status: "blocked",
+      }),
+    ]);
+    expect(outcome.colony.reservations).toEqual([
+      expect.objectContaining({
+        grant: { cpu: 0, energy: 0, spawn: null },
+        status: "pending",
+      }),
+    ]);
+    expect(outcome.stateCommit).toMatchObject({
+      committed: true,
+      owners: ["config", "kernel", "colonies", "contracts"],
+    });
+  });
+
+  it("settles a scheduled spawn even when command execution overruns its CPU budget", () => {
+    const memory = {} as Memory;
+    let used = 0;
+    const spawnCreep = vi.fn(() => {
+      used = 499;
+      return 0;
+    });
+
+    const outcome = runTick({
+      game: fundedContractGame(73, {
+        cpuGetUsed: () => used,
+        includeCreep: false,
+        spawnCreep,
+      }),
+      memory,
+    });
+
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+    expect(outcome.kernel.faults).toEqual([
+      expect.objectContaining({ stage: "budget", systemId: "spawn.execute" }),
+    ]);
+    expect(outcome.kernel.systems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "failed", systemId: "spawn.execute" }),
+        expect.objectContaining({ status: "completed", systemId: "spawn.settle" }),
+        expect.objectContaining({ status: "completed", systemId: "state.reconcile" }),
+      ]),
+    );
+    expect(outcome.colony.reservations).toEqual([
+      expect.objectContaining({
+        consumed: { cpu: 100, energy: 200, spawn: true },
+        status: "released",
+      }),
+    ]);
+    expect(outcome.spawn.execution).toEqual([
+      expect.objectContaining({ reason: "scheduled", status: "scheduled" }),
+    ]);
+    expect(outcome.stateCommit).toMatchObject({
+      committed: true,
+      owners: ["config", "kernel", "colonies"],
+    });
   });
 
   it("preserves contracts when emergency admission skips operational work", () => {
@@ -392,7 +579,7 @@ describe("tick lifecycle", () => {
     }
     opened.ledger.reconcile({
       actors: [workforceActorFromCreep(actor)],
-      funding: fundingFromTick(initial),
+      funding: activeFundingFromTick(initial),
       requests: [],
       tick: 43,
       transitions: [
@@ -824,25 +1011,42 @@ describe("tick lifecycle", () => {
   });
 });
 
-function fundedContractGame(time: number): RuntimeGame {
+interface FundedContractGameOptions {
+  readonly cpuGetUsed?: () => number;
+  readonly creepName?: string;
+  readonly energy?: number;
+  readonly energyCapacity?: number;
+  readonly includeCreep?: boolean;
+  readonly legalCreep?: boolean;
+  readonly spawnCreep?: (...arguments_: unknown[]) => number;
+}
+
+function fundedContractGame(time: number, options: FundedContractGameOptions = {}): RuntimeGame {
+  const energy = options.energy ?? 300;
+  const energyCapacity = options.energyCapacity ?? 300;
+  const includeCreep = options.includeCreep ?? true;
+  const legalCreep = options.legalCreep ?? false;
+  const spawnCreep = options.spawnCreep ?? (() => 0);
+  const creepName = options.creepName ?? "budget-worker";
   const position = { roomName: "W1N1", x: 10, y: 10 };
   const store = {
-    energy: 300,
-    getCapacity: () => 300,
-    getFreeCapacity: () => 0,
-    getUsedCapacity: () => 300,
+    energy,
+    getCapacity: () => energyCapacity,
+    getFreeCapacity: () => Math.max(0, energyCapacity - energy),
+    getUsedCapacity: () => energy,
   };
   const creep = {
     body: [
       { hits: 100, type: "work" },
+      ...(legalCreep ? [{ hits: 100, type: "carry" }] : []),
       { hits: 100, type: "move" },
     ],
     fatigue: 0,
-    hits: 200,
-    hitsMax: 200,
+    hits: legalCreep ? 300 : 200,
+    hitsMax: legalCreep ? 300 : 200,
     id: "creep-budget",
     my: true,
-    name: "budget-worker",
+    name: creepName,
     owner: { username: "Myrmex" },
     pos: position,
     spawning: false,
@@ -861,6 +1065,9 @@ function fundedContractGame(time: number): RuntimeGame {
     name: "Spawn1",
     owner: { username: "Myrmex" },
     pos: { roomName: "W1N1", x: 11, y: 10 },
+    room: { name: "W1N1" },
+    isActive: () => true,
+    spawnCreep,
     spawning: null,
     store,
     structureType: "spawn",
@@ -880,11 +1087,11 @@ function fundedContractGame(time: number): RuntimeGame {
       ticksToDowngrade: 10_000,
       upgradeBlocked: undefined,
     },
-    energyAvailable: 300,
-    energyCapacityAvailable: 300,
+    energyAvailable: energy,
+    energyCapacityAvailable: energyCapacity,
     find: (findType: number): unknown[] => {
       if (findType === FIND_CREEPS_VALUE) {
-        return [creep];
+        return includeCreep ? [creep] : [];
       }
       if (findType === FIND_STRUCTURES_VALUE) {
         return [spawn];
@@ -897,11 +1104,17 @@ function fundedContractGame(time: number): RuntimeGame {
     name: "W1N1",
   } as unknown as Room;
   return {
-    cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
-    creeps: { [creep.name]: creep },
+    cpu: {
+      bucket: 10_000,
+      limit: 20,
+      tickLimit: 500,
+      getUsed: options.cpuGetUsed ?? (() => 0),
+    },
+    creeps: includeCreep ? { [creep.name]: creep } : {},
     rooms: { W1N1: room },
     shard: { name: "shard3" },
     time,
+    getObjectById: (id: string) => (id === spawn.id ? spawn : null),
   };
 }
 
@@ -955,5 +1168,19 @@ function fundingFromTick(outcome: ReturnType<typeof runTick>): ContractFundingVi
     })),
     owners: outcome.colony.colonies.map(({ id, visibility }) => ({ id, visibility })),
     status: "ready",
+  };
+}
+
+function activeFundingFromTick(outcome: ReturnType<typeof runTick>): ContractFundingView {
+  const funding = fundingFromTick(outcome);
+  if (funding.status !== "ready") {
+    throw new Error("expected a ready runtime funding view");
+  }
+  return {
+    ...funding,
+    authorizations: funding.authorizations.map((authorization) => ({
+      ...authorization,
+      status: "active" as const,
+    })),
   };
 }

@@ -1,6 +1,13 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
 import { getRuntimeCacheManager, type CacheManager } from "../cache";
-import { ColonyDirector, emptyColonyPlanningResult, type ColonyPlanningResult } from "../colony";
+import {
+  ColonyDirector,
+  emptyColonyPlanningResult,
+  resolveColoniesOwner,
+  type ColonyDirectorSession,
+  type ColonyPlanningResult,
+  type ColonySpawnCommandSettlement,
+} from "../colony";
 import {
   isFeatureEnabled,
   type RuntimeConfig,
@@ -22,6 +29,19 @@ import {
   type MemoryManager,
   type OpenMemoryResult,
 } from "../state/memory";
+import {
+  SpawnBroker,
+  SpawnExecutor,
+  generatedSpawnCreepName,
+  spawnRuntimeResult,
+  type SpawnBrokerResult,
+  type SpawnCommandIntent,
+  type SpawnDemand,
+  type SpawnExecutionResult,
+  type SpawnExpectation,
+  type SpawnRuntimeResult,
+  type SpawnSelection,
+} from "../spawn";
 import type { JsonObject, StateView } from "../state/schema";
 import { recordTickTelemetry, type TickTelemetry } from "../telemetry/metrics";
 import { observeWorld } from "../world/observe";
@@ -42,6 +62,8 @@ const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
 const runtimeConfigAuthority = new RuntimeConfigAuthority();
 const colonyDirector = new ColonyDirector();
+const spawnBroker = new SpawnBroker();
+const spawnExecutor = new SpawnExecutor();
 
 export interface TickInput {
   readonly game: RuntimeGame;
@@ -59,6 +81,7 @@ export interface TickOutcome {
   readonly colony: ColonyPlanningResult;
   readonly contracts: ContractReconciliationResult | null;
   readonly execution: ArbitrationBatch | null;
+  readonly spawn: SpawnRuntimeResult;
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
   readonly telemetry: TickTelemetry | null;
@@ -73,6 +96,8 @@ interface TickRuntimeControl {
   publishContracts(result: ContractReconciliationResult): void;
   clearContracts(): void;
   publishExecution(batch: ArbitrationBatch): void;
+  publishSpawn(result: SpawnRuntimeResult): void;
+  clearSpawn(): void;
   publishStateCommit(result: MemoryCommitResult): void;
   publishTelemetry(telemetry: TickTelemetry): void;
 }
@@ -145,6 +170,7 @@ export function runTick(input: TickInput): TickOutcome {
     colony: runtime.context.colony,
     contracts: runtime.context.contracts,
     execution: runtime.context.execution,
+    spawn: runtime.context.spawn,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
     kernel: report,
@@ -163,8 +189,27 @@ interface CompositionInput {
   readonly getKernel: () => RuntimeKernel<TickContext>;
 }
 
+interface SpawnTickDraft {
+  session: ColonyDirectorSession | null;
+  broker: SpawnBrokerResult | null;
+  intents: readonly SpawnCommandIntent[];
+  execution: readonly SpawnExecutionResult[] | null;
+  settled: ReturnType<ColonyDirectorSession["settle"]> | null;
+  settlementStaged: boolean;
+  status: SpawnRuntimeResult["status"];
+}
+
 /** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
 function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<TickContext>[] {
+  const spawnDraft: SpawnTickDraft = {
+    session: null,
+    broker: null,
+    intents: [],
+    execution: null,
+    settled: null,
+    settlementStaged: false,
+    status: "not-run",
+  };
   return Object.freeze([
     configBootSystem(input),
     {
@@ -183,6 +228,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           return staged(() => undefined);
         }
         if (input.manager === null || context.state === null) {
+          input.contractChannel.seal();
+          return staged(() => undefined);
+        }
+        if (!spawnDraft.settlementStaged) {
           input.contractChannel.seal();
           return staged(() => undefined);
         }
@@ -256,7 +305,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     },
     phaseMarker("safety.foundation", "safety", true, false, 0.1, input.onPhase),
-    colonyDirectorSystem(input),
+    colonyDirectorSystem(input, spawnDraft),
     {
       descriptor: {
         id: "cache.sweep",
@@ -298,6 +347,37 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     },
     {
       descriptor: {
+        id: "spawn.execute",
+        phase: "execute",
+        criticality: "mandatory",
+        cadence: 1,
+        estimate: 0.75,
+        admitInRecovery: true,
+        mandatoryTail: true,
+      },
+      run: () => {
+        const results = spawnExecutor.execute(
+          spawnDraft.intents,
+          (spawnId) => resolveLiveSpawn(input.game, spawnId),
+          input.game.cpu,
+        );
+        spawnDraft.execution = results;
+        return staged(
+          () => {
+            input.runtime.publishSpawn(
+              spawnRuntimeResult(spawnDraft.status, spawnDraft.broker, results),
+            );
+          },
+          () => {
+            input.runtime.clearColony();
+            input.runtime.clearSpawn();
+          },
+        );
+      },
+    },
+    spawnSettleSystem(input, spawnDraft),
+    {
+      descriptor: {
         id: "state.reconcile",
         phase: "reconcile",
         criticality: "mandatory",
@@ -334,7 +414,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           },
           () => {
             if (!rootCommitted) {
+              input.runtime.clearColony();
               input.runtime.clearContracts();
+              input.runtime.clearSpawn();
             }
           },
         );
@@ -371,7 +453,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   ]);
 }
 
-function colonyDirectorSystem(input: CompositionInput): TickSystem<TickContext> {
+function colonyDirectorSystem(
+  input: CompositionInput,
+  spawnDraft: SpawnTickDraft,
+): TickSystem<TickContext> {
   return {
     descriptor: {
       id: "colony.director",
@@ -384,33 +469,129 @@ function colonyDirectorSystem(input: CompositionInput): TickSystem<TickContext> 
     },
     run: ({ context, mode, budget }) => {
       input.onPhase?.("plan");
-      const result = colonyDirector.plan({
+      resetSpawnDraft(spawnDraft);
+      const owner = input.manager?.ownerView("colonies") ?? null;
+      const provisional = colonyDirector.begin({
         tick: context.tick,
         snapshot: context.snapshot,
         config: context.config,
-        owner: input.manager?.ownerView("colonies") ?? null,
+        owner,
         cpuMode: mode,
         cpuBudget: budget,
       });
-      const planningView = colonyPlanningView(result);
-      if (result.replacementOwner !== null) {
-        if (input.manager === null) {
-          throw new Error("colony owner replacement requires a ready Memory manager");
-        }
-        const transaction = input.manager.transaction("colonies");
-        transaction.replace(result.replacementOwner);
-        const stagedResult = transaction.stage();
-        if (!stagedResult.staged) {
-          throw new Error(stagedResult.fault?.message ?? "colony state staging failed");
-        }
-      }
+      const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
+      const brokerResult = spawnEnabled
+        ? spawnBroker.arbitrate({
+            tick: context.tick,
+            snapshot: context.snapshot,
+            demands: recoverySpawnDemands(provisional.result, owner, context.config, context.tick),
+            expectations: recoverySpawnExpectations(owner),
+            policy: {
+              maximumBodyParts: context.config.policy.spawn.maximumBodyParts,
+              maximumBodyEnergy: context.config.policy.spawn.maximumBodyEnergy,
+              maximumNonMovePartsPerMovePart:
+                context.config.policy.spawn.maximumNonMovePartsPerMovePart,
+              nameCollisionRetryLimit: context.config.policy.spawn.nameCollisionRetryLimit,
+              retryDelayTicks: context.config.policy.retries.initialDelayTicks,
+            },
+          })
+        : null;
+      const selections = brokerResult?.selections ?? [];
+      const satisfiedObjectiveIds =
+        brokerResult?.decisions
+          .filter(
+            ({ status, reason }) =>
+              status === "satisfied" ||
+              reason === "observed-spawning" ||
+              reason === "expectation-pending",
+          )
+          .map(({ demandId }) => demandId) ?? [];
+      const hasFundedRecoveryObjective = provisional.result.objectives.some(
+        ({ status }) => status === "funded",
+      );
+      const session =
+        spawnEnabled && !hasFundedRecoveryObjective
+          ? provisional
+          : colonyDirector.begin({
+              tick: context.tick,
+              snapshot: context.snapshot,
+              config: context.config,
+              owner,
+              cpuMode: mode,
+              cpuBudget: budget,
+              recoverySpawnSelections: selections.map((selection) => ({
+                objectiveId: selection.demandId,
+                colonyId: selection.colonyId,
+                energyCost: selection.energyCost,
+                spawn: selection.spawnClaim,
+              })),
+              satisfiedRecoveryObjectiveIds: satisfiedObjectiveIds,
+            });
+      const intents = authorizedSpawnIntents(session, selections, context.tick);
+      spawnDraft.session = session;
+      spawnDraft.broker = brokerResult;
+      spawnDraft.intents = intents;
+      spawnDraft.status = spawnEnabled ? "planned" : "disabled";
+      const planningView = colonyPlanningView(session.result);
+      const spawnView = spawnRuntimeResult(spawnDraft.status, brokerResult);
+
       return staged(
         () => {
           input.runtime.publishColony(planningView);
+          input.runtime.publishSpawn(spawnView);
+        },
+        () => {
+          resetSpawnDraft(spawnDraft);
+          input.runtime.clearColony();
+          input.runtime.clearSpawn();
+        },
+      );
+    },
+  };
+}
+
+function spawnSettleSystem(
+  input: CompositionInput,
+  spawnDraft: SpawnTickDraft,
+): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "spawn.settle",
+      phase: "execute",
+      criticality: "mandatory",
+      cadence: 1,
+      estimate: 0.75,
+      admitInRecovery: true,
+      mandatoryTail: true,
+    },
+    run: ({ context }) => {
+      const settled = settleSpawnDraft(spawnDraft, context.tick);
+      return staged(
+        () => {
+          if (settled?.replacementOwner !== null && settled?.replacementOwner !== undefined) {
+            if (input.manager === null) {
+              throw new Error("colony owner replacement requires a ready Memory manager");
+            }
+            const transaction = input.manager.transaction("colonies");
+            transaction.replace(settled.replacementOwner);
+            const stagedResult = transaction.stage();
+            if (!stagedResult.staged) {
+              throw new Error(stagedResult.fault?.message ?? "colony state staging failed");
+            }
+          }
+          spawnDraft.settlementStaged = settled !== null;
+          if (settled !== null) {
+            input.runtime.publishColony(colonyPlanningView(settled));
+          }
+          input.runtime.publishSpawn(
+            spawnRuntimeResult(spawnDraft.status, spawnDraft.broker, spawnDraft.execution ?? []),
+          );
         },
         () => {
           input.manager?.discard("colonies");
+          spawnDraft.settlementStaged = false;
           input.runtime.clearColony();
+          input.runtime.clearSpawn();
         },
       );
     },
@@ -429,6 +610,199 @@ function colonyPlanningView(result: ReturnType<ColonyDirector["plan"]>): ColonyP
     transitions: result.transitions,
     totals: result.totals,
   });
+}
+
+function recoverySpawnDemands(
+  colony: ColonyPlanningResult,
+  ownerValue: unknown,
+  config: RuntimeConfig,
+  tick: number,
+): readonly SpawnDemand[] {
+  if (colony.status !== "planned") {
+    return [];
+  }
+  const owner = resolveColoniesOwner(ownerValue).owner;
+  const demands: SpawnDemand[] = [];
+  for (const objective of colony.objectives) {
+    if (objective.status !== "funded" || objective.reservationId === null) {
+      continue;
+    }
+    const reservation = colony.reservations.find(
+      ({ reservationId }) => reservationId === objective.reservationId,
+    );
+    if (reservation === undefined || reservation.grant.energy < 200) {
+      continue;
+    }
+    const failed = owner?.ledger.find(
+      (entry) =>
+        entry.issuer === objective.id &&
+        entry.request.spawn !== null &&
+        entry.status === "released" &&
+        !entry.consumed.spawn,
+    );
+    const earliestTick =
+      failed === undefined
+        ? tick
+        : Math.max(tick, safeAddTick(failed.updatedAt, config.policy.retries.initialDelayTicks));
+    const deadline = Math.max(earliestTick, safeAddTick(tick, config.policy.leases.durationTicks));
+    demands.push({
+      id: objective.id,
+      issuer: objective.id,
+      colonyId: objective.colonyId,
+      revision: objective.revision,
+      category: "emergency-recovery",
+      priorityValue: 1_000,
+      deadline,
+      earliestTick,
+      destinationRoomName: objective.colonyId,
+      replacementCreepName: null,
+      budgetId: objective.reservationId,
+      requiredPartCounts: {
+        tough: 0,
+        work: objective.demand.work,
+        carry: objective.demand.carry,
+        attack: 0,
+        ranged_attack: 0,
+        heal: 0,
+        claim: 0,
+        move: objective.demand.move,
+      },
+      energyCap: Math.min(
+        reservation.grant.energy,
+        config.policy.recovery.emergencyWorkerEnergyBudget,
+        config.policy.spawn.maximumBodyEnergy,
+      ),
+      nameBasis: null,
+    });
+  }
+  return Object.freeze(demands);
+}
+
+function recoverySpawnExpectations(ownerValue: unknown): readonly SpawnExpectation[] {
+  const owner = resolveColoniesOwner(ownerValue).owner;
+  if (owner === null) {
+    return [];
+  }
+  return Object.freeze(
+    owner.ledger
+      .filter(
+        (entry) =>
+          entry.category === "emergency-spawn" &&
+          entry.request.spawn !== null &&
+          entry.consumed.spawn,
+      )
+      .map((entry) => {
+        const spawn = entry.request.spawn;
+        if (spawn === null) {
+          throw new Error("filtered recovery expectation lost its spawn interval");
+        }
+        return Object.freeze({
+          demandId: entry.issuer,
+          revision: entry.revision,
+          spawnId: spawn.spawnId,
+          creepName: generatedSpawnCreepName({
+            id: entry.issuer,
+            issuer: entry.issuer,
+            colonyId: entry.colonyId,
+          }),
+          scheduledAt: spawn.startTick,
+          expectedReadyAt: spawn.endTick,
+          retryAt: Math.max(spawn.endTick, entry.request.expiresAt),
+        });
+      })
+      .sort(
+        (left, right) =>
+          left.scheduledAt - right.scheduledAt ||
+          (left.demandId < right.demandId ? -1 : left.demandId > right.demandId ? 1 : 0),
+      ),
+  );
+}
+
+function authorizedSpawnIntents(
+  session: ColonyDirectorSession,
+  selections: readonly SpawnSelection[],
+  tick: number,
+): readonly SpawnCommandIntent[] {
+  const intents: SpawnCommandIntent[] = [];
+  for (const selection of selections) {
+    const objective = session.result.objectives.find(({ id }) => id === selection.demandId);
+    if (objective?.status !== "funded" || objective.reservationId === null) {
+      continue;
+    }
+    const reservation = session.result.reservations.find(
+      ({ reservationId }) => reservationId === objective.reservationId,
+    );
+    if (
+      reservation === undefined ||
+      reservation.grant.energy < selection.energyCost ||
+      reservation.grant.spawn === null ||
+      reservation.grant.spawn.spawnId !== selection.spawnClaim.spawnId ||
+      reservation.grant.spawn.startTick !== selection.spawnClaim.startTick ||
+      reservation.grant.spawn.endTick !== selection.spawnClaim.endTick
+    ) {
+      throw new Error("SpawnBroker selection does not match its atomic colony grant");
+    }
+    intents.push({
+      intentId: `spawn/${selection.spawnId}/${selection.name}/${String(objective.revision)}`,
+      demandId: selection.demandId,
+      colonyId: selection.colonyId,
+      issuer: selection.issuer,
+      revision: objective.revision,
+      reservationId: objective.reservationId,
+      spawnId: selection.spawnId,
+      spawnName: selection.spawnName,
+      roomName: selection.destinationRoomName,
+      body: selection.body,
+      name: selection.name,
+      energyCost: selection.energyCost,
+      spawnTicks: selection.spawnTicks,
+      scheduledTick: tick,
+    });
+  }
+  return Object.freeze(intents);
+}
+
+function settleSpawnDraft(
+  draft: SpawnTickDraft,
+  tick: number,
+): ReturnType<ColonyDirectorSession["settle"]> | null {
+  if (draft.settled !== null || draft.session === null) {
+    return draft.settled;
+  }
+  const resultByIntent = new Map(
+    (draft.execution ?? []).map((result) => [result.intentId, result] as const),
+  );
+  const settlements: ColonySpawnCommandSettlement[] = draft.intents.map((intent) => {
+    const result = resultByIntent.get(intent.intentId);
+    return result?.status === "scheduled"
+      ? {
+          reservationId: intent.reservationId,
+          status: "scheduled",
+          energyCost: intent.energyCost,
+        }
+      : { reservationId: intent.reservationId, status: "not-scheduled" };
+  });
+  draft.settled = draft.session.settle(tick, settlements);
+  return draft.settled;
+}
+
+function resolveLiveSpawn(game: RuntimeGame, spawnId: string): unknown {
+  const resolver = game.getObjectById;
+  return resolver === undefined ? null : resolver.call(game, spawnId);
+}
+
+function resetSpawnDraft(draft: SpawnTickDraft): void {
+  draft.session = null;
+  draft.broker = null;
+  draft.intents = [];
+  draft.execution = null;
+  draft.settled = null;
+  draft.settlementStaged = false;
+  draft.status = "not-run";
+}
+
+function safeAddTick(tick: number, delta: number): number {
+  return tick <= Number.MAX_SAFE_INTEGER - delta ? tick + delta : Number.MAX_SAFE_INTEGER;
 }
 
 function contractFundingView(colony: ColonyPlanningResult): ContractFundingView {
@@ -540,6 +914,7 @@ function createTickRuntime(
   let colony: ColonyPlanningResult = emptyColonyPlanningResult();
   let contracts: ContractReconciliationResult | null = null;
   let execution: ArbitrationBatch | null = null;
+  let spawn: SpawnRuntimeResult = spawnRuntimeResult("not-run");
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
   const context = Object.freeze({
@@ -560,6 +935,9 @@ function createTickRuntime(
     },
     get execution(): ArbitrationBatch | null {
       return execution;
+    },
+    get spawn(): SpawnRuntimeResult {
+      return spawn;
     },
     get stateCommit(): MemoryCommitResult | null {
       return stateCommit;
@@ -588,6 +966,12 @@ function createTickRuntime(
     },
     publishExecution(value: ArbitrationBatch): void {
       execution = value;
+    },
+    publishSpawn(value: SpawnRuntimeResult): void {
+      spawn = value;
+    },
+    clearSpawn(): void {
+      spawn = spawnRuntimeResult("not-run");
     },
     publishStateCommit(value: MemoryCommitResult): void {
       stateCommit = value;

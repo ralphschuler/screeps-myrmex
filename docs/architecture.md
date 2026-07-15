@@ -14,9 +14,11 @@ The Phase 0 substrate is executable: state, kernel, CPU admission, heap cache, w
 intent arbitration/execution contracts, telemetry, deterministic replay, and architecture checks are
 implemented. Phase 1 also implements validated runtime configuration, fail-closed configured
 relations, the owned-room survival lifecycle, the local budget ledger, the persistent contract
-ledger, and bounded workforce allocation. Systems assigned to later roadmap gates remain normative
-targets. Their absence is an implementation task, not permission to invent a different boundary. If
-a requirement cannot fit this architecture, write an ADR before changing the architecture.
+ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration, narrow spawn
+command execution, and atomic command-to-budget settlement. Systems assigned to later roadmap gates
+remain normative targets. Their absence is an implementation task, not permission to invent a
+different boundary. If a requirement cannot fit this architecture, write an ADR before changing the
+architecture.
 
 Normative words have their usual meanings:
 
@@ -77,6 +79,8 @@ one bundle, one composition root, one tick loop, and internal modules with stric
     exit condition.
 20. `ColonyDirector` is the sole owned-room lifecycle authority and `BudgetLedger` is the sole local
     energy, spawn-time, and abstract-CPU reservation authority.
+21. `SpawnBroker` is the sole spawn-slot/body/name arbiter, and `SpawnExecutor` is the sole caller
+    of `StructureSpawn.spawnCreep`. Neither owns a persistent queue or resource ledger.
 
 Adding a second authority for any item above is an architecture defect, even if the duplicate is
 described as temporary.
@@ -160,6 +164,7 @@ interface TickContext {
   readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly colony: ColonyPlanningResult;
   readonly contracts: ContractReconciliationResult | null;
+  readonly spawn: SpawnRuntimeResult;
   readonly budgets: BudgetView;
   readonly buffers: TickBuffers;
   readonly services: RuntimeServices;
@@ -168,13 +173,13 @@ interface TickContext {
 
 The executable `TickContext` began in Phase 0 with tick, shard, memory status, detached state view,
 immutable snapshot, sealed arbitration result, reconcile result, and bounded tick telemetry. Phase 1
-adds the resolved `RuntimeConfig`, immutable colony-plan view, and contract-reconciliation view. The
-context contains neither `Game`, mutable `Memory`, nor the raw operational candidate. Later fields
-enter only with the roadmap system that owns them. The aggregate `StateView` also redacts the raw
-`config`, `colonies`, and `contracts` owners; consumers use only `TickContext.config`,
-`TickContext.colony`, and `TickContext.contracts`. A later planner consumes the explicit colony-plan
-output rather than depending on a staged `colonies` mutation that is invisible in the
-beginning-of-tick state view.
+adds the resolved `RuntimeConfig`, immutable colony-plan and spawn-plan/result views, and
+contract-reconciliation view. The context contains neither `Game`, mutable `Memory`, nor the raw
+operational candidate. Later fields enter only with the roadmap system that owns them. The aggregate
+`StateView` also redacts the raw `config`, `colonies`, and `contracts` owners; consumers use only
+`TickContext.config`, `TickContext.colony`, `TickContext.spawn`, and `TickContext.contracts`. A
+later planner consumes the explicit colony-plan output rather than depending on a staged `colonies`
+mutation that is invisible in the beginning-of-tick state view.
 
 `RuntimeServices` contains narrow interfaces, not concrete systems. It exposes state transactions,
 cache lookup, segment requests, deterministic IDs, and telemetry. Gameplay planners MUST NOT receive
@@ -204,7 +209,7 @@ Every tick runs the following seven phases in order.
 | Observe   | one immutable snapshot and observation facts        | none                                 | read-only API access only |
 | Safety    | urgent safety intents and survival overrides        | staged transitions only              | safety executors only     |
 | Plan      | objectives, contracts, demands, normal intents      | staged transitions only              | none                      |
-| Execute   | arbitration decisions and command results           | none                                 | executors only            |
+| Execute   | arbitration decisions and command results           | exact spawn settlement staging only  | executors only            |
 | Reconcile | updated contracts, ledgers, and cache invalidations | one staged commit                    | none                      |
 | Telemetry | bounded metrics and diagnostics                     | none in Phase 0                      | visual/log output only    |
 
@@ -237,7 +242,9 @@ codes for telemetry.
 - converts game objects into immutable plain data;
 - derives observation facts such as ownership changes, damage, hostile presence, and event-log
   entries;
-- never makes strategic decisions;
+- projects owned spawn activity, including `isActive()` and the full nullable `spawning` record, so
+  arbitration never reads `Game.spawns`;
+- never makes strategic decisions; and
 - never mutates persistent state.
 
 Later phases MUST use the snapshot. Direct `Game.rooms`, `Game.creeps`, or `Game.getObjectById`
@@ -274,6 +281,13 @@ recovery cannot wait for optional admission. It still obeys the kernel-provided 
 When the feature gate is disabled or the owner is unavailable, malformed, or from a future schema,
 it emits a bounded fail-closed status and authorizes no new work.
 
+When `phase1.spawn` is enabled, zero-worker recovery uses one tick-local two-pass authorization. A
+provisional director session exposes the derived objective and current resource view. `SpawnBroker`
+then chooses a deterministic body, name, and exact local spawn interval against the one shared room
+energy pool. A fresh exact director session re-arbitrates that selection as one energy/spawn/CPU
+bundle. Only selections backed by the exact grant become command intents. No provisional colonies
+owner is staged, and the broker cannot construct a second `BudgetLedger`.
+
 ### 6.5 Execute
 
 Execute processes safety-remaining and normal intent buffers in fixed authority order. Each arbiter:
@@ -289,9 +303,23 @@ Execute processes safety-remaining and normal intent buffers in fixed authority 
 An executor translates one accepted intent into one bounded API interaction. It contains no
 long-term policy.
 
+`spawn.execute` and `spawn.settle` are consecutive mandatory-tail Execute systems. `SpawnExecutor`
+first rejects a malformed batch or multiple intents for one spawn slot, then resolves each selected
+spawn ID, revalidates the live object's type, identity, room, ownership, busy state, and activity,
+and calls `spawnCreep` at most once. All documented return codes, live mismatches, malformed return
+values, and adapter exceptions become typed immutable results. `OK` means scheduled, not already
+observed as a completed creep.
+
+Execution writes its result to a private tick draft before the kernel evaluates post-run CPU. Thus
+an irreversible `OK` is still available if `spawn.execute` is marked failed for budget overrun.
+`spawn.settle` validates the complete result set, applies exact ledger consumption/release, stages
+the sole `colonies` transaction, and publishes the settled colony and spawn views.
+
 ### 6.6 Reconcile
 
-`Reconciler` is the only normal path that converts tick outcomes into persistent state. It:
+Reconcile is the only phase that commits the staged root. The narrow exception for pre-Reconcile
+staging is mandatory-tail `spawn.settle`: it must bind an irreversible spawn result to its owning
+ledger before contract funding can inspect that ledger. General `Reconciler` work:
 
 - maps command results back to contracts and operations;
 - advances or fails state machines using explicit transition tables;
@@ -302,9 +330,12 @@ long-term policy.
 - stages the next tick's segment activation requests;
 - commits all validated changes through `MemoryManager`.
 
-The colony system may prepare and stage only its `colonies` owner transaction. A system fault or
-post-run CPU overrun discards that transaction and its tick-local plan. Reconcile remains the sole
-normal path that publishes the complete root.
+Spawn results settle the private director session before downstream budget consumers run. A
+scheduled result consumes the exact body energy, spawn use, and admitted CPU atomically, then
+releases unused grant; any non-scheduled result releases its exact reservation without claiming
+energy or spawn use. Mandatory-tail `spawn.settle` has already staged at most one `colonies` owner
+transaction before Reconcile begins. Contract reconciliation proceeds only when that settlement was
+staged. `state.reconcile` remains the sole normal path that publishes the complete root.
 
 A failed command is evidence, not an exception. Expected game return codes become typed result
 reasons. Unexpected exceptions are handled by the owning system's fault boundary.
@@ -335,6 +366,8 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `colony.director`     | Plan      | mandatory, recovery-safe        |         1.50 |
 | `cache.sweep`         | Plan      | surplus maintenance, cadence 25 |         0.25 |
 | `execution.arbitrate` | Execute   | mandatory tail                  |         0.50 |
+| `spawn.execute`       | Execute   | mandatory tail, recovery-safe   |         0.75 |
+| `spawn.settle`        | Execute   | mandatory tail, recovery-safe   |         0.75 |
 | `contracts.reconcile` | Reconcile | operational, recovery-safe      |         0.50 |
 | `state.reconcile`     | Reconcile | mandatory tail                  |         1.00 |
 | `telemetry.minimum`   | Telemetry | mandatory tail                  |         0.50 |
@@ -342,9 +375,19 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 Memory opening is a bounded preflight because recovery status is an input to CPU-mode selection. It
 may perform only the documented migration step budget. `RuntimeKernel` remains the sole scheduled
 phase orchestrator. The Phase 1 colony outcome replaces `planning.foundation` with
-`colony.director`. When admitted, operational `contracts.reconcile` stages its owner transaction
-before mandatory-tail `state.reconcile`; only the latter commits the `Memory.myrmex` root. Later
-outcomes replace their own foundation markers without adding another loop.
+`colony.director`. The spawn outcome adds mandatory-tail `spawn.execute` followed by mandatory-tail
+`spawn.settle`; the latter performs durable colony staging after command results and before
+budget-consuming contract reconciliation. When admitted, operational `contracts.reconcile` stages
+its owner transaction before mandatory-tail `state.reconcile`; only the latter commits the
+`Memory.myrmex` root. Later outcomes replace their own foundation markers without adding another
+loop.
+
+There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
+normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
+written directly. Command results remain in the private tick draft even if `spawn.execute` exceeds
+its CPU budget and its publication is discarded, so mandatory-tail `spawn.settle` still records an
+API call that already happened; an intent with no result is treated as not scheduled. If settlement
+or colony staging is not staged, downstream contracts receive no invented active authorization.
 
 `contracts.reconcile` runs only when the effective `phase1.contracts` gate is enabled and the
 current colony result can supply a bounded authorization view. A disabled or prerequisite-blocked
@@ -354,6 +397,13 @@ commitments from assignment without treating lost vision as revocation. If a sta
 is discarded at its CPU boundary, the runtime clears the tick-local publication as well as the owner
 transaction. A final atomic root-commit rejection likewise clears the contract publication, so
 diagnostics never claim a lease that did not reach the single root commit.
+
+The spawn runtime view is similarly honest across failure boundaries. Disabled spawn planning
+publishes `disabled`; admitted planning publishes the broker decisions and, after Execute, typed
+execution results. A discarded colony stage or rejected atomic root commit clears both colony and
+spawn publications. Durable success expectations are reconstructed from the settled colony ledger,
+not a heap-only queue. Each tick-local expectation includes the exact creep name rederived from the
+stable logical recovery identity.
 
 `runTick` captures CPU before that Memory preflight and passes the baseline into the kernel. The
 kernel's final reading follows mandatory telemetry work and report collection preparation. Thus
@@ -857,8 +907,9 @@ adds a detected delay. Equality is viable at both boundaries, and an exact-bound
 remains feasible as its lifetime and modeled work decrease together. Unknown travel fails closed.
 Issue [#25](https://github.com/ralphschuler/screeps-myrmex/issues/25) owns pathfinding and movement
 estimates; this foundation does not approximate a route. Issue
-[#27](https://github.com/ralphschuler/screeps-myrmex/issues/27) owns replacement deadlines and spawn
-timing. No task or lease is mirrored into per-creep Memory.
+[#27](https://github.com/ralphschuler/screeps-myrmex/issues/27) owns proactive replacement deadlines
+and timing; issue #24's spawn authority handles the zero-worker emergency order without inventing
+those future estimates. No task or lease is mirrored into per-creep Memory.
 
 A creep agent reads its lease and emits at most:
 
@@ -874,30 +925,31 @@ only; it does not itself park, recycle, move, or issue another command.
 
 The following table is the canonical ownership map.
 
-| System                   | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                         |
-| ------------------------ | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | ---------------------------------- |
-| `RuntimeConfigAuthority` | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners   |
-| `EmpireDirector`         | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands     |
-| `ColonyDirector`         | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache       |
-| `BudgetLedger`           | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend     |
-| `ContractLedger`         | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands     |
-| `EconomyPlanner`         | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps             |
-| `SpawnBroker`            | spawn queue and body selection                 | demands, energy, deadlines                | accepted spawn intents                   | call `spawnCreep` directly         |
-| `WorkforceAllocator`     | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands |
-| `LogisticsPlanner`       | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly          |
-| `MovementArbiter`        | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels         |
-| `LayoutPlanner`          | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites          |
-| `ConstructionPlanner`    | build/repair/dismantle priorities              | layout, structures, reserves              | construction and work intents            | modify layout ownership            |
-| `DefenseDirector`        | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war            |
-| `DiplomacyLedger`        | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions       |
-| `RemotePortfolio`        | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly         |
-| `ExpansionDirector`      | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets        |
-| `IndustryDirector`       | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls  |
-| `MarketPlanner`          | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly       |
-| `OperationsController`   | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies           |
-| `ExecutorRegistry`       | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices             |
-| `Reconciler`             | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                |
-| `TelemetryService`       | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store        |
+| System                   | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                          |
+| ------------------------ | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | ----------------------------------- |
+| `RuntimeConfigAuthority` | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners    |
+| `EmpireDirector`         | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands      |
+| `ColonyDirector`         | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache        |
+| `BudgetLedger`           | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend      |
+| `ContractLedger`         | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands      |
+| `EconomyPlanner`         | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps              |
+| `SpawnBroker`            | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger |
+| `SpawnExecutor`          | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy   |
+| `WorkforceAllocator`     | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands  |
+| `LogisticsPlanner`       | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly           |
+| `MovementArbiter`        | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels          |
+| `LayoutPlanner`          | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites           |
+| `ConstructionPlanner`    | build/repair/dismantle priorities              | layout, structures, reserves              | construction and work intents            | modify layout ownership             |
+| `DefenseDirector`        | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war             |
+| `DiplomacyLedger`        | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions        |
+| `RemotePortfolio`        | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly          |
+| `ExpansionDirector`      | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets         |
+| `IndustryDirector`       | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls   |
+| `MarketPlanner`          | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly        |
+| `OperationsController`   | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies            |
+| `ExecutorRegistry`       | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices              |
+| `Reconciler`             | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                 |
+| `TelemetryService`       | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store         |
 
 ### 12.1 ColonyDirector
 
@@ -927,23 +979,63 @@ proof of loss, and authorizes no new live commitment.
 A colony is a planning boundary, not a separate kernel. All colonies share the same global
 scheduler, caches, movement authority, diplomacy ledger, and executors.
 
+The director's spawn integration is a same-tick continuation, not delegated budget ownership. A
+provisional session may expose a recovery objective, but an exact session admits only the
+broker-selected body cost and half-open spawn interval. The session keeps its replacement owner
+private until `SpawnExecutor` results reach mandatory-tail `spawn.settle`. Exact settlement is
+validated as a complete set before the ledger changes, is idempotent for an identical replay, and
+advances the owner revision at most once. External requests cannot impersonate the director-owned
+restore-workforce issuer.
+
 ### 12.2 SpawnBroker
 
-All spawn requests are `SpawnDemand` records containing capability vector, body constraints,
-deadline, destination, lifetime value, energy cap, priority, replacement target, and budget ID.
+All spawn requests are detached `SpawnDemand` records containing stable identity/revision, issuer,
+owner colony, category, capability vector, earliest tick, inclusive deadline, destination, energy
+cap, priority, replacement target, and budget ID. `SpawnBroker` owns no persistent queue: callers
+resubmit desired work, while settled colony-ledger entries provide bounded success or failure
+expectations across heap reset.
 
 `SpawnBroker`:
 
-- deduplicates equivalent issuer demand;
-- predicts availability across all eligible spawns;
-- builds deterministic bodies from capability constraints;
-- accounts for spawn time and travel/replacement lead time;
-- reserves energy without starving emergency demand;
-- emits one `SpawnIntent` per chosen spawn slot;
-- records why a demand is deferred or impossible.
+- collapses byte-equivalent demand retries and rejects conflicting reuse of one demand ID;
+- orders emergency recovery, replacement, upgrading, then construction before numeric priority,
+  deadline, required body energy, and stable demand ID;
+- considers only active, idle, owned spawns in the demand's currently observed local room;
+- canonicalizes eligible spawns by ID and name;
+- builds deterministic bodies from official costs, configured movement ratio, and policy/engine
+  limits;
+- debits every selection from one tick-local copy of the room's shared `energyAvailable` balance;
+- assigns an exact half-open interval of three ticks per body part;
+- reserves a unique generated or explicit name within the batch; and
+- records typed satisfaction, deferral, impossibility, or invalid-input reasons for every logical
+  demand.
 
-Only `SpawnExecutor` calls `spawn.spawnCreep`. Creep names encode a unique ID for diagnostics, not
-behavioral role dispatch.
+The canonical demand order is stricter than the general arbitration precedence because survival
+spawning and proactive replacement must precede upgrading and construction. Within that policy,
+priority never authorizes an energy, spawn-slot, name, or structural-cap overcommit. With two idle
+spawns, 300 shared energy schedules one 200-energy recovery body and 400 schedules two.
+
+Generated recovery names encode stable `(demand ID, issuer, colony)` identity for reset adoption and
+diagnostics, not revision, budget ID, or behavioral role dispatch. They never use suffix retries; a
+collision defers rather than changing the reconstructible name. Explicit caller-selected name bases
+retain the configured bounded suffix attempts. A terminal successful ledger entry deterministically
+recreates a tick-local `SpawnExpectation` containing that exact creep name after any heap reset.
+
+The broker adopts the expectation's exact observed creep name as satisfied only while that creep
+retains every active capability required by the demand, including policy-required movement, and
+defers exact-name spawning even at zero remaining time. A damaged or unrelated same-name creep is a
+bounded collision, not satisfaction. Unrelated activity on the previously selected spawn is not
+proof of the expected creep. If the exact name remains absent at the bounded retry tick, the same
+unsuffixed recovery name becomes eligible again.
+
+Only `SpawnExecutor` calls `spawn.spawnCreep`. It revalidates the live object's type, ID, name,
+room, ownership, busy state, and activity before issuing the already-authorized body/name once. It
+normalizes `OK`, `ERR_NOT_OWNER`, `ERR_NAME_EXISTS`, `ERR_BUSY`, `ERR_NOT_ENOUGH_ENERGY`,
+`ERR_INVALID_ARGS`, and `ERR_RCL_NOT_ENOUGH`; live mismatches, unknown values, and adapter faults
+remain typed failures. The full batch is validated before live resolution: duplicate intent IDs,
+inconsistent body cost/duration, or multiple intents targeting one spawn slot reject without a
+partial command. The complete bounds and proof matrix are in
+[`phase1-spawn-evidence.md`](phase1-spawn-evidence.md).
 
 ### 12.3 LogisticsPlanner
 
@@ -1212,16 +1304,19 @@ Activation fields do not exist in the override schema and are rejected as unknow
 gate therefore remains unavailable, and a gate with a closed prerequisite reports prerequisite
 blocking. Issue `#37` made `phase1.colony` source-available under `runtime-config-source-v2`; issue
 `#23` makes `phase1.contracts` source-available under `runtime-config-source-v3`, with the colony
-gate as its prerequisite. Every later gameplay gate remains unavailable until its own outcome is
-proved. Operational Memory may disable an available gate but cannot activate another gate. A
-source-v2 receipt is incompatible under v3 and is reissued only after a present candidate
-revalidates; an incompatible receipt with no candidate falls back to source defaults without
-rewriting operator bytes. Secrets never enter source, Memory, telemetry, Wiki, or committed config.
+gate as its prerequisite. Issue `#24` makes `phase1.spawn` source-available under
+`runtime-config-source-v4`, also with the colony gate as its prerequisite. Every later gameplay gate
+remains unavailable until its own outcome is proved. Operational Memory may disable an available
+gate but cannot activate another gate. A source-v3 receipt is incompatible under v4 and is reissued
+only after a present candidate revalidates; an incompatible receipt with no candidate falls back to
+source defaults without rewriting operator bytes. Secrets never enter source, Memory, telemetry,
+Wiki, or committed config.
 
 The versioned policy fields, limits, statuses, gates, and deterministic matrices are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md) and
 [`phase1-colony-evidence.md`](phase1-colony-evidence.md), with current contract-gate integration in
-[`phase1-contracts-evidence.md`](phase1-contracts-evidence.md).
+[`phase1-contracts-evidence.md`](phase1-contracts-evidence.md) and spawn-gate integration in
+[`phase1-spawn-evidence.md`](phase1-spawn-evidence.md).
 
 ## 15. Observability and Explainability
 
@@ -1260,27 +1355,31 @@ The runtime status surface MUST answer:
 
 ## 16. Failure and Recovery Rules
 
-| Failure                         | Required behavior                                                                  |
-| ------------------------------- | ---------------------------------------------------------------------------------- |
-| global heap reset               | rebuild all services/caches; continue from persistent contracts                    |
-| empty Memory                    | initialize owners; derive one bootstrap objective; create no duplicate commitments |
-| incomplete migration            | enter recovery mode and resume bounded migration                                   |
-| malformed/future config owner   | preserve owner; source-defaults with bounded malformed/future reason               |
-| malformed/future colonies owner | preserve owner; authorize no objective or reservation; report bounded reason       |
-| invalid config candidate        | reject atomically; revalidate compatible last-valid or use source defaults         |
-| unavailable/prerequisite gate   | keep work disabled and report its source or prerequisite reason                    |
-| missing/corrupt cache           | treat as miss and rebuild within budget                                            |
-| unavailable segment             | defer optional consumer or use explicitly lower-confidence fallback                |
-| corrupt segment                 | quarantine generation; load previous valid generation or rebuild                   |
-| stale/unknown colony vision     | preserve durable state; authorize no new live commitment; never infer room loss    |
-| planner exception               | discard its writes; quarantine optional system; continue mandatory phases          |
-| expected command error          | record typed result; reconcile and retry/retire by policy                          |
-| executor exception              | fail intent, isolate adapter, preserve reconcile/telemetry budget                  |
-| CPU pressure                    | stop optional admissions; preserve safety, essential execute, reconcile, telemetry |
-| lost creep/structure            | expire leases/reservations and replan from observation                             |
-| visibly lost owned room         | enter terminal colony lost path; release active local reservations                 |
-| stale/malformed reputation      | treat as neutral; never weaken configured self/ally/NAP exclusions                 |
-| operation timeout/budget breach | stop new spending and transition to withdrawal/abort                               |
+| Failure                         | Required behavior                                                                   |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| global heap reset               | rebuild all services/caches; continue from persistent contracts                     |
+| empty Memory                    | initialize owners; derive one bootstrap objective; create no duplicate commitments  |
+| incomplete migration            | enter recovery mode and resume bounded migration                                    |
+| malformed/future config owner   | preserve owner; source-defaults with bounded malformed/future reason                |
+| malformed/future colonies owner | preserve owner; authorize no objective or reservation; report bounded reason        |
+| invalid config candidate        | reject atomically; revalidate compatible last-valid or use source defaults          |
+| unavailable/prerequisite gate   | keep work disabled and report its source or prerequisite reason                     |
+| missing/corrupt cache           | treat as miss and rebuild within budget                                             |
+| unavailable segment             | defer optional consumer or use explicitly lower-confidence fallback                 |
+| corrupt segment                 | quarantine generation; load previous valid generation or rebuild                    |
+| stale/unknown colony vision     | preserve durable state; authorize no new live commitment; never infer room loss     |
+| planner exception               | discard its writes; quarantine optional system; continue mandatory phases           |
+| expected command error          | record typed result; reconcile and retry/retire by policy                           |
+| executor exception              | fail intent, isolate adapter, preserve reconcile/telemetry budget                   |
+| duplicate spawn-slot commands   | reject complete batch before resolving a live spawn or issuing a partial command    |
+| spawn command not scheduled     | release exact energy/spawn grant; retain bounded failed-attempt retry evidence      |
+| scheduled creep not yet visible | rederive exact-name expectation; retry same name only after its bounded expiry      |
+| spawn Execute CPU overrun       | keep private API result; mandatory-tail settlement persists command and actual cost |
+| CPU pressure                    | stop optional admissions; preserve safety, essential execute, reconcile, telemetry  |
+| lost creep/structure            | expire leases/reservations and replan from observation                              |
+| visibly lost owned room         | enter terminal colony lost path; release active local reservations                  |
+| stale/malformed reputation      | treat as neutral; never weaken configured self/ally/NAP exclusions                  |
+| operation timeout/budget breach | stop new spending and transition to withdrawal/abort                                |
 
 Recovery MUST be automatic and idempotent. Console intervention may aid diagnosis but cannot be a
 normal transition in a state machine.
@@ -1362,6 +1461,14 @@ byte-equivalent output under reordered input and heap reconstruction. The transi
 greater than the maximum reachable work from all other bounded valid inputs; tests do not fabricate
 an invalid owner merely to reach it.
 
+The Phase 1 spawn gate additionally proves official body costs and limits, temporary versus terminal
+body failure, deterministic emergency/replacement precedence, shared room-energy conservation across
+multiple spawns, exact half-open claims, bounded names and expectations, every documented
+`spawnCreep` result, live-object and adapter faults, same-tick atomic settlement, successful
+200-of-300 consumption with unused release, non-scheduled release, exact-name heap-reset
+deduplication, duplicate-slot batch rejection, zero-creep 199-energy denial, expected-creep present
+and absent paths, and settlement after an executor CPU overrun.
+
 Required architecture assertions include:
 
 - only state code references `Memory.myrmex`;
@@ -1372,10 +1479,20 @@ Required architecture assertions include:
 - all cache namespaces are registered centrally;
 - every persistent subtree and state transition has one owner;
 - `ColonyDirector` and `BudgetLedger` each have one canonical declaration;
+- `BudgetLedger` is constructed only inside the canonical colony authority;
 - raw `colonies` owner transactions occur only in the runtime state adapter;
+- exactly one literal `colonies` transaction and one root reconciliation commit call site exist;
 - `ContractLedger` and `WorkforceAllocator` each have one canonical declaration;
 - raw `contracts` owner reads occur only in the runtime adapter and writes only in `ContractLedger`;
 - funding and assignment require the tick-local BudgetLedger authorization view;
+- `SpawnBroker` and `SpawnExecutor` each have one declaration at their canonical `spawn/` path;
+- direct or aliased `spawnCreep` calls occur only in `SpawnExecutor`;
+- executor batches target each spawn ID at most once and validate complete body cost/duration before
+  live resolution;
+- mandatory-tail `spawn.execute` precedes mandatory-tail `spawn.settle`, and contract funding cannot
+  proceed until settlement is staged;
+- spawn collection is observed only in `world/`, with narrow live ID resolution captured only by
+  runtime composition;
 - all arbitration has a stable final tie-breaker;
 - global reset does not change correctness;
 - optional system failure does not prevent mandatory tail phases.
@@ -1417,8 +1534,18 @@ accounting every tick.
 
 The Phase 1 contract and workforce matrix is recorded in
 [`phase1-contracts-evidence.md`](phase1-contracts-evidence.md). It proves the contract/lease
-foundation only; the Phase 1 zero-creep recovery exit remains gated on the economy, spawn,
+foundation only; the Phase 1 zero-creep recovery exit remains gated on the economy, agents,
 replacement, movement, and construction slices that consume it.
+
+The Phase 1 spawn authority matrix is recorded in
+[`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,
+shared-energy arbitration, atomic colony-ledger settlement, and reset-safe recovery-order boundary.
+Its replay compares ordered and reversed two-spawn worlds at 300 and 400 energy and reconstructs the
+broker/executor heap while carrying an exact-name expectation after an acknowledged command, without
+changing outcome bytes or issuing a duplicate. Runtime tests separately prove terminal-ledger
+expectation derivation, exact-name presence and bounded-absence behavior, and mandatory settlement
+after Execute overrun. The resulting creep still needs economy, agent, and movement behavior before
+zero-creep recovery is an end-to-end Phase 1 exit.
 
 ## 19. Roadmap Activation
 

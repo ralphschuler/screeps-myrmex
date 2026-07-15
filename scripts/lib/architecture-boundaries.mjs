@@ -59,6 +59,21 @@ const PER_CREEP_TASK_MEMORY_MEMBERS = new Set(["contractId", "lease", "role", "t
 
 const CONFIG_OWNER_METHODS = new Set(["ownerView", "transaction"]);
 
+const ROOT_COMMIT_METHODS = new Set(["commitReconciliation"]);
+
+const SPAWN_BROKER_PATH = "spawn/spawn-broker.ts";
+const SPAWN_EXECUTOR_PATH = "spawn/spawn-executor.ts";
+const COLONY_AUTHORITY_PATH = "colony/director.ts";
+const RUNTIME_COMPOSITION_PATH = "runtime/tick.ts";
+
+const COMPLETE_SOURCE_SENTINELS = new Set([
+  "colony/director.ts",
+  "contracts/contract-ledger.ts",
+  "execution/command-executor.ts",
+  "runtime/tick.ts",
+  "state/manager.ts",
+]);
+
 const CONFIG_PUBLIC_MODULES = new Set(["", "index"]);
 
 const CONFIG_PUBLIC_EXPORTS = new Map([
@@ -147,20 +162,44 @@ const AUTHORITY_DECLARATIONS = new Map([
   ["MemoryManager", "state/manager.ts"],
   ["RuntimeConfigAuthority", "config/authority.ts"],
   ["RuntimeKernel", "runtime/kernel/runtime-kernel.ts"],
+  ["SpawnBroker", SPAWN_BROKER_PATH],
+  ["SpawnExecutor", SPAWN_EXECUTOR_PATH],
   ["WorkforceAllocator", "contracts/workforce-allocator.ts"],
 ]);
 
 export function findArchitectureViolations(sources) {
   const violations = [];
+  let coloniesTransactionCalls = 0;
+  let rootCommitCalls = 0;
 
   for (const { contents, path } of sources) {
-    const rules = inspectSource(contents, path);
-    for (const rule of rules) {
+    const inspection = inspectSource(contents, path);
+    coloniesTransactionCalls += inspection.coloniesTransactionCalls;
+    rootCommitCalls += inspection.rootCommitCalls;
+    for (const rule of inspection.rules) {
       violations.push({ path, rule });
     }
   }
 
-  return violations.sort((left, right) =>
+  const paths = new Set(sources.map(({ path }) => path));
+  if ([...COMPLETE_SOURCE_SENTINELS].every((path) => paths.has(path))) {
+    if (coloniesTransactionCalls !== 1) {
+      violations.push({
+        path: RUNTIME_COMPOSITION_PATH,
+        rule: "colonies-transaction-callsite-count",
+      });
+    }
+    if (rootCommitCalls !== 1) {
+      violations.push({ path: RUNTIME_COMPOSITION_PATH, rule: "root-commit-callsite-count" });
+    }
+  }
+
+  const uniqueViolations = [
+    ...new Map(
+      violations.map((violation) => [`${violation.path}\u0000${violation.rule}`, violation]),
+    ).values(),
+  ];
+  return uniqueViolations.sort((left, right) =>
     left.path === right.path
       ? compareStrings(left.rule, right.rule)
       : compareStrings(left.path, right.path),
@@ -177,8 +216,14 @@ function inspectSource(contents, path) {
   );
   const rules = new Set();
   const numericLiteralBindings = collectNumericLiteralBindings(source);
-  const ownerMethodCalls = collectOwnerMethodCallAnalysis(source);
+  const ownerMethodCalls = collectMethodCallAnalysis(source, CONFIG_OWNER_METHODS);
+  const commandMethodCalls = collectMethodCallAnalysis(source, COMMAND_METHODS);
+  const rootCommitMethodCalls = collectMethodCallAnalysis(source, ROOT_COMMIT_METHODS);
+  const gameAccess = collectGlobalObjectAccessAnalysis(source, "Game");
+  const budgetLedgerConstructions = collectConstructorAnalysis(source, "BudgetLedger");
   const perCreepTaskMemory = collectPerCreepTaskMemoryAnalysis(source);
+  let coloniesTransactionCalls = 0;
+  let rootCommitCalls = 0;
 
   function addUnlessAllowed(rule, allowed) {
     if (!allowed) {
@@ -219,9 +264,12 @@ function inspectSource(contents, path) {
     }
 
     if (ts.isCallExpression(node)) {
-      const calledMember = memberAccess(node.expression);
-      if (calledMember !== null && COMMAND_METHODS.has(calledMember.member)) {
+      const commandMethodCall = commandMethodCalls.resolve(node);
+      if (commandMethodCall !== null) {
         addUnlessAllowed("game-command-outside-executor", isExecutorPath(path));
+        if (commandMethodCall.methods.has("spawnCreep")) {
+          addUnlessAllowed("spawn-command-outside-spawn-executor", path === SPAWN_EXECUTOR_PATH);
+        }
       }
       const ownerMethodCall = ownerMethodCalls.resolve(node);
       const calledOwnerView = ownerMethodCall?.methods.has("ownerView") === true;
@@ -236,6 +284,12 @@ function inspectSource(contents, path) {
       }
       if (ownerMethodCall !== null && stringLiteralValue(ownerArgument) === "colonies") {
         addUnlessAllowed("colonies-owner-access-outside-runtime", path === "runtime/tick.ts");
+        if (calledTransaction) {
+          coloniesTransactionCalls += 1;
+        }
+      }
+      if (calledTransaction && stringLiteralValue(ownerArgument) === null) {
+        rules.add("memory-owner-transaction-requires-static-literal");
       }
       if (calledOwnerView && stringLiteralValue(ownerArgument) === "contracts") {
         addUnlessAllowed("contracts-owner-read-outside-runtime", path === "runtime/tick.ts");
@@ -246,6 +300,19 @@ function inspectSource(contents, path) {
           path === "contracts/contract-ledger.ts",
         );
       }
+
+      const rootCommitMethodCall = rootCommitMethodCalls.resolve(node);
+      if (rootCommitMethodCall?.methods.has("commitReconciliation") === true) {
+        rootCommitCalls += 1;
+        addUnlessAllowed("root-commit-outside-runtime", path === RUNTIME_COMPOSITION_PATH);
+      }
+    }
+
+    if (budgetLedgerConstructions.isConstruction(node)) {
+      addUnlessAllowed(
+        "budget-ledger-construction-outside-colony-authority",
+        path === COLONY_AUTHORITY_PATH,
+      );
     }
 
     if (ts.isPropertyAssignment(node)) {
@@ -282,9 +349,15 @@ function inspectSource(contents, path) {
           }
           if (
             initializer.text === "Game" &&
-            (member === "creeps" || member === "getObjectById" || member === "rooms")
+            (member === "creeps" ||
+              member === "getObjectById" ||
+              member === "rooms" ||
+              member === "spawns")
           ) {
-            addUnlessAllowed("live-world-read-outside-observer", path.startsWith("world/"));
+            addUnlessAllowed(
+              "live-world-read-outside-observer",
+              isLiveWorldReadAllowed(path, member),
+            );
           }
           if (initializer.text === "Game" && member === "cpu") {
             addUnlessAllowed("cpu-source-outside-runtime", path.startsWith("runtime/"));
@@ -302,9 +375,13 @@ function inspectSource(contents, path) {
         (access.owner === "Game" || access.owner === "game") &&
         (access.member === "creeps" ||
           access.member === "getObjectById" ||
-          access.member === "rooms")
+          access.member === "rooms" ||
+          access.member === "spawns")
       ) {
-        addUnlessAllowed("live-world-read-outside-observer", path.startsWith("world/"));
+        addUnlessAllowed(
+          "live-world-read-outside-observer",
+          isLiveWorldReadAllowed(path, access.member),
+        );
       }
       if ((access.owner === "Game" || access.owner === "game") && access.member === "cpu") {
         addUnlessAllowed("cpu-source-outside-runtime", path.startsWith("runtime/"));
@@ -318,6 +395,9 @@ function inspectSource(contents, path) {
           path.startsWith("intershard/") || path.startsWith("shards/"),
         );
       }
+    }
+    if (accessesGlobalMember(node, gameAccess, "spawns")) {
+      addUnlessAllowed("live-world-read-outside-observer", path.startsWith("world/"));
     }
     if (isPerCreepTaskMemoryAccess(node, perCreepTaskMemory)) {
       rules.add("per-creep-task-memory");
@@ -334,7 +414,19 @@ function inspectSource(contents, path) {
   }
 
   visit(source);
-  return rules;
+  if (path === RUNTIME_COMPOSITION_PATH && coloniesTransactionCalls > 1) {
+    rules.add("colonies-transaction-callsite-count");
+  }
+  if (path === RUNTIME_COMPOSITION_PATH && rootCommitCalls > 1) {
+    rules.add("root-commit-callsite-count");
+  }
+  return { rules, coloniesTransactionCalls, rootCommitCalls };
+}
+
+function isLiveWorldReadAllowed(path, member) {
+  return (
+    path.startsWith("world/") || (path === RUNTIME_COMPOSITION_PATH && member === "getObjectById")
+  );
 }
 
 function moduleSpecifier(node) {
@@ -425,7 +517,7 @@ function collectNumericLiteralBindings(source) {
   return bindings;
 }
 
-function collectOwnerMethodCallAnalysis(source) {
+function collectMethodCallAnalysis(source, trackedMethods) {
   const resolveBinding = createBindingResolver(source);
   const methodsByBinding = new Map();
   const aliasEdges = [];
@@ -440,7 +532,7 @@ function collectOwnerMethodCallAnalysis(source) {
   };
 
   const addSource = (target, expression) => {
-    const sourceValue = ownerMethodSource(expression, resolveBinding);
+    const sourceValue = trackedMethodSource(expression, resolveBinding, trackedMethods);
     if (sourceValue?.method !== undefined) {
       addMethod(target, sourceValue.method);
     } else if (sourceValue?.binding !== undefined) {
@@ -451,7 +543,7 @@ function collectOwnerMethodCallAnalysis(source) {
   const addBindingPattern = (pattern) => {
     for (const element of pattern.elements) {
       const method = propertyName(element.propertyName ?? element.name);
-      if (method !== null && CONFIG_OWNER_METHODS.has(method) && ts.isIdentifier(element.name)) {
+      if (method !== null && trackedMethods.has(method) && ts.isIdentifier(element.name)) {
         addMethod(element.name, method);
       }
     }
@@ -464,7 +556,7 @@ function collectOwnerMethodCallAnalysis(source) {
       }
       const method = propertyName(property.name);
       const target = assignmentTarget(property);
-      if (method !== null && CONFIG_OWNER_METHODS.has(method) && target !== null) {
+      if (method !== null && trackedMethods.has(method) && target !== null) {
         const binding = resolveBinding(target);
         if (binding !== null) {
           addMethod(binding, method);
@@ -480,6 +572,9 @@ function collectOwnerMethodCallAnalysis(source) {
       } else if (ts.isObjectBindingPattern(node.name)) {
         addBindingPattern(node.name);
       }
+    }
+    if (ts.isParameter(node) && ts.isObjectBindingPattern(node.name)) {
+      addBindingPattern(node.name);
     }
 
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
@@ -521,7 +616,7 @@ function collectOwnerMethodCallAnalysis(source) {
   }
 
   const callableMethods = (expression) => {
-    const sourceValue = ownerMethodSource(expression, resolveBinding);
+    const sourceValue = trackedMethodSource(expression, resolveBinding, trackedMethods);
     if (sourceValue?.method !== undefined) {
       return new Set([sourceValue.method]);
     }
@@ -563,18 +658,18 @@ function collectOwnerMethodCallAnalysis(source) {
   };
 }
 
-function ownerMethodSource(node, resolveBinding) {
+function trackedMethodSource(node, resolveBinding, trackedMethods) {
   const expression = unwrapExpression(node);
   if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
     const method = terminalMemberName(expression);
-    return method !== null && CONFIG_OWNER_METHODS.has(method) ? { method } : null;
+    return method !== null && trackedMethods.has(method) ? { method } : null;
   }
   if (ts.isIdentifier(expression)) {
     const binding = resolveBinding(expression);
     if (binding !== null) {
       return { binding };
     }
-    return CONFIG_OWNER_METHODS.has(expression.text) ? { method: expression.text } : null;
+    return trackedMethods.has(expression.text) ? { method: expression.text } : null;
   }
   if (ts.isCallExpression(expression)) {
     const calledExpression = unwrapExpression(expression.expression);
@@ -583,10 +678,300 @@ function ownerMethodSource(node, resolveBinding) {
         ts.isElementAccessExpression(calledExpression)) &&
       terminalMemberName(calledExpression) === "bind"
     ) {
-      return ownerMethodSource(calledExpression.expression, resolveBinding);
+      return trackedMethodSource(calledExpression.expression, resolveBinding, trackedMethods);
     }
   }
   return null;
+}
+
+function collectGlobalObjectAccessAnalysis(source, globalName) {
+  const resolveBinding = createBindingResolver(source);
+  const aliases = new Set();
+  const aliasEdges = [];
+
+  const addSource = (target, expression) => {
+    const sourceValue = globalObjectSource(expression, resolveBinding, aliases, globalName);
+    if (sourceValue?.global === true) {
+      aliases.add(target);
+    } else if (sourceValue?.binding !== undefined) {
+      aliasEdges.push({ source: sourceValue.binding, target });
+    }
+  };
+
+  const visit = (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined
+    ) {
+      addSource(node.name, node.initializer);
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const target = identifierExpression(node.left);
+      if (target !== null) {
+        const binding = resolveBinding(target);
+        if (binding !== null) {
+          addSource(binding, node.right);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of aliasEdges) {
+      if (aliases.has(edge.source) && !aliases.has(edge.target)) {
+        aliases.add(edge.target);
+        changed = true;
+      }
+    }
+  }
+
+  return { aliases, globalName, resolveBinding };
+}
+
+function globalObjectSource(node, resolveBinding, aliases, globalName) {
+  const identifier = identifierExpression(node);
+  if (identifier === null) {
+    return null;
+  }
+  const binding = resolveBinding(identifier);
+  if (binding === null) {
+    return identifier.text === globalName ? { global: true } : null;
+  }
+  return aliases.has(binding) ? { global: true } : { binding };
+}
+
+function accessesGlobalMember(node, analysis, member) {
+  if (
+    (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+    terminalMemberName(node) === member
+  ) {
+    return isGlobalObjectExpression(node.expression, analysis);
+  }
+
+  if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)) {
+    return (
+      node.initializer !== undefined &&
+      isGlobalObjectExpression(node.initializer, analysis) &&
+      bindingPatternAccessesMember(node.name, member)
+    );
+  }
+
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    const pattern = objectAssignmentPattern(node.left);
+    return (
+      pattern !== null &&
+      isGlobalObjectExpression(node.right, analysis) &&
+      assignmentPatternAccessesMember(pattern, member)
+    );
+  }
+
+  return false;
+}
+
+function isGlobalObjectExpression(node, analysis) {
+  const identifier = identifierExpression(node);
+  if (identifier === null) {
+    return false;
+  }
+  const binding = analysis.resolveBinding(identifier);
+  return binding === null ? identifier.text === analysis.globalName : analysis.aliases.has(binding);
+}
+
+function bindingPatternAccessesMember(pattern, member) {
+  return pattern.elements.some(
+    (element) =>
+      element.dotDotDotToken !== undefined ||
+      propertyName(element.propertyName ?? element.name) === member,
+  );
+}
+
+function assignmentPatternAccessesMember(pattern, member) {
+  return pattern.properties.some(
+    (property) => ts.isSpreadAssignment(property) || propertyName(property.name) === member,
+  );
+}
+
+function collectConstructorAnalysis(source, constructorName) {
+  const resolveBinding = createBindingResolver(source);
+  const constructorBindings = new Set();
+  const aliases = new Set();
+  const aliasEdges = [];
+
+  const collectCanonicalBinding = (node) => {
+    if (ts.isImportSpecifier(node) && (node.propertyName ?? node.name).text === constructorName) {
+      constructorBindings.add(node.name);
+    } else if (
+      ts.isImportClause(node) &&
+      node.name !== undefined &&
+      node.name.text === constructorName
+    ) {
+      constructorBindings.add(node.name);
+    } else if (
+      (ts.isClassDeclaration(node) || ts.isClassExpression(node)) &&
+      node.name?.text === constructorName
+    ) {
+      constructorBindings.add(node.name);
+    }
+    ts.forEachChild(node, collectCanonicalBinding);
+  };
+  collectCanonicalBinding(source);
+
+  const addAlias = (target, expression) => {
+    const sourceValue = constructorSource(
+      expression,
+      resolveBinding,
+      constructorBindings,
+      aliases,
+      constructorName,
+    );
+    if (sourceValue?.constructor === true) {
+      aliases.add(target);
+    } else if (sourceValue?.binding !== undefined) {
+      aliasEdges.push({ source: sourceValue.binding, target });
+    }
+  };
+
+  const addBindingPattern = (pattern) => {
+    for (const element of pattern.elements) {
+      if (
+        propertyName(element.propertyName ?? element.name) === constructorName &&
+        ts.isIdentifier(element.name)
+      ) {
+        aliases.add(element.name);
+      }
+    }
+  };
+
+  const addAssignmentPattern = (pattern) => {
+    for (const property of pattern.properties) {
+      if (ts.isSpreadAssignment(property) || propertyName(property.name) !== constructorName) {
+        continue;
+      }
+      const target = assignmentTarget(property);
+      if (target !== null) {
+        const binding = resolveBinding(target);
+        if (binding !== null) {
+          aliases.add(binding);
+        }
+      }
+    }
+  };
+
+  const collectAliases = (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      if (ts.isIdentifier(node.name) && node.initializer !== undefined) {
+        addAlias(node.name, node.initializer);
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        addBindingPattern(node.name);
+      }
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const target = identifierExpression(node.left);
+      if (target !== null) {
+        const binding = resolveBinding(target);
+        if (binding !== null) {
+          addAlias(binding, node.right);
+        }
+      } else {
+        const pattern = objectAssignmentPattern(node.left);
+        if (pattern !== null) {
+          addAssignmentPattern(pattern);
+        }
+      }
+    }
+    ts.forEachChild(node, collectAliases);
+  };
+  collectAliases(source);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of aliasEdges) {
+      if (
+        (constructorBindings.has(edge.source) || aliases.has(edge.source)) &&
+        !aliases.has(edge.target)
+      ) {
+        aliases.add(edge.target);
+        changed = true;
+      }
+    }
+  }
+
+  const isConstructorExpression = (node) => {
+    const sourceValue = constructorSource(
+      node,
+      resolveBinding,
+      constructorBindings,
+      aliases,
+      constructorName,
+    );
+    return sourceValue?.constructor === true;
+  };
+
+  return {
+    isConstruction(node) {
+      if (ts.isNewExpression(node)) {
+        return isConstructorExpression(node.expression);
+      }
+      return (
+        ts.isCallExpression(node) &&
+        isReflectConstruct(node.expression) &&
+        node.arguments[0] !== undefined &&
+        isConstructorExpression(node.arguments[0])
+      );
+    },
+  };
+}
+
+function constructorSource(node, resolveBinding, constructorBindings, aliases, constructorName) {
+  const expression = unwrapExpression(node);
+  if (
+    (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) &&
+    terminalMemberName(expression) === constructorName
+  ) {
+    return { constructor: true };
+  }
+  if (ts.isIdentifier(expression)) {
+    const binding = resolveBinding(expression);
+    if (binding === null) {
+      return expression.text === constructorName ? { constructor: true } : null;
+    }
+    return constructorBindings.has(binding) || aliases.has(binding)
+      ? { constructor: true }
+      : { binding };
+  }
+  if (ts.isCallExpression(expression)) {
+    const calledExpression = unwrapExpression(expression.expression);
+    if (
+      (ts.isPropertyAccessExpression(calledExpression) ||
+        ts.isElementAccessExpression(calledExpression)) &&
+      terminalMemberName(calledExpression) === "bind"
+    ) {
+      return constructorSource(
+        calledExpression.expression,
+        resolveBinding,
+        constructorBindings,
+        aliases,
+        constructorName,
+      );
+    }
+  }
+  return null;
+}
+
+function isReflectConstruct(node) {
+  const expression = unwrapExpression(node);
+  return (
+    (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === "Reflect" &&
+    terminalMemberName(expression) === "construct"
+  );
 }
 
 function firstStaticallyAppliedArgument(node) {

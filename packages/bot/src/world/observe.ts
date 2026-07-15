@@ -191,6 +191,7 @@ function snapshotSource(source: Source): SourceSnapshot {
 
 function snapshotSpawn(spawn: StructureSpawn): OwnedSpawnSnapshot {
   return {
+    active: spawn.isActive(),
     hits: spawn.hits,
     hitsMax: spawn.hitsMax,
     id: String(spawn.id),

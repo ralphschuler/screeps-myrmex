@@ -35,10 +35,10 @@ metadata has a separate narrow transient allowance, but every projected final ro
 normal persistent cap; diagnostic evidence never displaces valid owner state.
 
 Feature availability and prerequisites are source-controlled. Operational Memory may only disable a
-known gate, never activate incomplete work. The proved `phase1.colony` and `phase1.contracts` gates
-are available under source v3, with contracts depending on colony; later gates remain unavailable.
-Configured self, ally, and NAP identities are checked before optional reputation and always remain
-excluded from targeting.
+known gate, never activate incomplete work. The proved `phase1.colony`, `phase1.contracts`, and
+`phase1.spawn` gates are available under source v4, with contracts and spawn depending on colony;
+later gates remain unavailable. Configured self, ally, and NAP identities are checked before
+optional reputation and always remain excluded from targeting.
 
 The schema-v3 `colonies` owner has an exact owner-local schema for durable lifecycle and bounded
 ledger commitments. Exact `{}` initializes it. Malformed or future non-empty owners are preserved
@@ -48,8 +48,35 @@ visible ownership loss enters terminal lost state and releases local reservation
 The Phase 0 substrate also provides one immutable tick-local world snapshot, recovery-aware CPU
 admission, mandatory Execute/Reconcile/Telemetry tail systems, typed arbitration, a reconstructible
 CacheManager, and a bounded deterministic replay matrix. Its versioned evidence is maintained in
-`docs/phase0-evidence.md`; the Phase 1 config and colony contracts are in
-`docs/phase1-config-evidence.md` and `docs/phase1-colony-evidence.md` in the repository.
+`docs/phase0-evidence.md`; the Phase 1 config, colony, contract, and spawn matrices are in the
+repository's `docs/phase1-*-evidence.md` files.
+
+## Phase 1 spawn authority
+
+`SpawnBroker` is the one pure authority for spawn slots, deterministic bodies, and creep names. It
+reads immutable snapshot data and detached demands, owns no persistent queue or energy ledger, and
+sorts emergency recovery before replacement, upgrading, and construction. Every selection debits the
+room's one shared `energyAvailable` balance, so multiple spawns cannot each spend the full room
+pool. Body construction applies official part costs, three ticks per part, the 50-part engine cap,
+and configured energy/movement limits.
+
+The broker's selected cost and exact half-open spawn interval return to the existing colony
+`BudgetLedger` as one atomic energy/spawn/CPU request. Only an exact grant becomes a command intent.
+`SpawnExecutor` is the only `spawnCreep` caller; it revalidates the live spawn and turns all API
+codes or adapter faults into typed results. On `OK`, the ledger records actual body cost and spawn
+use and releases unused grant. On rejection it releases the exact reservation without claiming
+energy. Duplicate intents for one spawn reject the complete batch before live resolution. A separate
+mandatory-tail `spawn.settle` preserves an acknowledged result even if command execution overruns,
+stages the one `colonies` transaction, and runs before contract reconciliation. The state reconciler
+still performs the only root commit.
+
+Successful terminal ledger entries also provide bounded expectations across heap reset. They supply
+the exact expected creep name by reapplying the stable logical recovery identity. Generated recovery
+names never use suffix retries; explicit name bases retain bounded suffix attempts. The expectation
+suppresses duplicates until that exact creep with every required active capability or exact spawning
+name is observed, or its bound expires. A damaged same-name creep remains a bounded collision. No
+new Memory schema or spawn queue is required. The full evidence is in
+`docs/phase1-spawn-evidence.md`.
 
 ## Phase 1 contract foundation
 
@@ -78,10 +105,11 @@ comparison with the lease schedule. Unknown travel is deferred until the movemen
 estimate.
 
 The contract reconciler is operational work in the Reconcile phase. When admitted, it runs before
-the mandatory state reconciler; the latter remains the only root Memory commit. This foundation is
-one Phase 1 foundation slice—bootstrap economy, spawning, replacement, movement, and zero-creep
-recovery remain separate roadmap outcomes. Its evidence is maintained in
-`docs/phase1-contracts-evidence.md`.
+the mandatory state reconciler and after exact recovery-spawn settlement; the latter prevents a
+consumed or released spawn grant from authorizing contract work. The state reconciler remains the
+only root Memory commit. This foundation is one Phase 1 foundation slice—bootstrap economy,
+proactive replacement, movement, and end-to-end zero-creep recovery remain separate roadmap
+outcomes. Its evidence is maintained in `docs/phase1-contracts-evidence.md`.
 
 Gameplay domains never call each other as hidden control flow. They coordinate through typed,
 tick-local buffers and persistent contracts with explicit owners. Global heap resets, unavailable

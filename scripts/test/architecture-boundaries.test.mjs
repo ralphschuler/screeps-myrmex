@@ -25,6 +25,16 @@ function botSources() {
   }));
 }
 
+function completeBoundarySources(runtimeContents) {
+  return [
+    { path: "colony/director.ts", contents: "" },
+    { path: "contracts/contract-ledger.ts", contents: "" },
+    { path: "execution/command-executor.ts", contents: "" },
+    { path: "runtime/tick.ts", contents: runtimeContents },
+    { path: "state/manager.ts", contents: "" },
+  ];
+}
+
 describe("runtime architecture boundaries", () => {
   it("has no deployable source violations", () => {
     expect(findArchitectureViolations(botSources())).toEqual([]);
@@ -80,11 +90,22 @@ describe("runtime architecture boundaries", () => {
   it.each([
     ["CacheManager", "economy/cache.ts"],
     ["ContractLedger", "economy/contracts.ts"],
+    ["SpawnBroker", "economy/spawn-broker.ts"],
+    ["SpawnExecutor", "execution/spawn-executor.ts"],
     ["WorkforceAllocator", "colony/workforce.ts"],
   ])("detects a duplicate %s authority declaration", (authority, path) => {
     expect(
       findArchitectureViolations([{ path, contents: `export class ${authority} {}` }]),
     ).toEqual([{ path, rule: `duplicate-authority:${authority}` }]);
+  });
+
+  it("keeps spawn authorities at their exact canonical paths", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "spawn/spawn-broker.ts", contents: "export class SpawnBroker {}" },
+        { path: "spawn/spawn-executor.ts", contents: "export class SpawnExecutor {}" },
+      ]),
+    ).toEqual([]);
   });
 
   it("rejects contracts-owner writes outside ContractLedger", () => {
@@ -172,6 +193,41 @@ describe("runtime architecture boundaries", () => {
         },
       ]),
     ).toEqual([{ path: "economy/config.ts", rule: "duplicate-authority:RuntimeConfigAuthority" }]);
+  });
+
+  it("constructs BudgetLedger only inside the canonical colony authority boundary", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "colony/director.ts", contents: "const ledger = new BudgetLedger(); void ledger;" },
+      ]),
+    ).toEqual([]);
+
+    for (const contents of [
+      "const ledger = new BudgetLedger(); void ledger;",
+      'import { BudgetLedger as Ledger } from "../colony"; new Ledger();',
+      "const Ledger = BudgetLedger; new Ledger();",
+      "const first = BudgetLedger; const second = first; new second();",
+      "const { BudgetLedger: Ledger } = colony; new Ledger();",
+      "let Ledger; ({ BudgetLedger: Ledger } = colony); new Ledger();",
+      "const BoundLedger = BudgetLedger.bind(null); new BoundLedger();",
+      "Reflect.construct(BudgetLedger, []);",
+    ]) {
+      expect(findArchitectureViolations([{ path: "spawn/spawn-broker.ts", contents }])).toEqual([
+        {
+          path: "spawn/spawn-broker.ts",
+          rule: "budget-ledger-construction-outside-colony-authority",
+        },
+      ]);
+    }
+  });
+
+  it("respects lexical shadowing for BudgetLedger constructor aliases", () => {
+    for (const contents of [
+      "function make(BudgetLedger) { return new BudgetLedger(); }",
+      "const Ledger = BudgetLedger; function make(Ledger) { return new Ledger(); }",
+    ]) {
+      expect(findArchitectureViolations([{ path: "spawn/spawn-broker.ts", contents }])).toEqual([]);
+    }
   });
 
   it.each([
@@ -311,6 +367,79 @@ describe("runtime architecture boundaries", () => {
     ).toEqual([]);
   });
 
+  it("requires exactly one canonical colonies transaction and one root commit call site", () => {
+    expect(
+      findArchitectureViolations(
+        completeBoundarySources('manager.transaction("colonies"); manager.commitReconciliation();'),
+      ),
+    ).toEqual([]);
+
+    expect(
+      findArchitectureViolations(completeBoundarySources("manager.commitReconciliation();")),
+    ).toEqual([{ path: "runtime/tick.ts", rule: "colonies-transaction-callsite-count" }]);
+
+    expect(
+      findArchitectureViolations(completeBoundarySources('manager.transaction("colonies");')),
+    ).toEqual([{ path: "runtime/tick.ts", rule: "root-commit-callsite-count" }]);
+
+    expect(
+      findArchitectureViolations(
+        completeBoundarySources(
+          'manager.transaction("colonies"); manager.transaction("colonies"); ' +
+            "manager.commitReconciliation();",
+        ),
+      ),
+    ).toEqual([{ path: "runtime/tick.ts", rule: "colonies-transaction-callsite-count" }]);
+
+    expect(
+      findArchitectureViolations(
+        completeBoundarySources(
+          'manager.transaction("colonies"); manager.commitReconciliation(); ' +
+            "manager.commitReconciliation();",
+        ),
+      ),
+    ).toEqual([{ path: "runtime/tick.ts", rule: "root-commit-callsite-count" }]);
+  });
+
+  it("rejects dynamic owner transaction arguments at the static authority boundary", () => {
+    expect(
+      findArchitectureViolations([
+        {
+          path: "runtime/tick.ts",
+          contents: 'const owner = "colonies"; manager.transaction(owner);',
+        },
+      ]),
+    ).toEqual([
+      { path: "runtime/tick.ts", rule: "memory-owner-transaction-requires-static-literal" },
+    ]);
+  });
+
+  it("rejects direct and aliased root reconciliation commits outside runtime", () => {
+    for (const contents of [
+      "manager.commitReconciliation();",
+      "const commit = manager.commitReconciliation; commit();",
+      "const commit = manager.commitReconciliation; const alias = commit; alias();",
+      "const commit = manager.commitReconciliation.bind(manager); commit();",
+      "manager.commitReconciliation.call(manager);",
+      "manager.commitReconciliation.apply(manager, []);",
+      "let commit; commit = manager.commitReconciliation; commit();",
+      "let commit; ({ commitReconciliation: commit } = manager); commit();",
+    ]) {
+      expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([
+        { path: "economy/planner.ts", rule: "root-commit-outside-runtime" },
+      ]);
+    }
+  });
+
+  it("respects lexical shadowing for root commit aliases", () => {
+    for (const contents of [
+      "const commit = manager.commitReconciliation; function run(commit) { commit(); }",
+      "function run(commitReconciliation) { commitReconciliation(); }",
+    ]) {
+      expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([]);
+    }
+  });
+
   it("allowlists public config symbols rather than whole internal modules", () => {
     for (const contents of [
       'export type { RuntimeConfigCandidate } from "./authority-contracts";',
@@ -375,6 +504,61 @@ describe("runtime architecture boundaries", () => {
     ).toEqual([{ path: "execution/arbiter.ts", rule: "game-command-outside-executor" }]);
   });
 
+  it("allows spawnCreep only in the exact canonical SpawnExecutor", () => {
+    expect(
+      findArchitectureViolations([
+        {
+          path: "spawn/spawn-executor.ts",
+          contents:
+            "export class SpawnExecutor { run(spawn, body, name) { " +
+            "return spawn.spawnCreep(body, name); } }",
+        },
+      ]),
+    ).toEqual([]);
+
+    for (const path of [
+      "spawn/fake-executor-helper.ts",
+      "spawn/executors/spawn.ts",
+      "execution/spawn-executor.ts",
+    ]) {
+      expect(
+        findArchitectureViolations([{ path, contents: "spawn.spawnCreep(body, name);" }]),
+      ).toContainEqual({ path, rule: "spawn-command-outside-spawn-executor" });
+    }
+  });
+
+  it("rejects direct, destructured, transitive, bound, call, and apply spawnCreep aliases", () => {
+    for (const contents of [
+      'spawn["spawnCreep"](body, name);',
+      "const { spawnCreep: issue } = spawn; issue(body, name);",
+      "const issue = spawn.spawnCreep; const alias = issue; alias(body, name);",
+      "let issue; issue = spawn.spawnCreep; issue(body, name);",
+      "let issue; ({ spawnCreep: issue } = spawn); issue(body, name);",
+      "const issue = spawn.spawnCreep.bind(spawn); issue(body, name);",
+      "spawn.spawnCreep.call(spawn, body, name);",
+      "spawn.spawnCreep.apply(spawn, [body, name]);",
+      "const issue = spawn.spawnCreep; issue.call(spawn, body, name);",
+      "const issue = spawn.spawnCreep; issue.apply(spawn, [body, name]);",
+      "function run({ spawnCreep: issue }) { issue(body, name); }",
+    ]) {
+      expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([
+        { path: "economy/planner.ts", rule: "game-command-outside-executor" },
+        { path: "economy/planner.ts", rule: "spawn-command-outside-spawn-executor" },
+      ]);
+    }
+  });
+
+  it("respects lexical shadowing for spawnCreep aliases", () => {
+    for (const contents of [
+      "const issue = spawn.spawnCreep; function run(issue) { issue(body, name); }",
+      "const issue = spawn.spawnCreep; { const issue = callback; issue(body, name); }",
+      "function run(spawnCreep) { spawnCreep(body, name); }",
+      "function run({ spawnCreep }) { function nested(spawnCreep) { spawnCreep(); } }",
+    ]) {
+      expect(findArchitectureViolations([{ path: "economy/planner.ts", contents }])).toEqual([]);
+    }
+  });
+
   it("detects destructured persistent and live-world authorities", () => {
     expect(
       findArchitectureViolations([
@@ -387,6 +571,49 @@ describe("runtime architecture boundaries", () => {
       { path: "strategy/bypass.ts", rule: "live-world-read-outside-observer" },
       { path: "strategy/bypass.ts", rule: "persistent-root-outside-state" },
     ]);
+  });
+
+  it("rejects direct and aliased Game.spawns access outside observation", () => {
+    for (const contents of [
+      "const spawns = Game.spawns; void spawns;",
+      'const spawns = Game["spawns"]; void spawns;',
+      "const game = Game; const spawns = game.spawns; void spawns;",
+      'const first = Game; const second = first; const spawns = second["spawns"]; void spawns;',
+      "const game = Game; const { spawns } = game; void spawns;",
+      "let spawns; const game = Game; ({ spawns } = game); void spawns;",
+      "const game = Game; const { ...allGameState } = game; void allGameState;",
+    ]) {
+      expect(findArchitectureViolations([{ path: "spawn/spawn-broker.ts", contents }])).toEqual([
+        { path: "spawn/spawn-broker.ts", rule: "live-world-read-outside-observer" },
+      ]);
+    }
+  });
+
+  it("allows observation code to read Game.spawns through a local alias", () => {
+    expect(
+      findArchitectureViolations([
+        {
+          path: "world/observe.ts",
+          contents: "const game = Game; const { spawns } = game; void spawns;",
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("allows only runtime composition to capture the narrow live object resolver", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "runtime/tick.ts", contents: "const resolve = game.getObjectById; void resolve;" },
+      ]),
+    ).toEqual([]);
+    expect(
+      findArchitectureViolations([
+        {
+          path: "spawn/spawn-broker.ts",
+          contents: "const resolve = game.getObjectById; void resolve;",
+        },
+      ]),
+    ).toEqual([{ path: "spawn/spawn-broker.ts", rule: "live-world-read-outside-observer" }]);
   });
 
   it("rejects scenario-kit from the final esbuild input graph", () => {
