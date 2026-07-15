@@ -21,6 +21,11 @@ Each tick runs:
 8. `Reconciler` applies results through the owning state repositories.
 9. `TelemetryService` records bounded decisions, costs, failures, and outcomes.
 
+The executable Phase 0 substrate uses schema-v2 transactional Memory, one immutable tick-local world
+snapshot, recovery-aware CPU admission, mandatory Execute/Reconcile/Telemetry tail systems, typed
+arbitration, a reconstructible CacheManager, and a bounded deterministic replay matrix. Its
+versioned evidence is maintained in `docs/phase0-evidence.md` in the repository.
+
 Gameplay domains never call each other as hidden control flow. They coordinate through typed,
 tick-local buffers and persistent contracts with explicit owners. Global heap resets, unavailable
 segments, stale vision, command failures, and low CPU must degrade quality without breaking basic

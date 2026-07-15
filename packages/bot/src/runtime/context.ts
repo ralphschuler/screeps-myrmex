@@ -1,8 +1,14 @@
-import type { MyrmexMemory } from "../state/schema";
+import type { ArbitrationBatch } from "../execution";
+import type { MemoryCommitResult } from "../state/memory";
+import type { StateView } from "../state/schema";
+import type { TickTelemetry } from "../telemetry/metrics";
+import type { WorldSnapshot } from "../world/snapshot";
 
 export interface RuntimeGame {
   readonly cpu: {
     readonly bucket: number;
+    readonly limit: number;
+    readonly tickLimit: number;
     getUsed(): number;
   };
   readonly rooms: Readonly<Record<string, Room>>;
@@ -13,7 +19,14 @@ export interface RuntimeGame {
 }
 
 export interface TickContext {
-  readonly game: RuntimeGame;
-  readonly memory: Memory;
-  readonly state: MyrmexMemory;
+  readonly tick: number;
+  readonly shard: string;
+  readonly memoryStatus: "ready" | "recovery" | "unsupported";
+  /** Detached durable input. Systems never receive mutable Memory. */
+  readonly state: StateView | null;
+  /** The current tick's immutable observation, or an explicit empty value before Observe commits. */
+  readonly snapshot: WorldSnapshot;
+  readonly execution: ArbitrationBatch | null;
+  readonly stateCommit: MemoryCommitResult | null;
+  readonly telemetry: TickTelemetry | null;
 }
