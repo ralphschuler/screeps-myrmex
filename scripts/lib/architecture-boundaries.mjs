@@ -67,6 +67,7 @@ const MOVEMENT_EXECUTOR_PATH = "movement/executor.ts";
 const CREEP_ACTION_EXECUTOR_PATH = "movement/executor.ts";
 const COLONY_AUTHORITY_PATH = "colony/director.ts";
 const RUNTIME_COMPOSITION_PATH = "runtime/tick.ts";
+const LOCAL_PATH_ADAPTER_PATH = "runtime/local-path-adapter.ts";
 
 const COMPLETE_SOURCE_SENTINELS = new Set([
   "colony/director.ts",
@@ -235,6 +236,15 @@ function inspectSource(contents, path) {
 
   function visit(node) {
     const moduleName = moduleSpecifier(node);
+    if (
+      ts.isIdentifier(node) &&
+      ((node.text === "PathFinder" && path !== LOCAL_PATH_ADAPTER_PATH) ||
+        (node.text === "RoomPosition" &&
+          path !== LOCAL_PATH_ADAPTER_PATH &&
+          path !== "world/observe.ts"))
+    ) {
+      rules.add("pathfinder-engine-access-outside-runtime-adapter");
+    }
     if (moduleName?.includes("scenario-kit") === true) {
       rules.add("deployable-source-imports-scenario-kit");
     }

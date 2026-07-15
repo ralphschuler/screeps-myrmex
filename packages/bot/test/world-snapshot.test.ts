@@ -124,6 +124,30 @@ describe("WorldSnapshot", () => {
     });
   });
 
+  it("observes compact static traversal without retaining live terrain or creep occupancy", () => {
+    const fixture = makeOwnedRoom(false);
+    let wallAtOrigin = true;
+    const room = {
+      ...(fixture.room as unknown as Record<string, unknown>),
+      getTerrain: () => ({
+        get: (x: number, y: number) => (wallAtOrigin && x === 0 && y === 0 ? 1 : 0),
+      }),
+    } as unknown as Room;
+
+    const first = observeWorld(makeGameWithRooms({ W1N1: room }));
+    const traversal = first.rooms[0]?.traversal;
+    expect(traversal?.walkability).toHaveLength(2_500);
+    expect(traversal?.walkability.charAt(0)).toBe("#");
+    expect(traversal?.walkability.charAt(11 + 11 * 50)).toBe("."); // container
+    expect(traversal?.walkability.charAt(23 + 25 * 50)).toBe("#"); // spawn
+    expect(traversal?.walkability.charAt(26 + 25 * 50)).toBe("#"); // extension site
+
+    wallAtOrigin = false;
+    const changed = observeWorld(makeGameWithRooms({ W1N1: room }));
+    expect(changed.rooms[0]?.traversal?.revision).not.toBe(traversal?.revision);
+    expect(changed.rooms[0]?.traversal?.walkability.charAt(0)).toBe(".");
+  });
+
   it("reduces body data to a fixed-width, 50-part-bounded survival capability summary", () => {
     const room = makeOwnedRoom(false, 60).room;
     const snapshot = observeWorld(makeGameWithRooms({ W1N1: room }));

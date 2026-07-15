@@ -48,6 +48,11 @@ describe("runtime architecture boundaries", () => {
     ],
     ["persistent-root-outside-state", "economy/planner.ts", 'Memory["myrmex"] = {};'],
     ["live-world-read-outside-observer", "colony/planner.ts", 'const rooms = Game["rooms"];'],
+    [
+      "pathfinder-engine-access-outside-runtime-adapter",
+      "movement/rogue-path.ts",
+      "const path = PathFinder.search(origin, goal);",
+    ],
     ["cpu-source-outside-runtime", "colony/planner.ts", "const cpu = Game.cpu;"],
     ["game-command-outside-executor", "colony/planner.ts", 'creep["attack"](source);'],
     ["per-creep-task-memory", "agents/worker.ts", 'creep.memory["task"] = "harvest";'],

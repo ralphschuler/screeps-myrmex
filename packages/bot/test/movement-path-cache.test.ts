@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { CacheManager } from "../src/cache";
 import { DEFAULT_SURVIVAL_POLICY } from "../src/config/defaults";
-import { getMovementPathCache, LocalPathPlanner } from "../src/movement";
+import {
+  getMovementPathCache,
+  LocalPathPlanner,
+  SnapshotLocalPathPlanningService,
+} from "../src/movement";
+import type { LocalPathSearchInput } from "../src/movement";
+import type { WorldSnapshot } from "../src/world/snapshot";
 
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
+const snapshot = (walkability = ".".repeat(2_500)): WorldSnapshot =>
+  ({
+    rooms: [
+      {
+        name: "W1N1",
+        traversal: { revision: "traversal-v1:test", walkability },
+      },
+    ],
+  }) as unknown as WorldSnapshot;
 
 describe("movement path cache", () => {
   it("registers bounded static-only namespaces once and reconstructs values after a heap reset", () => {
@@ -20,7 +35,7 @@ describe("movement path cache", () => {
       {
         roomName: "W1N1",
         revision: "terrain:1",
-        walkable: [0, 1, 2],
+        walkability: ".".repeat(2_500),
       },
       { tick: 1 },
     );
@@ -44,7 +59,7 @@ describe("movement path cache", () => {
 
   it("uses only configured local bounds, defers a cold search without CPU, and reuses an equivalent path", () => {
     const cache = getMovementPathCache(new CacheManager());
-    const calls: unknown[] = [];
+    const calls: LocalPathSearchInput[] = [];
     let matrixBuilds = 0;
     const planner = new LocalPathPlanner(
       cache,
@@ -60,7 +75,7 @@ describe("movement path cache", () => {
       availableCpu: 1,
       buildStaticMatrix: () => {
         matrixBuilds += 1;
-        return { roomName: "W1N1", revision: "terrain:1", walkable: [0, 1, 2] };
+        return { roomName: "W1N1", revision: "terrain:1", walkability: ".".repeat(2_500) };
       },
       estimatedSearchCpu: 2,
       goal: position(12, 10),
@@ -116,7 +131,11 @@ describe("movement path cache", () => {
     );
     const request = {
       availableCpu: 2,
-      buildStaticMatrix: () => ({ roomName: "W1N1", revision: "terrain:1", walkable: [] }),
+      buildStaticMatrix: () => ({
+        roomName: "W1N1",
+        revision: "terrain:1",
+        walkability: ".".repeat(2_500),
+      }),
       estimatedSearchCpu: 1,
       goal: position(12, 10),
       origin: position(10, 10),
@@ -135,5 +154,71 @@ describe("movement path cache", () => {
       status: "no-path",
     });
     expect(calls).toBe(2);
+  });
+
+  it("exposes a snapshot-only service with fixed CPU admission and typed adapter faults", () => {
+    const calls: LocalPathSearchInput[] = [];
+    const service = new SnapshotLocalPathPlanningService(
+      getMovementPathCache(new CacheManager()),
+      {
+        search: (input) => {
+          calls.push(input);
+          return { cost: 1, directions: [3], incomplete: false };
+        },
+      },
+      DEFAULT_SURVIVAL_POLICY.movement,
+    );
+    const request = {
+      availableCpu: 0.49,
+      goal: position(11, 10),
+      origin: position(10, 10),
+      range: 1,
+      snapshot: snapshot(),
+      tick: 1,
+    };
+
+    expect(service.plan(request)).toEqual({ reason: "cpu-budget", status: "deferred" });
+    expect(calls).toHaveLength(0);
+    expect(service.plan({ ...request, availableCpu: 0.5 })).toMatchObject({
+      directions: [3],
+      source: "search",
+      status: "ready",
+    });
+    expect(calls[0]?.maxCost).toBe(DEFAULT_SURVIVAL_POLICY.movement.maximumPathCost);
+    expect(calls[0]?.maxOps).toBe(DEFAULT_SURVIVAL_POLICY.movement.maximumSearchOperations);
+    expect(calls[0]?.staticMatrix.walkability).toBe(".".repeat(2_500));
+    expect(
+      service.plan({
+        ...request,
+        availableCpu: 1,
+        goal: { ...position(11, 10), roomName: "W2N1" },
+      }),
+    ).toEqual({ reason: "invalid", status: "no-path" });
+    expect(
+      service.plan({
+        ...request,
+        availableCpu: 1,
+        snapshot: snapshot("?".repeat(2_500)),
+        tick: 3,
+      }),
+    ).toEqual({ reason: "invalid", status: "no-path" });
+    expect(
+      new SnapshotLocalPathPlanningService(
+        getMovementPathCache(new CacheManager()),
+        {
+          search: () => {
+            throw new Error("engine fault");
+          },
+        },
+        DEFAULT_SURVIVAL_POLICY.movement,
+      ).plan({ ...request, availableCpu: 1 }),
+    ).toEqual({ reason: "adapter-fault", status: "no-path" });
+    expect(
+      new SnapshotLocalPathPlanningService(
+        getMovementPathCache(new CacheManager()),
+        null,
+        DEFAULT_SURVIVAL_POLICY.movement,
+      ).plan({ ...request, availableCpu: 1 }),
+    ).toEqual({ reason: "unavailable", status: "no-path" });
   });
 });

@@ -2,10 +2,14 @@ import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "
 import { getRuntimeCacheManager, type CacheManager } from "../cache";
 import {
   MovementRuntime,
+  SnapshotLocalPathPlanningService,
   emptyMovementRuntimeResult,
   getMovementPathCache,
+  type LocalPathPlanningService,
+  type LocalPathSearch,
   type MovementRuntimeResult,
 } from "../movement";
+import { createScreepsLocalPathSearch } from "./local-path-adapter";
 import {
   ColonyDirector,
   emptyColonyPlanningResult,
@@ -76,6 +80,8 @@ const spawnExecutor = new SpawnExecutor();
 export interface TickInput {
   readonly game: RuntimeGame;
   readonly memory: Memory;
+  /** Test-only replacement for the runtime-owned Screeps PathFinder adapter. */
+  readonly localPathSearch?: LocalPathSearch;
   /** Test/diagnostic observer. A throwing callback is isolated like its owning system. */
   readonly onPhase?: (phase: TickPhase) => void;
 }
@@ -92,6 +98,8 @@ export interface TickOutcome {
   readonly contracts: ContractReconciliationResult | null;
   readonly execution: ArbitrationBatch | null;
   readonly movement: MovementRuntimeResult;
+  /** Runtime-owned data-only local path capability. */
+  readonly localPathPlanning: LocalPathPlanningService;
   readonly spawn: SpawnRuntimeResult;
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
@@ -136,6 +144,13 @@ export function runTick(input: TickInput): TickOutcome {
     manager?.ownerView("config") ?? null,
     input.game.time,
   );
+  const localPathPlanning = new SnapshotLocalPathPlanningService(
+    getMovementPathCache(cacheManager),
+    isFeatureEnabled(configResolution.config, "phase1.movement")
+      ? (input.localPathSearch ?? createScreepsLocalPathSearch())
+      : null,
+    configResolution.config.policy.movement,
+  );
   const restored = restoreKernelState(state);
   const movementRuntime = new MovementRuntime();
   const runtime = createTickRuntime(
@@ -145,6 +160,7 @@ export function runTick(input: TickInput): TickOutcome {
     configResolution.config,
     configResolution.metadata,
     contractExecution,
+    localPathPlanning,
     movementRuntime.channels,
   );
   const intentChannel = createIntentChannel({
@@ -191,6 +207,7 @@ export function runTick(input: TickInput): TickOutcome {
     contracts: runtime.context.contracts,
     execution: runtime.context.execution,
     movement: runtime.context.movement,
+    localPathPlanning: runtime.context.localPathPlanning,
     spawn: runtime.context.spawn,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
@@ -963,6 +980,7 @@ function createTickRuntime(
   config: RuntimeConfig,
   configResolution: RuntimeConfigResolutionMetadata,
   contractExecution: ContractExecutionView,
+  localPathPlanning: LocalPathPlanningService,
   movementChannels: TickContext["movementChannels"],
 ): TickRuntimeControl {
   let snapshot = emptyWorldSnapshot(game.time, game.shard.name);
@@ -994,6 +1012,7 @@ function createTickRuntime(
       return execution;
     },
     movementChannels,
+    localPathPlanning,
     get movement(): MovementRuntimeResult {
       return movement;
     },

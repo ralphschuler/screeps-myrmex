@@ -56,6 +56,16 @@ describe("tick lifecycle", () => {
       movementSubmitted: 0,
       status: "executed",
     });
+    expect(
+      initialized.localPathPlanning.plan({
+        availableCpu: 1,
+        goal: { roomName: "W1N1", x: 10, y: 10 },
+        origin: { roomName: "W1N1", x: 9, y: 10 },
+        range: 1,
+        snapshot: initialized.snapshot,
+        tick: 40,
+      }),
+    ).toEqual({ reason: "unavailable", status: "no-path" });
     expect(initialized.kernel.systems).toContainEqual(
       expect.objectContaining({ systemId: "movement.arbitrate-execute", status: "completed" }),
     );

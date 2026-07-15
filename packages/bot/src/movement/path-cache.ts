@@ -5,13 +5,14 @@ import {
   type JsonValue,
 } from "../cache";
 import type { MovementPolicy } from "../config";
-import type { PositionSnapshot } from "../world/snapshot";
+import type { PositionSnapshot, WorldSnapshot } from "../world/snapshot";
 
 export interface StaticTraversalMatrix {
   readonly [field: string]: JsonValue;
   readonly roomName: string;
   readonly revision: string;
-  readonly walkable: readonly number[];
+  /** 2,500 cells in y-major order: `.` is walkable and `#` is a static blocker. */
+  readonly walkability: string;
 }
 
 export interface LocalPath {
@@ -64,7 +65,69 @@ export type LocalPathPlanResult =
       readonly status: "ready";
     }
   | { readonly reason: "cpu-budget"; readonly status: "deferred" }
-  | { readonly reason: "incomplete" | "invalid"; readonly status: "no-path" };
+  | {
+      readonly reason: "adapter-fault" | "incomplete" | "invalid" | "unavailable";
+      readonly status: "no-path";
+    };
+
+export interface LocalPathPlanningRequest {
+  /** The CpuScheduler admission budget of the currently running planning system. */
+  readonly availableCpu: number;
+  readonly goal: PositionSnapshot;
+  readonly origin: PositionSnapshot;
+  readonly range: number;
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}
+
+export interface LocalPathPlanningService {
+  plan(request: LocalPathPlanningRequest): LocalPathPlanResult;
+}
+
+const LOCAL_PATH_SEARCH_CPU_ESTIMATE = 0.5;
+
+/**
+ * Canonical data-only service for plan systems. It extracts an observed static traversal projection
+ * from the immutable world snapshot; no planner can supply a live terrain, room, or PathFinder.
+ */
+export class SnapshotLocalPathPlanningService implements LocalPathPlanningService {
+  private readonly planner: LocalPathPlanner | null;
+
+  public constructor(
+    cache: MovementPathCache,
+    search: LocalPathSearch | null,
+    policy: MovementPolicy,
+  ) {
+    this.planner = search === null ? null : new LocalPathPlanner(cache, search, policy);
+  }
+
+  public plan(request: LocalPathPlanningRequest): LocalPathPlanResult {
+    if (this.planner === null) return Object.freeze({ reason: "unavailable", status: "no-path" });
+    const room = request.snapshot.rooms.find(({ name }) => name === request.origin.roomName);
+    const traversal = room?.traversal;
+    if (
+      room === undefined ||
+      traversal === undefined ||
+      request.goal.roomName !== request.origin.roomName ||
+      !isValidWalkability(traversal.walkability)
+    )
+      return Object.freeze({ reason: "invalid", status: "no-path" });
+    return this.planner.plan({
+      availableCpu: request.availableCpu,
+      buildStaticMatrix: () => ({
+        roomName: room.name,
+        revision: traversal.revision,
+        walkability: traversal.walkability,
+      }),
+      estimatedSearchCpu: LOCAL_PATH_SEARCH_CPU_ESTIMATE,
+      goal: request.goal,
+      origin: request.origin,
+      range: request.range,
+      staticMatrixRevision: traversal.revision,
+      tick: request.tick,
+    });
+  }
+}
 
 /**
  * Bounded local-room path admission. The surrounding tick system receives its budget from
@@ -80,60 +143,66 @@ export class LocalPathPlanner {
 
   public plan(request: LocalPathPlanRequest): LocalPathPlanResult {
     if (!isValidRequest(request)) return Object.freeze({ reason: "invalid", status: "no-path" });
-    const pathKey = [
-      request.origin.roomName,
-      `${request.staticMatrixRevision}:${positionKey(request.origin)}:${positionKey(request.goal)}:${String(request.range)}:${String(this.policy.maximumSearchOperations)}:${String(this.policy.maximumPathCost)}`,
-    ] as const;
-    const cached = this.cache.localPaths.get(pathKey, {
-      dependencies: { staticMatrixRevision: request.staticMatrixRevision },
-      tick: request.tick,
-    });
-    if (cached.hit)
-      return Object.freeze({
-        directions: Object.freeze([...cached.value.directions]) as readonly DirectionConstant[],
-        source: "cache",
-        status: "ready",
-      });
-    if (request.estimatedSearchCpu > request.availableCpu)
-      return Object.freeze({ reason: "cpu-budget", status: "deferred" });
-
-    const staticKey = [request.origin.roomName, request.staticMatrixRevision] as const;
-    const staticMatrix = this.cache.staticMatrices.getOrCompute(
-      staticKey,
-      {
+    try {
+      const pathKey = [
+        request.origin.roomName,
+        `${request.staticMatrixRevision}:${positionKey(request.origin)}:${positionKey(request.goal)}:${String(request.range)}:${String(this.policy.maximumSearchOperations)}:${String(this.policy.maximumPathCost)}`,
+      ] as const;
+      const cached = this.cache.localPaths.get(pathKey, {
         dependencies: { staticMatrixRevision: request.staticMatrixRevision },
         tick: request.tick,
-      },
-      request.buildStaticMatrix,
-    );
+      });
+      if (cached.hit)
+        return Object.freeze({
+          directions: Object.freeze([...cached.value.directions]) as readonly DirectionConstant[],
+          source: "cache",
+          status: "ready",
+        });
+      if (request.estimatedSearchCpu > request.availableCpu)
+        return Object.freeze({ reason: "cpu-budget", status: "deferred" });
 
-    const result = this.search.search({
-      goal: request.goal,
-      maxCost: this.policy.maximumPathCost,
-      maxOps: this.policy.maximumSearchOperations,
-      origin: request.origin,
-      range: request.range,
-      staticMatrix,
-    });
-    if (
-      result.incomplete ||
-      !Number.isFinite(result.cost) ||
-      result.cost < 0 ||
-      result.cost > this.policy.maximumPathCost ||
-      !result.directions.every(isDirection)
-    )
-      return Object.freeze({ reason: "incomplete", status: "no-path" });
+      const staticKey = [request.origin.roomName, request.staticMatrixRevision] as const;
+      const staticMatrix = this.cache.staticMatrices.getOrCompute(
+        staticKey,
+        {
+          dependencies: { staticMatrixRevision: request.staticMatrixRevision },
+          tick: request.tick,
+        },
+        request.buildStaticMatrix,
+      );
+      if (!isValidStaticMatrix(staticMatrix, request.origin.roomName, request.staticMatrixRevision))
+        return Object.freeze({ reason: "invalid", status: "no-path" });
 
-    const directions = Object.freeze([...result.directions]);
-    const path: LocalPath = Object.freeze({
-      directions,
-      roomName: request.origin.roomName,
-    });
-    this.cache.localPaths.set(pathKey, path, {
-      dependencies: { staticMatrixRevision: request.staticMatrixRevision },
-      tick: request.tick,
-    });
-    return Object.freeze({ directions, source: "search", status: "ready" });
+      const result = this.search.search({
+        goal: request.goal,
+        maxCost: this.policy.maximumPathCost,
+        maxOps: this.policy.maximumSearchOperations,
+        origin: request.origin,
+        range: request.range,
+        staticMatrix,
+      });
+      if (
+        result.incomplete ||
+        !Number.isFinite(result.cost) ||
+        result.cost < 0 ||
+        result.cost > this.policy.maximumPathCost ||
+        !result.directions.every(isDirection)
+      )
+        return Object.freeze({ reason: "incomplete", status: "no-path" });
+
+      const directions = Object.freeze([...result.directions]);
+      const path: LocalPath = Object.freeze({
+        directions,
+        roomName: request.origin.roomName,
+      });
+      this.cache.localPaths.set(pathKey, path, {
+        dependencies: { staticMatrixRevision: request.staticMatrixRevision },
+        tick: request.tick,
+      });
+      return Object.freeze({ directions, source: "search", status: "ready" });
+    } catch {
+      return Object.freeze({ reason: "adapter-fault", status: "no-path" });
+    }
   }
 }
 
@@ -206,6 +275,22 @@ function isFinitePosition(position: PositionSnapshot): boolean {
 
 function isDirection(value: number): value is DirectionConstant {
   return Number.isSafeInteger(value) && value >= 1 && value <= 8;
+}
+
+function isValidStaticMatrix(
+  matrix: StaticTraversalMatrix,
+  roomName: string,
+  revision: string,
+): boolean {
+  return (
+    matrix.roomName === roomName &&
+    matrix.revision === revision &&
+    isValidWalkability(matrix.walkability)
+  );
+}
+
+function isValidWalkability(walkability: string): boolean {
+  return walkability.length === 2_500 && /^[.#]+$/u.test(walkability);
 }
 
 function positionKey(position: PositionSnapshot): string {

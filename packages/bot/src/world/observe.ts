@@ -89,12 +89,11 @@ export function observeWorld(game: RuntimeGame, options: ObserveWorldOptions = {
 function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep[]): RoomSnapshot {
   const structures = room.find(FIND_STRUCTURES);
   const creeps = room.find(FIND_CREEPS);
+  const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+  const traversal = snapshotTraversal(room, structures, constructionSites);
 
   return {
-    constructionSites: room
-      .find(FIND_CONSTRUCTION_SITES)
-      .map(snapshotConstructionSite)
-      .sort(compareById),
+    constructionSites: constructionSites.map(snapshotConstructionSite).sort(compareById),
     controller: room.controller === undefined ? null : snapshotController(room.controller),
     energyAvailable: room.energyAvailable,
     energyCapacityAvailable: room.energyCapacityAvailable,
@@ -119,6 +118,7 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
       .sort(compareById),
     sources: room.find(FIND_SOURCES).map(snapshotSource).sort(compareById),
     storedStructures: structures.filter(hasStore).map(snapshotStoredStructure).sort(compareById),
+    ...(traversal === undefined ? {} : { traversal }),
   };
 }
 
@@ -352,6 +352,61 @@ function snapshotPosition(position: RoomPosition): PositionSnapshot {
     x: position.x,
     y: position.y,
   };
+}
+
+/**
+ * This is the only Observe-phase read of Room terrain. The compact detached projection deliberately
+ * excludes creeps and reservations; the movement arbiter overlays those current-tick facts later.
+ */
+function snapshotTraversal(
+  room: Room,
+  structures: readonly AnyStructure[],
+  constructionSites: readonly ConstructionSite[],
+): { readonly revision: string; readonly walkability: string } | undefined {
+  if (typeof room.getTerrain !== "function") return undefined;
+  let terrainView: RoomTerrain;
+  try {
+    terrainView = room.getTerrain();
+  } catch {
+    return undefined;
+  }
+  const blocked = new Set<number>();
+  for (const structure of structures) {
+    if (!isStaticallyWalkable(structure.structureType)) {
+      blocked.add(positionIndex(structure.pos.x, structure.pos.y));
+    }
+  }
+  for (const site of constructionSites) {
+    if (!isStaticallyWalkable(site.structureType)) {
+      blocked.add(positionIndex(site.pos.x, site.pos.y));
+    }
+  }
+  const cells: string[] = [];
+  for (let y = 0; y < 50; y += 1) {
+    for (let x = 0; x < 50; x += 1) {
+      const terrainCell = terrainView.get(x, y);
+      cells.push((terrainCell & 1) !== 0 || blocked.has(positionIndex(x, y)) ? "#" : ".");
+    }
+  }
+  const walkability = cells.join("");
+  return { revision: traversalRevision(walkability), walkability };
+}
+
+function isStaticallyWalkable(structureType: string): boolean {
+  return structureType === "container" || structureType === "rampart" || structureType === "road";
+}
+
+function positionIndex(x: number, y: number): number {
+  return y * 50 + x;
+}
+
+function traversalRevision(walkability: string): string {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < walkability.length; index += 1) {
+    hash ^= walkability.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return `traversal-v1:${(hash >>> 0).toString(36)}`;
 }
 
 function buildVisibility(

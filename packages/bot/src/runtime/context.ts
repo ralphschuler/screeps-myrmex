@@ -5,6 +5,7 @@ import type { ContractExecutionView, ContractReconciliationResult } from "../con
 import type { MemoryCommitResult } from "../state/memory";
 import type { SpawnRuntimeResult } from "../spawn";
 import type { MovementRuntimeChannels, MovementRuntimeResult } from "../movement";
+import type { LocalPathPlanningService } from "../movement";
 import type { StateView } from "../state/schema";
 import type { TickTelemetry } from "../telemetry/metrics";
 import type { WorldSnapshot } from "../world/snapshot";
@@ -48,6 +49,8 @@ export interface TickContext {
   readonly execution: ArbitrationBatch | null;
   /** Bounded data-only channels for admitted movement and primary-action planners. */
   readonly movementChannels: MovementRuntimeChannels;
+  /** Canonical data-only local path capability; unavailable service returns typed no-path data. */
+  readonly localPathPlanning: LocalPathPlanningService;
   /** Tick-local movement/action arbitration and command evidence. */
   readonly movement: MovementRuntimeResult;
   /** Tick-local spawn arbitration and command evidence. */
