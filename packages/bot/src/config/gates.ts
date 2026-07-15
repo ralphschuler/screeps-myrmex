@@ -21,7 +21,7 @@ export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze
   { id: "phase1.movement", available: true, prerequisites: [] },
   {
     id: "phase1.agents",
-    available: false,
+    available: true,
     prerequisites: ["phase1.colony", "phase1.contracts", "phase1.movement"],
   },
   {

@@ -6,6 +6,9 @@ export type MovementDecisionReason =
 
 export interface MovementIntent {
   readonly actorId: string;
+  /** Nullable only for non-contract producers; pairs action evidence with the leased authority. */
+  readonly contractId: string | null;
+  readonly contractRevision: number | null;
   readonly deadline: number;
   readonly destination: PositionSnapshot;
   readonly direction: DirectionConstant | null;
@@ -41,6 +44,9 @@ export type CreepActionKind =
 export interface CreepActionIntent {
   readonly actorId: string;
   readonly amount: number | null;
+  /** Nullable only for non-contract producers; pairs action evidence with the leased authority. */
+  readonly contractId: string | null;
+  readonly contractRevision: number | null;
   readonly deadline: number;
   readonly id: string;
   readonly kind: CreepActionKind;

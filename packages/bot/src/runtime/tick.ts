@@ -1,4 +1,10 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
+import {
+  dispositionTransitions,
+  planLeaseAgents,
+  reconcileLeaseAgentActions,
+  type LeaseAgentPlan,
+} from "../agents";
 import { getRuntimeCacheManager, type CacheManager } from "../cache";
 import {
   MovementRuntime,
@@ -249,8 +255,51 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     settlementStaged: false,
     status: "not-run",
   };
+  let leaseAgentPlan: LeaseAgentPlan = Object.freeze({
+    actions: Object.freeze([]),
+    dispositions: Object.freeze([]),
+    movement: Object.freeze([]),
+  });
   return Object.freeze([
     configBootSystem(input),
+    {
+      descriptor: {
+        id: "agents.reconcile",
+        phase: "reconcile",
+        criticality: "operational",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase1.agents")) return staged(() => undefined);
+        const scope = input.contractChannel.openProducer("agents.reconcile");
+        const transitions = [
+          ...dispositionTransitions(leaseAgentPlan.dispositions, context.tick),
+          ...reconcileLeaseAgentActions(
+            context.contractExecution.leases,
+            context.movement,
+            context.tick,
+          ),
+        ].sort((left, right) => left.contractId.localeCompare(right.contractId));
+        const seen = new Set<string>();
+        for (const transition of transitions) {
+          if (seen.has(transition.contractId)) continue;
+          seen.add(transition.contractId);
+          scope.producer.transition(transition);
+        }
+        const stagedRequests = scope.stage();
+        return staged(
+          () => {
+            stagedRequests.commit();
+          },
+          () => {
+            stagedRequests.discard();
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "contracts.reconcile",
@@ -345,6 +394,51 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     },
     phaseMarker("safety.foundation", "safety", true, false, 0.1, input.onPhase),
     colonyDirectorSystem(input, spawnDraft),
+    {
+      descriptor: {
+        id: "agents.plan",
+        phase: "plan",
+        criticality: "operational",
+        cadence: 1,
+        estimate: 1,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context, budget }) => {
+        if (!isFeatureEnabled(context.config, "phase1.agents")) {
+          return staged(() => {
+            leaseAgentPlan = Object.freeze({
+              actions: Object.freeze([]),
+              dispositions: Object.freeze([]),
+              movement: Object.freeze([]),
+            });
+          });
+        }
+        const planned = planLeaseAgents({
+          availablePathCpu: budget.available,
+          execution: context.contractExecution,
+          paths: context.localPathPlanning,
+          snapshot: context.snapshot,
+          tick: context.tick,
+        });
+        return staged(
+          () => {
+            for (const intent of planned.actions)
+              input.movementRuntime.actionProducer.submit(intent);
+            for (const intent of planned.movement)
+              input.movementRuntime.movementProducer.submit(intent);
+            leaseAgentPlan = planned;
+          },
+          () => {
+            leaseAgentPlan = Object.freeze({
+              actions: Object.freeze([]),
+              dispositions: Object.freeze([]),
+              movement: Object.freeze([]),
+            });
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "cache.sweep",

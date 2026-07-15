@@ -253,9 +253,13 @@ export interface LeasedWorkExecution {
   readonly execution: ContractExecutionTerms;
   readonly expiresAt: number;
   readonly leaseExpiresAt: number;
+  /** Strategy-owned priority copied into the sanitized agent projection. */
+  readonly priority: IntentPriority;
   readonly quantity: number;
   readonly range: number;
   readonly revision: number;
+  /** A lease can only remain assigned or active; other states clear it in the ledger. */
+  readonly state: "assigned" | "active";
   readonly target: PositionSnapshot;
   readonly targetId: string;
 }

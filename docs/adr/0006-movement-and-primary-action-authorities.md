@@ -37,8 +37,9 @@ adapter failure remains typed path result data.
   action pipelines, while the action arbiter prevents conflicting primary work.
 - The first implementation has a deterministic local arbitration seam but does not introduce
   multi-room routing, traffic optimization, or role behavior.
-- Source revision `runtime-config-source-v5` makes `phase1.movement` available; all later gameplay
-  gates remain unavailable.
+- Source revision `runtime-config-source-v5` makes `phase1.movement` available. Issue #38 advances
+  to `runtime-config-source-v6` and makes only `phase1.agents` available; later gameplay gates
+  remain unavailable.
 
 ## Mechanics basis
 

@@ -669,9 +669,12 @@ function room(fixture: RoomFixture, tick: number): OwnedRoomSnapshot {
     hostileCreeps: [],
     ownedExtensions: [],
     ownedTowers: [],
+    droppedResources: [],
+    ruins: [],
     sources: [],
     storedStructures: [],
     constructionSites: [],
+    tombstones: [],
   };
 }
 
