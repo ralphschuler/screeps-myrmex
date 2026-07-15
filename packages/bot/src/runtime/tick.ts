@@ -23,9 +23,11 @@ import { RuntimeConfigAuthority, type RuntimeConfigResolution } from "../config/
 import {
   ContractLedger,
   createContractRequestChannel,
+  emptyContractExecutionView,
   inRangeOrUnknownTravel,
   workforceActorFromCreep,
   type ContractFundingView,
+  type ContractExecutionView,
   type ContractReconciliationResult,
   type ContractRequestChannel,
 } from "../contracts";
@@ -85,6 +87,8 @@ export interface TickOutcome {
   readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly snapshot: WorldSnapshot;
   readonly colony: ColonyPlanningResult;
+  /** Sanitized start-of-tick lease authorization for plan systems and diagnostics. */
+  readonly contractExecution: ContractExecutionView;
   readonly contracts: ContractReconciliationResult | null;
   readonly execution: ArbitrationBatch | null;
   readonly movement: MovementRuntimeResult;
@@ -127,6 +131,7 @@ export function runTick(input: TickInput): TickOutcome {
   getMovementPathCache(cacheManager);
   const manager = opened.status === "ready" ? opened.manager : null;
   const state = manager?.view() ?? null;
+  const contractExecution = readContractExecution(manager);
   const configResolution = runtimeConfigAuthority.resolve(
     manager?.ownerView("config") ?? null,
     input.game.time,
@@ -139,6 +144,7 @@ export function runTick(input: TickInput): TickOutcome {
     state,
     configResolution.config,
     configResolution.metadata,
+    contractExecution,
     movementRuntime.channels,
   );
   const intentChannel = createIntentChannel({
@@ -181,6 +187,7 @@ export function runTick(input: TickInput): TickOutcome {
     configResolution: runtime.context.configResolution,
     snapshot: runtime.context.snapshot,
     colony: runtime.context.colony,
+    contractExecution: runtime.context.contractExecution,
     contracts: runtime.context.contracts,
     execution: runtime.context.execution,
     movement: runtime.context.movement,
@@ -955,6 +962,7 @@ function createTickRuntime(
   state: StateView | null,
   config: RuntimeConfig,
   configResolution: RuntimeConfigResolutionMetadata,
+  contractExecution: ContractExecutionView,
   movementChannels: TickContext["movementChannels"],
 ): TickRuntimeControl {
   let snapshot = emptyWorldSnapshot(game.time, game.shard.name);
@@ -981,6 +989,7 @@ function createTickRuntime(
     get contracts(): ContractReconciliationResult | null {
       return contracts;
     },
+    contractExecution,
     get execution(): ArbitrationBatch | null {
       return execution;
     },
@@ -1038,6 +1047,12 @@ function createTickRuntime(
       telemetry = value;
     },
   });
+}
+
+function readContractExecution(manager: MemoryManager | null): ContractExecutionView {
+  if (manager === null) return emptyContractExecutionView();
+  const opened = ContractLedger.open(manager.ownerView("contracts"));
+  return opened.status === "ready" ? opened.ledger.executionView() : emptyContractExecutionView();
 }
 
 function serializeKernelState(kernel: RuntimeKernel<TickContext>, mode: CpuMode): JsonObject {

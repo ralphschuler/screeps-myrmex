@@ -22,7 +22,9 @@ import {
   type ContractFundingDecisionReason,
   type ContractFundingView,
   type ContractIssuerFrontier,
+  type ContractExecutionView,
   type ContractLedgerStateV1,
+  type LeasedWorkExecution,
   type ContractOutcome,
   type ContractTransitionRequest,
   type TerminalWorkContractState,
@@ -163,6 +165,39 @@ export class ContractLedger {
 
   public view(): ContractLedgerStateV1 {
     return snapshotState(this.#active, this.#issuerFrontiers, this.#outcomes);
+  }
+
+  /**
+   * Returns the sole sanitized leased-work projection for plan systems. Contracts without explicit
+   * execution terms are legacy data and deliberately fail closed by not appearing in this view.
+   */
+  public executionView(): ContractExecutionView {
+    const leases: LeasedWorkExecution[] = [];
+    for (const record of this.#active) {
+      if (record.lease === null || record.execution === undefined || record.targetId === null) {
+        continue;
+      }
+      leases.push({
+        actorId: record.lease.actorId,
+        actorName: record.lease.actorName,
+        contractId: record.id,
+        deadline: record.deadline,
+        execution: { ...record.execution },
+        expiresAt: record.expiresAt,
+        leaseExpiresAt: record.lease.expiresAt,
+        quantity: record.quantity,
+        range: record.range,
+        revision: record.revision,
+        target: { ...record.target },
+        targetId: record.targetId,
+      });
+    }
+    leases.sort(
+      (left, right) =>
+        compareStrings(left.actorId, right.actorId) ||
+        compareStrings(left.contractId, right.contractId),
+    );
+    return deepFreeze({ leases, status: "ready" });
   }
 
   public submit(request: WorkContractRequest, tick: number): ContractSubmissionResult {

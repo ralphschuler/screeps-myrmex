@@ -1025,6 +1025,111 @@ describe("ContractLedger", () => {
       expect(reopened.ledger.view()).toEqual(ledger.view());
     }
   });
+
+  it("projects only explicitly executable leased work in stable actor order", () => {
+    const first = createAssignedLedger(
+      makeRequest({
+        execution: {
+          action: "harvest",
+          completion: "continuous",
+          counterpartId: null,
+          resourceType: null,
+          version: 1,
+        },
+      }),
+    );
+    const secondRequest = makeRequest({
+      budgetBinding: uniqueBudgetBinding(2),
+      execution: {
+        action: "harvest",
+        completion: "target-depleted",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      issuerKey: "second-source",
+      issuerSequence: 2,
+      targetId: "source-2",
+    });
+    const secondId = submitOrThrow(first.ledger, secondRequest, 4);
+    const funding = {
+      authorizations: [
+        ...activeFunding().authorizations,
+        ...activeFunding({ issuer: "planner:budget:2" }).authorizations,
+      ],
+      owners: [{ id: "W1N1", visibility: "visible" as const }],
+      status: "ready" as const,
+    };
+    first.ledger.reconcile({
+      actors: [makeActor("incumbent"), makeActor("actor-a")],
+      funding,
+      requests: [],
+      tick: 5,
+      transitions: [{ contractId: secondId, reason: "test-funded", tick: 5, to: "funded" }],
+      travel: ZERO_TRAVEL,
+    });
+
+    const view = first.ledger.executionView();
+    expect(view.status).toBe("ready");
+    expect(
+      view.leases.map(({ actorId, contractId, execution }) => ({
+        action: execution.action,
+        actorId,
+        completion: execution.completion,
+        contractId,
+      })),
+    ).toEqual([
+      {
+        action: "harvest",
+        actorId: "actor-a",
+        completion: "target-depleted",
+        contractId: secondId,
+      },
+      {
+        action: "harvest",
+        actorId: "incumbent",
+        completion: "continuous",
+        contractId: first.id,
+      },
+    ]);
+    expect(Object.isFrozen(view)).toBe(true);
+    expect(Object.isFrozen(view.leases)).toBe(true);
+    expect(reopenLedger(first.ledger).executionView()).toEqual(view);
+
+    const legacy = createAssignedLedger(makeRequest()).ledger.executionView();
+    expect(legacy).toEqual({ leases: [], status: "ready" });
+  });
+
+  it("rejects malformed or ambiguous execution terms without changing contract state", () => {
+    const ledger = openLedger({});
+    const before = JSON.stringify(ledger.view());
+    const invalid = makeRequest({
+      execution: {
+        action: "transfer",
+        completion: "target-full",
+        counterpartId: null,
+        resourceType: "energy",
+        version: 1,
+      },
+    });
+    const missingResource = makeRequest({
+      kind: "fill",
+      execution: {
+        action: "transfer",
+        completion: "target-full",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+    });
+
+    expect(ledger.submit(invalid, 1)).toMatchObject({ accepted: false, reason: "invalid-request" });
+    expect(ledger.submit(missingResource, 1)).toMatchObject({
+      accepted: false,
+      reason: "invalid-request",
+    });
+    expect(JSON.stringify(ledger.view())).toBe(before);
+  });
 });
 
 function openLedger(value: unknown): ContractLedger {

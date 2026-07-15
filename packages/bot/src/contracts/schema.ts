@@ -69,6 +69,14 @@ const REQUEST_KEYS = [
   "targetId",
 ] as const;
 
+const EXECUTION_KEYS = [
+  "action",
+  "completion",
+  "counterpartId",
+  "resourceType",
+  "version",
+] as const;
+
 const RECORD_KEYS = [
   ...REQUEST_KEYS,
   "history",
@@ -245,7 +253,7 @@ function parseContractLedgerState(value: unknown): ContractLedgerStateV1 {
 }
 
 function parseRecord(value: unknown, path: string): WorkContractRecord {
-  const record = requireRecord(value, path, RECORD_KEYS);
+  const record = requireRecord(value, path, recordKeysFor(value));
   const request = parseRequest(record, path);
   const id = requireString(record.id, `${path}.id`, 1, 512);
   if (id !== contractIdFor(request.issuer, request.issuerKey, request.issuerSequence)) {
@@ -354,10 +362,15 @@ function parseRequest(
     CAPABILITY_KEYS,
   );
   const target = requireRecord(record.target, `${path}.target`, ["roomName", "x", "y"]);
+  const execution =
+    record.execution === undefined
+      ? undefined
+      : requireRecord(record.execution, `${path}.execution`, EXECUTION_KEYS);
   const request = {
     budgetBinding,
     conditions,
     deadline: record.deadline,
+    ...(execution === undefined ? {} : { execution }),
     earliestStart: record.earliestStart,
     estimatedWorkTicks: record.estimatedWorkTicks,
     expiresAt: record.expiresAt,
@@ -485,12 +498,24 @@ function parseOutcomeRequestSignature(signature: string, path: string): WorkCont
       "must encode one canonical contract request",
     );
   }
-  const record = requireRecord(decoded, path, REQUEST_KEYS);
+  const record = requireRecord(decoded, path, requestKeysFor(decoded));
   const request = parseRequest(record, path);
   if (requestSignature(request) !== signature) {
     invalid("invalid-outcome-request-signature", path, "must use canonical request serialization");
   }
   return request;
+}
+
+function requestKeysFor(value: unknown): readonly string[] {
+  return isRecord(value) && hasOwn(value, "execution")
+    ? [...REQUEST_KEYS, "execution"]
+    : REQUEST_KEYS;
+}
+
+function recordKeysFor(value: unknown): readonly string[] {
+  return isRecord(value) && hasOwn(value, "execution")
+    ? [...RECORD_KEYS, "execution"]
+    : RECORD_KEYS;
 }
 
 function parseIssuerFrontier(value: unknown, path: string): ContractIssuerFrontier {
@@ -608,6 +633,10 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   }
   const prototype: unknown = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function hasOwn(value: Readonly<Record<string, unknown>>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function invalid(code: string, path: string, message: string): never {

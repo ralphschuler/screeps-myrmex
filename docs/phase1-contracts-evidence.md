@@ -4,7 +4,8 @@ Evidence version: `phase1-contracts-v4`
 
 Primary slice: [issue #23](https://github.com/ralphschuler/screeps-myrmex/issues/23), with spawn
 settlement ordering integrated by
-[issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24)
+[issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24) and executable leased-work
+terms by [issue #114](https://github.com/ralphschuler/screeps-myrmex/issues/114).
 
 This document is the evidence contract for persistent capability contracts and bounded workforce
 allocation. CI is authoritative for the referenced commit. This slice enables later Phase 1 economy,
@@ -13,32 +14,34 @@ zero-creep recovery exit condition by itself.
 
 ## Outcome matrix
 
-| Outcome                                                    | Evidence                                                                    |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Exact empty owner initializes owner-local v1               | `contract-ledger.test.ts`, `tick.test.ts`                                   |
-| Malformed or future owner content is preserved and faults  | `contract-ledger.test.ts`, `tick.test.ts`                                   |
-| Terminal signatures are canonical and identity-bound       | `contract-ledger.test.ts`                                                   |
-| Same issuer retry is idempotent; changed terms conflict    | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
-| Evicted terminal identities remain retired after reopen    | `contract-ledger.test.ts`                                                   |
-| Only declared state transitions are accepted               | `contract-ledger.test.ts`                                                   |
-| Live matching BudgetLedger authorization is required       | `contract-ledger.test.ts`, `tick.test.ts`, `phase1-contracts.test.ts`       |
-| Grant renewal preserves one contract identity              | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
-| One live grant binding authorizes one active contract      | `contract-ledger.test.ts`, owner schema validation                          |
-| Revocation suspends work and removes its lease             | `contract-ledger.test.ts`                                                   |
-| Unknown funding evidence preserves state without assigning | `contract-ledger.test.ts`, `tick.test.ts`                                   |
-| Expiry, cancellation, history, and outcome bounds hold     | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
-| Missing or damaged actors release leases before reassign   | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
-| Spawning/null-TTL actors and unknown travel fail closed    | `workforce-allocator.test.ts`                                               |
-| Exact deadline/TTL equality remains viable through work    | `workforce-allocator.test.ts`, `phase1-contracts.test.ts`                   |
-| Equal bids and reordered inputs select deterministically   | `workforce-allocator.test.ts`, `phase1-contracts.test.ts`                   |
-| Contract, actor, pair, and safe-idle caps defer safely     | `workforce-allocator.test.ts`                                               |
-| `Game.creeps` is the canonical owned-actor inventory       | `world-snapshot.test.ts`                                                    |
-| Warm and heap-reset runs preserve contract outcomes        | `phase1-contracts.test.ts`                                                  |
-| Only the ledger stages the contracts owner transaction     | `architecture-boundaries.test.mjs`, bundle and dependency checks in `check` |
-| Contract reconcile precedes the one mandatory root commit  | `tick.test.ts`, kernel order and mandatory-tail tests                       |
-| Mandatory-tail spawn settlement precedes contract funding  | `tick.test.ts`, kernel deterministic system order                           |
-| Skip, stage discard, or root rejection preserves honesty   | `tick.test.ts`                                                              |
-| Disabled and prerequisite-blocked gates preserve the owner | `runtime-config.test.ts`, `tick.test.ts`, `phase1-config.test.ts`           |
+| Outcome                                                     | Evidence                                                                    |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Exact empty owner initializes owner-local v1                | `contract-ledger.test.ts`, `tick.test.ts`                                   |
+| Malformed or future owner content is preserved and faults   | `contract-ledger.test.ts`, `tick.test.ts`                                   |
+| Terminal signatures are canonical and identity-bound        | `contract-ledger.test.ts`                                                   |
+| Same issuer retry is idempotent; changed terms conflict     | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
+| Evicted terminal identities remain retired after reopen     | `contract-ledger.test.ts`                                                   |
+| Only declared state transitions are accepted                | `contract-ledger.test.ts`                                                   |
+| Live matching BudgetLedger authorization is required        | `contract-ledger.test.ts`, `tick.test.ts`, `phase1-contracts.test.ts`       |
+| Grant renewal preserves one contract identity               | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
+| One live grant binding authorizes one active contract       | `contract-ledger.test.ts`, owner schema validation                          |
+| Revocation suspends work and removes its lease              | `contract-ledger.test.ts`                                                   |
+| Unknown funding evidence preserves state without assigning  | `contract-ledger.test.ts`, `tick.test.ts`                                   |
+| Expiry, cancellation, history, and outcome bounds hold      | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
+| Missing or damaged actors release leases before reassign    | `contract-ledger.test.ts`, `phase1-contracts.test.ts`                       |
+| Spawning/null-TTL actors and unknown travel fail closed     | `workforce-allocator.test.ts`                                               |
+| Exact deadline/TTL equality remains viable through work     | `workforce-allocator.test.ts`, `phase1-contracts.test.ts`                   |
+| Equal bids and reordered inputs select deterministically    | `workforce-allocator.test.ts`, `phase1-contracts.test.ts`                   |
+| Contract, actor, pair, and safe-idle caps defer safely      | `workforce-allocator.test.ts`                                               |
+| `Game.creeps` is the canonical owned-actor inventory        | `world-snapshot.test.ts`                                                    |
+| Warm and heap-reset runs preserve contract outcomes         | `phase1-contracts.test.ts`                                                  |
+| Explicit action/resource terms reject ambiguity fail-closed | `contract-ledger.test.ts`                                                   |
+| Leased-work projection omits legacy/unleased records        | `contract-ledger.test.ts`, `tick.test.ts`                                   |
+| Only the ledger stages the contracts owner transaction      | `architecture-boundaries.test.mjs`, bundle and dependency checks in `check` |
+| Contract reconcile precedes the one mandatory root commit   | `tick.test.ts`, kernel order and mandatory-tail tests                       |
+| Mandatory-tail spawn settlement precedes contract funding   | `tick.test.ts`, kernel deterministic system order                           |
+| Skip, stage discard, or root rejection preserves honesty    | `tick.test.ts`                                                              |
+| Disabled and prerequisite-blocked gates preserve the owner  | `runtime-config.test.ts`, `tick.test.ts`, `phase1-config.test.ts`           |
 
 The named files are assertions, not import smoke tests. Scenario evidence compares outcome hashes
 across warm, reset, and reordered-input runs while allowing reset telemetry to differ.

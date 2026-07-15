@@ -1,7 +1,7 @@
 import type { ArbitrationBatch } from "../execution";
 import type { ColonyPlanningResult } from "../colony";
 import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
-import type { ContractReconciliationResult } from "../contracts";
+import type { ContractExecutionView, ContractReconciliationResult } from "../contracts";
 import type { MemoryCommitResult } from "../state/memory";
 import type { SpawnRuntimeResult } from "../spawn";
 import type { MovementRuntimeChannels, MovementRuntimeResult } from "../movement";
@@ -43,6 +43,8 @@ export interface TickContext {
   readonly colony: ColonyPlanningResult;
   /** Immutable tick-local contract reconciliation and workforce-allocation view. */
   readonly contracts: ContractReconciliationResult | null;
+  /** Sanitized leased-work authorization for plan systems; never raw contract-owner data. */
+  readonly contractExecution: ContractExecutionView;
   readonly execution: ArbitrationBatch | null;
   /** Bounded data-only channels for admitted movement and primary-action planners. */
   readonly movementChannels: MovementRuntimeChannels;
