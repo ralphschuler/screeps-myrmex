@@ -49,6 +49,21 @@ describe("MemoryManager transactions", () => {
     expect(memory.myrmex?.empire).toEqual({});
   });
 
+  it("keeps raw operator config out of the aggregate state view", () => {
+    const memory = {} as Memory;
+    const manager = readyManager(memory, 25);
+    manager
+      .transaction("config")
+      .replace({ candidate: { revision: 1, overrides: { survival: { reserve: 8_000 } } } })
+      .stage();
+
+    expect(manager.commitReconciliation()).toMatchObject({ committed: true, owners: ["config"] });
+    expect(memory.myrmex?.config).toEqual({
+      candidate: { revision: 1, overrides: { survival: { reserve: 8_000 } } },
+    });
+    expect(manager.view()).not.toHaveProperty("config");
+  });
+
   it("atomically rejects every staged owner when one owner is not JSON-safe", () => {
     const memory = {} as Memory;
     const manager = readyManager(memory, 30);

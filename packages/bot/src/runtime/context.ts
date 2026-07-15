@@ -1,4 +1,5 @@
 import type { ArbitrationBatch } from "../execution";
+import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
 import type { MemoryCommitResult } from "../state/memory";
 import type { StateView } from "../state/schema";
 import type { TickTelemetry } from "../telemetry/metrics";
@@ -22,6 +23,10 @@ export interface TickContext {
   readonly tick: number;
   readonly shard: string;
   readonly memoryStatus: "ready" | "recovery" | "unsupported";
+  /** The sole recursively immutable policy view for every admitted system. */
+  readonly config: RuntimeConfig;
+  /** Bounded reason codes only; the raw override owner is never exposed to systems. */
+  readonly configResolution: RuntimeConfigResolutionMetadata;
   /** Detached durable input. Systems never receive mutable Memory. */
   readonly state: StateView | null;
   /** The current tick's immutable observation, or an explicit empty value before Observe commits. */

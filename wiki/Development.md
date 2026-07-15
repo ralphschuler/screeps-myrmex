@@ -10,6 +10,38 @@ npm run check
 The gate covers formatting, lint, TypeScript, tests, Markdown, the production bundle, and the
 publishable package layout.
 
+## Runtime policy
+
+Operators may change only `Memory.myrmex.config.candidate`. Use a nonnegative safe-integer revision
+greater than the accepted candidate revision whenever content changes. The candidate is one complete
+override, not a merge with the previous candidate. To return to source defaults, publish a newer
+candidate with `overrides: {}`.
+
+Do not use `candidate: null` as rollback. Null means no new proposal and leaves a compatible
+`lastValid` policy and revision receipt active. A rollback is always a newer complete candidate.
+
+```js
+Memory.myrmex.config.candidate = {
+  revision: 12,
+  overrides: {
+    policy: { recovery: { protectedSpawnEnergy: 400 } },
+    relations: { self: ["MyUser"], allies: ["AllyA"], naps: [] },
+    features: { disabled: ["phase1.growth"] },
+  },
+};
+```
+
+Do not edit the owner `schemaVersion` or bot-owned `lastValid`. Unknown keys, invalid values, and
+malformed or overlapping identities reject the whole candidate. Operational feature values can only
+disable source-available gates; they cannot activate incomplete gameplay. Confirm the bounded
+status/reason plus the config and policy revisions after changing a candidate. Keep real identities
+and operational values out of repository logs and issues.
+
+For a malformed or future config-owner schema, the runtime preserves the value and uses source
+defaults. Save and diagnose it privately before explicitly resetting the owner to exact `{}`. The
+full workflow and policy bounds are in the repository's `docs/development.md` and
+`docs/phase1-config-evidence.md`.
+
 Release tags publish `@ralphschuler/screeps-myrmex` to GitHub Packages. The manual deployment
 workflow uploads a commit-marked bundle and verifies the same code from Screeps.
 

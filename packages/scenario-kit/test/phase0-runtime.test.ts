@@ -178,7 +178,7 @@ describe("Phase 0 deterministic runtime scenarios", () => {
       };
     };
     expect(root.meta).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: 3,
       firstTick: 100,
       lastTick: 102,
@@ -203,6 +203,7 @@ describe("Phase 0 deterministic runtime scenarios", () => {
       ["recovery", 1, "recovery"],
       ["recovery", 2, "recovery"],
       ["recovery", 3, "recovery"],
+      ["recovery", 0, "recovery"],
       ["ready", null, "normal"],
     ]);
 
@@ -447,7 +448,7 @@ function migrationScenario(
         },
       },
     },
-    ticks: [500, 501, 502, 503, 504].map((gameTime, index) => ({
+    ticks: [500, 501, 502, 503, 504, 505].map((gameTime, index) => ({
       gameTime,
       input: null,
       cpuBudget: 5,

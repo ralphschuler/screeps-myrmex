@@ -18,13 +18,15 @@ export type DeepReadonly<T> = T extends JsonPrimitive
       : never;
 
 export const LEGACY_MEMORY_SCHEMA_VERSION = 1 as const;
-export const MEMORY_CURRENT_SCHEMA_VERSION = 2 as const;
+export const PREVIOUS_MEMORY_SCHEMA_VERSION = 2 as const;
+export const MEMORY_CURRENT_SCHEMA_VERSION = 3 as const;
 export const MEMORY_TARGET_SCHEMA_VERSION = MEMORY_CURRENT_SCHEMA_VERSION;
 
 /** Compatibility name for callers that only need the active durable schema number. */
 export const MEMORY_SCHEMA_VERSION = MEMORY_CURRENT_SCHEMA_VERSION;
 
-export const PERSISTENT_STATE_OWNERS = [
+/** Owners present in the deployed schema-2 root and historical v1-to-v2 migration. */
+export const PREVIOUS_PERSISTENT_STATE_OWNERS = [
   "kernel",
   "empire",
   "colonies",
@@ -38,17 +40,34 @@ export const PERSISTENT_STATE_OWNERS = [
   "telemetry",
 ] as const;
 
+export const PERSISTENT_STATE_OWNERS = ["config", ...PREVIOUS_PERSISTENT_STATE_OWNERS] as const;
+
+export type PreviousPersistentStateOwner = (typeof PREVIOUS_PERSISTENT_STATE_OWNERS)[number];
 export type PersistentStateOwner = (typeof PERSISTENT_STATE_OWNERS)[number];
 
-export const MEMORY_MIGRATION_ID = "myrmex-memory-v1-to-v2" as const;
-export const MEMORY_MIGRATION_STEP_COUNT = 4 as const;
+/** These literals are persisted by deployed code and must remain stable. */
+export const LEGACY_MEMORY_MIGRATION_ID = "myrmex-memory-v1-to-v2" as const;
+export const LEGACY_MEMORY_MIGRATION_STEP_COUNT = 4 as const;
+export const MEMORY_MIGRATION_ID = "myrmex-memory-v2-to-v3" as const;
+export const MEMORY_MIGRATION_STEP_COUNT = 1 as const;
 export const MAX_MEMORY_DIAGNOSTICS = 16 as const;
 
 export type MemoryRecoveryReason = "corrupt-root" | "schema-migration";
 
-export interface MemoryMigrationCursor {
-  readonly id: typeof MEMORY_MIGRATION_ID;
+export interface LegacyMemoryMigrationCursor {
+  readonly id: typeof LEGACY_MEMORY_MIGRATION_ID;
   readonly fromVersion: typeof LEGACY_MEMORY_SCHEMA_VERSION;
+  readonly targetVersion: typeof PREVIOUS_MEMORY_SCHEMA_VERSION;
+  /** Zero-based index of the next migration step to execute. */
+  readonly nextStep: number;
+  readonly stepCount: typeof LEGACY_MEMORY_MIGRATION_STEP_COUNT;
+  readonly startedAt: number;
+  readonly updatedAt: number;
+}
+
+export interface CurrentMemoryMigrationCursor {
+  readonly id: typeof MEMORY_MIGRATION_ID;
+  readonly fromVersion: typeof PREVIOUS_MEMORY_SCHEMA_VERSION;
   readonly targetVersion: typeof MEMORY_TARGET_SCHEMA_VERSION;
   /** Zero-based index of the next migration step to execute. */
   readonly nextStep: number;
@@ -56,6 +75,8 @@ export interface MemoryMigrationCursor {
   readonly startedAt: number;
   readonly updatedAt: number;
 }
+
+export type MemoryMigrationCursor = LegacyMemoryMigrationCursor | CurrentMemoryMigrationCursor;
 
 export interface MemoryRecoveryMarker {
   readonly active: true;
@@ -82,22 +103,53 @@ export interface MyrmexMemoryMeta {
   readonly recovery: null;
 }
 
-export interface MigratingMyrmexMemoryMeta {
-  readonly schemaVersion: typeof LEGACY_MEMORY_SCHEMA_VERSION;
-  readonly targetSchemaVersion: typeof MEMORY_TARGET_SCHEMA_VERSION;
+export interface PreviousMyrmexMemoryMeta {
+  readonly schemaVersion: typeof PREVIOUS_MEMORY_SCHEMA_VERSION;
+  readonly targetSchemaVersion: typeof PREVIOUS_MEMORY_SCHEMA_VERSION;
   readonly revision: number;
   readonly firstTick: number;
   readonly lastTick: number;
   readonly shard: string;
   readonly diagnostics: readonly MemoryDiagnostic[];
-  readonly migration: MemoryMigrationCursor;
+  readonly migration: null;
+  readonly recovery: null;
+}
+
+interface MigratingMyrmexMemoryMetaBase {
+  readonly revision: number;
+  readonly firstTick: number;
+  readonly lastTick: number;
+  readonly shard: string;
+  readonly diagnostics: readonly MemoryDiagnostic[];
   readonly recovery: MemoryRecoveryMarker;
 }
 
+export interface LegacyMigratingMyrmexMemoryMeta extends MigratingMyrmexMemoryMetaBase {
+  readonly schemaVersion: typeof LEGACY_MEMORY_SCHEMA_VERSION;
+  readonly targetSchemaVersion: typeof PREVIOUS_MEMORY_SCHEMA_VERSION;
+  readonly migration: LegacyMemoryMigrationCursor;
+}
+
+export interface CurrentMigratingMyrmexMemoryMeta extends MigratingMyrmexMemoryMetaBase {
+  readonly schemaVersion: typeof PREVIOUS_MEMORY_SCHEMA_VERSION;
+  readonly targetSchemaVersion: typeof MEMORY_TARGET_SCHEMA_VERSION;
+  readonly migration: CurrentMemoryMigrationCursor;
+}
+
+export type MigratingMyrmexMemoryMeta =
+  LegacyMigratingMyrmexMemoryMeta | CurrentMigratingMyrmexMemoryMeta;
+
 export type PersistentOwnerState = Readonly<Record<PersistentStateOwner, JsonObject>>;
+export type PreviousPersistentOwnerState = Readonly<
+  Record<PreviousPersistentStateOwner, JsonObject>
+>;
 
 export interface MyrmexMemory extends PersistentOwnerState {
   readonly meta: MyrmexMemoryMeta;
+}
+
+export interface PreviousMyrmexMemory extends PreviousPersistentOwnerState {
+  readonly meta: PreviousMyrmexMemoryMeta;
 }
 
 /**
@@ -109,7 +161,8 @@ export type MigratingMyrmexMemory = {
 } & Partial<PersistentOwnerState>;
 
 export type MyrmexMemoryRoot = MyrmexMemory | MigratingMyrmexMemory;
-export type StateView = DeepReadonly<MyrmexMemory>;
+/** General runtime consumers cannot inspect the operator-owned raw config candidate. */
+export type StateView = DeepReadonly<Omit<MyrmexMemory, "config">>;
 export type OwnerStateView = DeepReadonly<JsonObject>;
 
 declare global {

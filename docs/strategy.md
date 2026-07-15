@@ -25,7 +25,17 @@ Players occupy one of seven states: self, ally, non-aggression pact, neutral, tr
 or war. Reputation is based on observed events with decay and confidence.
 
 Escalation is predictable: observe, warn, block, evict, deny remotes, retaliate, then wage war.
-Configured allies are excluded from targeting by a fail-closed safety invariant.
+Configured self, allies, and non-aggression-pact players are authoritative exclusions and are never
+targetable. This check occurs before optional reputation, so empty, stale, malformed,
+future-assessed, or contradictory reputation cannot weaken it. Invalid observed identities also fail
+closed to exclusion.
+
+During Phase 1, a valid unconfigured identity has at most a `local-defense` targeting ceiling.
+`local-defense` is not permission to attack: a defense authority must additionally prove a fresh
+threat in an owned room. Irreversible offense remains forbidden until a later authorized operation.
+Optional reputation may reduce a ceiling but cannot raise it. The engine's hostile collections mean
+“not owned,” not “diplomatically authorized,” and area-effect actions must preserve configured
+exclusions.
 
 ## Economy
 

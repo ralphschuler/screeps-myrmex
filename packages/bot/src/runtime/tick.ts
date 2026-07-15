@@ -1,5 +1,7 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
 import { getRuntimeCacheManager, type CacheManager } from "../cache";
+import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
+import { RuntimeConfigAuthority, type RuntimeConfigResolution } from "../config/authority";
 import {
   openMyrmexMemory,
   type MemoryCommitResult,
@@ -24,6 +26,7 @@ import type { TickPhase } from "./phases";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
+const runtimeConfigAuthority = new RuntimeConfigAuthority();
 
 export interface TickInput {
   readonly game: RuntimeGame;
@@ -35,6 +38,8 @@ export interface TickInput {
 export interface TickOutcome {
   readonly memoryStatus: OpenMemoryResult["status"];
   readonly migrationStepsApplied: number;
+  readonly config: RuntimeConfig;
+  readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly snapshot: WorldSnapshot;
   readonly execution: ArbitrationBatch | null;
   readonly stateCommit: MemoryCommitResult | null;
@@ -66,8 +71,18 @@ export function runTick(input: TickInput): TickOutcome {
   const cacheManager = getRuntimeCacheManager();
   const manager = opened.status === "ready" ? opened.manager : null;
   const state = manager?.view() ?? null;
+  const configResolution = runtimeConfigAuthority.resolve(
+    manager?.ownerView("config") ?? null,
+    input.game.time,
+  );
   const restored = restoreKernelState(state);
-  const runtime = createTickRuntime(input.game, opened.status, state);
+  const runtime = createTickRuntime(
+    input.game,
+    opened.status,
+    state,
+    configResolution.config,
+    configResolution.metadata,
+  );
   const intentChannel = createIntentChannel({
     maximumSubmitted: 512,
     maximumAccepted: 128,
@@ -81,6 +96,7 @@ export function runTick(input: TickInput): TickOutcome {
     cacheManager,
     runtime,
     intentChannel,
+    configReplacement: configResolution.replacementOwner,
     onPhase: input.onPhase,
     getKernel: () => kernel,
   });
@@ -95,11 +111,13 @@ export function runTick(input: TickInput): TickOutcome {
     cpu: input.game.cpu,
     tickStartedAtCpu,
     signals: { recoveryRequired: opened.status !== "ready" },
-    inputRevision: snapshotRevision(runtime.context.snapshot),
+    inputRevision: runtimeInputRevision(runtime.context.snapshot, runtime.context.config),
   });
   return Object.freeze({
     memoryStatus: opened.status,
     migrationStepsApplied: opened.migrationStepsApplied,
+    config: runtime.context.config,
+    configResolution: runtime.context.configResolution,
     snapshot: runtime.context.snapshot,
     execution: runtime.context.execution,
     stateCommit: runtime.context.stateCommit,
@@ -114,6 +132,7 @@ interface CompositionInput {
   readonly cacheManager: CacheManager;
   readonly runtime: TickRuntimeControl;
   readonly intentChannel: IntentChannel;
+  readonly configReplacement: RuntimeConfigResolution["replacementOwner"];
   readonly onPhase: ((phase: TickPhase) => void) | undefined;
   readonly getKernel: () => RuntimeKernel<TickContext>;
 }
@@ -121,7 +140,7 @@ interface CompositionInput {
 /** Static, explicit Phase 0 composition. Gameplay systems replace the no-op policy stages later. */
 function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<TickContext>[] {
   return Object.freeze([
-    phaseMarker("core.boot", "boot", true, false, 0.05, input.onPhase),
+    configBootSystem(input),
     {
       descriptor: {
         id: "world.observe",
@@ -238,6 +257,8 @@ function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<T
           cpuBucket: input.game.cpu.bucket,
           snapshot: context.snapshot,
           cache: input.cacheManager.metrics(),
+          config: context.config,
+          configResolution: context.configResolution,
         });
         return staged(() => {
           input.runtime.publishTelemetry(telemetry);
@@ -245,6 +266,39 @@ function composePhaseZeroSystems(input: CompositionInput): readonly TickSystem<T
       },
     },
   ]);
+}
+
+function configBootSystem(input: CompositionInput): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "core.boot",
+      phase: "boot",
+      criticality: "mandatory",
+      cadence: 1,
+      estimate: 0.05,
+      admitInRecovery: true,
+      mandatoryTail: false,
+    },
+    run: () => {
+      input.onPhase?.("boot");
+      return staged(
+        () => {
+          if (input.manager === null || input.configReplacement === null) {
+            return;
+          }
+          const transaction = input.manager.transaction("config");
+          transaction.replace(input.configReplacement);
+          const stagedResult = transaction.stage();
+          if (!stagedResult.staged) {
+            throw new Error(stagedResult.fault?.message ?? "config state staging failed");
+          }
+        },
+        () => {
+          input.manager?.discard("config");
+        },
+      );
+    },
+  };
 }
 
 function phaseMarker(
@@ -283,6 +337,8 @@ function createTickRuntime(
   game: RuntimeGame,
   memoryStatus: TickContext["memoryStatus"],
   state: StateView | null,
+  config: RuntimeConfig,
+  configResolution: RuntimeConfigResolutionMetadata,
 ): TickRuntimeControl {
   let snapshot = emptyWorldSnapshot(game.time, game.shard.name);
   let execution: ArbitrationBatch | null = null;
@@ -292,6 +348,8 @@ function createTickRuntime(
     tick: game.time,
     shard: game.shard.name,
     memoryStatus,
+    config,
+    configResolution,
     state,
     get snapshot(): WorldSnapshot {
       return snapshot;
@@ -401,4 +459,8 @@ function snapshotRevision(snapshot: WorldSnapshot): string {
   return `${snapshot.observation.shard}:${String(snapshot.observation.tick)}:${String(
     snapshot.stats.estimatedPayloadBytes,
   )}`;
+}
+
+function runtimeInputRevision(snapshot: WorldSnapshot, config: RuntimeConfig): string {
+  return `${snapshotRevision(snapshot)}|config:${config.revision}|policy:${config.policyRevision}`;
 }
