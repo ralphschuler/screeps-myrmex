@@ -55,15 +55,15 @@ The fallback target format is:
 ```
 
 Room names and coordinates are operational intelligence, so keep this value in a secret rather than
-a repository variable. The respawner first tries configured, non-prohibited targets and then a start
-room returned by Screeps. It scores an interior tile from encoded terrain and visible room objects;
-no target coordinate is printed to the public workflow log.
+a repository variable. Every configured target must name its shard. The respawner discovers the
+currently available shards itself, counts owned rooms across all of them, and requests a start room
+on every shard. It ranks valid rooms by spawn-site quality and uses shard name and room name as
+stable tie-breakers. No target coordinate is printed to the public workflow log.
 
 Add these environment variables:
 
 | Variable                        | Required         | Default                   | Meaning                                                                  |
 | ------------------------------- | ---------------- | ------------------------- | ------------------------------------------------------------------------ |
-| `SCREEPS_SHARD`                 | yes for respawn  | none                      | shard on which to request a new start room                               |
 | `SCREEPS_AUTO_RESPAWN_ENABLED`  | yes for mutation | `false`                   | must equal `true` before scheduled recovery can mutate the account       |
 | `SCREEPS_RESPAWN_ON_ZERO_ROOMS` | no               | `false`                   | also recover when status is `normal` but the rooms endpoint reports zero |
 | `SCREEPS_RESPAWN_NAME`          | no               | `Myrmex`                  | non-secret prefix for the generated spawn name                           |
@@ -73,7 +73,8 @@ Use a dedicated Screeps token scoped, where supported, to only the endpoints req
 workflows:
 
 - deployment: `GET` and `POST /api/user/code`;
-- health: `GET /api/user/world-status` and `GET /api/user/rooms`;
+- shard discovery: `GET /api/game/shards/info`;
+- health: `GET /api/user/world-status` and `GET /api/user/rooms` on every discovered shard;
 - respawn transition: `POST /api/user/respawn`;
 - target selection: `GET /api/user/respawn-prohibited-rooms`, `GET /api/user/world-start-room`,
   `GET /api/game/room-terrain`, and `GET /api/game/room-objects`;
@@ -106,7 +107,7 @@ validated commit to the same branch or activation of a separately maintained las
 
 ### Auto-respawn procedure
 
-1. Configure `SCREEPS_SHARD` and `SCREEPS_TOKEN`.
+1. Configure `SCREEPS_TOKEN`; shard discovery is automatic.
 2. Keep `SCREEPS_AUTO_RESPAWN_ENABLED=false` and run `Auto Respawn` manually with dry-run enabled.
 3. Optionally configure private fallback targets.
 4. Set `SCREEPS_RESPAWN_ON_ZERO_ROOMS=true` only when a normal account state with zero reported
@@ -116,8 +117,8 @@ validated commit to the same branch or activation of a separately maintained las
 Healthy accounts are read-only. A `lost` account, or an explicitly authorized zero-room account, is
 moved through respawn and polled until it becomes `empty`. An `empty` account skips the destructive
 respawn call and proceeds directly to placement. After `place-spawn`, the action requires
-`world-status=normal`. Unknown states, missing configuration, exhausted targets, or changed API
-responses fail without additional account mutation.
+`world-status=normal`. Unknown states, malformed shard or room data, exhausted targets, or changed
+API responses fail without additional account mutation.
 
 Auto-respawn is disaster recovery, not expansion strategy. Once the initial spawn exists, the
 runtime's cold-boot and colony systems own all further decisions.
