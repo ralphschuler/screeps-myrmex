@@ -57,8 +57,10 @@ The fallback target format is:
 Room names and coordinates are operational intelligence, so keep this value in a secret rather than
 a repository variable. Every configured target must name its shard. The respawner discovers the
 currently available shards itself, reads the account-wide room map once, and requests a start room
-on every shard. It ranks valid rooms by spawn-site quality and uses shard name and room name as
-stable tie-breakers. No target coordinate is printed to the public workflow log.
+on every shard. The prohibited-room response uses `shard/room` identifiers; configured and
+discovered candidates are matched against that qualified key so identical room names on different
+shards remain distinct. It ranks valid rooms by spawn-site quality and uses shard name and room name
+as stable tie-breakers. No target coordinate is printed to the public workflow log.
 
 Add these environment variables:
 

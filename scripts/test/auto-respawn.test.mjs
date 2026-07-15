@@ -182,6 +182,107 @@ describe("Screeps auto-respawn", () => {
     );
   });
 
+  it.each([[null], [["W1N1"]]])("fails closed on malformed prohibited rooms: %j", async (rooms) => {
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "empty" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+        if (endpoint === "user/respawn-prohibited-rooms") return { ok: 1, rooms };
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }),
+      post: vi.fn(),
+    };
+
+    await expect(
+      ensureRespawn({
+        client,
+        configuredTargets: [{ room: "W1N1", shard: "shard3", x: 20, y: 20 }],
+        enabled: true,
+      }),
+    ).rejects.toThrow("malformed prohibited rooms");
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  it("keeps identical room names distinct when one shard target is prohibited", async () => {
+    let statusCalls = 0;
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") {
+          statusCalls += 1;
+          return { ok: 1, status: statusCalls === 1 ? "empty" : "normal" };
+        }
+        if (endpoint === "game/shards/info") {
+          return { ok: 1, shards: [{ name: "shard1" }, { name: "shard3" }] };
+        }
+        if (endpoint === "user/rooms") {
+          return {
+            ok: 1,
+            reservations: { shard1: [], shard3: [] },
+            shards: { shard1: [], shard3: [] },
+          };
+        }
+        if (endpoint === "user/respawn-prohibited-rooms") {
+          return { ok: 1, rooms: ["shard3/W1N1"] };
+        }
+
+        throw new Error("dynamic target unavailable");
+      }),
+      post: vi.fn(async () => ({ ok: 1 })),
+    };
+
+    await ensureRespawn({
+      client,
+      configuredTargets: [
+        { room: "W1N1", shard: "shard3", x: 20, y: 20 },
+        { room: "W1N1", shard: "shard1", x: 20, y: 20 },
+      ],
+      enabled: true,
+      now: () => 1,
+    });
+
+    expect(client.post).toHaveBeenCalledTimes(1);
+    expect(client.post).toHaveBeenCalledWith(
+      "game/place-spawn",
+      { room: "W1N1", shard: "shard1", x: 20, y: 20, name: "Myrmex-1" },
+      { allowApiError: true },
+    );
+  });
+
+  it("fails before placement when every discovered target is prohibited", async () => {
+    const objects = [
+      { type: "source", x: 10, y: 10 },
+      { type: "source", x: 40, y: 40 },
+      { type: "controller", x: 25, y: 25 },
+    ];
+    const client = {
+      get: vi.fn(async (endpoint) => {
+        if (endpoint === "user/world-status") return { ok: 1, status: "empty" };
+        if (endpoint === "game/shards/info") return shardInfo;
+        if (endpoint === "user/rooms") {
+          return { ok: 1, reservations: { shard3: [] }, shards: { shard3: [] } };
+        }
+        if (endpoint === "user/respawn-prohibited-rooms") {
+          return { ok: 1, rooms: ["shard3/W1N1"] };
+        }
+        if (endpoint === "user/world-start-room") return { ok: 1, room: "W1N1" };
+        if (endpoint === "game/room-terrain") {
+          return { ok: 1, terrain: [{ terrain: "0".repeat(2_500) }] };
+        }
+        if (endpoint === "game/room-objects") return { ok: 1, objects };
+        throw new Error(`Unexpected endpoint: ${endpoint}`);
+      }),
+      post: vi.fn(),
+    };
+
+    await expect(ensureRespawn({ client, enabled: true })).rejects.toThrow(
+      "No permitted respawn target is available.",
+    );
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
   it("validates shard discovery and configured target JSON", () => {
     expect(
       parseShards({ shards: [{ name: "shard3" }, { name: "shard1" }, { name: "shard3" }] }),

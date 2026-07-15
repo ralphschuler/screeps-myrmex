@@ -53,6 +53,27 @@ function positionKey(x, y) {
   return `${x}:${y}`;
 }
 
+function respawnRoomKey(target) {
+  return `${target.shard}/${target.room}`;
+}
+
+function prohibitedRoomKeys(payload) {
+  const rooms = payload?.rooms;
+
+  if (
+    !Array.isArray(rooms) ||
+    rooms.some((key) => {
+      if (typeof key !== "string") return true;
+      const parts = key.split("/");
+      return parts.length !== 2 || parts.some((part) => part.length === 0);
+    })
+  ) {
+    throw new Error("Screeps returned malformed prohibited rooms; refusing spawn placement.");
+  }
+
+  return new Set(rooms);
+}
+
 function chebyshev(left, right) {
   return Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y));
 }
@@ -314,14 +335,12 @@ export async function ensureRespawn({
   }
 
   const prohibitedPayload = await client.get("user/respawn-prohibited-rooms");
-  const prohibited = new Set(
-    Array.isArray(prohibitedPayload?.rooms) ? prohibitedPayload.rooms : [],
-  );
+  const prohibited = prohibitedRoomKeys(prohibitedPayload);
   const targets = configuredTargets.filter(
-    (target) => shards.includes(target.shard) && !prohibited.has(target.room),
+    (target) => shards.includes(target.shard) && !prohibited.has(respawnRoomKey(target)),
   );
   const dynamicTargets = await discoverDynamicTargets(client, shards);
-  targets.push(...dynamicTargets.filter((target) => !prohibited.has(target.room)));
+  targets.push(...dynamicTargets.filter((target) => !prohibited.has(respawnRoomKey(target))));
 
   if (targets.length === 0) {
     throw new Error("No permitted respawn target is available.");
