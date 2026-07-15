@@ -46,10 +46,9 @@ The config foundation initially left every Phase 1 gameplay gate source-unavaila
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`
 available under `runtime-config-source-v3`; issue #24 makes `phase1.spawn` available under
 `runtime-config-source-v4`; issue #25 makes `phase1.movement` available under
-`runtime-config-source-v5`. Every later gate remains
-source-unavailable. Each subsequent outcome change may mark only its own gate available after its
-prerequisites and outcome test exist. Operational Memory may disable available work but can never
-activate an unfinished gate.
+`runtime-config-source-v5`. Every later gate remains source-unavailable. Each subsequent outcome
+change may mark only its own gate available after its prerequisites and outcome test exist.
+Operational Memory may disable available work but can never activate an unfinished gate.
 
 **Exit:** recover from empty Memory and zero creeps without console intervention.
 
