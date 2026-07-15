@@ -14,6 +14,13 @@ operation/cost limits and refuse to rebuild or search when the caller's CpuSched
 cover the estimate. Architecture tests prove the command surface remains restricted to the canonical
 executors through direct and aliased call forms.
 
+The production path service, tracked by
+[#115](https://github.com/ralphschuler/screeps-myrmex/issues/115), observes detached
+terrain/static-structure traversal data, builds the cache from that projection, and keeps
+`PathFinder`/`RoomPosition` objects inside the runtime adapter. Its tests prove local-room
+restriction, configured operation/cost propagation, static cache cold/warm behavior, CPU deferral,
+and typed adapter faults.
+
 Current-tick occupancy and reservations are overlaid by `MovementArbiter` after a path is selected;
 they are never cached. Agents, contract translation, source/sink selection, and economic execution
 are intentionally not part of this evidence. They remain tracked by #38 and #26.

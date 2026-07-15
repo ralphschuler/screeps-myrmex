@@ -1072,6 +1072,13 @@ direction lists are reconstructible heap-cache values; live objects, creep occup
 and task state are never cached. The Execute-phase arbiter overlays current-tick occupancy and
 reservations only after cache lookup.
 
+Observe is the only live terrain/structure reader for that service. It publishes a compact immutable
+per-visible-room traversal projection; runtime's local path adapter is the only code that creates
+`RoomPosition`, `PathFinder`, or `CostMatrix` engine objects. The adapter is local-room-only and
+returns only direction/cost/incomplete data. Agent planners get neither the adapter nor an observed
+room object. Issue [#115](https://github.com/ralphschuler/screeps-myrmex/issues/115) owns this
+runtime composition.
+
 The arbiter:
 
 - validates the actor and goal;

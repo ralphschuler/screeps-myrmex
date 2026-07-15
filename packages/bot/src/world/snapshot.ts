@@ -139,6 +139,13 @@ export interface CreepSnapshot {
   readonly ticksToLive: number | null;
 }
 
+/** Reconstructible static traversal facts observed from a visible room. */
+export interface StaticTraversalSnapshot {
+  readonly revision: string;
+  /** 2,500 y-major cells: `.` is walkable and `#` is a static blocker. */
+  readonly walkability: string;
+}
+
 export interface RoomSnapshot {
   readonly constructionSites: readonly ConstructionSiteSnapshot[];
   readonly controller: ControllerSnapshot | null;
@@ -153,6 +160,8 @@ export interface RoomSnapshot {
   readonly ownedTowers: readonly OwnedTowerSnapshot[];
   readonly sources: readonly SourceSnapshot[];
   readonly storedStructures: readonly StoredStructureSnapshot[];
+  /** Absent only when an adapter cannot supply static terrain; path planning then fails closed. */
+  readonly traversal?: StaticTraversalSnapshot;
 }
 
 export interface OwnedRoomSnapshot extends RoomSnapshot {

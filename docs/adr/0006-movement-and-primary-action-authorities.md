@@ -25,6 +25,12 @@ never holds live objects, occupancy, reservations, or task state; the arbiter ap
 reservation after cache lookup. Expected return codes and adapter faults become typed execution
 results; they do not throw across the tick boundary.
 
+Issue #115 supplies the production composition of that seam: Observe publishes a compact detached
+terrain/static-structure projection, and the runtime-owned adapter alone converts it to `PathFinder`
+objects. Plan systems receive a data-only local-path capability, no engine objects, and use their
+CpuScheduler budget for a bounded cold search. Missing terrain, CPU, an incomplete path, or an
+adapter failure remains typed path result data.
+
 ## Consequences
 
 - Agents can combine one movement and one admitted primary action, matching the documented distinct
