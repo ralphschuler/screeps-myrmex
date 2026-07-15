@@ -1093,11 +1093,11 @@ not improve those outcomes must justify its CPU, memory, test, and maintenance c
 GitHub Actions form a narrow external control plane around the runtime. They do not become gameplay
 systems and never share mutable state with `RuntimeKernel`.
 
-| Capability             | Authority                                     | Contract                                                                     |
-| ---------------------- | --------------------------------------------- | ---------------------------------------------------------------------------- |
-| package distribution   | `package.yml` and `package-bot.mjs`           | build, validate, stage, and publish one immutable bundle version             |
-| code deployment        | `deploy-screeps.yml` and `deploy-screeps.mjs` | upload one commit-marked module and verify exact remote content              |
-| terminal-loss recovery | `auto-respawn.yml` and `auto-respawn.mjs`     | detect recognized account loss, respawn, place, and verify one initial spawn |
+| Capability             | Authority                                     | Contract                                                                        |
+| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
+| package distribution   | `package.yml` and `package-bot.mjs`           | build, validate, stage, and publish one immutable bundle version                |
+| code deployment        | `deploy-screeps.yml` and `deploy-screeps.mjs` | upload one commit-marked module and verify exact remote content                 |
+| terminal-loss recovery | `auto-respawn.yml` and `auto-respawn.mjs`     | detect loss, select a shard, respawn, place, verify, and fund one initial spawn |
 
 The internal workspace remains `@myrmex/bot`; the generated public distribution package is
 `@ralphschuler/screeps-myrmex`. The package contains the same single `main.js` runtime artifact and
@@ -1118,6 +1118,13 @@ Auto-respawn is the only external authority allowed to call the account respawn 
 place-spawn endpoints. It may act on the Screeps `lost` or `empty` states. Treating `normal` plus
 zero reported rooms as terminal loss requires the separate `SCREEPS_RESPAWN_ON_ZERO_ROOMS` opt-in.
 This prevents a shard/configuration error from silently causing destructive account reset.
+
+The same authority may allocate CPU only to the shard selected for a newly placed spawn. It prefers
+an already funded shard because `Game.cpu.setShardLimits` has a 12-hour change cooldown. A later run
+may retry missing allocation only while the account has a recent respawn timestamp and exactly one
+owned shard; it MUST NOT rebalance established or multi-shard accounts. Respawn cooldown waits,
+placement retries, CPU polling, and nearby-room search are bounded and covered by deterministic
+tests.
 
 The wider Screeps Web API is not a stable public contract. Its adapter and deterministic tests form
 an anti-corruption boundary: endpoint or payload changes must fail safely and be revalidated against

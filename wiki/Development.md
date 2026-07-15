@@ -13,11 +13,17 @@ publishable package layout.
 Release tags publish `@ralphschuler/screeps-myrmex` to GitHub Packages. The manual deployment
 workflow uploads a commit-marked bundle and verifies the same code from Screeps.
 
-The scheduled auto-respawn workflow discovers and ranks available shards automatically and reads the
-aggregate account room map once per run. It is disabled until the `screeps-production` environment
-contains a dedicated Screeps token and `SCREEPS_AUTO_RESPAWN_ENABLED=true`. It acts only on
-recognized terminal states, selects a viable start-room tile, verifies placement, and keeps target
-coordinates out of workflow logs.
+The scheduled auto-respawn workflow discovers and ranks available shards automatically. It is
+disabled until the `screeps-production` environment contains a dedicated Screeps token and
+`SCREEPS_AUTO_RESPAWN_ENABLED=true`. It reads account health, acts only on recognized terminal
+states, selects a viable start-room tile, verifies placement, and keeps target coordinates out of
+workflow logs. Start selection examines bounded nearby rooms on every shard, prefers an already
+funded shard, and independently validates neutral two-source rooms and safe terrain.
+
+After an accepted respawn, automation honors the documented 180-second cooldown with a 185-second
+wait and a guarded same-target retry. It verifies CPU on the selected shard after placement. A
+recently respawned account with one owned shard and zero CPU may complete that repair on a later
+run; established and multi-shard healthy accounts are not rebalanced.
 
 See the repository's `docs/development.md` for exact secrets, variables, token scope, dry-run,
 deployment, and rollback instructions.

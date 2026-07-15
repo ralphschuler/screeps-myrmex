@@ -56,17 +56,20 @@ The fallback target format is:
 
 Room names and coordinates are operational intelligence, so keep this value in a secret rather than
 a repository variable. Every configured target must name its shard. The respawner discovers the
-currently available shards itself, reads the account-wide room map once, and requests a start room
-on every shard. The prohibited-room response uses `shard/room` identifiers; configured and
-discovered candidates are matched against that qualified key so identical room names on different
-shards remain distinct. It ranks valid rooms by spawn-site quality and uses shard name and room name
-as stable tie-breakers. No target coordinate is printed to the public workflow log.
+currently available shards itself, validates account-wide ownership, and requests start-area anchors
+on every shard. It inspects each anchor plus a bounded three-room radius, validates neutral
+two-source rooms, and ranks safe spawn tiles deterministically. The prohibited-room response uses
+`shard/room` identifiers; candidates are matched against that qualified key so identical room names
+on different shards remain distinct. A shard that already has CPU is preferred when room scores are
+otherwise available, avoiding an unnecessary shard-limit change. No target coordinate is printed to
+the public workflow log.
 
 Add these environment variables:
 
 | Variable                        | Required         | Default                   | Meaning                                                                  |
 | ------------------------------- | ---------------- | ------------------------- | ------------------------------------------------------------------------ |
 | `SCREEPS_AUTO_RESPAWN_ENABLED`  | yes for mutation | `false`                   | must equal `true` before scheduled recovery can mutate the account       |
+| `SCREEPS_AUTO_ALLOCATE_CPU`     | no               | `true`                    | allocate CPU to a newly selected shard and verify the resulting limit    |
 | `SCREEPS_RESPAWN_ON_ZERO_ROOMS` | no               | `false`                   | also recover when status is `normal` but the rooms endpoint reports zero |
 | `SCREEPS_RESPAWN_NAME`          | no               | `Myrmex`                  | non-secret prefix for the generated spawn name                           |
 | `SCREEPS_API_BASE_URL`          | no               | `https://screeps.com/api` | API base for MMO or an explicitly supported server                       |
@@ -81,6 +84,7 @@ workflows:
 - target selection: `GET /api/user/respawn-prohibited-rooms`, `GET /api/user/world-start-room`,
   `GET /api/game/room-terrain`, and `GET /api/game/room-objects`;
 - placement: `POST /api/game/place-spawn`.
+- CPU selection and repair: `GET /api/auth/me` and `POST /api/user/console`.
 
 Screeps officially documents auth tokens and code upload, but describes the wider Web API as
 undocumented. The recovery script therefore validates every response, recognizes only known world
@@ -91,7 +95,10 @@ Foundation references:
 - [Screeps authentication tokens](https://docs.screeps.com/auth-tokens.html);
 - [committing scripts through the Screeps API](https://docs.screeps.com/commit.html);
 - [Screeps respawning behavior](https://docs.screeps.com/respawn.html);
+- [Screeps shard CPU allocation](https://docs.screeps.com/api/#Game.cpu.setShardLimits);
 - [Screeps Wiki code-pushing guidance](https://wiki.screepspl.us/Pushing_code_to_Screeps/);
+- [TooAngel respawner reference](https://github.com/TooAngel/screeps/blob/master/utils/respawner.js),
+  used as comparative operational evidence rather than copied implementation;
 - [GitHub Packages npm registry](https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-npm-registry).
 
 ### Deployment procedure
@@ -114,13 +121,24 @@ validated commit to the same branch or activation of a separately maintained las
 3. Optionally configure private fallback targets.
 4. Set `SCREEPS_RESPAWN_ON_ZERO_ROOMS=true` only when a normal account state with zero reported
    rooms should be treated as terminal loss.
-5. Set `SCREEPS_AUTO_RESPAWN_ENABLED=true` to authorize scheduled mutation.
+5. Leave `SCREEPS_AUTO_ALLOCATE_CPU=true` unless CPU is managed by separate trusted automation.
+6. Set `SCREEPS_AUTO_RESPAWN_ENABLED=true` to authorize scheduled mutation.
 
-Healthy accounts are read-only. A `lost` account, or an explicitly authorized zero-room account, is
-moved through respawn and polled until it becomes `empty`. An `empty` account skips the destructive
-respawn call and proceeds directly to placement. After `place-spawn`, the action requires
-`world-status=normal`. Unknown states, malformed shard or room data, exhausted targets, or changed
-API responses fail without additional account mutation.
+Established healthy accounts are read-only. A `lost` account, or an explicitly authorized zero-room
+account, is moved through respawn and polled until it becomes `empty`. The workflow then waits 185
+seconds, covering the documented 180-second timeout plus a five-second buffer, and re-reads account
+state before discovery. An account already in `empty` skips the destructive respawn call; if
+placement still reports the global cooldown, the workflow waits 185 seconds and retries the same
+candidate once without consuming the remaining candidates. After `place-spawn`, the action requires
+`world-status=normal`.
+
+When CPU allocation is enabled, candidates on an already funded shard are preferred. After
+placement, the workflow uses `Game.cpu.setShardLimits` through the console endpoint and polls
+`auth/me` until the selected shard has CPU. Screeps limits shard-allocation changes to once per 12
+hours, so a recently respawned healthy account with exactly one owned shard and zero CPU is eligible
+for bounded repair on later scheduled runs. Older or multi-shard healthy accounts are never
+rebalanced by this workflow. Unknown states, inconsistent ownership, malformed API data, exhausted
+targets, or changed responses fail closed.
 
 Auto-respawn is disaster recovery, not expansion strategy. Once the initial spawn exists, the
 runtime's cold-boot and colony systems own all further decisions.

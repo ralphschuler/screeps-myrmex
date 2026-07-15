@@ -23,7 +23,7 @@ jobs:
     name: Detect terminal loss and recover
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     environment:
       name: screeps-production
       url: https://screeps.com/a/#!/account
@@ -40,6 +40,7 @@ jobs:
       - name: Check account and recover when authorized
         env:
           SCREEPS_API_BASE_URL: ${{ vars.SCREEPS_API_BASE_URL || 'https://screeps.com/api' }}
+          SCREEPS_AUTO_ALLOCATE_CPU: ${{ vars.SCREEPS_AUTO_ALLOCATE_CPU || 'true' }}
           SCREEPS_AUTO_RESPAWN_ENABLED: ${{ vars.SCREEPS_AUTO_RESPAWN_ENABLED }}
           SCREEPS_RESPAWN_DRY_RUN:
             ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
