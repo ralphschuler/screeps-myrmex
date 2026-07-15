@@ -55,7 +55,7 @@ function manhattan(left, right) {
   return Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
 }
 
-export function selectSpawnPosition(terrain, objects = []) {
+function selectSpawnCandidate(terrain, objects = []) {
   if (typeof terrain !== "string" || terrain.length !== ROOM_SIZE * ROOM_SIZE) {
     throw new Error("Screeps returned malformed room terrain.");
   }
@@ -138,10 +138,15 @@ export function selectSpawnPosition(terrain, objects = []) {
     throw new Error("No safe spawn position was found in the selected room.");
   }
 
-  return { x: best.x, y: best.y };
+  return best;
 }
 
-export function parseConfiguredTargets(value, defaultShard) {
+export function selectSpawnPosition(terrain, objects = []) {
+  const { x, y } = selectSpawnCandidate(terrain, objects);
+  return { x, y };
+}
+
+export function parseConfiguredTargets(value) {
   if (value === undefined || value.trim() === "") {
     return [];
   }
@@ -159,8 +164,6 @@ export function parseConfiguredTargets(value, defaultShard) {
   }
 
   return parsed.map((target) => {
-    const shard = target?.shard ?? defaultShard;
-
     if (
       typeof target?.room !== "string" ||
       !Number.isInteger(target.x) ||
@@ -169,14 +172,34 @@ export function parseConfiguredTargets(value, defaultShard) {
       target.x > INTERIOR_MAX ||
       target.y < INTERIOR_MIN ||
       target.y > INTERIOR_MAX ||
-      typeof shard !== "string" ||
-      shard.length === 0
+      typeof target.shard !== "string" ||
+      target.shard.length === 0
     ) {
       throw new Error("SCREEPS_RESPAWN_TARGETS contains an invalid target.");
     }
 
-    return { room: target.room, shard, x: target.x, y: target.y };
+    return { room: target.room, shard: target.shard, x: target.x, y: target.y };
   });
+}
+
+export function parseShards(payload) {
+  if (!Array.isArray(payload?.shards)) {
+    throw new Error("Screeps did not provide a shard list.");
+  }
+
+  const shards = [
+    ...new Set(
+      payload.shards
+        .map((shard) => shard?.name)
+        .filter((name) => typeof name === "string" && name.length > 0),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+
+  if (shards.length === 0) {
+    throw new Error("Screeps did not provide any available shards.");
+  }
+
+  return shards;
 }
 
 async function dynamicTarget(client, shard) {
@@ -204,7 +227,23 @@ async function dynamicTarget(client, shard) {
     throw new Error("The selected start room does not expose two sources.");
   }
 
-  return { room, shard, ...selectSpawnPosition(terrain, objects) };
+  const candidate = selectSpawnCandidate(terrain, objects);
+  return { room, shard, ...candidate };
+}
+
+async function discoverDynamicTargets(client, shards) {
+  const settled = await Promise.allSettled(shards.map((shard) => dynamicTarget(client, shard)));
+
+  return settled
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value)
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.shard.localeCompare(right.shard) ||
+        left.room.localeCompare(right.room),
+    )
+    .map(({ room, shard, x, y }) => ({ room, shard, x, y }));
 }
 
 async function waitForEmptyStatus(client, { polls, wait }) {
@@ -227,7 +266,6 @@ async function waitForEmptyStatus(client, { polls, wait }) {
 
 export async function ensureRespawn({
   client,
-  shard,
   enabled,
   dryRun = false,
   respawnOnZeroRooms = false,
@@ -237,16 +275,22 @@ export async function ensureRespawn({
   polls = 24,
   wait = () => new Promise((resolvePromise) => setTimeout(resolvePromise, 15_000)),
 }) {
-  if (typeof shard !== "string" || shard.length === 0) {
-    throw new Error("SCREEPS_SHARD is required.");
+  const [worldStatus, shardsPayload] = await Promise.all([
+    client.get("user/world-status"),
+    client.get("game/shards/info"),
+  ]);
+  const shards = parseShards(shardsPayload);
+  const roomsPayloads = await Promise.all(
+    shards.map((shard) => client.get("user/rooms", { interval: 8, shard })),
+  );
+  const status = worldStatus?.status;
+  const roomCounts = roomsPayloads.map(roomCount);
+
+  if (roomCounts.some((count) => count === undefined)) {
+    throw new Error("Screeps returned a malformed room count; refusing to mutate the account.");
   }
 
-  const [worldStatus, roomsPayload] = await Promise.all([
-    client.get("user/world-status"),
-    client.get("user/rooms", { interval: 8, shard }),
-  ]);
-  const status = worldStatus?.status;
-  const ownedRooms = roomCount(roomsPayload);
+  const ownedRooms = roomCounts.reduce((sum, count) => sum + count, 0);
   const zeroRoomRecovery = status === "normal" && ownedRooms === 0 && respawnOnZeroRooms;
 
   if (status === "normal" && !zeroRoomRecovery) {
@@ -270,19 +314,11 @@ export async function ensureRespawn({
   const prohibited = new Set(
     Array.isArray(prohibitedPayload?.rooms) ? prohibitedPayload.rooms : [],
   );
-  const targets = configuredTargets.filter((target) => !prohibited.has(target.room));
-
-  try {
-    const candidate = await dynamicTarget(client, shard);
-
-    if (!prohibited.has(candidate.room)) {
-      targets.push(candidate);
-    }
-  } catch (error) {
-    if (targets.length === 0) {
-      throw error;
-    }
-  }
+  const targets = configuredTargets.filter(
+    (target) => shards.includes(target.shard) && !prohibited.has(target.room),
+  );
+  const dynamicTargets = await discoverDynamicTargets(client, shards);
+  targets.push(...dynamicTargets.filter((target) => !prohibited.has(target.room)));
 
   if (targets.length === 0) {
     throw new Error("No permitted respawn target is available.");
@@ -322,17 +358,13 @@ if (isMainModule()) {
     baseUrl: process.env.SCREEPS_API_BASE_URL,
     token: process.env.SCREEPS_TOKEN,
   });
-  const configuredTargets = parseConfiguredTargets(
-    process.env.SCREEPS_RESPAWN_TARGETS,
-    process.env.SCREEPS_SHARD,
-  );
+  const configuredTargets = parseConfiguredTargets(process.env.SCREEPS_RESPAWN_TARGETS);
   const result = await ensureRespawn({
     client,
     configuredTargets,
     dryRun: process.env.SCREEPS_RESPAWN_DRY_RUN === "true",
     enabled: process.env.SCREEPS_AUTO_RESPAWN_ENABLED === "true",
     respawnOnZeroRooms: process.env.SCREEPS_RESPAWN_ON_ZERO_ROOMS === "true",
-    shard: process.env.SCREEPS_SHARD,
     spawnNamePrefix: process.env.SCREEPS_RESPAWN_NAME || "Myrmex",
   });
 
