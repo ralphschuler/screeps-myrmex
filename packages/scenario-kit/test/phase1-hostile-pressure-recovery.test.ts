@@ -32,9 +32,7 @@ interface PressureHeap {
 
 describe("Phase 1 hostile-pressure recovery replay (#30)", () => {
   it("bounds defense, resets safely, and returns to normal work after threat removal", () => {
-    const warm = runScenario(pressureScenario(false, false));
-    const reset = runScenario(pressureScenario(true, false));
-    const reordered = runScenario(pressureScenario(true, true));
+    const { warm, reset, reordered } = collectHostilePressureEvidence();
 
     expect(reset.outcomes).toEqual(warm.outcomes);
     expect(reset.finalWorld).toEqual(warm.finalWorld);
@@ -60,6 +58,14 @@ describe("Phase 1 hostile-pressure recovery replay (#30)", () => {
     expect(reset.outcomes[2]?.commands).toEqual([]);
   });
 });
+
+export function collectHostilePressureEvidence() {
+  return Object.freeze({
+    warm: runScenario(pressureScenario(false, false)),
+    reset: runScenario(pressureScenario(true, false)),
+    reordered: runScenario(pressureScenario(true, true)),
+  });
+}
 
 function pressureScenario(
   resetHeap: boolean,

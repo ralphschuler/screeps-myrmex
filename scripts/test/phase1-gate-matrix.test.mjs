@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { assertDeployableBundle } from "../lib/bundle-boundaries.mjs";
 
 const document = readFileSync(new URL("../../docs/phase1-gate-matrix.md", import.meta.url), "utf8");
+const results = JSON.parse(
+  readFileSync(new URL("../../docs/phase1-gate-results.json", import.meta.url), "utf8"),
+);
 const header = "| row-id";
 const numericColumnCount = 12;
 const rows = parseRows(document);
@@ -38,6 +41,23 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
     expect(document).toContain("replacement lateness");
     expect(document).toContain("controller margin");
     expect(document).toContain("persistent-growth");
+    expect(document).toContain("phase1-gate-results.json");
+    expect(results.status).toBe("blocked");
+    expect(results.rows.map((row) => row.id)).toEqual(rows.map((row) => row.id));
+    expect(results.externalLive).toEqual({
+      deployment: "unevidenced",
+      engineTiming: "unevidenced",
+      hostilePressure: "unevidenced",
+      remoteAdapter: "unevidenced",
+      rollbackIncident: "unevidenced",
+    });
+    for (const row of results.rows) {
+      expect(Object.values(row.measurements)).toHaveLength(numericColumnCount);
+      for (const [field, value] of Object.entries(row.measurements)) {
+        expect(value === null || (Number.isSafeInteger(value) && value >= 0)).toBe(true);
+        if (value === null) expect(row.unevidenced).toContain(field);
+      }
+    }
   });
 
   it("composes the existing production-bundle exclusion check", () => {
