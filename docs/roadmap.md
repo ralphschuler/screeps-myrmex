@@ -65,6 +65,9 @@ merged.
 - Bounded survival accounting and explainable structured status are tracked by
   [issue #39](https://github.com/ralphschuler/screeps-myrmex/issues/39) and
   [`phase1-telemetry-evidence.md`](phase1-telemetry-evidence.md).
+- Security redaction of player-controlled and fault data before it reaches observability is tracked
+  by [issue #98](https://github.com/ralphschuler/screeps-myrmex/issues/98) and
+  [`phase1-security-evidence.md`](phase1-security-evidence.md).
 
 The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`

@@ -7,6 +7,7 @@ import type { MovementRuntimeResult } from "../movement";
 import type { SpawnRuntimeResult } from "../spawn";
 import type { JsonObject } from "../state/schema";
 import type { WorldSnapshot } from "../world/snapshot";
+import { opaqueId, safeCode } from "../security";
 import type { TickTelemetry } from "./metrics";
 
 type TickTelemetryBase = Omit<TickTelemetry, "activity" | "status">;
@@ -15,7 +16,7 @@ export const TELEMETRY_OWNER_SCHEMA_VERSION = 1 as const;
 
 export interface TelemetryDetail {
   readonly domain: "budget" | "contract" | "intent" | "movement" | "spawn";
-  readonly id: string;
+  readonly entityId: string;
   readonly reason: string;
   readonly status: string;
 }
@@ -203,16 +204,16 @@ function detail(
 ): TelemetryDetail {
   return {
     domain,
-    id: id.slice(0, 384),
-    status: status.slice(0, 64),
-    reason: reason.slice(0, 128),
+    entityId: opaqueId(domain, id),
+    status: safeCode(status),
+    reason: safeCode(reason),
   };
 }
 
 function compareDetails(left: TelemetryDetail, right: TelemetryDetail): number {
   return (
     left.domain.localeCompare(right.domain) ||
-    left.id.localeCompare(right.id) ||
+    left.entityId.localeCompare(right.entityId) ||
     left.status.localeCompare(right.status) ||
     left.reason.localeCompare(right.reason)
   );

@@ -56,9 +56,11 @@ describe("TelemetryService", () => {
       { ...input, colony: { ...input.colony, decisions: [...decisions].reverse() } },
     );
     expect(first.telemetry.status).toEqual(reversed.telemetry.status);
-    expect(first.telemetry.status.details).toEqual([
-      { domain: "budget", id: "a-budget", reason: "insufficient-cpu", status: "denied" },
-    ]);
+    expect(first.telemetry.status.details).toHaveLength(1);
+    const [detail] = first.telemetry.status.details;
+    expect(detail).toMatchObject({ domain: "budget", status: "denied" });
+    expect(detail?.entityId).toMatch(/^budget:[0-9a-f]{8}$/);
+    expect(detail?.entityId).not.toContain("a-budget");
     expect(first.telemetry.status.droppedDetails).toBe(1);
 
     const next = service.record(first.owner, {

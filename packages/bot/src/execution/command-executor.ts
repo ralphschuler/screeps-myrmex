@@ -1,3 +1,5 @@
+import { redactUntrusted } from "../security";
+
 export const SCREEPS_RETURN_CODES = {
   0: "OK",
   [-1]: "ERR_NOT_OWNER",
@@ -223,6 +225,6 @@ function readCpu(cpu: CommandCpuMeter | undefined): number {
 }
 
 function compactError(error: unknown): string {
-  return (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 300);
+  return redactUntrusted("command-error", error);
 }
 import type { ArbitrationBatch, IntentData, IntentEnvelope } from "./contracts";

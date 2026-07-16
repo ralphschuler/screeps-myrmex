@@ -142,7 +142,7 @@ describe("RuntimeKernel", () => {
       fault: {
         stage: "commit",
         inputRevision: "world-7",
-        error: { name: "Error", message: "commit rejected" },
+        error: { name: "RuntimeFault", message: "unexpected-exception" },
       },
     });
     expect(report.systems[1]).toMatchObject({ systemId: "later", status: "completed" });

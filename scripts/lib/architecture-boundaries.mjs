@@ -69,6 +69,7 @@ const DEFENSE_EXECUTOR_PATH = "defense/defense-executor.ts";
 const COLONY_AUTHORITY_PATH = "colony/director.ts";
 const RUNTIME_COMPOSITION_PATH = "runtime/tick.ts";
 const LOCAL_PATH_ADAPTER_PATH = "runtime/local-path-adapter.ts";
+const CONSOLE_REPORTER_PATH = "telemetry/console-reporter.ts";
 
 const COMPLETE_SOURCE_SENTINELS = new Set([
   "colony/director.ts",
@@ -236,6 +237,14 @@ function inspectSource(contents, path) {
   }
 
   function visit(node) {
+    if (
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "Function"
+    ) {
+      rules.add("unsafe-dynamic-or-console-primitive");
+    }
+
     const moduleName = moduleSpecifier(node);
     if (
       ts.isIdentifier(node) &&
@@ -277,6 +286,26 @@ function inspectSource(contents, path) {
     }
 
     if (ts.isCallExpression(node)) {
+      const called = node.expression;
+      if (
+        ts.isPropertyAccessExpression(called) &&
+        ts.isIdentifier(called.expression) &&
+        called.expression.text === "console"
+      ) {
+        addUnlessAllowed(
+          "production-console-output-outside-console-adapter",
+          path === CONSOLE_REPORTER_PATH,
+        );
+      }
+      if (
+        (ts.isIdentifier(called) && (called.text === "eval" || called.text === "Function")) ||
+        (ts.isPropertyAccessExpression(called) &&
+          ts.isIdentifier(called.expression) &&
+          called.expression.text === "console" &&
+          called.name.text === "logUnsafe")
+      ) {
+        rules.add("unsafe-dynamic-or-console-primitive");
+      }
       const commandMethodCall = commandMethodCalls.resolve(node);
       if (commandMethodCall !== null) {
         addUnlessAllowed("game-command-outside-executor", isExecutorPath(path));

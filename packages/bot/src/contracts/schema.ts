@@ -1,4 +1,5 @@
 import type { JsonObject } from "../state/schema";
+import { redactUntrusted } from "../security";
 import {
   CONTRACT_LEDGER_SCHEMA_VERSION,
   CAPABILITY_KEYS,
@@ -665,5 +666,5 @@ function deepFreeze<T>(value: T): T {
 }
 
 function compactMessage(error: unknown): string {
-  return error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 256) : "unknown error";
+  return redactUntrusted("contract-error", error);
 }

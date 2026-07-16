@@ -308,6 +308,32 @@ describe("runtime architecture boundaries", () => {
     expect(findArchitectureViolations([{ contents, path }])).toEqual([{ path, rule }]);
   });
 
+  it("rejects direct production console and dynamic-evaluation bypasses", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "economy/planner.ts", contents: 'console.log("unsafe");' },
+        { path: "telemetry/metrics.ts", contents: "console.logUnsafe(data);" },
+        {
+          path: "runtime/tick.ts",
+          contents: "eval(source); Function(source); new Function(source);",
+        },
+      ]),
+    ).toEqual([
+      { path: "economy/planner.ts", rule: "production-console-output-outside-console-adapter" },
+      { path: "runtime/tick.ts", rule: "unsafe-dynamic-or-console-primitive" },
+      { path: "telemetry/metrics.ts", rule: "production-console-output-outside-console-adapter" },
+      { path: "telemetry/metrics.ts", rule: "unsafe-dynamic-or-console-primitive" },
+    ]);
+  });
+
+  it("reserves production console output for the redacted console reporter", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "telemetry/console-reporter.ts", contents: 'console.log("safe");' },
+      ]),
+    ).toEqual([]);
+  });
+
   it("allows only the typed config barrel and the runtime authority adapter", () => {
     expect(
       findArchitectureViolations([
