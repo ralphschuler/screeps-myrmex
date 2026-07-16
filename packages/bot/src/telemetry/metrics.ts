@@ -58,6 +58,17 @@ export interface TickTelemetry {
   readonly configAcceptedCandidateRevision: number | null;
   readonly featureGates: readonly FeatureGateTelemetry[];
   readonly colony: ColonyTelemetry;
+  /** Bounded current-tick survival-flow evidence; it is observational and never an authority. */
+  readonly energyFlow: EnergyFlowTelemetry;
+}
+
+export interface EnergyFlowTelemetry {
+  readonly carried: number;
+  readonly delivered: number;
+  readonly dropped: number;
+  readonly harvested: number;
+  readonly requested: number;
+  readonly unmet: number;
 }
 
 export interface TickTelemetryInput {
@@ -70,6 +81,7 @@ export interface TickTelemetryInput {
   readonly config: RuntimeConfig;
   readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly colony: ColonyPlanningResult;
+  readonly energyFlow: EnergyFlowTelemetry;
 }
 
 /** Creates a bounded, immutable per-tick summary; durable history is a later telemetry policy. */
@@ -126,5 +138,6 @@ export function recordTickTelemetry(input: TickTelemetryInput): TickTelemetry {
       cpuReserved: input.colony.totals.cpuReserved,
       spawnTicksReserved: input.colony.totals.spawnTicksReserved,
     }),
+    energyFlow: Object.freeze({ ...input.energyFlow }),
   });
 }

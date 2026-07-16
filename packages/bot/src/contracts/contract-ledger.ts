@@ -21,6 +21,7 @@ import {
   type ContractFundingDecision,
   type ContractFundingDecisionReason,
   type ContractFundingView,
+  type ContractPlanningView,
   type ContractIssuerFrontier,
   type ContractExecutionView,
   type ContractLedgerStateV1,
@@ -200,6 +201,27 @@ export class ContractLedger {
         compareStrings(left.contractId, right.contractId),
     );
     return deepFreeze({ leases, status: "ready" });
+  }
+
+  /** Sanitized active records for bounded planners; no owner-state bytes or lease history escape. */
+  public planningView(): ContractPlanningView {
+    const contracts = this.#active
+      .flatMap((record) => {
+        if (record.execution === undefined || record.targetId === null) return [];
+        return [
+          {
+            budgetBinding: { ...record.budgetBinding },
+            contractId: record.id,
+            execution: { ...record.execution },
+            issuer: record.issuer,
+            owner: { ...record.owner },
+            state: record.state,
+            targetId: record.targetId,
+          },
+        ];
+      })
+      .sort((left, right) => compareStrings(left.contractId, right.contractId));
+    return deepFreeze({ contracts, status: "ready" });
   }
 
   public submit(request: WorkContractRequest, tick: number): ContractSubmissionResult {

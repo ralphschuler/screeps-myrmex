@@ -8,6 +8,7 @@ import {
   type WorkContractRequest,
 } from "../src/contracts";
 import { FEATURE_GATE_IDS } from "../src/config";
+import { planSurvivalFlow } from "../src/economy";
 import { runTick } from "../src/runtime/tick";
 import type { RuntimeGame } from "../src/runtime/context";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
@@ -357,6 +358,47 @@ describe("tick lifecycle", () => {
     );
   });
 
+  it("replays zero-creep recovery through harvest and positive spawn delivery", () => {
+    const memory = {} as Memory;
+    const world = economyGame();
+    const cold = runTick({ game: world.game(200), memory });
+    expect(cold.spawn.execution).toHaveLength(1);
+    world.spawnEnergy = 100;
+
+    world.workerPresent = true;
+    runTick({ game: world.game(210), memory });
+    const planned = runTick({ game: world.game(211), memory });
+    expect(planned.config.features.gates["phase1.economy"].enabled).toBe(true);
+    expect(planned.snapshot.rooms[0]?.sources).toHaveLength(1);
+    expect(planned.snapshot.rooms[0]?.ownedCreeps).toHaveLength(1);
+    expect(planSurvivalFlow(planned.snapshot)).toHaveLength(1);
+    expect(planned.colony.reservations).toContainEqual(
+      expect.objectContaining({ category: "harvesting-filling", status: "active" }),
+    );
+    const harvested = runTick({ game: world.game(212), memory });
+    expect(harvested.kernel.systems).toContainEqual(
+      expect.objectContaining({ systemId: "economy.contracts", status: "completed" }),
+    );
+    expect(world.workerEnergy).toBeGreaterThan(0);
+    expect(harvested.telemetry?.energyFlow).toMatchObject({ harvested: 1 });
+
+    // Simulate a heap reset: only serialized authorities may carry this flow forward.
+    const resumedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
+    let delivered: ReturnType<typeof runTick> | undefined;
+    for (const tick of [213, 214, 215, 216, 217, 218, 219, 220]) {
+      const outcome = runTick({ game: world.game(tick), memory: resumedMemory });
+      if (outcome.movement.actionExecution.some(({ intent }) => intent.kind === "transfer")) {
+        delivered = outcome;
+        break;
+      }
+    }
+    expect(delivered).toBeDefined();
+    if (delivered === undefined) throw new Error("expected one transfer action");
+    expect(world.spawnEnergy).toBeGreaterThan(100);
+    expect(world.workerEnergy).toBeLessThan(50);
+    expect(delivered.telemetry?.energyFlow).toMatchObject({ delivered: 1 });
+  });
+
   it("preserves the one-short recovery denial without staging an exact spawn grant", () => {
     const memory = {} as Memory;
     const spawnCreep = vi.fn(() => 0);
@@ -543,6 +585,14 @@ describe("tick lifecycle", () => {
       status: "planned",
       activeReservations: 0,
       objectives: 0,
+    });
+    expect(outcome.telemetry?.energyFlow).toEqual({
+      carried: 0,
+      delivered: 0,
+      dropped: 0,
+      harvested: 0,
+      requested: 0,
+      unmet: 0,
     });
   });
 
@@ -1042,6 +1092,126 @@ interface FundedContractGameOptions {
   readonly includeCreep?: boolean;
   readonly legalCreep?: boolean;
   readonly spawnCreep?: (...arguments_: unknown[]) => number;
+}
+
+function economyGame(): {
+  game(time: number): RuntimeGame;
+  spawnEnergy: number;
+  workerEnergy: number;
+  workerPresent: boolean;
+} {
+  const world = { spawnEnergy: 300, workerEnergy: 0, workerPresent: false };
+  const source = {
+    id: "source-economy",
+    energy: 3_000,
+    energyCapacity: 3_000,
+    pos: { roomName: "W1N1", x: 10, y: 10 },
+    ticksToRegeneration: 0,
+  };
+  const worker = {
+    body: [
+      { hits: 100, type: "work" },
+      { hits: 100, type: "carry" },
+      { hits: 100, type: "move" },
+    ],
+    fatigue: 0,
+    hits: 300,
+    hitsMax: 300,
+    id: "creep-economy",
+    my: true,
+    name: "economy-worker",
+    owner: { username: "Myrmex" },
+    pos: { roomName: "W1N1", x: 10, y: 10 },
+    spawning: false,
+    store: {
+      get energy() {
+        return world.workerEnergy;
+      },
+      getCapacity: () => 50,
+      getFreeCapacity: () => 50 - world.workerEnergy,
+      getUsedCapacity: () => world.workerEnergy,
+    },
+    ticksToLive: 100,
+    harvest: () => {
+      if (world.workerEnergy >= 50 || source.energy <= 0) return -8;
+      world.workerEnergy = 50;
+      source.energy -= 50;
+      return 0;
+    },
+    transfer: () => {
+      if (world.workerEnergy <= 0 || world.spawnEnergy >= 300) return -8;
+      world.workerEnergy -= 1;
+      world.spawnEnergy += 1;
+      return 0;
+    },
+    move: () => 0,
+  } as unknown as Creep;
+  const spawn = {
+    hits: 5_000,
+    hitsMax: 5_000,
+    id: "spawn-economy",
+    my: true,
+    name: "Spawn1",
+    owner: { username: "Myrmex" },
+    pos: { roomName: "W1N1", x: 11, y: 10 },
+    room: { name: "W1N1" },
+    isActive: () => true,
+    spawnCreep: () => 0,
+    spawning: null,
+    structureType: "spawn",
+    store: {
+      get energy() {
+        return world.spawnEnergy;
+      },
+      getCapacity: () => 300,
+      getFreeCapacity: () => 300 - world.spawnEnergy,
+      getUsedCapacity: () => world.spawnEnergy,
+    },
+  } as unknown as StructureSpawn;
+  const room = {
+    controller: {
+      id: "controller-economy",
+      level: 1,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: { roomName: "W1N1", x: 25, y: 25 },
+      progress: 0,
+      progressTotal: 200,
+      safeMode: undefined,
+      safeModeAvailable: 1,
+      safeModeCooldown: undefined,
+      ticksToDowngrade: 10_000,
+      upgradeBlocked: undefined,
+    },
+    get energyAvailable() {
+      return world.spawnEnergy;
+    },
+    energyCapacityAvailable: 300,
+    name: "W1N1",
+    find: (findType: number): unknown[] =>
+      findType === FIND_CREEPS_VALUE
+        ? world.workerPresent
+          ? [worker]
+          : []
+        : findType === FIND_STRUCTURES_VALUE
+          ? [spawn]
+          : findType === FIND_SOURCES_VALUE
+            ? [source]
+            : findType === FIND_CONSTRUCTION_SITES_VALUE
+              ? []
+              : [],
+  } as unknown as Room;
+  return Object.assign(world, {
+    game: (time: number): RuntimeGame => ({
+      cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+      creeps: world.workerPresent ? { "economy-worker": worker } : {},
+      rooms: { W1N1: room },
+      shard: { name: "shard3" },
+      time,
+      getObjectById: (id: string) =>
+        id === source.id ? source : id === spawn.id ? spawn : id === worker.id ? worker : null,
+    }),
+  });
 }
 
 function fundedContractGame(time: number, options: FundedContractGameOptions = {}): RuntimeGame {

@@ -269,6 +269,28 @@ export interface ContractExecutionView {
   readonly status: "ready" | "unavailable";
 }
 
+/** Bounded, data-only active-contract projection for planners that must renew or retire work. */
+export interface ContractPlanningRecord {
+  readonly budgetBinding: ContractBudgetBinding;
+  readonly contractId: string;
+  readonly execution: ContractExecutionTerms;
+  readonly issuer: string;
+  readonly owner: ContractOwnerScope;
+  readonly state: ActiveWorkContractState;
+  readonly targetId: string;
+}
+
+export interface ContractPlanningView {
+  readonly contracts: readonly ContractPlanningRecord[];
+  readonly status: "ready" | "unavailable";
+}
+
+export function emptyContractPlanningView(
+  status: ContractPlanningView["status"] = "unavailable",
+): ContractPlanningView {
+  return Object.freeze({ contracts: Object.freeze([]), status });
+}
+
 export function emptyContractExecutionView(
   status: ContractExecutionView["status"] = "unavailable",
 ): ContractExecutionView {
@@ -310,6 +332,10 @@ export interface ContractTransitionRequest {
 export interface WorkforceActor {
   readonly capability: CapabilityVector;
   readonly id: string;
+  /** Current energy is an optional, tick-local allocation predicate; it is never persisted. */
+  readonly energy?: number;
+  /** Null means an unbounded or unknown store; undefined preserves legacy pure-fixture behavior. */
+  readonly freeCapacity?: number | null;
   readonly name: string;
   readonly pos: PositionSnapshot;
   readonly spawning: boolean;
@@ -461,6 +487,9 @@ export function workforceActorFromCreep(creep: CreepSnapshot): WorkforceActor {
       work: creep.body.work.active,
     },
     id: creep.id,
+    energy:
+      creep.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0,
+    freeCapacity: creep.store.freeCapacity,
     name: creep.name,
     pos: { ...creep.pos },
     spawning: creep.spawning,

@@ -1,7 +1,11 @@
 import type { ArbitrationBatch } from "../execution";
 import type { ColonyPlanningResult } from "../colony";
 import type { RuntimeConfig, RuntimeConfigResolutionMetadata } from "../config";
-import type { ContractExecutionView, ContractReconciliationResult } from "../contracts";
+import type {
+  ContractExecutionView,
+  ContractPlanningView,
+  ContractReconciliationResult,
+} from "../contracts";
 import type { MemoryCommitResult } from "../state/memory";
 import type { SpawnRuntimeResult } from "../spawn";
 import type { MovementRuntimeChannels, MovementRuntimeResult } from "../movement";
@@ -46,6 +50,8 @@ export interface TickContext {
   readonly contracts: ContractReconciliationResult | null;
   /** Sanitized leased-work authorization for plan systems; never raw contract-owner data. */
   readonly contractExecution: ContractExecutionView;
+  /** Sanitized active contract identities for planners that safely renew or retire work. */
+  readonly contractPlanning: ContractPlanningView;
   readonly execution: ArbitrationBatch | null;
   /** Bounded data-only channels for admitted movement and primary-action planners. */
   readonly movementChannels: MovementRuntimeChannels;
