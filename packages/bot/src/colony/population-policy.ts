@@ -110,7 +110,7 @@ export class ColonyPopulationPolicy {
       );
       if (productive === 0) continue;
       const roundTrip =
-        load.mode === "stationary"
+        load.mode === "stationary" || load.mode === "logistics"
           ? 0
           : Math.min(
               load.travelTicks * 2,
@@ -121,7 +121,7 @@ export class ColonyPopulationPolicy {
         (productive * roundTrip) / POPULATION_PLANNING_HORIZON_TICKS,
       );
       const copies =
-        load.mode === "stationary"
+        load.mode === "stationary" || load.mode === "logistics"
           ? 1
           : Math.min(
               MAX_POPULATION_COPIES_PER_OBJECTIVE,
@@ -137,7 +137,7 @@ export class ColonyPopulationPolicy {
             );
       if (boundedCopies === 0) continue;
       const objectiveSupply: MutableCapability =
-        load.mode === "stationary"
+        load.mode === "stationary" || load.mode === "logistics"
           ? {
               ...supply(
                 input.actors,

@@ -28,7 +28,7 @@ export interface NormalizedPopulationLoad {
   readonly revision: number;
   readonly sourceCapacityWorkTicks: number;
   readonly travelTicks: number;
-  readonly mode?: "cyclic" | "stationary";
+  readonly mode?: "cyclic" | "logistics" | "stationary";
 }
 
 export interface ContractPopulationView {
@@ -178,6 +178,7 @@ export interface ContractLeasePolicy {
 /** Versioned, data-only authorization for one scoped primary creep action. */
 export const CONTRACT_EXECUTION_TERM_VERSION = 1 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V2 = 2 as const;
+export const CONTRACT_EXECUTION_TERM_VERSION_V3 = 3 as const;
 
 export const CONTRACT_EXECUTION_ACTIONS = [
   "build",
@@ -221,7 +222,20 @@ export interface ContractExecutionTermsV2 {
   readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V2;
   readonly workPosition: PositionSnapshot;
 }
-export type ContractExecutionTerms = ContractExecutionTermsV1 | ContractExecutionTermsV2;
+export interface ContractExecutionTermsV3 {
+  readonly action: "pickup" | "transfer" | "withdraw";
+  readonly completion: ContractExecutionDisposition;
+  readonly counterpartId: string;
+  readonly flowId: string;
+  readonly recommendedCarry: number;
+  readonly recommendedMove: number;
+  readonly reservedAmount: number;
+  readonly resourceType: ResourceConstant;
+  readonly stage: "acquire" | "deliver";
+  readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V3;
+}
+export type ContractExecutionTerms =
+  ContractExecutionTermsV1 | ContractExecutionTermsV2 | ContractExecutionTermsV3;
 
 export interface WorkContractRequest {
   readonly budgetBinding: ContractBudgetBinding;
@@ -628,6 +642,11 @@ function normalizeExecutionTerms(
     readonly completionHits?: unknown;
     readonly counterpartId: unknown;
     readonly resourceType: unknown;
+    readonly flowId?: unknown;
+    readonly recommendedCarry?: unknown;
+    readonly recommendedMove?: unknown;
+    readonly reservedAmount?: unknown;
+    readonly stage?: unknown;
     readonly version: unknown;
     readonly workPosition?: unknown;
   }>,
@@ -654,8 +673,8 @@ function normalizeExecutionTerms(
       "must be a supported disposition",
     );
   }
-  if (value.version !== 1 && value.version !== 2) {
-    invalid("invalid-execution-version", "$.execution.version", "must equal 1 or 2");
+  if (value.version !== 1 && value.version !== 2 && value.version !== 3) {
+    invalid("invalid-execution-version", "$.execution.version", "must equal 1, 2, or 3");
   }
   if (!actionMatchesContractKind(action, kind)) {
     invalid("execution-kind-mismatch", "$.execution.action", "is not authorized by contract kind");
@@ -686,7 +705,7 @@ function normalizeExecutionTerms(
           1,
           64,
         ) as ResourceConstant);
-  const resourceRequired = action === "transfer" || action === "withdraw";
+  const resourceRequired = value.version === 3 || action === "transfer" || action === "withdraw";
   if (resourceRequired !== (resourceType !== null)) {
     invalid(
       "execution-resource-mismatch",
@@ -708,6 +727,55 @@ function normalizeExecutionTerms(
         value.workPosition as PositionSnapshot,
         "$.execution.workPosition",
       ),
+    };
+  }
+  if (value.version === 3) {
+    if (
+      kind !== "haul" ||
+      (action !== "pickup" && action !== "withdraw" && action !== "transfer")
+    ) {
+      invalid("execution-v3-action-mismatch", "$.execution.action", "v3 is haul-only");
+    }
+    const stage = value.stage;
+    if (stage !== "acquire" && stage !== "deliver") {
+      invalid("invalid-execution-stage", "$.execution.stage", "must be acquire or deliver");
+    }
+    if ((stage === "acquire") !== (action === "pickup" || action === "withdraw")) {
+      invalid("execution-stage-action-mismatch", "$.execution.action", "must match the haul stage");
+    }
+    if (resourceType === null || counterpartId === null) {
+      invalid(
+        "execution-v3-endpoint-mismatch",
+        "$.execution",
+        "requires resource and counterpart ids",
+      );
+    }
+    const recommendedCarry = integerInRange(
+      value.recommendedCarry,
+      "$.execution.recommendedCarry",
+      0,
+      25,
+    );
+    const recommendedMove = integerInRange(
+      value.recommendedMove,
+      "$.execution.recommendedMove",
+      0,
+      25,
+    );
+    if (recommendedCarry + recommendedMove > 50) {
+      invalid("execution-v3-capability-too-large", "$.execution", "may recommend at most 50 parts");
+    }
+    return {
+      action,
+      completion,
+      counterpartId,
+      flowId: validateBoundedString(value.flowId, "$.execution.flowId", 1, 128),
+      recommendedCarry,
+      recommendedMove,
+      reservedAmount: positiveInteger(value.reservedAmount, "$.execution.reservedAmount"),
+      resourceType,
+      stage,
+      version: 3,
     };
   }
   return {

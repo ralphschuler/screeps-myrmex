@@ -204,6 +204,15 @@ export class ColonyDirector {
     }
 
     const knownNames = new Set(evidence.keys());
+    const populationSelectionsByObjective = new Map(
+      [...populationSelections.values()].map((selection) => [selection.objectiveId, selection]),
+    );
+    const populationDemandByReservation = new Map(
+      views.flatMap(({ populationPolicy }) =>
+        populationPolicy.demands.map((demand) => [demand.reservationId, demand] as const),
+      ),
+    );
+    const usedPopulationSelections = new Set<string>();
     const unknownLedger = currentOwner.ledger.filter((entry) => !knownNames.has(entry.colonyId));
     const knownLedger = currentOwner.ledger.filter((entry) => knownNames.has(entry.colonyId));
     const recordByName = new Map(records.map((record) => [record.roomName, record]));
@@ -213,8 +222,12 @@ export class ColonyDirector {
     const validExternalRequests: BudgetRequest[] = [];
     for (const rawRequest of input.requests ?? []) {
       const rawReservationId = safeReservationId(rawRequest);
+      const populationDemand =
+        rawReservationId === null ? undefined : populationDemandByReservation.get(rawReservationId);
       const populationSelection =
-        rawReservationId === null ? undefined : populationSelections.get(rawReservationId);
+        populationDemand === undefined
+          ? undefined
+          : populationSelectionsByObjective.get(populationDemand.id);
       const request =
         populationSelection === undefined
           ? rawRequest
@@ -224,13 +237,31 @@ export class ColonyDirector {
                 minimum: populationSelection.energyCost,
                 desired: populationSelection.energyCost,
               },
+              revision: populationSelection.revision,
               spawn: populationSelection.spawn,
             };
+      if (
+        populationSelection !== undefined &&
+        (populationDemand === undefined ||
+          populationSelection.colonyId !== rawRequest.colonyId ||
+          populationDemand.colonyId !== rawRequest.colonyId ||
+          populationDemand.category !== rawRequest.category ||
+          populationDemand.objectiveId !== rawRequest.issuer ||
+          populationSelection.reservationId !== formatReservationId(request))
+      ) {
+        throw new TypeError("population spawn selection does not match its exact budget revision");
+      }
+      if (populationSelection !== undefined) {
+        usedPopulationSelections.add(populationSelection.objectiveId);
+      }
       if (safeReservationId(request) === null) {
         preDecisions.push(invalidExternalDecision(request));
       } else {
         validExternalRequests.push(request);
       }
+    }
+    if (usedPopulationSelections.size !== populationSelectionsByObjective.size) {
+      throw new TypeError("population spawn selection does not match an active capability demand");
     }
     validExternalRequests.sort(compareBudgetRequestsSafely);
     for (const request of validExternalRequests.slice(MAX_BUDGET_REQUESTS_PER_TICK)) {
@@ -323,11 +354,34 @@ export class ColonyDirector {
       : currentOwner;
     const mustInitialize = resolved.status === "initialized";
 
+    const projectedViews = views.map((view) => {
+      const demands = view.populationPolicy.demands.map((demand) => {
+        const selection = populationSelectionsByObjective.get(demand.id);
+        if (selection === undefined) return demand;
+        return deepFreeze({
+          ...demand,
+          reservationId: selection.reservationId,
+          revision: selection.revision,
+        });
+      });
+      const changed = demands.some(
+        (demand, index) => demand !== view.populationPolicy.demands[index],
+      );
+      return changed
+        ? deepFreeze({
+            ...view,
+            populationPolicy: deepFreeze({
+              ...view.populationPolicy,
+              demands: deepFreeze(demands),
+            }),
+          })
+        : view;
+    });
     const result: ColonyDirectorResult = deepFreeze({
       status: "planned",
       reasonCode: "planned",
       ownerRevision: replacement.revision,
-      colonies: views,
+      colonies: projectedViews,
       objectives,
       decisions: sortDecisions([...preDecisions, ...ledgerResult.decisions]),
       reservations: ledgerResult.entries,
@@ -351,7 +405,7 @@ export class ColonyDirector {
           ];
     });
     const populationReservationIds = new Set(
-      views.flatMap(({ populationPolicy: { demands } }) =>
+      projectedViews.flatMap(({ populationPolicy: { demands } }) =>
         demands.map(({ reservationId }) => reservationId),
       ),
     );
@@ -614,6 +668,7 @@ function normalizePopulationSelections(
   if (selections.length > 8)
     throw new RangeError("population spawn selections exceed the demand cap");
   const normalized = new Map<string, RecoverySpawnSelection>();
+  const objectiveIds = new Set<string>();
   for (const selection of selections) {
     if (
       !isBoundedIdentifier(selection.objectiveId, 256) ||
@@ -629,6 +684,7 @@ function normalizePopulationSelections(
       !isNonNegativeSafeInteger(selection.spawn.endTick) ||
       selection.spawn.endTick <= selection.spawn.startTick ||
       selection.spawn.endTick - selection.spawn.startTick > MAX_SPAWN_INTERVAL_TICKS ||
+      objectiveIds.has(selection.objectiveId) ||
       normalized.has(selection.reservationId)
     )
       throw new TypeError("invalid exact population spawn selection");
@@ -636,6 +692,7 @@ function normalizePopulationSelections(
       selection.reservationId,
       deepFreeze({ ...selection, spawn: { ...selection.spawn } }),
     );
+    objectiveIds.add(selection.objectiveId);
   }
   return normalized;
 }
@@ -677,6 +734,25 @@ export function recoverySpawnDemandBinding(
       colonyId: objective.colonyId,
       category: "emergency-spawn",
       issuer: objective.id,
+      revision,
+    }),
+  });
+}
+
+/** Projects the reservation revision that atomically attaches a workforce spawn claim. */
+export function populationSpawnDemandBinding(input: {
+  readonly colonyId: string;
+  readonly category: BudgetRequest["category"];
+  readonly objectiveId: string;
+  readonly revision: number;
+}): RecoverySpawnDemandBinding {
+  const revision = checkedIncrement(input.revision, "population spawn demand revision");
+  return deepFreeze({
+    revision,
+    reservationId: formatReservationId({
+      colonyId: input.colonyId,
+      category: input.category,
+      issuer: input.objectiveId,
       revision,
     }),
   });
