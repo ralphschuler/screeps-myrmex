@@ -175,12 +175,21 @@ export function advanceReporterState(
   policy: ReporterStatePolicy,
 ): { readonly owner: unknown; readonly events: readonly ReporterEvent[] } {
   const previous = read(owner);
-  const current = signals
-    .map((signal) => ({
-      fingerprint: opaqueId(signal.kind, signal.identity),
-      reasonCode: safeCode(signal.reasonCode),
-    }))
-    .sort((left, right) => left.fingerprint.localeCompare(right.fingerprint));
+  const current = [
+    ...new Map(
+      signals
+        .map((signal) => ({
+          fingerprint: opaqueId(signal.kind, signal.identity),
+          reasonCode: safeCode(signal.reasonCode),
+        }))
+        .sort(
+          (left, right) =>
+            left.fingerprint.localeCompare(right.fingerprint) ||
+            left.reasonCode.localeCompare(right.reasonCode),
+        )
+        .map((signal) => [signal.fingerprint, signal] as const),
+    ).values(),
+  ];
   const next: Entry[] = [];
   const events: ReporterEvent[] = [];
   for (const signal of current) {

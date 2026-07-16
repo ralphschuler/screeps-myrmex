@@ -36,6 +36,20 @@ describe("reporter state", () => {
     );
     expect((result.owner as { entries: unknown[] }).entries).toHaveLength(2);
   });
+
+  it("deduplicates thousands of reordered hostile signals without retaining hostile text", () => {
+    const hostile = Array.from({ length: 2_000 }, (_, index) => ({
+      kind: "fault",
+      identity: `alliance-secret-W9N9-${String(index % 17)}`,
+      reasonCode: index % 2 === 0 ? "unexpected-exception" : "unexpected-exception",
+    }));
+    const first = advanceReporterState(undefined, 10, hostile, policy);
+    const reversed = advanceReporterState(undefined, 10, [...hostile].reverse(), policy);
+    expect(first).toEqual(reversed);
+    expect((first.owner as { entries: readonly unknown[] }).entries).toHaveLength(2);
+    expect(first.events).toHaveLength(17);
+    expect(JSON.stringify(first)).not.toContain("alliance-secret-W9N9");
+  });
 });
 
 describe("recovery progress", () => {
