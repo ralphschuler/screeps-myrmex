@@ -65,6 +65,7 @@ const SPAWN_BROKER_PATH = "spawn/spawn-broker.ts";
 const SPAWN_EXECUTOR_PATH = "spawn/spawn-executor.ts";
 const MOVEMENT_EXECUTOR_PATH = "movement/executor.ts";
 const CREEP_ACTION_EXECUTOR_PATH = "movement/executor.ts";
+const DEFENSE_EXECUTOR_PATH = "defense/defense-executor.ts";
 const COLONY_AUTHORITY_PATH = "colony/director.ts";
 const RUNTIME_COMPOSITION_PATH = "runtime/tick.ts";
 const LOCAL_PATH_ADAPTER_PATH = "runtime/local-path-adapter.ts";
@@ -307,7 +308,11 @@ function inspectSource(contents, path) {
         ) {
           addUnlessAllowed(
             "creep-action-command-outside-action-executor",
-            path === CREEP_ACTION_EXECUTOR_PATH,
+            path === CREEP_ACTION_EXECUTOR_PATH ||
+              (path === DEFENSE_EXECUTOR_PATH &&
+                [...commandMethodCall.methods].every((method) =>
+                  ["attack", "heal", "repair", "activateSafeMode"].includes(method),
+                )),
           );
         }
       }

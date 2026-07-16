@@ -1,4 +1,5 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
+import { executeDefenseIntents, planDefense } from "../defense";
 import {
   authorizedSurvivalFlow,
   planSurvivalFlow,
@@ -407,7 +408,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
       },
     },
-    phaseMarker("safety.foundation", "safety", true, false, 0.1, input.onPhase),
+    defenseSafetySystem(input),
     colonyDirectorSystem(input, spawnDraft, (candidates) => {
       survivalCandidates = candidates;
     }),
@@ -526,6 +527,27 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           },
           () => undefined,
         );
+      },
+    },
+    {
+      descriptor: {
+        id: "execution.defense",
+        phase: "execute",
+        criticality: "mandatory",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: true,
+        mandatoryTail: true,
+      },
+      run: ({ context }) => {
+        if (context.execution !== null)
+          executeDefenseIntents(
+            context.execution,
+            context.tick,
+            (id) => resolveLiveObject(input.game, id),
+            input.game.cpu,
+          );
+        return staged(() => undefined);
       },
     },
     {
@@ -774,6 +796,36 @@ function colonyDirectorSystem(
           resetSpawnDraft(spawnDraft);
           input.runtime.clearColony();
           input.runtime.clearSpawn();
+        },
+      );
+    },
+  };
+}
+
+function defenseSafetySystem(input: CompositionInput): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "defense.plan",
+      phase: "safety",
+      criticality: "mandatory",
+      cadence: 1,
+      estimate: 0.5,
+      admitInRecovery: true,
+      mandatoryTail: false,
+    },
+    run: ({ context }) => {
+      input.onPhase?.("safety");
+      if (!isFeatureEnabled(context.config, "phase1.safety")) return staged(() => undefined);
+      const scope = input.intentChannel.openProducer("defense.plan");
+      for (const intent of planDefense(context.snapshot, context.config))
+        scope.producer.submit(intent);
+      const stagedIntents = scope.stage();
+      return staged(
+        () => {
+          stagedIntents.commit();
+        },
+        () => {
+          stagedIntents.discard();
         },
       );
     },
@@ -1101,31 +1153,6 @@ function configBootSystem(input: CompositionInput): TickSystem<TickContext> {
           input.manager?.discard("config");
         },
       );
-    },
-  };
-}
-
-function phaseMarker(
-  id: string,
-  phase: TickPhase,
-  admitInRecovery: boolean,
-  mandatoryTail: boolean,
-  estimate: number,
-  onPhase: TickInput["onPhase"],
-): TickSystem<TickContext> {
-  return {
-    descriptor: {
-      id,
-      phase,
-      criticality: mandatoryTail || admitInRecovery ? "mandatory" : "economic",
-      cadence: 1,
-      estimate,
-      admitInRecovery,
-      mandatoryTail,
-    },
-    run: () => {
-      onPhase?.(phase);
-      return staged(() => undefined);
     },
   };
 }
