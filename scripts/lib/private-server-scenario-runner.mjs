@@ -130,6 +130,7 @@ function boundedLogs(value) {
 
 function classifyScenarioError(error) {
   const kind = error instanceof Error ? error.name : "";
+  if (kind === "BundleDeploymentFailure") return "bundle-deployment-failed";
   if (kind === "CliOperationFailure") return "cli-operation-failed";
   if (kind === "ScenarioTimeoutError") return "scenario-timeout";
   if (kind === "BotExceptionError") return "bot-exception";
@@ -143,6 +144,9 @@ function safeError(error) {
 
 function scenarioFailureCode(error) {
   if (!(error instanceof Error)) return null;
+  if (error.name === "BundleDeploymentFailure") {
+    return error.message === "bundle-deployment-failed" ? error.message : null;
+  }
   if (error.name === "CliOperationFailure") {
     return [
       "cli-bootstrap-controlled-bot-failed",
