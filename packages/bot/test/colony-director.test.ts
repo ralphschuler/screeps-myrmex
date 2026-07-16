@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BudgetLedger, ColonyDirector } from "../src/colony";
+import { BudgetLedger, ColonyDirector, recoverySpawnDemandBinding } from "../src/colony";
 import {
   MAX_COLONIES,
   MAX_BUDGET_REQUESTS_PER_TICK,
   type BudgetRequest,
 } from "../src/colony/contracts";
 import { canonicalColoniesOwner } from "../src/colony/persistence";
+import { formatReservationId } from "../src/colony/reservation-id";
 import { buildRuntimeConfig } from "../src/config/runtime-config";
 import { emptyWorldSnapshot, freezeWorldSnapshot, type WorldSnapshot } from "../src/world/snapshot";
 
@@ -15,6 +16,23 @@ const CPU_BUDGET = Object.freeze({
   estimate: 1.5,
   reservedForTail: 2,
 });
+
+function recoverySelection(tick: number, revision = 1) {
+  const objectiveId = "colony/W1N1/restore-workforce";
+  return {
+    objectiveId,
+    colonyId: "W1N1",
+    revision,
+    reservationId: formatReservationId({
+      colonyId: "W1N1",
+      category: "emergency-spawn",
+      issuer: objectiveId,
+      revision,
+    }),
+    energyCost: 200,
+    spawn: { spawnId: "spawn-1", startTick: tick, endTick: tick + 9 },
+  } as const;
+}
 
 describe("ColonyDirector owner boundary", () => {
   it("starts durable recovery before the last worker can outlive its successor handoff", () => {
@@ -176,6 +194,76 @@ describe("ColonyDirector owner boundary", () => {
     });
   });
 
+  it("projects an exact spawn revision across multiple unrelated pending policy revisions", () => {
+    const director = new ColonyDirector();
+    const finalConfig = buildRuntimeConfig({
+      policy: { spawn: { replacementSafetyMarginTicks: 52 } },
+    });
+    const configs = [
+      buildRuntimeConfig(),
+      buildRuntimeConfig({ policy: { spawn: { replacementSafetyMarginTicks: 51 } } }),
+      finalConfig,
+    ];
+    let owner: unknown = {};
+    for (const [offset, config] of configs.entries()) {
+      const result = director.plan({
+        tick: 10 + offset,
+        snapshot: bootstrapSnapshot(10 + offset, 199),
+        config,
+        owner,
+        cpuMode: "normal",
+        cpuBudget: CPU_BUDGET,
+      });
+      expect(result.colonies[0]?.revision).toBe(offset + 1);
+      expect(result.objectives[0]).toMatchObject({ revision: 1, status: "blocked" });
+      expect(result.reservations[0]).toMatchObject({ revision: 1, status: "pending" });
+      if (result.replacementOwner === null) {
+        throw new Error("pending policy fixture did not advance its colonies owner");
+      }
+      owner = result.replacementOwner;
+    }
+
+    const provisional = director.plan({
+      tick: 13,
+      snapshot: bootstrapSnapshot(13, 300),
+      config: finalConfig,
+      owner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+    });
+    const objective = provisional.objectives[0];
+    const colonyRevision = provisional.colonies[0]?.revision;
+    if (objective === undefined || colonyRevision === undefined) {
+      throw new Error("funded policy fixture did not expose its recovery binding inputs");
+    }
+    const binding = recoverySpawnDemandBinding(objective, colonyRevision, owner);
+    expect(binding).toMatchObject({ revision: 3 });
+
+    const session = director.begin({
+      tick: 13,
+      snapshot: bootstrapSnapshot(13, 300),
+      config: finalConfig,
+      owner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+      recoverySpawnSelections: [
+        {
+          objectiveId: objective.id,
+          colonyId: objective.colonyId,
+          revision: binding.revision,
+          reservationId: binding.reservationId,
+          energyCost: 200,
+          spawn: { spawnId: "spawn-1", startTick: 13, endTick: 22 },
+        },
+      ],
+    });
+    expect(session.result.objectives[0]).toMatchObject({
+      revision: 3,
+      reservationId: binding.reservationId,
+      status: "funded",
+    });
+  });
+
   it("keeps exact spawn authorization tick-local until one settlement revision", () => {
     const director = new ColonyDirector();
     const session = director.begin({
@@ -185,14 +273,7 @@ describe("ColonyDirector owner boundary", () => {
       owner: {},
       cpuMode: "normal",
       cpuBudget: CPU_BUDGET,
-      recoverySpawnSelections: [
-        {
-          objectiveId: "colony/W1N1/restore-workforce",
-          colonyId: "W1N1",
-          energyCost: 200,
-          spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
-        },
-      ],
+      recoverySpawnSelections: [recoverySelection(100)],
     });
     const reservationId = session.result.objectives[0]?.reservationId;
     if (reservationId === null || reservationId === undefined) {
@@ -258,14 +339,7 @@ describe("ColonyDirector owner boundary", () => {
       owner: {},
       cpuMode: "normal",
       cpuBudget: CPU_BUDGET,
-      recoverySpawnSelections: [
-        {
-          objectiveId: "colony/W1N1/restore-workforce",
-          colonyId: "W1N1",
-          energyCost: 200,
-          spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
-        },
-      ],
+      recoverySpawnSelections: [recoverySelection(100)],
     });
     const reservationId = session.result.objectives[0]?.reservationId;
     if (reservationId === null || reservationId === undefined) {
@@ -289,14 +363,7 @@ describe("ColonyDirector owner boundary", () => {
         owner: {},
         cpuMode: "normal",
         cpuBudget: CPU_BUDGET,
-        recoverySpawnSelections: [
-          {
-            objectiveId: "colony/W1N1/restore-workforce",
-            colonyId: "W1N1",
-            energyCost: 200,
-            spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
-          },
-        ],
+        recoverySpawnSelections: [recoverySelection(100)],
       });
     const session = makeSession();
     const reservationId = session.result.objectives[0]?.reservationId;
@@ -445,14 +512,7 @@ describe("ColonyDirector owner boundary", () => {
       owner,
       cpuMode: "normal",
       cpuBudget: CPU_BUDGET,
-      recoverySpawnSelections: [
-        {
-          objectiveId: "colony/W1N1/restore-workforce",
-          colonyId: "W1N1",
-          energyCost: 200,
-          spawn: { spawnId: "spawn-1", startTick: 100, endTick: 109 },
-        },
-      ],
+      recoverySpawnSelections: [recoverySelection(100)],
     });
     const reservationId = session.result.objectives[0]?.reservationId;
     if (reservationId === null || reservationId === undefined) {

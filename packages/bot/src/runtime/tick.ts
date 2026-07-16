@@ -39,6 +39,7 @@ import { createScreepsLocalPathSearch } from "./local-path-adapter";
 import {
   ColonyDirector,
   emptyColonyPlanningResult,
+  recoverySpawnDemandBinding,
   resolveColoniesOwner,
   type ColonyDirectorSession,
   type ColonyPlanningResult,
@@ -70,9 +71,11 @@ import {
   type OpenMemoryResult,
 } from "../state/memory";
 import {
+  CREEP_SPAWN_TICKS_PER_PART,
   SpawnBroker,
   SpawnExecutor,
   generatedSpawnCreepName,
+  generatedSpawnCreepNameCandidates,
   spawnRuntimeResult,
   type SpawnBrokerResult,
   type SpawnCommandIntent,
@@ -949,8 +952,14 @@ function colonyDirectorSystem(
         ? spawnBroker.arbitrate({
             tick: context.tick,
             snapshot: context.snapshot,
-            demands: recoverySpawnDemands(provisional.result, owner, context.config, context.tick),
-            expectations: recoverySpawnExpectations(owner),
+            demands: recoverySpawnDemands(
+              provisional.result,
+              owner,
+              context.snapshot,
+              context.config,
+              context.tick,
+            ),
+            expectations: recoverySpawnExpectations(owner, context.snapshot),
             policy: {
               maximumBodyParts: context.config.policy.spawn.maximumBodyParts,
               maximumBodyEnergy: context.config.policy.spawn.maximumBodyEnergy,
@@ -990,6 +999,8 @@ function colonyDirectorSystem(
               recoverySpawnSelections: selections.map((selection) => ({
                 objectiveId: selection.demandId,
                 colonyId: selection.colonyId,
+                revision: selection.revision,
+                reservationId: selection.budgetId,
                 energyCost: selection.energyCost,
                 spawn: selection.spawnClaim,
               })),
@@ -1113,6 +1124,7 @@ function colonyPlanningView(result: ReturnType<ColonyDirector["plan"]>): ColonyP
 function recoverySpawnDemands(
   colony: ColonyPlanningResult,
   ownerValue: unknown,
+  snapshot: WorldSnapshot,
   config: RuntimeConfig,
   tick: number,
 ): readonly SpawnDemand[] {
@@ -1131,6 +1143,11 @@ function recoverySpawnDemands(
     if (reservation === undefined || reservation.grant.energy < 200) {
       continue;
     }
+    const colonyRevision = colony.colonies.find(({ id }) => id === objective.colonyId)?.revision;
+    if (colonyRevision === undefined) {
+      throw new Error("funded recovery objective has no visible colony revision");
+    }
+    const binding = recoverySpawnDemandBinding(objective, colonyRevision, ownerValue);
     const failed = owner?.ledger.find(
       (entry) =>
         entry.issuer === objective.id &&
@@ -1147,14 +1164,20 @@ function recoverySpawnDemands(
       id: objective.id,
       issuer: objective.id,
       colonyId: objective.colonyId,
-      revision: objective.revision,
+      revision: binding.revision,
       category: "emergency-recovery",
       priorityValue: 1_000,
       deadline,
       earliestTick,
       destinationRoomName: objective.colonyId,
-      replacementCreepName: null,
-      budgetId: objective.reservationId,
+      replacementCreepName: recoveryReplacementCreepName(
+        snapshot,
+        owner,
+        objective.id,
+        objective.colonyId,
+        config,
+      ),
+      budgetId: binding.reservationId,
       requiredPartCounts: {
         tough: 0,
         work: objective.demand.work,
@@ -1176,33 +1199,61 @@ function recoverySpawnDemands(
   return Object.freeze(demands);
 }
 
-function recoverySpawnExpectations(ownerValue: unknown): readonly SpawnExpectation[] {
+function recoverySpawnExpectations(
+  ownerValue: unknown,
+  snapshot: WorldSnapshot,
+): readonly SpawnExpectation[] {
   const owner = resolveColoniesOwner(ownerValue).owner;
   if (owner === null) {
     return [];
   }
+  const expectationEntries = owner.ledger.filter(
+    (entry) =>
+      entry.category === "emergency-spawn" && entry.request.spawn !== null && entry.consumed.spawn,
+  );
+  const candidateNamesByReservation = new Map(
+    expectationEntries.map((entry) => [
+      entry.reservationId,
+      generatedSpawnCreepNameCandidates({
+        id: entry.issuer,
+        issuer: entry.issuer,
+        colonyId: entry.colonyId,
+        revision: entry.revision,
+        category: "emergency-recovery",
+      }),
+    ]),
+  );
+  const candidateNames = new Set([...candidateNamesByReservation.values()].flat());
+  const observedNames = new Set<string>();
+  for (const room of snapshot.rooms) {
+    for (const creep of room.ownedCreeps) {
+      if (candidateNames.has(creep.name)) {
+        observedNames.add(creep.name);
+      }
+    }
+    for (const spawn of room.ownedSpawns) {
+      if (spawn.spawning !== null && candidateNames.has(spawn.spawning.creepName)) {
+        observedNames.add(spawn.spawning.creepName);
+      }
+    }
+  }
   return Object.freeze(
-    owner.ledger
-      .filter(
-        (entry) =>
-          entry.category === "emergency-spawn" &&
-          entry.request.spawn !== null &&
-          entry.consumed.spawn,
-      )
+    expectationEntries
       .map((entry) => {
         const spawn = entry.request.spawn;
         if (spawn === null) {
           throw new Error("filtered recovery expectation lost its spawn interval");
         }
+        const nameCandidates = candidateNamesByReservation.get(entry.reservationId);
+        if (nameCandidates === undefined) {
+          throw new Error("recovery expectation lost its bounded name candidates");
+        }
+        const observedName = nameCandidates.find((name) => observedNames.has(name));
         return Object.freeze({
           demandId: entry.issuer,
           revision: entry.revision,
           spawnId: spawn.spawnId,
-          creepName: generatedSpawnCreepName({
-            id: entry.issuer,
-            issuer: entry.issuer,
-            colonyId: entry.colonyId,
-          }),
+          creepName: observedName ?? nameCandidates[0],
           scheduledAt: spawn.startTick,
           expectedReadyAt: spawn.endTick,
           retryAt: Math.max(spawn.endTick, entry.request.expiresAt),
@@ -1214,6 +1265,62 @@ function recoverySpawnExpectations(ownerValue: unknown): readonly SpawnExpectati
           (left.demandId < right.demandId ? -1 : left.demandId > right.demandId ? 1 : 0),
       ),
   );
+}
+
+function recoveryReplacementCreepName(
+  snapshot: WorldSnapshot,
+  owner: ReturnType<typeof resolveColoniesOwner>["owner"],
+  objectiveId: string,
+  colonyId: string,
+  config: RuntimeConfig,
+): string | null {
+  const room = snapshot.rooms.find(({ name }) => name === colonyId);
+  if (room === undefined) {
+    return null;
+  }
+  const replacementLeadTicks =
+    3 * CREEP_SPAWN_TICKS_PER_PART + config.policy.spawn.replacementSafetyMarginTicks;
+  const expiringWorkers = room.ownedCreeps
+    .filter(
+      (creep) =>
+        !creep.spawning &&
+        creep.body.work.active >= 1 &&
+        creep.body.carry.active >= 1 &&
+        creep.body.move.active >= 1 &&
+        creep.ticksToLive !== null &&
+        creep.ticksToLive <= replacementLeadTicks,
+    )
+    .sort((left, right) => {
+      const leftTtl = left.ticksToLive ?? -1;
+      const rightTtl = right.ticksToLive ?? -1;
+      if (leftTtl !== rightTtl) {
+        return rightTtl - leftTtl;
+      }
+      if (left.name !== right.name) {
+        return left.name < right.name ? -1 : 1;
+      }
+      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+    });
+  const previousSuccessful = owner?.ledger.find(
+    (entry) =>
+      entry.issuer === objectiveId &&
+      entry.category === "emergency-spawn" &&
+      entry.request.spawn !== null &&
+      entry.consumed.spawn,
+  );
+  if (previousSuccessful !== undefined) {
+    const previousName = generatedSpawnCreepName({
+      id: previousSuccessful.issuer,
+      issuer: previousSuccessful.issuer,
+      colonyId: previousSuccessful.colonyId,
+      revision: previousSuccessful.revision,
+      category: "emergency-recovery",
+    });
+    if (expiringWorkers.some(({ name }) => name === previousName)) {
+      return previousName;
+    }
+  }
+  return expiringWorkers[0]?.name ?? null;
 }
 
 function authorizedSpawnIntents(
@@ -1231,6 +1338,8 @@ function authorizedSpawnIntents(
       ({ reservationId }) => reservationId === objective.reservationId,
     );
     if (
+      selection.revision !== objective.revision ||
+      selection.budgetId !== objective.reservationId ||
       reservation === undefined ||
       reservation.grant.energy < selection.energyCost ||
       reservation.grant.spawn === null ||

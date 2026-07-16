@@ -443,7 +443,7 @@ publishes `disabled`; admitted planning publishes the broker decisions and, afte
 execution results. A discarded colony stage or rejected atomic root commit clears both colony and
 spawn publications. Durable success expectations are reconstructed from the settled colony ledger,
 not a heap-only queue. Each tick-local expectation includes the exact creep name rederived from the
-stable logical recovery identity.
+stable logical recovery identity and its durable demand revision.
 
 `runTick` captures CPU before that Memory preflight and passes the baseline into the kernel. The
 kernel's final reading follows mandatory telemetry work and report collection preparation. Thus
@@ -951,10 +951,12 @@ estimates; this foundation does not approximate a route. Issue
 colony treats a worker as no longer sustaining the room when its remaining lifetime is no more than
 the nine spawn ticks for the minimal `WORK,CARRY,MOVE` successor plus
 `policy.spawn.replacementSafetyMarginTicks`. It then reuses the colony director's stable recovery
-objective and the spawn authority's tick-local authorization/settlement sequence; a scheduled
-successor remains deduplicated through the durable ledger after a heap reset. This intentionally
-does not create a second replacement queue or per-creep Memory. Issue #24's spawn authority still
-handles the zero-worker order. No task or lease is mirrored into per-creep Memory.
+objective and the spawn authority's tick-local authorization/settlement sequence. The runtime
+declares the visible expiring incumbent as predecessor and the broker gives the successor a distinct
+revision-qualified generated identity. A predecessor never satisfies its successor demand, while a
+scheduled successor remains deduplicated through the durable ledger after a heap reset. This
+intentionally does not create a second replacement queue or per-creep Memory. Issue #24's spawn
+authority still handles the zero-worker order. No task or lease is mirrored into per-creep Memory.
 
 A creep agent reads its lease and emits at most:
 
@@ -1066,7 +1068,10 @@ broker-selected body cost and half-open spawn interval. The session keeps its re
 private until `SpawnExecutor` results reach mandatory-tail `spawn.settle`. Exact settlement is
 validated as a complete set before the ledger changes, is idempotent for an identical replay, and
 advances the owner revision at most once. External requests cannot impersonate the director-owned
-restore-workforce issuer.
+restore-workforce issuer. When adding the exact spawn claim advances a retained provisional
+reservation, the director projects that revision and reservation ID into the detached demand and
+then rederives both during admission. It uses the same maximum of current colony revision and prior
+ledger revision plus one as exact request construction. A mismatch fails before an intent exists.
 
 ### 12.2 SpawnBroker
 
@@ -1096,18 +1101,25 @@ spawning and proactive replacement must precede upgrading and construction. With
 priority never authorizes an energy, spawn-slot, name, or structural-cap overcommit. With two idle
 spawns, 300 shared energy schedules one 200-energy recovery body and 400 schedules two.
 
-Generated recovery names encode stable `(demand ID, issuer, colony)` identity for reset adoption and
-diagnostics, not revision, budget ID, or behavioral role dispatch. They never use suffix retries; a
-collision defers rather than changing the reconstructible name. Explicit caller-selected name bases
-retain the configured bounded suffix attempts. A terminal successful ledger entry deterministically
-recreates a tick-local `SpawnExpectation` containing that exact creep name after any heap reset.
+Generated recovery names encode `(demand ID, issuer, colony, demand revision)` as a fixed logical
+hash plus a base-36 revision suffix. Successive generations are distinct, budget IDs and behavioral
+roles remain excluded, and the terminal ledger revision reconstructs the exact bounded name after
+reset. Revision qualification applies only to emergency recovery; other generated-name producers
+keep their logical identity across budget-only revisions. Generated names never use collision suffix
+retries; explicit caller-selected name bases retain configured bounded suffix attempts.
 
 The broker adopts the expectation's exact observed creep name as satisfied only while that creep
-retains every active capability required by the demand, including policy-required movement, and
-defers exact-name spawning even at zero remaining time. A damaged or unrelated same-name creep is a
-bounded collision, not satisfaction. Unrelated activity on the previously selected spawn is not
-proof of the expected creep. If the exact name remains absent at the bounded retry tick, the same
-unsuffixed recovery name becomes eligible again.
+retains every active capability required by the demand, including policy-required movement, and is
+not the declared predecessor. During proactive handoff, the runtime first reconstructs a prior
+generated incumbent from its successful terminal revision, then falls back to the canonical
+last-surviving expiring WCM worker. That predecessor cannot erase the successor demand. Exact
+expected successor spawning defers even at zero remaining time; unrelated spawn activity is not
+success. A failed command observes bounded backoff, then the next durable demand revision supplies
+one new reconstructible name without collision retries. For a bounded deployment transition,
+expectation reconstruction accepts the previous logical-only recovery name only when that exact name
+is currently visible as a creep or spawn activity; current format wins when both are observed, and
+the previous name is never a fresh allocation candidate. Observation retains only the bounded
+candidate names derived from terminal recovery entries rather than indexing the whole snapshot.
 
 Only `SpawnExecutor` calls `spawn.spawnCreep`. It revalidates the live object's type, ID, name,
 room, ownership, busy state, and activity before issuing the already-authorized body/name once. It
@@ -1455,31 +1467,31 @@ The runtime status surface MUST answer:
 
 ## 16. Failure and Recovery Rules
 
-| Failure                         | Required behavior                                                                   |
-| ------------------------------- | ----------------------------------------------------------------------------------- |
-| global heap reset               | rebuild all services/caches; continue from persistent contracts                     |
-| empty Memory                    | initialize owners; derive one bootstrap objective; create no duplicate commitments  |
-| incomplete migration            | enter recovery mode and resume bounded migration                                    |
-| malformed/future config owner   | preserve owner; source-defaults with bounded malformed/future reason                |
-| malformed/future colonies owner | preserve owner; authorize no objective or reservation; report bounded reason        |
-| invalid config candidate        | reject atomically; revalidate compatible last-valid or use source defaults          |
-| unavailable/prerequisite gate   | keep work disabled and report its source or prerequisite reason                     |
-| missing/corrupt cache           | treat as miss and rebuild within budget                                             |
-| unavailable segment             | defer optional consumer or use explicitly lower-confidence fallback                 |
-| corrupt segment                 | quarantine generation; load previous valid generation or rebuild                    |
-| stale/unknown colony vision     | preserve durable state; authorize no new live commitment; never infer room loss     |
-| planner exception               | discard its writes; quarantine optional system; continue mandatory phases           |
-| expected command error          | record typed result; reconcile and retry/retire by policy                           |
-| executor exception              | fail intent, isolate adapter, preserve reconcile/telemetry budget                   |
-| duplicate spawn-slot commands   | reject complete batch before resolving a live spawn or issuing a partial command    |
-| spawn command not scheduled     | release exact energy/spawn grant; retain bounded failed-attempt retry evidence      |
-| scheduled creep not yet visible | rederive exact-name expectation; retry same name only after its bounded expiry      |
-| spawn Execute CPU overrun       | keep private API result; mandatory-tail settlement persists command and actual cost |
-| CPU pressure                    | stop optional admissions; preserve safety, essential execute, reconcile, telemetry  |
-| lost creep/structure            | expire leases/reservations and replan from observation                              |
-| visibly lost owned room         | enter terminal colony lost path; release active local reservations                  |
-| stale/malformed reputation      | treat as neutral; never weaken configured self/ally/NAP exclusions                  |
-| operation timeout/budget breach | stop new spending and transition to withdrawal/abort                                |
+| Failure                         | Required behavior                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| global heap reset               | rebuild all services/caches; continue from persistent contracts                      |
+| empty Memory                    | initialize owners; derive one bootstrap objective; create no duplicate commitments   |
+| incomplete migration            | enter recovery mode and resume bounded migration                                     |
+| malformed/future config owner   | preserve owner; source-defaults with bounded malformed/future reason                 |
+| malformed/future colonies owner | preserve owner; authorize no objective or reservation; report bounded reason         |
+| invalid config candidate        | reject atomically; revalidate compatible last-valid or use source defaults           |
+| unavailable/prerequisite gate   | keep work disabled and report its source or prerequisite reason                      |
+| missing/corrupt cache           | treat as miss and rebuild within budget                                              |
+| unavailable segment             | defer optional consumer or use explicitly lower-confidence fallback                  |
+| corrupt segment                 | quarantine generation; load previous valid generation or rebuild                     |
+| stale/unknown colony vision     | preserve durable state; authorize no new live commitment; never infer room loss      |
+| planner exception               | discard its writes; quarantine optional system; continue mandatory phases            |
+| expected command error          | record typed result; reconcile and retry/retire by policy                            |
+| executor exception              | fail intent, isolate adapter, preserve reconcile/telemetry budget                    |
+| duplicate spawn-slot commands   | reject complete batch before resolving a live spawn or issuing a partial command     |
+| spawn command not scheduled     | release exact energy/spawn grant; retain bounded failed-attempt retry evidence       |
+| scheduled creep not yet visible | rederive its revision-qualified expectation; suppress duplicate until bounded expiry |
+| spawn Execute CPU overrun       | keep private API result; mandatory-tail settlement persists command and actual cost  |
+| CPU pressure                    | stop optional admissions; preserve safety, essential execute, reconcile, telemetry   |
+| lost creep/structure            | expire leases/reservations and replan from observation                               |
+| visibly lost owned room         | enter terminal colony lost path; release active local reservations                   |
+| stale/malformed reputation      | treat as neutral; never weaken configured self/ally/NAP exclusions                   |
+| operation timeout/budget breach | stop new spending and transition to withdrawal/abort                                 |
 
 Recovery MUST be automatic and idempotent. Console intervention may aid diagnosis but cannot be a
 normal transition in a state machine.

@@ -34,8 +34,9 @@ itself implement harvesting, filling, movement, proactive replacement, or the co
 | Scheduled cost is consumed atomically and unused grant is released   | `colony-director.test.ts`, `tick.test.ts`                               |
 | Unscheduled commands release exact energy/spawn authorization        | `colony-director.test.ts`, `tick.test.ts`                               |
 | Zero-creep 199 energy issues no command or exact spawn grant         | `tick.test.ts`                                                          |
-| Exact legal creep suppresses retry; damaged same-name creep defers   | `spawn-broker.test.ts`, `tick.test.ts`                                  |
-| Bounded absence of the exact expected name retries the same command  | `spawn-broker.test.ts`, `tick.test.ts`                                  |
+| Exact legal current target suppresses retry; damaged target defers   | `spawn-broker.test.ts`                                                  |
+| Declared predecessor cannot satisfy its distinct successor demand    | `spawn-broker.test.ts`, `tick.test.ts`                                  |
+| Failed runtime scheduling backs off then advances one name revision  | `tick.test.ts`                                                          |
 | Execute CPU overrun still reaches mandatory settlement and commit    | `tick.test.ts`                                                          |
 | One colonies transaction precedes one normal root commit             | `tick.test.ts`, `architecture-boundaries.test.mjs`                      |
 | Canonical broker/executor and sole command/ledger authorities hold   | `architecture-boundaries.test.mjs`, production bundle checks in `check` |
@@ -71,12 +72,14 @@ Within a category, higher numeric priority wins, followed by earlier deadline, l
 energy, and demand ID. Byte-identical repeats under one demand ID collapse to one logical demand;
 different canonical terms under one ID produce `identity-conflict` and no selection.
 
-For a generated recovery name, identity is exactly `(demand ID, issuer, colony ID)`. Revision and
-BudgetLedger ID are excluded, so the same logical recovery demand has the same name after a retry,
-owner revision, JSON round trip, or heap reset. Generated names have exactly one candidate and are
-never suffixed; a collision defers the demand. Only an explicit caller-selected `nameBasis` receives
-the configured `~1` through bounded suffix candidates. This distinction preserves exact durable name
-reconstruction while still supporting explicit-name producers later.
+For a generated recovery name, identity is exactly
+`(demand ID, issuer, colony ID, demand revision)`. The logical triple is represented by a fixed
+eight-hex hash and the durable revision by an explicit base-36 suffix, so consecutive recovery
+generations are distinct while a terminal BudgetLedger entry can reconstruct the exact bounded name
+after a JSON round trip or heap reset. Budget ID remains excluded. Generated names have exactly one
+candidate and are never collision-suffixed; only an explicit caller-selected `nameBasis` receives
+configured bounded suffix candidates. The revision suffix is recovery-specific: other generated
+categories retain the logical hash across budget-only revisions.
 
 The issue #24 runtime producer emits only the derived `colony/<room>/restore-workforce` emergency
 demand. It requests one active `WORK`, `CARRY`, and `MOVE`, uses the currently visible owner room as
@@ -196,31 +199,47 @@ evidence when all of these are true:
 
 The tick-local `SpawnExpectation` contains demand ID/revision, spawn ID, exact `creepName`,
 scheduled tick, expected-ready tick, and retry tick. It is rederived after reset from the terminal
-entry plus the stable logical recovery identity; no separate expectation record is persisted. The
-exact name is therefore reproducible even though it is not duplicated inside the owner schema.
+entry plus its logical recovery identity and durable demand revision; no separate expectation record
+is persisted. The exact name is therefore reproducible even though it is not duplicated inside the
+owner schema.
+
+If an already-running deployment exposes the previous logical-only recovery name, reconstruction
+adopts it only while that exact name is observed as a creep or spawn activity. It prefers the
+current revision-qualified name when both are observed and otherwise defaults to current format.
+This second value is observation-only and is never submitted as a new generated-name candidate.
+Runtime first derives at most two candidates per bounded terminal recovery entry, then retains only
+matching names while scanning the snapshot.
 
 The expectation is keyed by stable demand ID rather than only its current revision. It blocks retry
 until `max(expectedReadyAt, request.expiresAt)`. Observation of its exact `creepName` marks the
 demand satisfied only when the creep still has every active capability required by the demand,
-including policy-required movement. A damaged or unrelated same-name creep remains a bounded name
-collision and cannot erase the zero-workforce objective. Visible spawning defers only when the
-activity carries that expected name, even when `remainingTime` is zero because the completed creep
-may still be blocked from exiting. Unrelated activity on the old spawn is not success evidence. At
-the bounded retry tick, the exact legal live creep or spawning name is still adopted; if the exact
-name is absent, the demand becomes eligible and retries the same unsuffixed generated name.
+including policy-required movement, and is not the demand's declared predecessor. The runtime
+reconstructs a previously scheduled incumbent from its terminal revision when possible and otherwise
+chooses the deterministic last-surviving expiring WCM worker. That predecessor cannot satisfy the
+revision-qualified successor demand. Visible spawning defers only when the activity carries the
+expected successor name, even when `remainingTime` is zero because the completed creep may still be
+blocked from exiting. A damaged creep under the current successor name remains a bounded collision;
+an observed predecessor instead permits the distinct current generation to proceed.
 
 A command that did not schedule leaves a released exact entry with `spawn: false`. Its `updatedAt`
-anchors the configured bounded retry delay; it does not become a success expectation.
+anchors the configured bounded retry delay; it does not become a success expectation. The next
+admitted revision reconstructs one new bounded name without collision retries, so a failed attempt
+cannot reserve or satisfy its successor generation.
 
 ## Runtime recovery matrix
 
 | Beginning-of-tick evidence                                | Required outcome                                                                 |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Zero workers, idle active spawn, 199 current/300 capacity | one blocked objective; no broker demand, exact spawn grant, resolver, or command |
+| Prior pending 199 reservation, then 300 after heap reset  | broker, exact grant, command name, and terminal entry bind to one new revision   |
+| Pending entry across two unrelated policy revisions       | exact binding uses the latest colony revision; admission does not diverge        |
 | Zero legal workers, idle active spawn, 300 current energy | one WCM command; consume 200/CPU/spawn and release unused 100                    |
 | Prior `OK`, exact generated creep now present and legal   | no recovery objective and no second command                                      |
-| Prior `OK`, exact generated creep present but damaged     | retain blocked objective; bounded name-collision defer; no false satisfaction    |
-| Prior `OK`, exact name absent after bounded expectation   | retry one WCM command with the same generated name                               |
+| Prior `OK`, generated incumbent reaches handoff boundary  | one distinct revision-qualified successor; incumbent cannot satisfy its demand   |
+| Prior `OK`, exact generated creep present but damaged     | one distinct recovery generation; no false satisfaction by the damaged incumbent |
+| Failed command, retry delay not elapsed                   | stable `not-before`; no duplicate command                                        |
+| Failed command, retry delay elapsed                       | one reconstructible bounded name at the next durable revision                    |
+| Previous-format name spawning beside another idle spawn   | adopt only the observed name and defer; no duplicate command                     |
 | Prior `OK`, command execution exceeds its admitted CPU    | `spawn.execute` budget fault; `spawn.settle` still persists exact consumption    |
 | Two validated intents target the same spawn ID            | deterministic whole-batch rejection before any live resolution or API command    |
 

@@ -206,7 +206,7 @@ describe("SpawnBroker", () => {
       demands: [demand()],
     });
     const generatedName = first.selections[0]?.name;
-    expect(generatedName).toMatch(/^mx-[0-9a-f]{8}$/u);
+    expect(generatedName).toMatch(/^mx-[0-9a-f]{8}-1$/u);
     if (generatedName === undefined) {
       throw new Error("generated name missing");
     }
@@ -258,7 +258,7 @@ describe("SpawnBroker", () => {
     expect(spawning.selections).toEqual([]);
   });
 
-  it("keeps generated names stable and never suffixes them after same-batch reservation", () => {
+  it("qualifies only recovery names by durable revision and never suffixes them", () => {
     const logicalDemand = demand({ id: "worker-z" });
     const changedAttempt = {
       ...logicalDemand,
@@ -267,7 +267,10 @@ describe("SpawnBroker", () => {
     };
     const generatedName = generatedSpawnCreepName(logicalDemand);
 
-    expect(generatedSpawnCreepName(changedAttempt)).toBe(generatedName);
+    const changedName = generatedSpawnCreepName(changedAttempt);
+    expect(changedName).not.toBe(generatedName);
+    expect(generatedName).toMatch(/^mx-[0-9a-f]{8}-1$/u);
+    expect(changedName).toMatch(/^mx-[0-9a-f]{8}-2$/u);
     const firstAttempt = arbitrate({
       snapshot: snapshot([{ energy: 300, spawns: [spawn("spawn-a")] }]),
       demands: [logicalDemand],
@@ -277,7 +280,16 @@ describe("SpawnBroker", () => {
       demands: [changedAttempt],
     });
     expect(firstAttempt.selections[0]?.name).toBe(generatedName);
-    expect(nextAttempt.selections[0]?.name).toBe(generatedName);
+    expect(nextAttempt.selections[0]?.name).toBe(changedName);
+
+    const genericAttempt = demand({ category: "replacement" });
+    const genericRevision = {
+      ...genericAttempt,
+      revision: genericAttempt.revision + 1,
+      budgetId: "replacement-budget-next",
+    };
+    expect(generatedSpawnCreepName(genericRevision)).toBe(generatedSpawnCreepName(genericAttempt));
+    expect(generatedSpawnCreepName(genericAttempt)).toMatch(/^mx-[0-9a-f]{8}$/u);
 
     const reservedByExplicitDemand = arbitrate({
       snapshot: snapshot([{ energy: 400, spawns: [spawn("spawn-b"), spawn("spawn-a")] }]),
@@ -294,6 +306,54 @@ describe("SpawnBroker", () => {
       reason: "name-collision-exhausted",
       name: null,
     });
+  });
+
+  it("does not let a declared predecessor satisfy its successor demand", () => {
+    const predecessorDemand = demand({ revision: 1 });
+    const predecessorName = generatedSpawnCreepName(predecessorDemand);
+    const successorDemand = demand({
+      revision: 2,
+      replacementCreepName: predecessorName,
+    });
+    const successorName = generatedSpawnCreepName(successorDemand);
+    const expectation: SpawnExpectation = {
+      demandId: predecessorDemand.id,
+      revision: predecessorDemand.revision,
+      spawnId: "spawn-a",
+      creepName: predecessorName,
+      scheduledAt: 90,
+      expectedReadyAt: 99,
+      retryAt: 110,
+    };
+
+    const expectedPredecessor = arbitrate({
+      snapshot: snapshot([
+        { energy: 300, spawns: [spawn("spawn-a")], creepNames: [predecessorName] },
+      ]),
+      demands: [successorDemand],
+      expectations: [expectation],
+    });
+    expect(expectedPredecessor.decisions[0]).toMatchObject({
+      status: "selected",
+      reason: "selected",
+      name: successorName,
+    });
+    expect(expectedPredecessor.selections[0]).toMatchObject({
+      replacementCreepName: predecessorName,
+      name: successorName,
+    });
+
+    const directPredecessor = demand({ replacementCreepName: generatedSpawnCreepName(demand()) });
+    const directName = generatedSpawnCreepName(directPredecessor);
+    const collision = arbitrate({
+      snapshot: snapshot([{ energy: 300, spawns: [spawn("spawn-a")], creepNames: [directName] }]),
+      demands: [directPredecessor],
+    });
+    expect(collision.decisions[0]).toMatchObject({
+      status: "deferred",
+      reason: "name-collision-exhausted",
+    });
+    expect(collision.selections).toEqual([]);
   });
 
   it("honors unexpired expectations and retries at, but not before, retryAt", () => {

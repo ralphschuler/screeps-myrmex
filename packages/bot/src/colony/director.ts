@@ -7,6 +7,7 @@ import {
   BUDGET_CATEGORIES,
   MAX_BUDGET_REQUESTS_PER_TICK,
   MAX_COLONIES,
+  MAX_RESERVATION_ID_CODE_UNITS,
   MAX_SPAWN_INTERVAL_TICKS,
   RECOVERY_OBJECTIVE_CPU_UNITS,
   type BudgetDecision,
@@ -27,6 +28,7 @@ import {
   type SpawnBudgetCapacity,
 } from "./contracts";
 import { canonicalColoniesOwner, coloniesOwnerEquals, resolveColoniesOwner } from "./persistence";
+import { formatReservationId } from "./reservation-id";
 
 export interface ColonyDirectorInput {
   readonly tick: number;
@@ -45,12 +47,19 @@ export interface ColonyDirectorInput {
 export interface RecoverySpawnSelection {
   readonly objectiveId: string;
   readonly colonyId: string;
+  readonly revision: number;
+  readonly reservationId: string;
   readonly energyCost: number;
   readonly spawn: {
     readonly spawnId: string;
     readonly startTick: number;
     readonly endTick: number;
   };
+}
+
+export interface RecoverySpawnDemandBinding {
+  readonly revision: number;
+  readonly reservationId: string;
 }
 
 export type ColonySpawnCommandSettlement =
@@ -246,6 +255,13 @@ export class ColonyDirector {
         usedRecoverySelections.add(objectiveId);
       }
       const request = recoveryRequest(record, knownLedger, input, selection);
+      if (
+        selection !== null &&
+        (selection.revision !== request.revision ||
+          selection.reservationId !== formatReservationId(request))
+      ) {
+        throw new TypeError("recovery spawn selection does not match its exact budget revision");
+      }
       const admitted = !exactRecoveryMode || selection !== null;
       if (admitted) {
         objectiveRequests.push(request);
@@ -519,6 +535,9 @@ function normalizeRecoverySelections(
     if (
       !isBoundedIdentifier(selection.objectiveId, 128) ||
       !isBoundedIdentifier(selection.colonyId, 64) ||
+      !isNonNegativeSafeInteger(selection.revision) ||
+      selection.revision === 0 ||
+      !isBoundedIdentifier(selection.reservationId, MAX_RESERVATION_ID_CODE_UNITS) ||
       !isNonNegativeSafeInteger(selection.energyCost) ||
       selection.energyCost === 0 ||
       selection.energyCost > input.config.policy.spawn.maximumBodyEnergy ||
@@ -538,12 +557,56 @@ function normalizeRecoverySelections(
       deepFreeze({
         objectiveId: selection.objectiveId,
         colonyId: selection.colonyId,
+        revision: selection.revision,
+        reservationId: selection.reservationId,
         energyCost: selection.energyCost,
         spawn: { ...selection.spawn },
       }),
     );
   }
   return normalized;
+}
+
+/**
+ * Projects the one exact revision change caused by attaching a spawn claim to a retained
+ * provisional recovery reservation. ColonyDirector owns this projection and verifies the same
+ * binding again when it admits the broker selection.
+ */
+export function recoverySpawnDemandBinding(
+  objective: ColonyObjective,
+  colonyRevision: number,
+  ownerValue: unknown,
+): RecoverySpawnDemandBinding {
+  if (!isNonNegativeSafeInteger(colonyRevision) || colonyRevision === 0) {
+    throw new TypeError("recovery spawn demand requires a positive colony revision");
+  }
+  const owner = resolveColoniesOwner(ownerValue).owner;
+  const existing = owner?.ledger.find(
+    (entry) =>
+      entry.colonyId === objective.colonyId &&
+      entry.category === "emergency-spawn" &&
+      entry.issuer === objective.id,
+  );
+  const attachesClaimToRetainedRevision =
+    existing !== undefined &&
+    (existing.status === "active" || existing.status === "pending") &&
+    existing.revision === objective.revision &&
+    existing.request.spawn === null;
+  const revision = attachesClaimToRetainedRevision
+    ? Math.max(
+        colonyRevision,
+        checkedIncrement(existing.revision, "recovery spawn demand revision"),
+      )
+    : objective.revision;
+  return deepFreeze({
+    revision,
+    reservationId: formatReservationId({
+      colonyId: objective.colonyId,
+      category: "emergency-spawn",
+      issuer: objective.id,
+      revision,
+    }),
+  });
 }
 
 function normalizeSatisfiedObjectiveIds(values: readonly string[]): ReadonlySet<string> {
