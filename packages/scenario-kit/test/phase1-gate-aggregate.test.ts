@@ -1,18 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import checkedResult from "../../../docs/phase1-gate-results.json";
+import { survivalWorld } from "../../bot/test/support/survival-flow-fixture";
+import { runTick, type TickOutcome } from "../../bot/src/runtime/tick";
 import { collectConstrainedCpuEvidence } from "./phase1-constrained-cpu.test";
 import { collectHostilePressureEvidence } from "./phase1-hostile-pressure-recovery.test";
 import { collectPathTargetEvidence } from "./phase1-path-target-recovery.test";
 import { collectSpawnBlockerEvidence } from "./phase1-spawn-blockers.test";
+import { canonicalSerialize } from "../src";
+
+const FIND_CREEPS_VALUE = 101;
+const FIND_SOURCES_VALUE = 105;
+const FIND_STRUCTURES_VALUE = 107;
+const FIND_CONSTRUCTION_SITES_VALUE = 111;
 
 describe("Phase 1 aggregate deterministic evidence (#30)", () => {
-  it("matches checked-in component outputs and keeps unavailable measurements explicit", () => {
-    const actual = collectAggregateEvidence();
+  beforeAll(() => {
+    vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
+    vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
+    vi.stubGlobal("FIND_STRUCTURES", FIND_STRUCTURES_VALUE);
+    vi.stubGlobal("FIND_CONSTRUCTION_SITES", FIND_CONSTRUCTION_SITES_VALUE);
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("matches checked-in component outputs and keeps unavailable measurements explicit", async () => {
+    const actual = await collectAggregateEvidence();
     expect(actual).toEqual(checkedResult);
 
     for (const row of actual.rows) {
       for (const value of Object.values(row.measurements)) {
-        expect(value === null || (Number.isSafeInteger(value) && value >= 0)).toBe(true);
+        expect(value === null || (Number.isFinite(value) && value >= 0)).toBe(true);
       }
       for (const [field, value] of Object.entries(row.measurements)) {
         if (value === null) expect(row.unevidenced).toContain(field);
@@ -30,10 +49,11 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
       remoteAdapter: "unevidenced",
       rollbackIncident: "unevidenced",
     });
-  });
+  }, 30_000);
 });
 
-export function collectAggregateEvidence() {
+export async function collectAggregateEvidence() {
+  const rcl1 = await collectRcl1RuntimeEvidence();
   const components = [
     componentRow("spawn-blocker-recovery", collectSpawnBlockerEvidence(), {
       energyFlow: 200,
@@ -55,7 +75,9 @@ export function collectAggregateEvidence() {
       spawnUtilizationPct: 0,
     }),
   ];
-  const resetReorder = equivalenceRow(components);
+  const rcl1Row = runtimeRow("rcl1-cold-boot-growth", rcl1, "partial");
+  const evidenceRows = [rcl1Row, ...components];
+  const resetReorder = equivalenceRow(evidenceRows);
   return Object.freeze({
     schemaVersion: 1,
     issue: 30,
@@ -70,10 +92,10 @@ export function collectAggregateEvidence() {
     }),
     rows: Object.freeze([
       unavailableRuntimeRow("rcl2-established", "evidenced"),
-      unavailableRuntimeRow("rcl1-cold-boot-growth", "partial"),
+      rcl1Row,
       ...components,
       resetReorder,
-      aggregateRow(components, resetReorder),
+      aggregateRow(evidenceRows, resetReorder),
     ]),
   });
 }
@@ -84,6 +106,25 @@ interface EvidenceRun {
     readonly ticks: readonly { readonly cpu: { readonly used: number } }[];
   };
   readonly transcriptHash: string;
+}
+
+interface RuntimeEvidenceRun {
+  readonly measurements: Partial<Record<MeasurementName, number>>;
+  readonly outcome: Readonly<Record<string, unknown>>;
+  readonly transcript: {
+    readonly ticks: readonly {
+      readonly cpu: { readonly used: number };
+      readonly gameTime: number;
+      readonly heapReset: boolean;
+      readonly sourceOrder: "normal" | "reversed";
+    }[];
+  };
+}
+
+interface RuntimeRuns {
+  readonly reordered: RuntimeEvidenceRun;
+  readonly reset: RuntimeEvidenceRun;
+  readonly warm: RuntimeEvidenceRun;
 }
 
 interface Runs {
@@ -128,7 +169,172 @@ function unavailableRuntimeRow(id: string, status: "evidenced" | "partial") {
   });
 }
 
-function equivalenceRow(components: readonly ReturnType<typeof componentRow>[]) {
+function runtimeRow(id: string, runs: RuntimeRuns, status: "evidenced" | "partial") {
+  const ticks = runs.warm.transcript.ticks.length;
+  const modeledCpu = runs.warm.transcript.ticks.reduce((total, tick) => total + tick.cpu.used, 0);
+  const measurements = {
+    ...emptyMeasurements(),
+    ...runs.warm.measurements,
+    ticks,
+    modeledCpu,
+  };
+  const hashes = {
+    warmOutcome: hashText(canonicalSerialize(runs.warm.outcome)),
+    resetOutcome: hashText(canonicalSerialize(runs.reset.outcome)),
+    reorderedOutcome: hashText(canonicalSerialize(runs.reordered.outcome)),
+    warmTranscript: hashText(canonicalSerialize(runs.warm.transcript)),
+    resetTranscript: hashText(canonicalSerialize(runs.reset.transcript)),
+    reorderedTranscript: hashText(canonicalSerialize(runs.reordered.transcript)),
+  };
+  expect(hashes.resetOutcome).toBe(hashes.warmOutcome);
+  expect(hashes.reorderedOutcome).toBe(hashes.warmOutcome);
+  return Object.freeze({
+    id,
+    status,
+    scope: "focused-runtime-export",
+    measurements: Object.freeze(measurements),
+    hashes: Object.freeze(hashes),
+    unevidenced: Object.freeze(
+      Object.entries(measurements)
+        .filter(([, value]) => value === null)
+        .map(([field]) => field),
+    ),
+  });
+}
+
+type RuntimeExecuteTick = typeof runTick;
+type RuntimeTickSample = RuntimeEvidenceRun["transcript"]["ticks"][number];
+
+async function collectRcl1RuntimeEvidence(): Promise<RuntimeRuns> {
+  return {
+    warm: await runRcl1Variant(false, false, runTick),
+    reset: await runRcl1Variant(true, false),
+    reordered: await runRcl1Variant(true, true),
+  };
+}
+
+async function runRcl1Variant(
+  resetMemory: boolean,
+  reorderAfterReset: boolean,
+  initialExecuteTick?: RuntimeExecuteTick,
+): Promise<RuntimeEvidenceRun> {
+  const world = survivalWorld();
+  let executeTick = initialExecuteTick;
+  if (executeTick === undefined) {
+    vi.resetModules();
+    executeTick = (await import("../../bot/src/runtime/tick")).runTick;
+  }
+  let memory = {} as Memory;
+  let memoryResetAt: number | null = null;
+  let markHeapReset = false;
+  const samples: RuntimeTickSample[] = [];
+  const outcomes: Array<{ readonly outcome: TickOutcome; readonly tick: number }> = [];
+
+  for (let tick = 100; tick <= 100 + 1_499; tick += 1) {
+    const outcome = executeTick({
+      game: world.game(tick),
+      localPathSearch: world.pathSearch,
+      memory,
+    });
+    outcomes.push({ outcome, tick });
+    world.assertEnergyConserved();
+    samples.push({
+      cpu: { used: outcome.kernel.cpuUsed },
+      gameTime: tick,
+      heapReset: markHeapReset,
+      sourceOrder: world.reverseSources ? "reversed" : "normal",
+    });
+    markHeapReset = false;
+
+    if (
+      resetMemory &&
+      memoryResetAt === null &&
+      world.workerEnergy >= 10 &&
+      world.firstHarvestAt !== null
+    ) {
+      memory = JSON.parse(JSON.stringify(memory)) as Memory;
+      vi.resetModules();
+      executeTick = (await import("../../bot/src/runtime/tick")).runTick;
+      if (reorderAfterReset) world.reverseSources = true;
+      memoryResetAt = tick;
+      markHeapReset = true;
+    }
+    if (world.controllerLevel >= 2) break;
+  }
+
+  const last = outcomes[outcomes.length - 1];
+  if (last === undefined) throw new Error("RCL1 runtime evidence produced no ticks");
+  const deliveredBeforeDeath = world.sourceBDelivered;
+  world.killWorker();
+  const afterDeathTick = last.tick + 1;
+  const afterDeath = executeTick({
+    game: world.game(afterDeathTick),
+    localPathSearch: world.pathSearch,
+    memory,
+  });
+  outcomes.push({ outcome: afterDeath, tick: afterDeathTick });
+  world.assertEnergyConserved();
+  samples.push({
+    cpu: { used: afterDeath.kernel.cpuUsed },
+    gameTime: afterDeathTick,
+    heapReset: false,
+    sourceOrder: world.reverseSources ? "reversed" : "normal",
+  });
+
+  for (let tick = afterDeathTick + 1; tick <= afterDeathTick + 122; tick += 1) {
+    const outcome = executeTick({
+      game: world.game(tick),
+      localPathSearch: world.pathSearch,
+      memory,
+    });
+    outcomes.push({ outcome, tick });
+    world.assertEnergyConserved();
+    samples.push({
+      cpu: { used: outcome.kernel.cpuUsed },
+      gameTime: tick,
+      heapReset: false,
+      sourceOrder: world.reverseSources ? "reversed" : "normal",
+    });
+    if (world.sourceBDelivered > deliveredBeforeDeath) break;
+  }
+
+  expect(world.controllerLevel).toBe(2);
+  expect(world.firstHarvestTargetId).toBe("source-a");
+  expect(world.spawnCalls).toHaveLength(2);
+  expect(world.sourceBDelivered).toBeGreaterThan(deliveredBeforeDeath);
+  const deliveredEnergy = outcomes.reduce(
+    (total, { outcome }) => total + (outcome.telemetry?.energyFlow.delivered ?? 0),
+    0,
+  );
+  const recoveryTime = last.tick - 100;
+  const tickCount = samples.length;
+  return {
+    measurements: {
+      energyFlow: deliveredEnergy,
+      recoveryTime,
+      spawnUtilizationPct:
+        Math.round(
+          (world.spawnCalls.reduce((total, call) => total + call.body.length * 3, 0) / tickCount) *
+            10_000,
+        ) / 100,
+    },
+    outcome: {
+      controllerLevel: world.controllerLevel,
+      firstHarvestTargetId: world.firstHarvestTargetId,
+      sourceAEnergy: world.sourceAEnergy,
+      sourceBDelivered: world.sourceBDelivered,
+      sourceBHarvested: world.sourceBHarvested,
+      spawnCalls: world.spawnCalls.map(({ body, cost }) => ({ body, cost })),
+      spawnEnergy: world.spawnEnergy,
+      workerVisibleAt: world.workerVisibleAt,
+    },
+    transcript: { ticks: samples },
+  };
+}
+
+type AggregateEvidenceRow = ReturnType<typeof componentRow> | ReturnType<typeof runtimeRow>;
+
+function equivalenceRow(components: readonly AggregateEvidenceRow[]) {
   const warmOutcome = hashText(components.map((row) => row.hashes.warmOutcome).join(":"));
   const resetOutcome = hashText(components.map((row) => row.hashes.resetOutcome).join(":"));
   const reorderedOutcome = hashText(components.map((row) => row.hashes.reorderedOutcome).join(":"));
@@ -162,7 +368,7 @@ function equivalenceRow(components: readonly ReturnType<typeof componentRow>[]) 
 }
 
 function aggregateRow(
-  components: readonly ReturnType<typeof componentRow>[],
+  components: readonly AggregateEvidenceRow[],
   equivalence: ReturnType<typeof equivalenceRow>,
 ) {
   return Object.freeze({
@@ -183,7 +389,6 @@ function aggregateRow(
       "warmTranscript",
       "resetTranscript",
       "reorderedTranscript",
-      "rcl1RuntimeExport",
       "rcl2RuntimeExport",
       "externalLive",
     ]),

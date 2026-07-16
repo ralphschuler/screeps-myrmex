@@ -54,7 +54,7 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
     for (const row of results.rows) {
       expect(Object.values(row.measurements)).toHaveLength(numericColumnCount);
       for (const [field, value] of Object.entries(row.measurements)) {
-        expect(value === null || (Number.isSafeInteger(value) && value >= 0)).toBe(true);
+        expect(value === null || (Number.isFinite(value) && value >= 0)).toBe(true);
         if (value === null) expect(row.unevidenced).toContain(field);
       }
     }
