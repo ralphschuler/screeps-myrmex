@@ -24,6 +24,14 @@ export interface ReporterStatus {
     readonly degraded: boolean;
   };
   readonly observer: { readonly status: "ready" | "unavailable"; readonly hash: string | null };
+  readonly colony: { readonly status: string; readonly objectives: number };
+  readonly recovery: {
+    readonly required: boolean;
+    readonly spawnDemand: number;
+    readonly harvested: number;
+    readonly delivered: number;
+    readonly unmet: number;
+  };
   readonly gates: readonly {
     readonly id: FeatureGateId;
     readonly enabled: boolean;
@@ -100,6 +108,17 @@ export function projectReporterStatus(
         status: telemetry === null ? "unavailable" : "ready",
         hash: telemetry?.status.hash ?? null,
       }),
+      colony: Object.freeze({
+        status: safeCode(telemetry?.colony.status ?? "unavailable"),
+        objectives: telemetry?.colony.objectives ?? 0,
+      }),
+      recovery: Object.freeze({
+        required: telemetry?.memoryStatus === "recovery",
+        spawnDemand: telemetry?.activity.spawnDemand ?? 0,
+        harvested: telemetry?.energyFlow.harvested ?? 0,
+        delivered: telemetry?.energyFlow.delivered ?? 0,
+        unmet: telemetry?.energyFlow.unmet ?? 0,
+      }),
       gates: Object.freeze(
         FEATURE_GATE_IDS.map((id) => ({
           id,
@@ -133,6 +152,14 @@ function fallback(kernel: KernelTickReport): ReporterStatus {
       degraded: true,
     }),
     observer: Object.freeze({ status: "unavailable", hash: null }),
+    colony: Object.freeze({ status: "unavailable", objectives: 0 }),
+    recovery: Object.freeze({
+      required: false,
+      spawnDemand: 0,
+      harvested: 0,
+      delivered: 0,
+      unmet: 0,
+    }),
     gates: Object.freeze([]),
     blockers: Object.freeze([]),
     faults: Object.freeze([]),

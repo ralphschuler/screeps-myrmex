@@ -89,6 +89,7 @@ import {
   type TickTelemetry,
 } from "../telemetry/metrics";
 import { TelemetryService } from "../telemetry/service";
+import { ConsoleReporter, type ConsoleSink } from "../telemetry/console-reporter";
 import { projectReporterStatus, type ReporterStatus } from "../telemetry/reporter-status";
 import { observeWorld } from "../world/observe";
 import { emptyWorldSnapshot, type WorldSnapshot } from "../world/snapshot";
@@ -119,6 +120,8 @@ export interface TickInput {
   readonly localPathSearch?: LocalPathSearch;
   /** Test/diagnostic observer. A throwing callback is isolated like its owning system. */
   readonly onPhase?: (phase: TickPhase) => void;
+  /** Optional host adapter for the sole redacted console reporter. */
+  readonly consoleSink?: ConsoleSink;
 }
 
 export interface TickOutcome {
@@ -235,6 +238,18 @@ export function runTick(input: TickInput): TickOutcome {
     signals: { recoveryRequired: opened.status !== "ready" },
     inputRevision: runtimeInputRevision(runtime.context.snapshot, runtime.context.config),
   });
+  const reporterStatus = projectReporterStatus(
+    runtime.context.telemetry,
+    report,
+    runtime.context.config.policy.reporter,
+  );
+  if (input.consoleSink !== undefined) {
+    new ConsoleReporter().report(
+      reporterStatus,
+      runtime.context.config.policy.reporter,
+      input.consoleSink,
+    );
+  }
   return Object.freeze({
     memoryStatus: opened.status,
     migrationStepsApplied: opened.migrationStepsApplied,
@@ -250,11 +265,7 @@ export function runTick(input: TickInput): TickOutcome {
     spawn: runtime.context.spawn,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
-    reporterStatus: projectReporterStatus(
-      runtime.context.telemetry,
-      report,
-      runtime.context.config.policy.reporter,
-    ),
+    reporterStatus,
     kernel: report,
   });
 }

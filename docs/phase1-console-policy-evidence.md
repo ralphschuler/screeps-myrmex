@@ -14,6 +14,13 @@ reporter caps and a pure redacted status projection for the renderer in issue #1
   cross into the renderer input.
 - A null telemetry result becomes a bounded unavailable observer view and does not alter the tick.
 
+## Synthetic console examples
+
+```text
+[MYRMEX][INFO][shard:deadbeef][t=100] mode=normal cpu=0/20000 bucket=9000 observer=ready colony=developing objectives=2 recovery=false spawnDemand=0 harvested=10 delivered=10 unmet=0 blockers=0 faults=0
+[MYRMEX][WARN][shard:deadbeef][t=101] mode=recovery cpu=0/20000 bucket=700 observer=ready colony=bootstrapping objectives=1 recovery=true spawnDemand=1 harvested=0 delivered=0 unmet=50 blockers=1 faults=0
+```
+
 ## Mechanics sources consulted
 
 - [Screeps API: Game.cpu](https://docs.screeps.com/api/#Game.cpu)
