@@ -18,6 +18,9 @@ reporter caps and a pure redacted status projection for the renderer in issue #1
   a successful spawn, harvest, delivery, changed evidence, or recovery completion clears it.
 - Reminder timing is bounded exponential backoff. It is observer evidence only: no retry, command,
   or gameplay admission path reads it.
+- Equivalent hostile fault signals are deduplicated by opaque fingerprint before the
+  retained-cardinality cap is applied. Reordered high-cardinality input therefore cannot multiply
+  retained entries or console events.
 - An optional observer diagnostic request accepts only `debug` or `trace` and the fixed `recovery`,
   `blockers`, and `faults` categories. Its duration is anchored in the versioned config receipt and
   expires exactly at the recorded tick; it cannot change reporter caps or redaction.
