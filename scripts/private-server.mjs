@@ -84,6 +84,8 @@ async function start() {
       `${paths.root}/db.json`,
       "--logdir",
       paths.root,
+      "--assetdir",
+      `${paths.root}/assets`,
       "--host",
       "127.0.0.1",
       "--port",
