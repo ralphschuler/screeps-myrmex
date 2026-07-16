@@ -115,6 +115,15 @@ export interface StoredStructureSnapshot {
   readonly structureType: string;
 }
 
+/** Visible road facts are kept separately because roads have no store and may be repaired locally. */
+export interface RoadSnapshot {
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly ticksToDecay: number | null;
+}
+
 export interface ConstructionSiteSnapshot {
   readonly id: string;
   readonly ownerUsername: string;
@@ -178,6 +187,8 @@ export interface RoomSnapshot {
   readonly ownedExtensions: readonly OwnedExtensionSnapshot[];
   readonly ownedSpawns: readonly OwnedSpawnSnapshot[];
   readonly ownedTowers: readonly OwnedTowerSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly roads?: readonly RoadSnapshot[];
   readonly ruins?: readonly RuinSnapshot[];
   readonly sources: readonly SourceSnapshot[];
   readonly storedStructures: readonly StoredStructureSnapshot[];

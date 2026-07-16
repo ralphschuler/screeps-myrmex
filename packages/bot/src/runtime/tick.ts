@@ -7,6 +7,12 @@ import {
   type SurvivalFlowCandidate,
 } from "../economy";
 import {
+  authorizedCriticalMaintenance,
+  planCriticalMaintenance,
+  renewCriticalMaintenanceBudgets,
+  type CriticalMaintenanceCandidate,
+} from "../maintenance";
+import {
   dispositionTransitions,
   planLeaseAgents,
   repairRetryTransitions,
@@ -277,6 +283,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     movement: Object.freeze([]),
   });
   let survivalCandidates: readonly SurvivalFlowCandidate[] = Object.freeze([]);
+  let maintenanceCandidates: readonly CriticalMaintenanceCandidate[] = Object.freeze([]);
   return Object.freeze([
     configBootSystem(input),
     {
@@ -415,8 +422,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     },
     defenseSafetySystem(input),
-    colonyDirectorSystem(input, spawnDraft, (candidates) => {
-      survivalCandidates = candidates;
+    colonyDirectorSystem(input, spawnDraft, (economy, maintenance) => {
+      survivalCandidates = economy;
+      maintenanceCandidates = maintenance;
     }),
     {
       descriptor: {
@@ -440,6 +448,40 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
         for (const request of flow.requests) scope.producer.submit(request);
         for (const transition of flow.transitions) scope.producer.transition(transition);
+        const stagedRequests = scope.stage();
+        return staged(
+          () => {
+            stagedRequests.commit();
+          },
+          () => {
+            stagedRequests.discard();
+          },
+        );
+      },
+    },
+    {
+      descriptor: {
+        id: "maintenance.contracts",
+        phase: "plan",
+        criticality: "operational",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: true,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase1.critical-maintenance")) {
+          return staged(() => undefined);
+        }
+        const scope = input.contractChannel.openProducer("maintenance.contracts");
+        const maintenance = authorizedCriticalMaintenance(
+          maintenanceCandidates,
+          context.colony.reservations,
+          context.contractPlanning,
+          context.tick,
+        );
+        for (const request of maintenance.requests) scope.producer.submit(request);
+        for (const transition of maintenance.transitions) scope.producer.transition(transition);
         const stagedRequests = scope.stage();
         return staged(
           () => {
@@ -700,7 +742,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
 function colonyDirectorSystem(
   input: CompositionInput,
   spawnDraft: SpawnTickDraft,
-  publishEconomyCandidates: (candidates: readonly SurvivalFlowCandidate[]) => void,
+  publishCandidates: (
+    economy: readonly SurvivalFlowCandidate[],
+    maintenance: readonly CriticalMaintenanceCandidate[],
+  ) => void,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -726,7 +771,17 @@ function colonyDirectorSystem(
         context.config.policy.leases.durationTicks,
         context.config.policy.leases.renewalWindowTicks,
       );
-      publishEconomyCandidates(economyCandidates);
+      const maintenanceEnabled = isFeatureEnabled(context.config, "phase1.critical-maintenance");
+      const maintenanceCandidates = renewCriticalMaintenanceBudgets(
+        maintenanceEnabled
+          ? planCriticalMaintenance(context.snapshot, context.config)
+          : Object.freeze([]),
+        resolveColoniesOwner(owner).owner?.ledger ?? [],
+        context.tick,
+        context.config.policy.leases.durationTicks,
+        context.config.policy.leases.renewalWindowTicks,
+      );
+      publishCandidates(economyCandidates, maintenanceCandidates);
       const provisional = colonyDirector.begin({
         tick: context.tick,
         snapshot: context.snapshot,
@@ -734,7 +789,9 @@ function colonyDirectorSystem(
         owner,
         cpuMode: mode,
         cpuBudget: budget,
-        requests: economyCandidates.map(({ budgetRequest }) => budgetRequest),
+        requests: [...economyCandidates, ...maintenanceCandidates].map(
+          ({ budgetRequest }) => budgetRequest,
+        ),
       });
       const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
       const brokerResult = spawnEnabled
@@ -776,7 +833,9 @@ function colonyDirectorSystem(
               owner,
               cpuMode: mode,
               cpuBudget: budget,
-              requests: economyCandidates.map(({ budgetRequest }) => budgetRequest),
+              requests: [...economyCandidates, ...maintenanceCandidates].map(
+                ({ budgetRequest }) => budgetRequest,
+              ),
               recoverySpawnSelections: selections.map((selection) => ({
                 objectiveId: selection.demandId,
                 colonyId: selection.colonyId,

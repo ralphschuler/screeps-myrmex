@@ -331,9 +331,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v9");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v10");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v9",
+      "runtime-config-source-v10",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -591,9 +591,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("makes completed safety and recovery source-available under v9", () => {
+  it("makes completed safety, recovery, and maintenance source-available under v10", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v9");
+    expect(config.sourceRevision).toBe("runtime-config-source-v10");
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.spawn")).toBe(true);
@@ -602,6 +602,7 @@ describe("source feature gates", () => {
     expect(isFeatureEnabled(config, "phase1.economy")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.safety")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.recovery")).toBe(true);
+    expect(isFeatureEnabled(config, "phase1.critical-maintenance")).toBe(true);
     expect(
       FEATURE_GATE_IDS.filter(
         (id) =>
@@ -612,7 +613,8 @@ describe("source feature gates", () => {
           id !== "phase1.agents" &&
           id !== "phase1.economy" &&
           id !== "phase1.safety" &&
-          id !== "phase1.recovery",
+          id !== "phase1.recovery" &&
+          id !== "phase1.critical-maintenance",
       ).every((id) => !isFeatureEnabled(config, id)),
     ).toBe(true);
     expect(config.features.gates["phase1.growth"].reason).toBe("source-unavailable");
