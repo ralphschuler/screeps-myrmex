@@ -18,6 +18,11 @@ The module accepts one strict, 4 KiB JSON definition with a fixed room, controll
 coordinates, ticks, and the canonical `smallMelee` invader body. It exposes no CLI command, HTTP
 route, credential, arbitrary path, arbitrary JavaScript, or database query.
 
+The scenario runner writes that definition only while simulation is paused, into its generated
+ignored state directory. Each processor and runner latches the first valid definition for its server
+run and writes a separate fixed ready receipt. The runner waits for both receipts before resuming;
+cleanup removes the definition and receipts, and a new scenario starts a new server run.
+
 At the pinned `screeps@4.3.0` / `@screeps/driver@5.3.0` boundary, the module uses `processRoom` and
 the engine bulk writer to schedule a user `"2"` invader. The normal engine invader processor
 supplies its movement and attacks on the following tick. A bounded heap reset publishes the pinned

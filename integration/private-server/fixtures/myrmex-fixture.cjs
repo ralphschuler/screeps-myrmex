@@ -20,22 +20,24 @@ const RECEIPT_PREFIX = "myrmexFixture:";
 module.exports = attachFixture;
 module.exports.readDefinition = readDefinition;
 module.exports.validateDefinition = validateDefinition;
+module.exports.latchDefinition = latchDefinition;
 
 /**
  * Adds the fixture only to standalone-server extension hooks. It deliberately adds no CLI method,
  * HTTP route, or production-bundle capability.
  */
-function attachFixture(
-  config,
-  definition = readDefinition(env.MYRMEX_PRIVATE_SERVER_FIXTURE),
-  storage = loadStorage(),
-) {
-  if (!config.engine || !definition) return;
+function attachFixture(config, definition = null, storage = loadStorage()) {
+  if (!config.engine) return;
+  let activeDefinition = definition;
   let hostileInserted = false;
   let resetPublished = false;
   let resetObservationPending = false;
 
   config.engine.on("processRoom", (room, _roomInfo, objects, terrain, gameTime, bulk) => {
+    activeDefinition = latchDefinition(activeDefinition, env.MYRMEX_PRIVATE_SERVER_FIXTURE);
+    if (!activeDefinition) return;
+    writeReceipt(storage, activeDefinition, "ready-processor", { phase: "ready" });
+    const definition = activeDefinition;
     if (room !== definition.target.room) return;
     if (!hostileInserted && gameTime === definition.hostile.atTick) {
       const rejection = hostileRejection(definition, objects, terrain);
@@ -61,6 +63,10 @@ function attachFixture(
   });
 
   config.engine.on("playerSandbox", (sandbox, userId) => {
+    activeDefinition = latchDefinition(activeDefinition, env.MYRMEX_PRIVATE_SERVER_FIXTURE);
+    if (!activeDefinition) return;
+    writeReceipt(storage, activeDefinition, "ready-runner", { phase: "ready" });
+    const definition = activeDefinition;
     if (resetObservationPending || `${userId}` !== definition.target.userId) return;
     return storage.env.get(receiptKey(definition, "reset")).then((value) => {
       const receipt = safeReceipt(value, definition);
@@ -86,6 +92,16 @@ function readDefinition(filename) {
     throw new RangeError("MYRMEX fixture definition exceeds the byte limit.");
   }
   return validateDefinition(JSON.parse(contents));
+}
+
+/** Reads a definition only until a valid definition is latched for the current server process. */
+function latchDefinition(current, filename) {
+  if (current) return current;
+  try {
+    return readDefinition(filename);
+  } catch {
+    return null;
+  }
 }
 
 function validateDefinition(value) {
