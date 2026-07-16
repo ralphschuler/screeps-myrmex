@@ -21,8 +21,8 @@ Bootstrap phase. The repository currently provides:
 - GitHub Actions for CI, security review, package publishing, Screeps deployment, terminal-loss
   respawn recovery, dependency updates, and Wiki synchronization.
 
-No gameplay feature is considered complete until it passes a deterministic scenario and a
-private-server outcome gate.
+No gameplay feature is considered complete until it passes a deterministic outcome scenario and the
+evidence gate defined for its roadmap phase.
 
 ## Quick Start
 

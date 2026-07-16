@@ -168,8 +168,8 @@ automation, power, boosted offense, nukes, strongholds, and cross-shard strategy
 until their preceding economy, expansion, defense, and canary gates pass.
 
 Moving to a later phase requires evidence in a tracking issue or ADR that the current exit condition
-has passed. A green unit test alone is insufficient when the gate requires a private-server or MMO
-outcome.
+has passed. A green unit test alone is insufficient when the gate requires a multi-tick
+deterministic outcome, exact-bundle evidence, or an MMO canary.
 
 ## 6. Start-of-Run Preflight
 
@@ -332,7 +332,8 @@ Preferred hierarchy:
 
 1. pure unit/property test for formulas and invariants;
 2. deterministic scenario for multi-tick decisions;
-3. private-server scenario for real engine behavior;
+3. exact production-bundle validation and an inactive code-branch upload when engine integration
+   matters;
 4. PTR check for upcoming API compatibility;
 5. MMO canary for production evidence.
 
@@ -466,8 +467,8 @@ npm run check
 Screeps bundle. Use actual repository scripts if this contract changes.
 
 For gameplay work, also run the narrow scenario or test command that most directly proves the
-outcome. Later phases must add the relevant private-server or canary gate before claiming
-completion.
+outcome. Later phases must add the relevant deterministic soak, exact-bundle, PTR, or canary gate
+before claiming completion.
 
 Never claim a check passed unless it ran and passed. Report skipped validation with the exact reason
 and residual risk.

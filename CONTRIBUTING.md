@@ -17,6 +17,7 @@ efficiency, deterrence, or strategic reach without weakening a guardrail.
 - Add no new workspace without an accepted ADR.
 - Add no direct Screeps API call outside an executor or runtime adapter.
 - Include schema migration behavior for persistent-memory changes.
-- State how the behavior is measured in private-server or MMO canary telemetry.
+- State how the behavior is measured in deterministic scenario evidence and, for Phase 6 production
+  work, MMO canary telemetry.
 
 See [Development](docs/development.md) for commands and repository conventions.
