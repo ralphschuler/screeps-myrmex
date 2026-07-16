@@ -11,10 +11,24 @@ site-placement authority.
 - `survival-growth.test.ts` proves downgrade-risk controller upgrading outranks optional existing
   construction, funded work alone becomes a contract, hostile rooms emit nothing, and a vanished
   site cancels its contract.
+- The bootstrap acceptance scaffold is covered by targeted command:
+  `npm exec vitest -- run packages/bot/test/survival-growth.test.ts`
 - Optional work requires the protected spawn-energy floor plus the configured growth surplus, uses
   the existing `optional-growth` budget category, and is bounded per room and per tick.
+- `survival-growth.test.ts` also proves the new RCL1 bootstrap path: when `energyAvailable` and
+  `energyCapacityAvailable` are both at the configured protected floor, growth can emit
+  `bootstrap-controller` upgrade work with stable reason `rcl1-bootstrap-controller`, and bootstrap
+  demand remains reusable while temporary conditions fluctuate.
 - Controller downgrade work uses `controller-risk`; `BudgetLedger` places it ahead of optional
   growth while recovery, defense, and mandatory work remain authoritative.
+- Bootstrap growth uses a new `bootstrap-controller` budget category with a null room-energy claim
+  so controller progress spends carried creep energy first and leaves the protected reserve intact
+  until RCL2.
+- `survival-flow-runtime.test.ts` composes the recovery and bootstrap paths from an empty Memory
+  RCL1 world with one 300-capacity spawn: it accounts controller spend separately from room and
+  creep energy, reaches RCL2 by tick 1,599 (a 1,500-tick replay deadline), and asserts the spawn
+  reserve is restored to 300 while `upgradeController` work executes. The same replay preserves
+  heap-reset, reordered-source, movement, replacement, and single-authority assertions.
 - The planner selects only observed owned spawn, extension, container, road, and tower sites. It
   creates no construction sites and retains no layout, topology, or placement state.
 

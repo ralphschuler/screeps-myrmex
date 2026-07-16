@@ -36,6 +36,7 @@ export const BUDGET_CATEGORIES = [
   "replacement",
   "harvesting-filling",
   "controller-risk",
+  "bootstrap-controller",
   "critical-maintenance",
   "optional-growth",
 ] as const;
