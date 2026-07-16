@@ -1,4 +1,7 @@
 import { createRequire } from "node:module";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -13,6 +16,16 @@ const definition = {
 };
 
 describe("private-server fixture mod", () => {
+  it("latches one post-bootstrap definition and ignores a later replacement", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "myrmex-fixture-"));
+    const path = join(directory, "definition.json");
+    await writeFile(path, JSON.stringify(definition), "utf8");
+    const first = fixture.latchDefinition(null, path);
+    await writeFile(path, JSON.stringify({ ...definition, scenarioId: "replacement" }), "utf8");
+    expect(fixture.latchDefinition(first, path)).toBe(first);
+    expect(fixture.latchDefinition(null, join(directory, "missing.json"))).toBeNull();
+  });
+
   it("carries reset scheduling from processor to runner through a shared receipt", async () => {
     const processorEvents = new Map();
     const runnerEvents = new Map();
