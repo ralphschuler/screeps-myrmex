@@ -22,8 +22,9 @@ command; later scenario work must treat that as infrastructure failure rather th
 evidence.
 
 When a launcher cannot become healthy, the record may include only one fixed reason code:
-`launch-configuration`, `steam-authentication`, `port-unavailable`, `launcher-exited`, or
-`health-timeout`. It never includes launcher text, command arguments, credentials, or state.
+`asset-directory-unavailable`, `configuration-file-unavailable`, `required-launch-option-missing`,
+`steam-authentication`, `port-unavailable`, `launcher-exited`, or `health-timeout`. It never
+includes launcher text, command arguments, credentials, or state.
 
 `provision` is the clean-checkout path for a headless local server. It requires
 `SCREEPS_STEAM_API_KEY` only in the invoking environment, supplies it to the upstream initializer on
