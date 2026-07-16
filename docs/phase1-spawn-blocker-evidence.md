@@ -67,3 +67,10 @@ is intentionally included there. The complete run has exactly one `spawnCreep` c
   this one-demand slice.
 - Production deploy, rollback, and incident evidence for the complete Phase 1 gate remains
   outstanding.
+
+## Production runtime composition
+
+The aggregate `runTick` timeline composes this focused broker/executor row with one busy-spawn
+observation, one protected low-energy observation, persistent Memory and telemetry bounds, hostile
+and constrained-CPU intervals, sole-worker death, and bounded replacement. Warm, heap-reset, and
+reordered variants combine the focused and production-runtime hashes.

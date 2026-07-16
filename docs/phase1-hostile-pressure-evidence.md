@@ -52,3 +52,11 @@ npx vitest run packages/scenario-kit/test/phase1-hostile-pressure-recovery.test.
 - Remaining risks and the complete matrix evidence required before #44 is unblocked.
 
 This file proves only the hostile-pressure row. It does not claim that #30 is complete.
+
+## Production runtime composition
+
+The aggregate gate joins this focused defense row to a three-tick hostile interval observed by
+production `runTick`. It records the `threatened` colony posture, clears pressure, resumes economic
+delivery, and carries shared persistent Memory, telemetry, controller, energy-flow, and replacement
+measurements through warm, heap-reset, and reordered variants. This remains deterministic evidence,
+not a live MMO hostile-pressure claim.

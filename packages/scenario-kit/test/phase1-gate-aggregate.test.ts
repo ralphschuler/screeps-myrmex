@@ -41,16 +41,30 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
         if (value === null) expect(row.unevidenced).toContain(field);
       }
       for (const value of Object.values(row.hashes)) {
-        expect(value === null || /^(?:fnv1a64-utf16:)?[0-9a-f]{8,64}$/u.test(value)).toBe(true);
+        expect(
+          typeof value === "string" && /^(?:fnv1a64-utf16:)?[0-9a-f]{8,64}$/u.test(value),
+        ).toBe(true);
       }
+    }
+    for (const id of [
+      "spawn-blocker-recovery",
+      "path-target-recovery",
+      "hostile-pressure-recovery",
+      "constrained-cpu",
+    ]) {
+      const row = actual.rows.find((candidate) => candidate.id === id);
+      expect(row?.unevidenced).toEqual([]);
+      expect(
+        Object.values(row?.measurements ?? {}).every((value) => typeof value === "number"),
+      ).toBe(true);
     }
 
     expect(actual.status).toBe("blocked");
     expect(actual.externalLive).toEqual({
-      deployment: "unevidenced",
-      engineTiming: "unevidenced",
+      deployment: "evidenced",
+      engineTiming: "evidenced",
       hostilePressure: "unevidenced",
-      remoteAdapter: "unevidenced",
+      remoteAdapter: "evidenced",
       rollbackIncident: "unevidenced",
     });
   }, 30_000);
@@ -59,22 +73,27 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
 export async function collectAggregateEvidence() {
   const rcl2 = await collectRcl2RuntimeEvidence();
   const rcl1 = await collectRcl1RuntimeEvidence();
+  const composed = await collectComposedRuntimeEvidence();
   const components = [
-    componentRow("spawn-blocker-recovery", collectSpawnBlockerEvidence(), {
+    composedComponentRow("spawn-blocker-recovery", collectSpawnBlockerEvidence(), composed, {
+      ...composedRuntimeMeasurements(composed, "spawn-blocker-recovery"),
       energyFlow: 200,
       recoveryTime: 2,
       spawnUtilizationPct: 25,
     }),
-    componentRow("path-target-recovery", collectPathTargetEvidence(), {
+    composedComponentRow("path-target-recovery", collectPathTargetEvidence(), composed, {
+      ...composedRuntimeMeasurements(composed, "path-target-recovery"),
       energyFlow: 0,
       recoveryTime: 3,
       spawnUtilizationPct: 0,
     }),
-    componentRow("hostile-pressure-recovery", collectHostilePressureEvidence(), {
+    composedComponentRow("hostile-pressure-recovery", collectHostilePressureEvidence(), composed, {
+      ...composedRuntimeMeasurements(composed, "hostile-pressure-recovery"),
       recoveryTime: 3,
       spawnUtilizationPct: 0,
     }),
-    componentRow("constrained-cpu", collectConstrainedCpuEvidence(), {
+    composedComponentRow("constrained-cpu", collectConstrainedCpuEvidence(), composed, {
+      ...composedRuntimeMeasurements(composed, "constrained-cpu"),
       energyFlow: 0,
       recoveryTime: 4,
       spawnUtilizationPct: 0,
@@ -90,10 +109,10 @@ export async function collectAggregateEvidence() {
     status: "blocked",
     productionBundleExclusion: "evidenced-local",
     externalLive: Object.freeze({
-      deployment: "unevidenced",
-      engineTiming: "unevidenced",
+      deployment: "evidenced",
+      engineTiming: "evidenced",
       hostilePressure: "unevidenced",
-      remoteAdapter: "unevidenced",
+      remoteAdapter: "evidenced",
       rollbackIncident: "unevidenced",
     }),
     rows: Object.freeze([
@@ -114,7 +133,16 @@ interface EvidenceRun {
   readonly transcriptHash: string;
 }
 
+type ComposedRuntimeRowId =
+  | "spawn-blocker-recovery"
+  | "path-target-recovery"
+  | "hostile-pressure-recovery"
+  | "constrained-cpu";
+
 interface RuntimeEvidenceRun {
+  readonly componentMeasurements?: Readonly<
+    Record<ComposedRuntimeRowId, Partial<Record<MeasurementName, number>>>
+  >;
   readonly measurements: Partial<Record<MeasurementName, number>>;
   readonly outcome: Readonly<Record<string, unknown>>;
   readonly transcript: {
@@ -140,28 +168,70 @@ interface Runs {
 }
 type MeasurementName = keyof ReturnType<typeof emptyMeasurements>;
 
-function componentRow(id: string, runs: Runs, measured: Partial<Record<MeasurementName, number>>) {
+function composedComponentRow(
+  id: string,
+  runs: Runs,
+  composed: RuntimeRuns,
+  measured: Partial<Record<MeasurementName, number>>,
+) {
   const ticks = runs.warm.transcript.ticks.length;
   const modeledCpu = Math.max(0, ...runs.warm.transcript.ticks.map((tick) => tick.cpu.used));
+  const compositionHashes = {
+    warmOutcome: hashText(canonicalSerialize(composed.warm.outcome)),
+    resetOutcome: hashText(canonicalSerialize(composed.reset.outcome)),
+    reorderedOutcome: hashText(canonicalSerialize(composed.reordered.outcome)),
+    warmTranscript: hashText(canonicalSerialize(composed.warm.transcript)),
+    resetTranscript: hashText(canonicalSerialize(composed.reset.transcript)),
+    reorderedTranscript: hashText(canonicalSerialize(composed.reordered.transcript)),
+  };
+  expect(compositionHashes.resetOutcome).toBe(compositionHashes.warmOutcome);
+  expect(compositionHashes.reorderedOutcome).toBe(compositionHashes.warmOutcome);
+  const measurements = { ...emptyMeasurements(), ticks, modeledCpu, ...measured };
   return Object.freeze({
     id,
-    status: "partial",
-    scope: "deterministic-component",
-    measurements: Object.freeze({ ...emptyMeasurements(), ticks, modeledCpu, ...measured }),
+    status: "evidenced",
+    scope: "composed-runtime-and-focused-component",
+    measurements: Object.freeze(measurements),
     hashes: Object.freeze({
-      warmOutcome: runs.warm.outcomeHash,
-      resetOutcome: runs.reset.outcomeHash,
-      reorderedOutcome: runs.reordered.outcomeHash,
-      warmTranscript: runs.warm.transcriptHash,
-      resetTranscript: runs.reset.transcriptHash,
-      reorderedTranscript: runs.reordered.transcriptHash,
+      warmOutcome: hashText(`${runs.warm.outcomeHash}:${compositionHashes.warmOutcome}`),
+      resetOutcome: hashText(`${runs.reset.outcomeHash}:${compositionHashes.resetOutcome}`),
+      reorderedOutcome: hashText(
+        `${runs.reordered.outcomeHash}:${compositionHashes.reorderedOutcome}`,
+      ),
+      warmTranscript: hashText(`${runs.warm.transcriptHash}:${compositionHashes.warmTranscript}`),
+      resetTranscript: hashText(
+        `${runs.reset.transcriptHash}:${compositionHashes.resetTranscript}`,
+      ),
+      reorderedTranscript: hashText(
+        `${runs.reordered.transcriptHash}:${compositionHashes.reorderedTranscript}`,
+      ),
     }),
     unevidenced: Object.freeze(
-      Object.entries({ ...emptyMeasurements(), ticks, modeledCpu, ...measured })
+      Object.entries(measurements)
         .filter(([, value]) => value === null)
         .map(([field]) => field),
     ),
   });
+}
+
+function composedRuntimeMeasurements(runs: RuntimeRuns, id: ComposedRuntimeRowId) {
+  const component = runs.warm.componentMeasurements?.[id];
+  if (component === undefined) throw new Error(`composed runtime row ${id} is unavailable`);
+  const measurement = (name: MeasurementName): number => {
+    const value = component[name] ?? runs.warm.measurements[name];
+    if (value === undefined) throw new Error(`composed runtime measurement ${name} is unavailable`);
+    return value;
+  };
+  return {
+    persistentBytes: measurement("persistentBytes"),
+    persistentGrowth: measurement("persistentGrowth"),
+    telemetryBytes: measurement("telemetryBytes"),
+    telemetryCardinality: measurement("telemetryCardinality"),
+    energyFlow: measurement("energyFlow"),
+    replacementLateness: measurement("replacementLateness"),
+    controllerMargin: measurement("controllerMargin"),
+    controllerRisk: measurement("controllerRisk"),
+  };
 }
 
 function runtimeRow(id: string, runs: RuntimeRuns, status: "evidenced" | "partial") {
@@ -294,6 +364,235 @@ async function collectRcl1RuntimeEvidence(): Promise<RuntimeRuns> {
     warm: await runRcl1Variant(false, false, runTick),
     reset: await runRcl1Variant(true, false),
     reordered: await runRcl1Variant(true, true),
+  };
+}
+
+async function collectComposedRuntimeEvidence(): Promise<RuntimeRuns> {
+  return {
+    warm: await runComposedRuntimeVariant(false, false),
+    reset: await runComposedRuntimeVariant(true, false),
+    reordered: await runComposedRuntimeVariant(true, true),
+  };
+}
+
+async function runComposedRuntimeVariant(
+  resetMemory: boolean,
+  reorderAfterReset: boolean,
+): Promise<RuntimeEvidenceRun> {
+  const world = survivalWorld();
+  vi.resetModules();
+  let executeTick = (await import("../../bot/src/runtime/tick")).runTick;
+  let memory = {} as Memory;
+  let nextTick = 100;
+  let markHeapReset = false;
+  const samples: RuntimeTickSample[] = [];
+  const outcomes: TickOutcome[] = [];
+  const runtimeMeasurements = createRuntimeMeasurementAccumulator(memory, false);
+  const spawnMeasurements = createRuntimeMeasurementAccumulator(memory, false);
+  const spawnOutcomes: TickOutcome[] = [];
+
+  const runOne = (stage?: {
+    readonly accumulator: RuntimeMeasurementAccumulator;
+    readonly outcomes: TickOutcome[];
+  }): TickOutcome => {
+    const tick = nextTick;
+    nextTick += 1;
+    const outcome = executeTick({
+      game: world.game(tick),
+      localPathSearch: world.pathSearch,
+      memory,
+    });
+    outcomes.push(outcome);
+    world.assertEnergyConserved();
+    observeRuntimeMeasurements(runtimeMeasurements, memory, outcome.telemetry);
+    if (stage !== undefined) {
+      observeRuntimeMeasurements(stage.accumulator, memory, outcome.telemetry);
+      stage.outcomes.push(outcome);
+    }
+    samples.push({
+      cpu: { used: outcome.kernel.cpuUsed },
+      gameTime: tick,
+      heapReset: markHeapReset,
+      sourceOrder: world.reverseSources ? "reversed" : "normal",
+    });
+    markHeapReset = false;
+    return outcome;
+  };
+  const spawnStage = { accumulator: spawnMeasurements, outcomes: spawnOutcomes };
+
+  world.setSpawnBlocker("busy");
+  runOne(spawnStage);
+  world.setSpawnBlocker("energy");
+  runOne(spawnStage);
+  world.setSpawnBlocker(null);
+  runOne(spawnStage);
+  const initialSpawn = world.spawnCalls[0];
+  if (initialSpawn === undefined) throw new Error("composed runtime did not schedule its worker");
+  const workerReadyAt = initialSpawn.tick + initialSpawn.body.length * 3;
+  while (nextTick < workerReadyAt) runOne(spawnStage);
+
+  const pathMeasurements = createRuntimeMeasurementAccumulator(memory, false);
+  const pathOutcomes: TickOutcome[] = [];
+  const pathStage = { accumulator: pathMeasurements, outcomes: pathOutcomes };
+  world.setPathUnavailable(true);
+  for (let attempt = 0; attempt < 12 && world.pathUnavailableObservations === 0; attempt += 1) {
+    runOne(pathStage);
+  }
+  world.setPathUnavailable(false);
+  if (world.pathUnavailableObservations === 0) {
+    throw new Error("composed runtime never exercised the unavailable path adapter");
+  }
+  world.setTargetResolverUnavailable(true);
+  for (let attempt = 0; attempt < 30 && world.targetMissingObservations === 0; attempt += 1) {
+    runOne(pathStage);
+  }
+  world.setTargetResolverUnavailable(false);
+  if (world.targetMissingObservations === 0) {
+    throw new Error("composed runtime never exercised the stale target resolver");
+  }
+
+  if (resetMemory) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../../bot/src/runtime/tick")).runTick;
+    if (reorderAfterReset) world.reverseSources = true;
+    markHeapReset = true;
+  }
+
+  const hostileMeasurements = createRuntimeMeasurementAccumulator(memory, true);
+  const hostileStageOutcomes: TickOutcome[] = [];
+  const hostileStage = { accumulator: hostileMeasurements, outcomes: hostileStageOutcomes };
+  world.setHostilePressure(true);
+  const hostileOutcomes = [runOne(hostileStage), runOne(hostileStage), runOne(hostileStage)];
+  world.setHostilePressure(false);
+  const threatObserved = hostileOutcomes.some(
+    (outcome) =>
+      (outcome.telemetry?.colony.states.find(({ id }) => id === "threatened")?.count ?? 0) > 0,
+  );
+
+  const constrainedMeasurements = createRuntimeMeasurementAccumulator(memory, true);
+  const constrainedStageOutcomes: TickOutcome[] = [];
+  const constrainedStage = {
+    accumulator: constrainedMeasurements,
+    outcomes: constrainedStageOutcomes,
+  };
+  world.setCpuBucket(3_000);
+  const constrainedOutcomes = [
+    runOne(constrainedStage),
+    runOne(constrainedStage),
+    runOne(constrainedStage),
+    runOne(constrainedStage),
+  ];
+  world.setCpuBucket(10_000);
+  const mandatoryTailIds = [
+    "execution.arbitrate",
+    "execution.defense",
+    "spawn.execute",
+    "spawn.settle",
+    "state.reconcile",
+    "telemetry.minimum",
+  ];
+  const constrainedTailCompleted = constrainedOutcomes.every(
+    (outcome) =>
+      outcome.kernel.mode === "constrained" &&
+      mandatoryTailIds.every(
+        (id) =>
+          outcome.kernel.systems.find(({ systemId }) => systemId === id)?.status === "completed",
+      ) &&
+      outcome.telemetry !== null,
+  );
+  const constrainedGrowthDeferred = constrainedOutcomes.every((outcome) => {
+    const growth = outcome.kernel.systems.find(({ systemId }) => systemId === "growth.contracts");
+    return growth?.status === "skipped" && growth.skipReason === "cpu-mode";
+  });
+
+  while ((world.firstDeliveryAt === null || world.spawnEnergy < 200) && nextTick <= 500) runOne();
+  if (world.firstDeliveryAt === null || world.spawnEnergy < 200) {
+    throw new Error("composed runtime did not recover normal delivery before worker death");
+  }
+  const deliveredBeforeDeath = world.sourceBDelivered;
+  const afterDeathTick = nextTick;
+  world.killWorker();
+  runOne();
+  let replacementRecoveredAt: number | null = null;
+  while (nextTick <= afterDeathTick + 122) {
+    runOne();
+    if (world.sourceBDelivered > deliveredBeforeDeath) {
+      replacementRecoveredAt = nextTick - 1;
+      break;
+    }
+  }
+  if (replacementRecoveredAt === null) {
+    throw new Error("composed runtime replacement missed its recovery deadline");
+  }
+
+  expect(world.spawnBusyObservations).toBe(1);
+  expect(world.spawnEnergyBlockerObservations).toBe(1);
+  expect(world.targetMissingObservations).toBeGreaterThan(0);
+  expect(world.pathUnavailableObservations).toBeGreaterThan(0);
+  expect(world.hostileObservations).toBe(3);
+  expect(world.constrainedCpuObservations).toBe(4);
+  expect(threatObserved).toBe(true);
+  expect(constrainedTailCompleted).toBe(true);
+  expect(constrainedGrowthDeferred).toBe(true);
+  expect(world.spawnCalls).toHaveLength(2);
+  expect(world.sourceBDelivered).toBeGreaterThan(deliveredBeforeDeath);
+
+  const deliveredEnergy = outcomes.reduce(
+    (total, outcome) => total + (outcome.telemetry?.energyFlow.delivered ?? 0),
+    0,
+  );
+  const tickCount = samples.length;
+  const controllerMargin = Math.max(0, world.controllerTicksToDowngrade - tickCount);
+  const sharedMeasurements = {
+    controllerMargin,
+    controllerRisk: controllerMargin >= 1 ? 0 : 1,
+    replacementLateness: Math.max(0, replacementRecoveredAt - afterDeathTick - 122),
+  };
+  const stageMeasurements = (
+    accumulator: RuntimeMeasurementAccumulator,
+    stageOutcomes: readonly TickOutcome[],
+  ) => ({
+    ...finalizeRuntimeMeasurements(accumulator),
+    ...sharedMeasurements,
+    energyFlow: stageOutcomes.reduce(
+      (total, outcome) => total + (outcome.telemetry?.energyFlow.delivered ?? 0),
+      0,
+    ),
+  });
+  return {
+    componentMeasurements: {
+      "spawn-blocker-recovery": stageMeasurements(spawnMeasurements, spawnOutcomes),
+      "path-target-recovery": stageMeasurements(pathMeasurements, pathOutcomes),
+      "hostile-pressure-recovery": stageMeasurements(hostileMeasurements, hostileStageOutcomes),
+      "constrained-cpu": stageMeasurements(constrainedMeasurements, constrainedStageOutcomes),
+    },
+    measurements: {
+      ...finalizeRuntimeMeasurements(runtimeMeasurements),
+      ...sharedMeasurements,
+      energyFlow: deliveredEnergy,
+      recoveryTime: tickCount,
+      spawnUtilizationPct:
+        Math.round(
+          (world.spawnCalls.reduce((total, call) => total + call.body.length * 3, 0) / tickCount) *
+            10_000,
+        ) / 100,
+    },
+    outcome: {
+      constrainedCpuObservations: world.constrainedCpuObservations,
+      constrainedGrowthDeferred,
+      constrainedTailCompleted,
+      hostileObservations: world.hostileObservations,
+      pathUnavailableObservations: world.pathUnavailableObservations,
+      replacementRecovered: true,
+      sourceBDelivered: world.sourceBDelivered,
+      spawnBusyObservations: world.spawnBusyObservations,
+      spawnCalls: world.spawnCalls.map(({ body, cost }) => ({ body, cost })),
+      spawnEnergyBlockerObservations: world.spawnEnergyBlockerObservations,
+      targetMissingObservations: world.targetMissingObservations,
+      threatObserved,
+    },
+    transcript: { ticks: samples },
   };
 }
 
@@ -490,22 +789,42 @@ function telemetryChannelCardinality(value: unknown): number {
     : 0;
 }
 
-type AggregateEvidenceRow = ReturnType<typeof componentRow> | ReturnType<typeof runtimeRow>;
+type AggregateEvidenceRow = ReturnType<typeof composedComponentRow> | ReturnType<typeof runtimeRow>;
+
+function availableRowMeasurements(
+  rows: readonly AggregateEvidenceRow[],
+  name: MeasurementName,
+): readonly number[] {
+  const values = rows.flatMap((row) => {
+    const value = row.measurements[name];
+    return value === null ? [] : [value];
+  });
+  if (values.length === 0) throw new Error(`aggregate measurement ${name} is unavailable`);
+  return values;
+}
 
 function equivalenceRow(components: readonly AggregateEvidenceRow[]) {
   const warmOutcome = hashText(components.map((row) => row.hashes.warmOutcome).join(":"));
   const resetOutcome = hashText(components.map((row) => row.hashes.resetOutcome).join(":"));
   const reorderedOutcome = hashText(components.map((row) => row.hashes.reorderedOutcome).join(":"));
   const measurements = {
-    ...emptyMeasurements(),
     ticks: components.reduce((total, row) => total + row.measurements.ticks, 0),
     modeledCpu: Math.max(...components.map((row) => row.measurements.modeledCpu)),
-    recoveryTime: Math.max(...components.map((row) => row.measurements.recoveryTime ?? 0)),
+    persistentBytes: Math.max(...availableRowMeasurements(components, "persistentBytes")),
+    persistentGrowth: Math.max(...availableRowMeasurements(components, "persistentGrowth")),
+    telemetryBytes: Math.max(...availableRowMeasurements(components, "telemetryBytes")),
+    telemetryCardinality: Math.max(...availableRowMeasurements(components, "telemetryCardinality")),
+    spawnUtilizationPct: Math.max(...availableRowMeasurements(components, "spawnUtilizationPct")),
+    energyFlow: Math.max(...availableRowMeasurements(components, "energyFlow")),
+    replacementLateness: Math.max(...availableRowMeasurements(components, "replacementLateness")),
+    controllerMargin: Math.min(...availableRowMeasurements(components, "controllerMargin")),
+    controllerRisk: Math.max(...availableRowMeasurements(components, "controllerRisk")),
+    recoveryTime: Math.max(...availableRowMeasurements(components, "recoveryTime")),
   };
   return Object.freeze({
     id: "reset-reorder-equivalence",
-    status: "partial",
-    scope: "deterministic-component-equivalence",
+    status: "evidenced",
+    scope: "composed-runtime-equivalence",
     measurements: Object.freeze(measurements),
     hashes: Object.freeze({
       warmOutcome,
@@ -517,11 +836,7 @@ function equivalenceRow(components: readonly AggregateEvidenceRow[]) {
         components.map((row) => row.hashes.reorderedTranscript).join(":"),
       ),
     }),
-    unevidenced: Object.freeze(
-      Object.entries(measurements)
-        .filter(([, value]) => value === null)
-        .map(([field]) => field),
-    ),
+    unevidenced: Object.freeze([]),
   });
 }
 
@@ -531,24 +846,18 @@ function aggregateRow(
 ) {
   return Object.freeze({
     id: "aggregate-phase1-matrix",
-    status: "unevidenced",
-    scope: "local-component-subset",
+    status: "partial",
+    scope: "local-composed-runtime",
     measurements: equivalence.measurements,
     hashes: Object.freeze({
       warmOutcome: hashText(components.map((row) => row.hashes.warmOutcome).join("|")),
       resetOutcome: hashText(components.map((row) => row.hashes.resetOutcome).join("|")),
       reorderedOutcome: hashText(components.map((row) => row.hashes.reorderedOutcome).join("|")),
-      warmTranscript: null,
-      resetTranscript: null,
-      reorderedTranscript: null,
+      warmTranscript: equivalence.hashes.warmTranscript,
+      resetTranscript: equivalence.hashes.resetTranscript,
+      reorderedTranscript: equivalence.hashes.reorderedTranscript,
     }),
-    unevidenced: Object.freeze([
-      ...equivalence.unevidenced,
-      "warmTranscript",
-      "resetTranscript",
-      "reorderedTranscript",
-      "externalLive",
-    ]),
+    unevidenced: Object.freeze(["externalLive.hostilePressure", "externalLive.rollbackIncident"]),
   });
 }
 

@@ -31,7 +31,6 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
     expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
     expect(rows.map((row) => row.status)).toContain("evidenced");
     expect(rows.map((row) => row.status)).toContain("partial");
-    expect(rows.map((row) => row.status)).toContain("unevidenced");
 
     for (const row of rows) {
       expect(row.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
@@ -49,7 +48,7 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
 
   it("declares evidence policy after the table and keeps missing proof explicit", () => {
     expect(document.indexOf("## Evidence policy")).toBeGreaterThan(document.indexOf(header));
-    expect(rows.find((row) => row.id === "aggregate-phase1-matrix")?.status).toBe("unevidenced");
+    expect(rows.find((row) => row.id === "aggregate-phase1-matrix")?.status).toBe("partial");
     expect(document).toContain("Reset metadata may change the transcript hash");
     expect(document).toContain("packages/scenario-kit");
     expect(document).toContain("replacement lateness");
@@ -67,10 +66,10 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
     expect(results.productionBundle.inputCount).toBeGreaterThan(0);
     expect(results.rows.map((row) => row.id)).toEqual(rows.map((row) => row.id));
     expect(results.externalLive).toEqual({
-      deployment: "unevidenced",
-      engineTiming: "unevidenced",
+      deployment: "evidenced",
+      engineTiming: "evidenced",
       hostilePressure: "unevidenced",
-      remoteAdapter: "unevidenced",
+      remoteAdapter: "evidenced",
       rollbackIncident: "unevidenced",
     });
     for (const row of results.rows) {

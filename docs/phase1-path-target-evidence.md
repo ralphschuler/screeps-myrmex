@@ -19,3 +19,10 @@ row.
 Mechanics references: [Creep.move](https://docs.screeps.com/api/#Creep.move),
 [PathFinder](https://docs.screeps.com/api/#PathFinder), [Creep API](https://docs.screeps.com/api/),
 and [simultaneous actions](https://docs.screeps.com/simultaneous-actions.html).
+
+## Production runtime composition
+
+The aggregate gate composes the stale resolver and incomplete local-path adapter through production
+`runTick` while measuring the same persistent Memory, telemetry, controller, and replacement
+lifecycle used by the other recovery faults. Its warm, heap-reset, and source-reordered outcomes are
+equivalent.
