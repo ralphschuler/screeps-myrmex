@@ -51,6 +51,7 @@ describe("private-server scenario runner", () => {
     const result = await runPrivateServerScenario({ driver: driver(calls), manifest });
     expect(result.ok).toBe(true);
     expect(result.evidence).toMatchObject({ cleanup: "complete", failure: null });
+    expect(result).toMatchObject({ cleanupFailureCode: null, primaryFailureCode: null });
     expect(calls).toEqual([
       "start",
       "pause",
@@ -81,7 +82,7 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(timeout.evidence.failure).toEqual({ kind: "scenario-timeout" });
-    expect(timeout.failureCode).toBeNull();
+    expect(timeout.primaryFailureCode).toBeNull();
     const bot = await runPrivateServerScenario({
       driver: driver([], { observeError: namedError("BotExceptionError") }),
       manifest,
@@ -91,7 +92,7 @@ describe("private-server scenario runner", () => {
       driver: driver([], { observeError: namedError("StartupFailure", "port-unavailable") }),
       manifest,
     });
-    expect(startup).toMatchObject({ failureCode: "port-unavailable", ok: false });
+    expect(startup).toMatchObject({ primaryFailureCode: "port-unavailable", ok: false });
     const cli = await runPrivateServerScenario({
       driver: driver([], {
         observeError: namedError("CliOperationFailure", "cli-bootstrap-controlled-bot-failed"),
@@ -100,7 +101,7 @@ describe("private-server scenario runner", () => {
     });
     expect(cli).toMatchObject({
       evidence: { failure: { kind: "cli-operation-failed" } },
-      failureCode: "cli-bootstrap-controlled-bot-failed",
+      primaryFailureCode: "cli-bootstrap-controlled-bot-failed",
       ok: false,
     });
     const sample = await runPrivateServerScenario({
@@ -111,7 +112,7 @@ describe("private-server scenario runner", () => {
     });
     expect(sample).toMatchObject({
       evidence: { failure: { kind: "cli-operation-failed" } },
-      failureCode: "cli-sample-controlled-not-ready",
+      primaryFailureCode: "cli-sample-controlled-not-ready",
       ok: false,
     });
     const deployment = await runPrivateServerScenario({
@@ -122,7 +123,7 @@ describe("private-server scenario runner", () => {
     });
     expect(deployment).toMatchObject({
       evidence: { failure: { kind: "bundle-deployment-failed" } },
-      failureCode: "bundle-deployment-unacknowledged",
+      primaryFailureCode: "bundle-deployment-unacknowledged",
       ok: false,
     });
     const cleanup = await runPrivateServerScenario({
@@ -138,14 +139,15 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(fixtureCleanup).toMatchObject({
+      cleanupFailureCode: "cli-clear-fixture-failed",
       evidence: { failure: { kind: "cleanup-failed" } },
-      failureCode: "cli-clear-fixture-failed",
       ok: false,
+      primaryFailureCode: null,
     });
     expect(cleanupCalls.at(-1)).toBe("stop");
   });
 
-  it("surfaces the cleanup code when both primary execution and cleanup fail", async () => {
+  it("preserves separate primary and cleanup codes when both phases fail", async () => {
     const result = await runPrivateServerScenario({
       driver: driver([], {
         observeError: namedError("CliOperationFailure", "cli-sample-controlled-not-ready"),
@@ -158,8 +160,9 @@ describe("private-server scenario runner", () => {
         cleanup: "incomplete",
         failure: { kind: "cleanup-failed" },
       },
-      failureCode: "shutdown-timeout",
+      cleanupFailureCode: "shutdown-timeout",
       ok: false,
+      primaryFailureCode: "cli-sample-controlled-not-ready",
     });
     expect(result.evidence.logs).toHaveLength(2);
   });
@@ -173,9 +176,10 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(result).toMatchObject({
+      cleanupFailureCode: null,
       evidence: { cleanup: "complete", failure: { kind: "startup-failed" } },
-      failureCode: "storage-not-ready",
       ok: false,
+      primaryFailureCode: "storage-not-ready",
     });
     expect(calls).toEqual(["start", "clearFixture", "stop"]);
   });
@@ -191,16 +195,18 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(result).toMatchObject({
+      cleanupFailureCode: "shutdown-timeout",
       evidence: { cleanup: "incomplete", failure: { kind: "cleanup-failed" } },
-      failureCode: "shutdown-timeout",
       ok: false,
+      primaryFailureCode: "shutdown-timeout",
     });
     expect(calls).toEqual(["start", "clearFixture", "stop"]);
   });
 
   it.each([
     ["CliOperationFailure", "cli-pause-failed", "cli-operation-failed"],
-    ["CliOperationFailure", "cli-pause-fixture-clear-failed", "cli-operation-failed"],
+    ["CliOperationFailure", "cli-pause-fixture-clear-command-failed", "cli-operation-failed"],
+    ["CliOperationFailure", "cli-pause-fixture-clear-unacknowledged", "cli-operation-failed"],
     ["CliOperationFailure", "cli-pause-fixture-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-pause-fixture-request-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-sample-fixture-failed", "cli-operation-failed"],
@@ -226,9 +232,10 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(result).toMatchObject({
+      cleanupFailureCode: null,
       evidence: { failure: { kind } },
-      failureCode: code,
       ok: false,
+      primaryFailureCode: code,
     });
   });
 

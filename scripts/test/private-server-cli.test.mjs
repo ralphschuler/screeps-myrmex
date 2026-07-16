@@ -156,8 +156,9 @@ describe("private-server CLI adapter", () => {
       scenarioId: "hostile-reset-v1",
     });
     expect(prepare).toBe(
-      'storage.env.del("myrmexFixture:hostile-reset-v1:quiescent-main").then(()=>storage.env.del("myrmexFixture:hostile-reset-v1:pause-request")).then(()=>Promise.all([storage.env.get("myrmexFixture:hostile-reset-v1:quiescent-main"),storage.env.get("myrmexFixture:hostile-reset-v1:pause-request")])).then(values=>JSON.stringify({prepared:values.every(value=>value==null)}))',
+      'storage.env.set("myrmexFixture:hostile-reset-v1:quiescent-main",null).then(()=>storage.env.set("myrmexFixture:hostile-reset-v1:pause-request",null)).then(()=>storage.env.get("myrmexFixture:hostile-reset-v1:quiescent-main").then(value=>[value]).then(values=>storage.env.get("myrmexFixture:hostile-reset-v1:pause-request").then(value=>values.concat([value])))).then(values=>JSON.stringify({prepared:values.every(value=>value==null)}))',
     );
+    expect(prepare).not.toContain("storage.env.del");
     const request = privateServerCliCommand({
       kind: "request-fixture-pause",
       scenarioId: "hostile-reset-v1",
@@ -261,11 +262,11 @@ describe("private-server CLI adapter", () => {
   it("classifies each independently acknowledged fixture pause boundary", async () => {
     const cases = [
       {
-        code: "cli-pause-fixture-clear-failed",
+        code: "cli-pause-fixture-clear-command-failed",
         responses: ["Error: rejected"],
       },
       {
-        code: "cli-pause-fixture-clear-failed",
+        code: "cli-pause-fixture-clear-unacknowledged",
         responses: [`'${JSON.stringify({ prepared: false })}'`],
       },
       {
@@ -322,8 +323,8 @@ describe("private-server CLI adapter", () => {
       ["myrmexFixture:hostile-reset-v1:quiescent-main", "old"],
       ["myrmexFixture:hostile-reset-v1:pause-request", "old"],
       ["myrmexFixture:hostile-reset-v1:ready-processor", "old"],
-      ["myrmexFixture:hostile-reset-v1:ready-runner", "old"],
-      ["myrmexFixture:hostile-reset-v1:hostile", "old"],
+      ["myrmexFixture:hostile-reset-v1:ready-runner", ""],
+      ["myrmexFixture:hostile-reset-v1:hostile", 0],
       ["myrmexFixture:hostile-reset-v1:reset", "old"],
       ["myrmexFixture:hostile-reset-v1:bot-exception", "old"],
     ]);
@@ -338,14 +339,12 @@ describe("private-server CLI adapter", () => {
     const storage = {
       env: {
         keys: { MAIN_LOOP_PAUSED: "mainLoopPaused" },
-        async del(key) {
-          await mutate(() => values.delete(key));
-        },
         async get(key) {
           return values.get(key) ?? null;
         },
         async set(key, value) {
           await mutate(() => values.set(key, value));
+          return JSON.parse(JSON.stringify({ result: value })).result;
         },
       },
     };
@@ -382,6 +381,18 @@ describe("private-server CLI adapter", () => {
         context,
       ),
     ).resolves.toBe(JSON.stringify({ cleared: true }));
+    for (const key of [
+      "myrmexFixture:hostile-reset-v1:ready-processor",
+      "myrmexFixture:hostile-reset-v1:ready-runner",
+      "myrmexFixture:hostile-reset-v1:hostile",
+      "myrmexFixture:hostile-reset-v1:reset",
+      "myrmexFixture:hostile-reset-v1:bot-exception",
+      "myrmexFixture:hostile-reset-v1:pause-request",
+      "myrmexFixture:hostile-reset-v1:quiescent-main",
+    ]) {
+      expect(values.has(key)).toBe(true);
+      expect(values.get(key)).toBeNull();
+    }
   });
 
   it("rejects extra operation fields and terminal CLI errors", async () => {
@@ -398,7 +409,10 @@ describe("private-server CLI adapter", () => {
     expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:bot-exception");
     expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:pause-request");
     expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:quiescent-main");
-    expect(clearCommand).not.toContain("map(key=>storage.env.del(key))");
+    expect(clearCommand).not.toContain("storage.env.del");
+    expect(clearCommand).toContain(
+      'storage.env.set("myrmexFixture:hostile-reset-v1:ready-processor",null)',
+    );
     expect(clearCommand.indexOf("ready-processor")).toBeLessThan(
       clearCommand.indexOf("ready-runner"),
     );

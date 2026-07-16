@@ -73,7 +73,8 @@ export async function clearPrivateServerScenarioFixture({
 export async function runPrivateServerScenario({ driver, manifest }) {
   const normalizedManifest = definePrivateServerManifest(authoringManifest(manifest));
   let failure = null;
-  let failureCode = null;
+  let primaryFailureCode = null;
+  let cleanupFailureCode = null;
   let cleanup;
   let outcomes = [];
   let state = [];
@@ -102,11 +103,10 @@ export async function runPrivateServerScenario({ driver, manifest }) {
     }
   } catch (error) {
     failure ??= { kind: classifyScenarioError(error) };
-    failureCode = scenarioFailureCode(error);
+    primaryFailureCode = scenarioFailureCode(error);
     logs = [safeError(error)];
   } finally {
     const cleanupErrors = [];
-    let cleanupFailureCode = null;
     try {
       await driver.clearFixture(normalizedManifest);
     } catch (error) {
@@ -124,7 +124,6 @@ export async function runPrivateServerScenario({ driver, manifest }) {
     } else {
       cleanup = "incomplete";
       failure = { kind: "cleanup-failed" };
-      failureCode = cleanupFailureCode;
       logs = [...logs, ...cleanupErrors.map(safeError)];
     }
   }
@@ -137,7 +136,12 @@ export async function runPrivateServerScenario({ driver, manifest }) {
     outcomes,
     state,
   });
-  return Object.freeze({ evidence, failureCode, ok: failure === null && cleanup === "complete" });
+  return Object.freeze({
+    cleanupFailureCode,
+    evidence,
+    ok: failure === null && cleanup === "complete",
+    primaryFailureCode,
+  });
 }
 
 /** Constructs the fixed Phase 1 matrix with deterministic manifest values. */
@@ -201,7 +205,8 @@ function scenarioFailureCode(error) {
       "cli-bootstrap-controlled-bot-failed",
       "cli-clear-fixture-failed",
       "cli-pause-failed",
-      "cli-pause-fixture-clear-failed",
+      "cli-pause-fixture-clear-command-failed",
+      "cli-pause-fixture-clear-unacknowledged",
       "cli-pause-fixture-failed",
       "cli-pause-fixture-request-failed",
       "cli-reset-failed",

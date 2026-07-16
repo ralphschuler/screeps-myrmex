@@ -43,11 +43,8 @@ export function privateServerCliCommand(operation) {
   if (kind === "prepare-fixture-pause") {
     exactOperation(operation, ["kind", "scenarioId"]);
     if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
-    const acknowledgementKey = JSON.stringify(
-      `myrmexFixture:${operation.scenarioId}:quiescent-main`,
-    );
-    const requestKey = JSON.stringify(`myrmexFixture:${operation.scenarioId}:pause-request`);
-    return `storage.env.del(${acknowledgementKey}).then(()=>storage.env.del(${requestKey})).then(()=>Promise.all([storage.env.get(${acknowledgementKey}),storage.env.get(${requestKey})])).then(values=>JSON.stringify({prepared:values.every(value=>value==null)}))`;
+    const keys = fixtureReceiptKeys(operation.scenarioId, ["quiescent-main", "pause-request"]);
+    return `${sequentialEnvTombstones(keys)}.then(()=>${sequentialEnvReads(keys)}).then(values=>JSON.stringify({prepared:values.every(value=>value==null)}))`;
   }
   if (kind === "request-fixture-pause") {
     exactOperation(operation, ["kind", "scenarioId", "sequence"]);
@@ -114,7 +111,7 @@ export function privateServerCliCommand(operation) {
       "pause-request",
       "quiescent-main",
     ]);
-    return `${sequentialEnvDeletes(keys)}.then(()=>Promise.all(${JSON.stringify(keys)}.map(key=>storage.env.get(key)))).then(values=>JSON.stringify({cleared:values.every(value=>value==null)}))`;
+    return `${sequentialEnvTombstones(keys)}.then(()=>${sequentialEnvReads(keys)}).then(values=>JSON.stringify({cleared:values.every(value=>value==null)}))`;
   }
   if (!Number.isSafeInteger(operation.milliseconds)) {
     throw new TypeError("Tick duration must be a safe integer.");
@@ -204,10 +201,16 @@ export async function pausePrivateServerFixture(scenarioId, sequence, options = 
     scenarioId,
     sequence,
   });
+  let preparation;
   try {
-    parseFixturePausePreparation(await runPrivateServerCommand(prepareCommand, options));
+    preparation = await runPrivateServerCommand(prepareCommand, options);
   } catch {
-    throw new Error("cli-pause-fixture-clear-failed");
+    throw new Error("cli-pause-fixture-clear-command-failed");
+  }
+  try {
+    parseFixturePausePreparation(preparation);
+  } catch {
+    throw new Error("cli-pause-fixture-clear-unacknowledged");
   }
   try {
     await runPrivateServerCommand(pauseCommand, options);
@@ -231,7 +234,7 @@ export async function samplePrivateServerFixtureQuiescence(scenarioId, sequence,
   );
 }
 
-/** Deletes and verifies only the fixed namespaced receipts for one declared scenario. */
+/** Tombstones and verifies only the fixed namespaced receipts for one declared scenario. */
 export async function clearPrivateServerFixture(scenarioId, options = {}) {
   return parseFixtureClearance(
     await runPrivateServerCommand(
@@ -525,12 +528,22 @@ function fixtureReceiptKeys(scenarioId, kinds) {
   return kinds.map((kind) => `myrmexFixture:${scenarioId}:${kind}`);
 }
 
-function sequentialEnvDeletes(keys) {
+function sequentialEnvTombstones(keys) {
   return keys
     .slice(1)
     .reduce(
-      (command, key) => `${command}.then(()=>storage.env.del(${JSON.stringify(key)}))`,
-      `storage.env.del(${JSON.stringify(keys[0])})`,
+      (command, key) => `${command}.then(()=>storage.env.set(${JSON.stringify(key)},null))`,
+      `storage.env.set(${JSON.stringify(keys[0])},null)`,
+    );
+}
+
+function sequentialEnvReads(keys) {
+  return keys
+    .slice(1)
+    .reduce(
+      (command, key) =>
+        `${command}.then(values=>storage.env.get(${JSON.stringify(key)}).then(value=>values.concat([value])))`,
+      `storage.env.get(${JSON.stringify(keys[0])}).then(value=>[value])`,
     );
 }
 
