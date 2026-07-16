@@ -17,6 +17,28 @@ const CPU_BUDGET = Object.freeze({
 });
 
 describe("ColonyDirector owner boundary", () => {
+  it("starts durable recovery before the last worker can outlive its successor handoff", () => {
+    const result = new ColonyDirector().plan({
+      tick: 100,
+      snapshot: bootstrapSnapshot(100, 300, "W1N1", {
+        legalWorker: true,
+        // 9 spawn ticks for the WCM recovery body plus the default 50-tick handoff margin.
+        workerTicksToLive: 59,
+      }),
+      config: buildRuntimeConfig(),
+      owner: {},
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+    });
+
+    expect(result.colonies).toEqual([
+      expect.objectContaining({ legalWorkforce: false, state: "bootstrapping" }),
+    ]);
+    expect(result.objectives).toEqual([
+      expect.objectContaining({ id: "colony/W1N1/restore-workforce", status: "funded" }),
+    ]);
+  });
+
   it("distinguishes unavailable, malformed, future, and exact initializer owners", () => {
     const director = new ColonyDirector();
     const base = {
@@ -600,6 +622,7 @@ function request(index: number): BudgetRequest {
 
 interface SnapshotOptions {
   readonly legalWorker?: boolean;
+  readonly workerTicksToLive?: number;
   readonly controllerLevel?: number;
   readonly ticksToDowngrade?: number;
   readonly hostiles?: readonly {
@@ -618,7 +641,12 @@ function bootstrapSnapshot(
   options: SnapshotOptions = {},
 ): WorldSnapshot {
   const ownedCreeps = options.legalWorker
-    ? [testCreep("worker", "Myrmex", { work: 1, carry: 1, move: 1 }, roomName)]
+    ? [
+        {
+          ...testCreep("worker", "Myrmex", { work: 1, carry: 1, move: 1 }, roomName),
+          ticksToLive: options.workerTicksToLive ?? 1_000,
+        },
+      ]
     : [];
   const hostileCreeps = (options.hostiles ?? []).map((hostile, index) =>
     testCreep(`foreign-${String(index)}`, hostile.username, hostile, roomName),

@@ -153,6 +153,35 @@ describe("survival flow", () => {
       ).transitions,
     ).toEqual([expect.objectContaining({ contractId: "fill", to: "funded" })]);
   });
+
+  it("cancels a continuous lease as soon as its worker is absent", () => {
+    const planning = {
+      status: "ready" as const,
+      contracts: [
+        {
+          budgetBinding: {
+            category: "harvesting-filling" as const,
+            issuer: "economy/W1N1/dead/harvest/source",
+          },
+          contractId: "dead-harvest",
+          execution: {
+            action: "harvest" as const,
+            completion: "continuous" as const,
+            counterpartId: null,
+            resourceType: null,
+            version: 1 as const,
+          },
+          issuer: "economy/W1N1/dead/harvest/source",
+          owner: { id: "W1N1", kind: "colony" as const },
+          state: "funded" as const,
+          targetId: "source",
+        },
+      ],
+    };
+    expect(
+      authorizedSurvivalFlow([], [], planning, 20, new Set(["other-worker"])).transitions,
+    ).toEqual([expect.objectContaining({ contractId: "dead-harvest", to: "cancelled" })]);
+  });
 });
 
 function snapshot(carriedEnergy = 0): WorldSnapshot {

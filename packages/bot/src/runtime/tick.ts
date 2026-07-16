@@ -429,6 +429,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           context.colony.reservations,
           context.contractPlanning,
           context.tick,
+          new Set(context.snapshot.rooms.flatMap((room) => room.ownedCreeps.map(({ id }) => id))),
         );
         for (const request of flow.requests) scope.producer.submit(request);
         for (const transition of flow.transitions) scope.producer.transition(transition);

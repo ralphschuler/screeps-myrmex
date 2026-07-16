@@ -578,7 +578,7 @@ function emptyResult(status: ColonyPlanStatus, reasonCode: ColonyPlanReason): Co
 function observeEvidence(room: RoomSnapshot, config: RuntimeConfig, tick: number): ColonyEvidence {
   const controller = room.controller;
   const owned = controller?.ownership === "owned";
-  const legalWorkforce = room.ownedCreeps.some(isLegalWorker);
+  const legalWorkforce = room.ownedCreeps.some((creep) => isLegalWorker(creep, config));
   const activeThreatParts = room.hostileCreeps.reduce((total, creep) => {
     const relation = classifyPlayerRelation(config, { username: creep.ownerUsername, tick });
     if (relation.targetingCeiling !== "local-defense") {
@@ -622,12 +622,20 @@ function observeEvidence(room: RoomSnapshot, config: RuntimeConfig, tick: number
   };
 }
 
-function isLegalWorker(creep: CreepSnapshot): boolean {
+/**
+ * A worker that cannot outlive creation of the smallest legal successor plus the configured
+ * handoff margin is no longer evidence that the colony can sustain itself.  The existing
+ * recovery objective then owns the replacement atomically, rather than letting an expiring
+ * actor hide a coming total-workforce loss.
+ */
+function isLegalWorker(creep: CreepSnapshot, config: RuntimeConfig): boolean {
+  const replacementLeadTicks = 3 * 3 + config.policy.spawn.replacementSafetyMarginTicks;
   return (
     !creep.spawning &&
     creep.body.work.active >= 1 &&
     creep.body.carry.active >= 1 &&
-    creep.body.move.active >= 1
+    creep.body.move.active >= 1 &&
+    (creep.ticksToLive === null || creep.ticksToLive > replacementLeadTicks)
   );
 }
 
