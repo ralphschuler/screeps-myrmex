@@ -642,7 +642,8 @@ function resolvedPolicySatisfiesInvariants(overrides: RuntimePolicyOverrides | u
     policy.retries.initialDelayTicks <= policy.retries.maximumDelayTicks &&
     policy.movement.stuckReplanTicks <= policy.movement.blockedReleaseTicks &&
     policy.repair.criticalHitsBasisPoints <= policy.repair.completionHitsBasisPoints &&
-    policy.tower.emergencyReserveEnergy <= policy.tower.repairMinimumEnergy
+    policy.tower.emergencyReserveEnergy <= policy.tower.repairMinimumEnergy &&
+    policy.reporter.initialReminderDelayTicks <= policy.reporter.maximumReminderDelayTicks
   );
 }
 
@@ -659,6 +660,7 @@ export function mergePolicy(
     repair: { ...defaults.repair, ...overrides?.repair },
     growth: { ...defaults.growth, ...overrides?.growth },
     telemetry: { ...defaults.telemetry, ...overrides?.telemetry },
+    reporter: defaults.reporter,
     tower: { ...defaults.tower, ...overrides?.tower },
     safeMode: { ...defaults.safeMode, ...overrides?.safeMode },
   };

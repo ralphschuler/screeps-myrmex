@@ -331,9 +331,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v12");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v13");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v12",
+      "runtime-config-source-v13",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -593,7 +593,7 @@ describe("runtime override validation", () => {
 describe("source feature gates", () => {
   it("makes completed safety, recovery, maintenance, growth, and telemetry source-available under v12", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v12");
+    expect(config.sourceRevision).toBe("runtime-config-source-v13");
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.spawn")).toBe(true);

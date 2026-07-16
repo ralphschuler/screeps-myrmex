@@ -89,6 +89,7 @@ import {
   type TickTelemetry,
 } from "../telemetry/metrics";
 import { TelemetryService } from "../telemetry/service";
+import { projectReporterStatus, type ReporterStatus } from "../telemetry/reporter-status";
 import { observeWorld } from "../world/observe";
 import { emptyWorldSnapshot, type WorldSnapshot } from "../world/snapshot";
 import type { RuntimeGame, TickContext } from "./context";
@@ -138,6 +139,8 @@ export interface TickOutcome {
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
   readonly telemetry: TickTelemetry | null;
+  /** Pure, redacted observer view for the later ConsoleReporter adapter. */
+  readonly reporterStatus: ReporterStatus;
   readonly kernel: KernelTickReport;
 }
 
@@ -247,6 +250,11 @@ export function runTick(input: TickInput): TickOutcome {
     spawn: runtime.context.spawn,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
+    reporterStatus: projectReporterStatus(
+      runtime.context.telemetry,
+      report,
+      runtime.context.config.policy.reporter,
+    ),
     kernel: report,
   });
 }
