@@ -13,6 +13,12 @@ import {
   type CriticalMaintenanceCandidate,
 } from "../maintenance";
 import {
+  authorizedSurvivalGrowth,
+  planSurvivalGrowth,
+  renewGrowthBudgets,
+  type GrowthCandidate,
+} from "../growth";
+import {
   dispositionTransitions,
   planLeaseAgents,
   repairRetryTransitions,
@@ -284,6 +290,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   });
   let survivalCandidates: readonly SurvivalFlowCandidate[] = Object.freeze([]);
   let maintenanceCandidates: readonly CriticalMaintenanceCandidate[] = Object.freeze([]);
+  let growthCandidates: readonly GrowthCandidate[] = Object.freeze([]);
   return Object.freeze([
     configBootSystem(input),
     {
@@ -422,9 +429,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     },
     defenseSafetySystem(input),
-    colonyDirectorSystem(input, spawnDraft, (economy, maintenance) => {
+    colonyDirectorSystem(input, spawnDraft, (economy, maintenance, growth) => {
       survivalCandidates = economy;
       maintenanceCandidates = maintenance;
+      growthCandidates = growth;
     }),
     {
       descriptor: {
@@ -482,6 +490,38 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
         for (const request of maintenance.requests) scope.producer.submit(request);
         for (const transition of maintenance.transitions) scope.producer.transition(transition);
+        const stagedRequests = scope.stage();
+        return staged(
+          () => {
+            stagedRequests.commit();
+          },
+          () => {
+            stagedRequests.discard();
+          },
+        );
+      },
+    },
+    {
+      descriptor: {
+        id: "growth.contracts",
+        phase: "plan",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase1.growth")) return staged(() => undefined);
+        const scope = input.contractChannel.openProducer("growth.contracts");
+        const growth = authorizedSurvivalGrowth(
+          growthCandidates,
+          context.colony.reservations,
+          context.contractPlanning,
+          context.tick,
+        );
+        for (const request of growth.requests) scope.producer.submit(request);
+        for (const transition of growth.transitions) scope.producer.transition(transition);
         const stagedRequests = scope.stage();
         return staged(
           () => {
@@ -745,6 +785,7 @@ function colonyDirectorSystem(
   publishCandidates: (
     economy: readonly SurvivalFlowCandidate[],
     maintenance: readonly CriticalMaintenanceCandidate[],
+    growth: readonly GrowthCandidate[],
   ) => void,
 ): TickSystem<TickContext> {
   return {
@@ -781,7 +822,16 @@ function colonyDirectorSystem(
         context.config.policy.leases.durationTicks,
         context.config.policy.leases.renewalWindowTicks,
       );
-      publishCandidates(economyCandidates, maintenanceCandidates);
+      const growthCandidates = renewGrowthBudgets(
+        isFeatureEnabled(context.config, "phase1.growth")
+          ? planSurvivalGrowth(context.snapshot, context.config)
+          : Object.freeze([]),
+        resolveColoniesOwner(owner).owner?.ledger ?? [],
+        context.tick,
+        context.config.policy.leases.durationTicks,
+        context.config.policy.leases.renewalWindowTicks,
+      );
+      publishCandidates(economyCandidates, maintenanceCandidates, growthCandidates);
       const provisional = colonyDirector.begin({
         tick: context.tick,
         snapshot: context.snapshot,
@@ -789,7 +839,7 @@ function colonyDirectorSystem(
         owner,
         cpuMode: mode,
         cpuBudget: budget,
-        requests: [...economyCandidates, ...maintenanceCandidates].map(
+        requests: [...economyCandidates, ...maintenanceCandidates, ...growthCandidates].map(
           ({ budgetRequest }) => budgetRequest,
         ),
       });
@@ -833,7 +883,7 @@ function colonyDirectorSystem(
               owner,
               cpuMode: mode,
               cpuBudget: budget,
-              requests: [...economyCandidates, ...maintenanceCandidates].map(
+              requests: [...economyCandidates, ...maintenanceCandidates, ...growthCandidates].map(
                 ({ budgetRequest }) => budgetRequest,
               ),
               recoverySpawnSelections: selections.map((selection) => ({

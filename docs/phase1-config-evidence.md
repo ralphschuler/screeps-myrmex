@@ -138,21 +138,20 @@ duplicate, or activation field rejects the entire candidate. For every gate `g`:
 
 `effective(g) = available(g) && !disabled(g) && every prerequisite is effective`
 
-Issue #37 made `phase1.colony` available under source v2. Issue #23 added `phase1.contracts` under
-source v3. Issue #24 adds only `phase1.spawn` under source v4. Every later gate remains
-source-unavailable.
+The completed Phase 1 slices advance source availability only with their owned outcome evidence;
+issue #28 advances `phase1.growth` under source v11.
 
 | Gate                          | Availability | Prerequisites                                          |
 | ----------------------------- | ------------ | ------------------------------------------------------ |
 | `phase1.colony`               | available    | none                                                   |
 | `phase1.contracts`            | available    | `phase1.colony`                                        |
 | `phase1.spawn`                | available    | `phase1.colony`                                        |
-| `phase1.movement`             | unavailable  | none                                                   |
-| `phase1.agents`               | unavailable  | `phase1.colony`, `phase1.contracts`, `phase1.movement` |
-| `phase1.economy`              | unavailable  | `phase1.agents`, `phase1.spawn`                        |
+| `phase1.movement`             | available    | none                                                   |
+| `phase1.agents`               | available    | `phase1.colony`, `phase1.contracts`, `phase1.movement` |
+| `phase1.economy`              | available    | `phase1.agents`, `phase1.spawn`                        |
 | `phase1.recovery`             | available    | `phase1.economy`                                       |
-| `phase1.growth`               | unavailable  | `phase1.recovery`                                      |
-| `phase1.safety`               | unavailable  | `phase1.colony`, `phase1.movement`                     |
+| `phase1.growth`               | available    | `phase1.recovery`                                      |
+| `phase1.safety`               | available    | `phase1.colony`, `phase1.movement`                     |
 | `phase1.telemetry`            | unavailable  | `phase1.agents`, `phase1.spawn`                        |
 | `phase1.critical-maintenance` | available    | `phase1.economy`, `phase1.recovery`                    |
 

@@ -951,6 +951,14 @@ budget and contract authorities. During an active local offensive threat it emit
 DefenseDirector retains the only tower repair command path and reserve enforcement. ADR 0012 records
 this boundary.
 
+The Phase 1 `SurvivalGrowthPlanner` is likewise a pure snapshot selector with no layout, placement,
+or durable queue. A downgrade-risk controller may request `controller-risk` upgrade work; optional
+controller upgrading and owned spawn, extension, container, road, and tower construction sites need
+both the protected spawn reserve and configured surplus. `ColonyDirector` remains the sole budget
+authority, so controller risk is admitted ahead of optional construction and constrained CPU,
+threat, or recovery posture fails optional growth closed. Lease agents and executors retain the only
+Screeps work-command path.
+
 Lease agents retain no task or role Memory. They correlate each proposal with contract ID and
 revision; the runtime's Reconcile phase feeds typed executor evidence through the existing contract
 request channel, while only `ContractLedger` validates and persists a transition. Current snapshot
