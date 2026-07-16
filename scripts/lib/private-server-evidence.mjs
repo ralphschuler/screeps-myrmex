@@ -12,6 +12,7 @@ export const PRIVATE_SERVER_EVIDENCE_LIMITS = Object.freeze({
 const FAILURE_KINDS = new Set([
   "assertion-failed",
   "bot-exception",
+  "cli-operation-failed",
   "cleanup-failed",
   "scenario-timeout",
   "startup-failed",

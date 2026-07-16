@@ -58,6 +58,17 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(startup).toMatchObject({ failureCode: "port-unavailable", ok: false });
+    const cli = await runPrivateServerScenario({
+      driver: driver([], {
+        observeError: namedError("CliOperationFailure", "cli-bootstrap-controlled-bot-failed"),
+      }),
+      manifest,
+    });
+    expect(cli).toMatchObject({
+      evidence: { failure: { kind: "cli-operation-failed" } },
+      failureCode: "cli-bootstrap-controlled-bot-failed",
+      ok: false,
+    });
     const cleanup = await runPrivateServerScenario({
       driver: driver([], { stopError: new Error("cannot stop") }),
       manifest,

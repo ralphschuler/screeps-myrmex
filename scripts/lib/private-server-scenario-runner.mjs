@@ -130,6 +130,7 @@ function boundedLogs(value) {
 
 function classifyScenarioError(error) {
   const kind = error instanceof Error ? error.name : "";
+  if (kind === "CliOperationFailure") return "cli-operation-failed";
   if (kind === "ScenarioTimeoutError") return "scenario-timeout";
   if (kind === "BotExceptionError") return "bot-exception";
   return "startup-failed";
@@ -141,7 +142,18 @@ function safeError(error) {
 }
 
 function scenarioFailureCode(error) {
-  if (!(error instanceof Error) || error.name !== "StartupFailure") return null;
+  if (!(error instanceof Error)) return null;
+  if (error.name === "CliOperationFailure") {
+    return [
+      "cli-bootstrap-controlled-bot-failed",
+      "cli-pause-failed",
+      "cli-reset-failed",
+      "cli-resume-failed",
+    ].includes(error.message)
+      ? error.message
+      : null;
+  }
+  if (error.name !== "StartupFailure") return null;
   return [
     "asset-directory-unavailable",
     "configuration-file-unavailable",
