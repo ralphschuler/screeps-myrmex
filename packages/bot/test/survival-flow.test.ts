@@ -118,6 +118,62 @@ describe("survival flow", () => {
     expect(planSurvivalFlow(withOnlyInactiveExtension)).toEqual([]);
   });
 
+  it("hands each source from mobile survival flow to static mining only after funding", () => {
+    const binding = (
+      state: ContractPlanningView["contracts"][number]["state"],
+    ): ContractPlanningView => ({
+      status: "ready",
+      contracts: [
+        {
+          budgetBinding: {
+            category: "harvesting-filling",
+            issuer: "mining/W1N1/source-near",
+          },
+          contractId: "static-near",
+          execution: {
+            action: "harvest",
+            completion: "continuous",
+            counterpartId: null,
+            resourceType: null,
+            version: 2,
+            workPosition: position(9, 10),
+          },
+          issuer: "mining/W1N1/source-near",
+          owner: { id: "W1N1", kind: "colony" },
+          state,
+          targetId: "source-near",
+        },
+      ],
+    });
+    const selectedTarget = (state: ContractPlanningView["contracts"][number]["state"]) =>
+      planSurvivalFlow(snapshot(), { leases: [], status: "ready" }, binding(state))[0]?.targetId;
+
+    expect(selectedTarget("proposed")).toBe("source-near");
+    expect(selectedTarget("suspended")).toBe("source-near");
+    for (const state of ["funded", "assigned", "active"] as const)
+      expect(selectedTarget(state)).toBe("source-far");
+
+    const mobile = activeFlowPlanning("harvest").contracts[0];
+    const staticContract = binding("funded").contracts[0];
+    if (mobile === undefined || staticContract === undefined)
+      throw new Error("expected handoff contracts");
+    expect(
+      authorizedSurvivalFlow(
+        [],
+        [],
+        { contracts: [mobile, staticContract], status: "ready" },
+        10,
+        snapshot(),
+      ).transitions,
+    ).toEqual([
+      expect.objectContaining({
+        contractId: mobile.contractId,
+        reason: "static-binding-funded",
+        to: "cancelled",
+      }),
+    ]);
+  });
+
   it("funds suspended work again and cancels a vanished endpoint without duplicating its binding", () => {
     const candidates = planSurvivalFlow(snapshot());
     const harvest = candidates.find(({ action }) => action === "harvest");

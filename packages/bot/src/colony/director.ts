@@ -888,6 +888,7 @@ function viewForUnknown(record: ColonyRecord, input: ColonyDirectorInput): Colon
       maximumBodyEnergy: input.config.policy.spawn.maximumBodyEnergy,
       protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
       replacementLeadTicks: input.config.policy.spawn.replacementSafetyMarginTicks + 9,
+      spawnBusyTicks: 0,
       spawnUtilizationBasisPoints: 10_000,
       state: record.state,
       visibility: "unknown",
@@ -933,6 +934,10 @@ function viewForVisible(
       maximumBodyEnergy: input.config.policy.spawn.maximumBodyEnergy,
       protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
       replacementLeadTicks: input.config.policy.spawn.replacementSafetyMarginTicks + 9,
+      spawnBusyTicks: Math.max(
+        0,
+        ...facts.room.ownedSpawns.map((spawn) => spawn.spawning?.remainingTime ?? 0),
+      ),
       spawnUtilizationBasisPoints:
         facts.room.ownedSpawns.length === 0
           ? 10_000

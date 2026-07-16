@@ -105,6 +105,11 @@ sieges, boosted formations, nukes, strongholds, power operations, or cross-shard
 
 ## Funded Population Scaling
 
+Static extraction assigns one stationary commitment to each independently viable owned source.
+Container, site, RCL, decay, destruction, fullness, and link-candidate state affect offload quality,
+not legal extraction: miners continue with drop fallback and never issue hauling, repair, or link
+transfer commands. Five WORK parts cap normal-source throughput at the official regeneration rate.
+
 Funded population scales from normalized productive capability-part ticks rather than role counts.
 Mandatory defense, replacement, spawn supply, controller safety, and critical maintenance retain
 precedence; threat, recovery, bootstrap, constrained CPU, controller risk, reserve collapse, and

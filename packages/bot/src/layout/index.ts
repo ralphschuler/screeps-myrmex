@@ -14,6 +14,7 @@ export {
   emptyLayoutsOwner,
   parseLayoutsOwner,
   persistLayoutCommitment,
+  freshSourceServicePlacements,
   persistConstructionSiteReceipt,
   reconcileOwnedLayouts,
 } from "./persistence";

@@ -68,6 +68,7 @@ export interface LayoutCommitment {
 }
 export interface LayoutRecord extends LayoutCommitment {
   readonly roomName: string;
+  readonly sourceServices?: readonly LayoutPlacement[];
   readonly siteReceipts?: readonly ConstructionSiteAttemptReceipt[];
 }
 

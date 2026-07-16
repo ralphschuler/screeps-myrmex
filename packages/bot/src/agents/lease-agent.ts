@@ -23,6 +23,7 @@ export type AgentDispositionReason =
   | "actor-ttl-insufficient"
   | "contract-expired"
   | "path-unavailable"
+  | "work-position-invalid"
   | "target-depleted"
   | "target-full"
   | "target-missing"
@@ -87,15 +88,27 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
     if (actor === undefined) continue;
     const target = targets.get(lease.targetId);
     if (target === undefined) continue;
-    if (inRange(actor.pos, target.pos, lease.range)) {
+    if (lease.execution.version === 2 && target.amount === 0) continue;
+    const goal = lease.execution.version === 2 ? lease.execution.workPosition : target.pos;
+    const range = lease.execution.version === 2 ? 0 : lease.range;
+    if (inRange(actor.pos, goal, range)) {
+      if (lease.execution.version === 2 && !inRange(actor.pos, target.pos, 1)) {
+        dispositions.push({
+          contractId: lease.contractId,
+          contractRevision: lease.revision,
+          reason: "work-position-invalid",
+          to: "suspended",
+        });
+        continue;
+      }
       actions.push(actionIntent(lease));
       continue;
     }
     const path = input.paths.plan({
       availableCpu: Math.max(0, input.availablePathCpu - index * 0.5),
-      goal: target.pos,
+      goal,
       origin: actor.pos,
-      range: lease.range,
+      range,
       snapshot: input.snapshot,
       tick: input.tick,
     });
@@ -126,10 +139,10 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       deadline: actionDeadline(lease),
       destination,
       direction,
-      goal: target.pos,
+      goal,
       id: `lease:${lease.contractId}:r${String(lease.revision)}:move`,
       priority: lease.priority.value,
-      range: lease.range,
+      range,
       stuckAge: 0,
     });
   }
@@ -326,8 +339,12 @@ function validateLease(
     actor.store.freeCapacity <= 0
   )
     return suspend("actor-store-full");
-  if (lease.execution.action === "harvest" && (target.type !== "source" || target.amount === 0))
+  if (lease.execution.action === "harvest" && target.type !== "source")
     return unavailableTarget(lease, suspend, "target-depleted");
+  if (lease.execution.action === "harvest" && target.amount === 0)
+    return lease.execution.version === 2
+      ? null
+      : unavailableTarget(lease, suspend, "target-depleted");
   if (
     lease.execution.action === "transfer" &&
     (target.store === null || target.store.freeCapacity === 0)

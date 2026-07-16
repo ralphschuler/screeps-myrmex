@@ -28,6 +28,7 @@ export interface NormalizedPopulationLoad {
   readonly revision: number;
   readonly sourceCapacityWorkTicks: number;
   readonly travelTicks: number;
+  readonly mode?: "cyclic" | "stationary";
 }
 
 export interface ContractPopulationView {
@@ -176,6 +177,7 @@ export interface ContractLeasePolicy {
 
 /** Versioned, data-only authorization for one scoped primary creep action. */
 export const CONTRACT_EXECUTION_TERM_VERSION = 1 as const;
+export const CONTRACT_EXECUTION_TERM_VERSION_V2 = 2 as const;
 
 export const CONTRACT_EXECUTION_ACTIONS = [
   "build",
@@ -202,7 +204,7 @@ export type ContractExecutionDisposition = (typeof CONTRACT_EXECUTION_DISPOSITIO
  * Terms a lease agent may consume. `targetId` remains the primary action target; `counterpartId`
  * identifies the other endpoint of a source/sink relationship when a later agent needs it.
  */
-export interface ContractExecutionTerms {
+export interface ContractExecutionTermsV1 {
   readonly action: ContractExecutionAction;
   readonly completion: ContractExecutionDisposition;
   /** Repair-only observed hit-point threshold; null preserves full-hit completion. */
@@ -211,6 +213,15 @@ export interface ContractExecutionTerms {
   readonly resourceType: ResourceConstant | null;
   readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION;
 }
+export interface ContractExecutionTermsV2 {
+  readonly action: "harvest";
+  readonly completion: ContractExecutionDisposition;
+  readonly counterpartId: string | null;
+  readonly resourceType: null;
+  readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V2;
+  readonly workPosition: PositionSnapshot;
+}
+export type ContractExecutionTerms = ContractExecutionTermsV1 | ContractExecutionTermsV2;
 
 export interface WorkContractRequest {
   readonly budgetBinding: ContractBudgetBinding;
@@ -618,6 +629,7 @@ function normalizeExecutionTerms(
     readonly counterpartId: unknown;
     readonly resourceType: unknown;
     readonly version: unknown;
+    readonly workPosition?: unknown;
   }>,
   kind: WorkContractKind,
   targetId: string | null,
@@ -642,8 +654,8 @@ function normalizeExecutionTerms(
       "must be a supported disposition",
     );
   }
-  if (value.version !== CONTRACT_EXECUTION_TERM_VERSION) {
-    invalid("invalid-execution-version", "$.execution.version", "must equal 1");
+  if (value.version !== 1 && value.version !== 2) {
+    invalid("invalid-execution-version", "$.execution.version", "must equal 1 or 2");
   }
   if (!actionMatchesContractKind(action, kind)) {
     invalid("execution-kind-mismatch", "$.execution.action", "is not authorized by contract kind");
@@ -681,6 +693,22 @@ function normalizeExecutionTerms(
       "$.execution.resourceType",
       resourceRequired ? "is required for this action" : "must be null for this action",
     );
+  }
+  if (value.version === 2) {
+    if (action !== "harvest" || resourceType !== null) {
+      invalid("execution-v2-action-mismatch", "$.execution.action", "v2 is harvest-only");
+    }
+    return {
+      action: "harvest",
+      completion,
+      counterpartId,
+      resourceType: null,
+      version: 2,
+      workPosition: normalizePosition(
+        value.workPosition as PositionSnapshot,
+        "$.execution.workPosition",
+      ),
+    };
   }
   return {
     action,
