@@ -207,6 +207,7 @@ function recoverySnapshot(tick: number): WorldSnapshot {
   return {
     observation: { age: 0, shard: "sim", status: "observed", tick },
     observedAt: tick,
+    ownedConstructionSiteCount: 0,
     ownedRooms: [],
     rooms: [
       {

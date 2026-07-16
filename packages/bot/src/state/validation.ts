@@ -2,6 +2,7 @@ import {
   LEGACY_MEMORY_MIGRATION_ID,
   LEGACY_MEMORY_MIGRATION_STEP_COUNT,
   LEGACY_MEMORY_SCHEMA_VERSION,
+  INTERMEDIATE_MEMORY_SCHEMA_VERSION,
   MEMORY_CURRENT_SCHEMA_VERSION,
   MEMORY_MIGRATION_ID,
   MEMORY_MIGRATION_STEP_COUNT,
@@ -10,6 +11,9 @@ import {
   PERSISTENT_STATE_OWNERS,
   PREVIOUS_MEMORY_SCHEMA_VERSION,
   PREVIOUS_PERSISTENT_STATE_OWNERS,
+  LAYOUT_MEMORY_MIGRATION_ID,
+  LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION,
+  LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS,
   type JsonObject,
   type MemoryMigrationCursor,
   type MigratingMyrmexMemory,
@@ -17,6 +21,7 @@ import {
   type OwnerStateView,
   type PersistentStateOwner,
   type PreviousMyrmexMemory,
+  type IntermediateMyrmexMemory,
   type StateView,
 } from "./schema";
 import { projectMigrationFinalState } from "./migration-projection";
@@ -94,6 +99,19 @@ export function isPreviousMyrmexMemory(value: unknown): value is PreviousMyrmexM
 
   return (
     PREVIOUS_PERSISTENT_STATE_OWNERS.every((owner) => isJsonObject(value[owner])) &&
+    validateJsonValue(value).valid
+  );
+}
+
+export function isIntermediateMyrmexMemory(value: unknown): value is IntermediateMyrmexMemory {
+  if (
+    !isPlainObject(value) ||
+    !hasOnlyKeys(value, ["meta", ...LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS])
+  )
+    return false;
+  return (
+    isIntermediateMeta(value.meta) &&
+    LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS.every((owner) => isJsonObject(value[owner])) &&
     validateJsonValue(value).valid
   );
 }
@@ -374,6 +392,37 @@ function isPreviousMeta(value: unknown): boolean {
   );
 }
 
+function isIntermediateMeta(value: unknown): boolean {
+  if (
+    !isPlainObject(value) ||
+    !hasOnlyKeys(value, [
+      "schemaVersion",
+      "targetSchemaVersion",
+      "revision",
+      "firstTick",
+      "lastTick",
+      "shard",
+      "diagnostics",
+      "migration",
+      "recovery",
+    ])
+  )
+    return false;
+  return (
+    value.schemaVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION &&
+    value.targetSchemaVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION &&
+    isNonNegativeInteger(value.revision) &&
+    isNonNegativeInteger(value.firstTick) &&
+    isNonNegativeInteger(value.lastTick) &&
+    value.lastTick >= value.firstTick &&
+    typeof value.shard === "string" &&
+    value.shard.length > 0 &&
+    isDiagnosticHistory(value.diagnostics) &&
+    value.migration === null &&
+    value.recovery === null
+  );
+}
+
 function isMigratingMeta(value: unknown): value is MigratingMyrmexMemory["meta"] {
   if (
     !isPlainObject(value) ||
@@ -429,11 +478,22 @@ function isMigratingMeta(value: unknown): value is MigratingMyrmexMemory["meta"]
   if (migration.id === LEGACY_MEMORY_MIGRATION_ID) {
     return (
       value.schemaVersion === LEGACY_MEMORY_SCHEMA_VERSION &&
-      value.targetSchemaVersion === PREVIOUS_MEMORY_SCHEMA_VERSION &&
+      value.targetSchemaVersion === INTERMEDIATE_MEMORY_SCHEMA_VERSION &&
       migration.fromVersion === LEGACY_MEMORY_SCHEMA_VERSION &&
-      migration.targetVersion === PREVIOUS_MEMORY_SCHEMA_VERSION &&
+      migration.targetVersion === INTERMEDIATE_MEMORY_SCHEMA_VERSION &&
       migration.nextStep < LEGACY_MEMORY_MIGRATION_STEP_COUNT &&
       migration.stepCount === LEGACY_MEMORY_MIGRATION_STEP_COUNT
+    );
+  }
+
+  if (migration.id === LAYOUT_MEMORY_MIGRATION_ID) {
+    return (
+      value.schemaVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION &&
+      value.targetSchemaVersion === MEMORY_TARGET_SCHEMA_VERSION &&
+      migration.fromVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION &&
+      migration.targetVersion === MEMORY_TARGET_SCHEMA_VERSION &&
+      migration.nextStep < MEMORY_MIGRATION_STEP_COUNT &&
+      migration.stepCount === MEMORY_MIGRATION_STEP_COUNT
     );
   }
 
@@ -442,7 +502,8 @@ function isMigratingMeta(value: unknown): value is MigratingMyrmexMemory["meta"]
     value.targetSchemaVersion === MEMORY_TARGET_SCHEMA_VERSION &&
     migration.id === MEMORY_MIGRATION_ID &&
     migration.fromVersion === PREVIOUS_MEMORY_SCHEMA_VERSION &&
-    migration.targetVersion === MEMORY_TARGET_SCHEMA_VERSION &&
+    (migration.targetVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION ||
+      migration.targetVersion === MEMORY_TARGET_SCHEMA_VERSION) &&
     migration.nextStep < MEMORY_MIGRATION_STEP_COUNT &&
     migration.stepCount === MEMORY_MIGRATION_STEP_COUNT
   );
@@ -469,6 +530,9 @@ function expectedMigrationOwners(
 ): readonly PersistentStateOwner[] | null {
   if (migration.id === MEMORY_MIGRATION_ID) {
     return migration.nextStep === 0 ? PREVIOUS_PERSISTENT_STATE_OWNERS : null;
+  }
+  if (migration.id === LAYOUT_MEMORY_MIGRATION_ID) {
+    return migration.nextStep === 0 ? LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS : null;
   }
 
   switch (migration.nextStep) {
@@ -497,8 +561,10 @@ function expectedMigrationOwners(
 
 function allowedMigrationOwners(migration: MemoryMigrationCursor): readonly string[] {
   return migration.id === MEMORY_MIGRATION_ID
-    ? PERSISTENT_STATE_OWNERS
-    : PREVIOUS_PERSISTENT_STATE_OWNERS;
+    ? LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS
+    : migration.id === LAYOUT_MEMORY_MIGRATION_ID
+      ? PERSISTENT_STATE_OWNERS
+      : PREVIOUS_PERSISTENT_STATE_OWNERS;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

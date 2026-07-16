@@ -766,6 +766,7 @@ function bootstrapSnapshot(
     schemaVersion: 1,
     observation: { age: 0, shard: "shard3", status: "observed", tick },
     observedAt: tick,
+    ownedConstructionSiteCount: 0,
     rooms: [room],
     ownedRooms: [room],
     visibility: {

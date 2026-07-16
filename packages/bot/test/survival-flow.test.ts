@@ -430,6 +430,7 @@ function snapshot(
   return {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 10 },
     observedAt: 10,
+    ownedConstructionSiteCount: 0,
     schemaVersion: 1,
     rooms: [
       {

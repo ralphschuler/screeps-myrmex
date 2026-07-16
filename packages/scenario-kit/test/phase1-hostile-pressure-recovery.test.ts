@@ -191,6 +191,7 @@ function pressureSnapshot(tick: number, input: PressureInput): WorldSnapshot {
     schemaVersion: 1,
     observation: { age: 0, shard: "shard2", status: "observed", tick },
     observedAt: tick,
+    ownedConstructionSiteCount: 0,
     rooms: [room],
     ownedRooms: [room],
     visibility: {

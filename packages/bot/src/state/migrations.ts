@@ -2,6 +2,8 @@ import {
   LEGACY_MEMORY_MIGRATION_ID,
   LEGACY_MEMORY_MIGRATION_STEP_COUNT,
   LEGACY_MEMORY_SCHEMA_VERSION,
+  INTERMEDIATE_MEMORY_SCHEMA_VERSION,
+  INTERMEDIATE_PERSISTENT_STATE_OWNERS,
   MEMORY_CURRENT_SCHEMA_VERSION,
   MEMORY_MIGRATION_ID,
   MEMORY_MIGRATION_STEP_COUNT,
@@ -10,8 +12,12 @@ import {
   PERSISTENT_STATE_OWNERS,
   PREVIOUS_MEMORY_SCHEMA_VERSION,
   PREVIOUS_PERSISTENT_STATE_OWNERS,
+  LAYOUT_MEMORY_MIGRATION_ID,
+  LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION,
+  LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS,
   type JsonObject,
   type LegacyMigratingMyrmexMemoryMeta,
+  type IntermediateMyrmexMemory,
   type MemoryDiagnostic,
   type MemoryRecoveryReason,
   type MigratingMyrmexMemory,
@@ -19,6 +25,8 @@ import {
   type MyrmexMemoryRoot,
   type PersistentStateOwner,
   type PreviousPersistentStateOwner,
+  type IntermediatePersistentStateOwner,
+  type LayoutPreviousPersistentStateOwner,
 } from "./schema";
 import {
   cloneJsonObject,
@@ -68,12 +76,20 @@ export function beginMyrmexMigration(
   shard: string,
   reason: MemoryRecoveryReason,
 ): MigratingMyrmexMemory {
+  if (
+    isRecord(source) &&
+    isRecord(source.meta) &&
+    (source.meta.schemaVersion === INTERMEDIATE_MEMORY_SCHEMA_VERSION ||
+      source.meta.schemaVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION)
+  ) {
+    return beginCurrentMyrmexMigration(memory, source, gameTime, shard, "schema-migration");
+  }
   const tick = normalizeTick(gameTime);
   const boot = extractBootMetadata(source, tick, shard);
   const minimal: MigratingMyrmexMemory = {
     meta: {
       schemaVersion: LEGACY_MEMORY_SCHEMA_VERSION,
-      targetSchemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+      targetSchemaVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
       revision: 0,
       firstTick: boot.firstTick,
       lastTick: Math.max(boot.lastTick, tick),
@@ -82,7 +98,7 @@ export function beginMyrmexMigration(
       migration: {
         id: LEGACY_MEMORY_MIGRATION_ID,
         fromVersion: LEGACY_MEMORY_SCHEMA_VERSION,
-        targetVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+        targetVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
         nextStep: 0,
         stepCount: LEGACY_MEMORY_MIGRATION_STEP_COUNT,
         startedAt: tick,
@@ -116,18 +132,24 @@ export function beginCurrentMyrmexMigration(
   const tick = normalizeTick(gameTime);
   const boot = extractBootMetadata(source, tick, shard);
   const previous = isPreviousMyrmexMemory(source) ? source : undefined;
+  const intermediate = isIntermediateMemory(source) ? source : undefined;
+  const fromLayoutPrevious =
+    intermediate !== undefined ||
+    (isRecord(source) &&
+      isRecord(source.meta) &&
+      source.meta.schemaVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION);
   const start = diagnostic("recovery-start", tick, reason);
-  const base: MigratingMyrmexMemory = {
-    meta: {
-      schemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
-      targetSchemaVersion: MEMORY_TARGET_SCHEMA_VERSION,
-      revision: previous?.meta.revision ?? 0,
-      firstTick: boot.firstTick,
-      lastTick: Math.max(boot.lastTick, tick),
-      shard: boot.shard,
-      diagnostics:
-        previous === undefined ? [start] : appendDiagnostic(previous.meta.diagnostics, start),
-      migration: {
+  const migrationCursor = fromLayoutPrevious
+    ? ({
+        id: LAYOUT_MEMORY_MIGRATION_ID,
+        fromVersion: LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION,
+        targetVersion: MEMORY_TARGET_SCHEMA_VERSION,
+        nextStep: 0,
+        stepCount: MEMORY_MIGRATION_STEP_COUNT,
+        startedAt: tick,
+        updatedAt: tick,
+      } as const)
+    : ({
         id: MEMORY_MIGRATION_ID,
         fromVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
         targetVersion: MEMORY_TARGET_SCHEMA_VERSION,
@@ -135,15 +157,28 @@ export function beginCurrentMyrmexMigration(
         stepCount: MEMORY_MIGRATION_STEP_COUNT,
         startedAt: tick,
         updatedAt: tick,
-      },
+      } as const);
+  const base: MigratingMyrmexMemory = {
+    meta: {
+      schemaVersion: fromLayoutPrevious
+        ? LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION
+        : PREVIOUS_MEMORY_SCHEMA_VERSION,
+      targetSchemaVersion: MEMORY_TARGET_SCHEMA_VERSION,
+      revision: previous?.meta.revision ?? intermediate?.meta.revision ?? 0,
+      firstTick: boot.firstTick,
+      lastTick: Math.max(boot.lastTick, tick),
+      shard: boot.shard,
+      diagnostics:
+        previous === undefined ? [start] : appendDiagnostic(previous.meta.diagnostics, start),
+      migration: migrationCursor,
       recovery: {
         active: true,
         lastProgressTick: tick,
         reason,
         sinceTick: tick,
       },
-    },
-    ...emptyOwnerState(),
+    } as MigratingMyrmexMemory["meta"],
+    ...(fromLayoutPrevious ? emptyLayoutPreviousOwnerState() : emptyPreviousOwnerState()),
   };
   const migration = fitRecognizedAuthorityState(source, base);
 
@@ -164,7 +199,7 @@ export function advanceMyrmexMigration(
   const tick = normalizeTick(gameTime);
   const migration = root.meta.migration;
 
-  if (migration.id === MEMORY_MIGRATION_ID) {
+  if (migration.id === MEMORY_MIGRATION_ID || migration.id === LAYOUT_MEMORY_MIGRATION_ID) {
     if (migration.nextStep !== 0) {
       throw new Error(`Unsupported MYRMEX v2-to-v3 migration step: ${String(migration.nextStep)}`);
     }
@@ -240,7 +275,7 @@ function transitionLegacyMigration(
 
   const base: MigratingMyrmexMemory = {
     meta: {
-      schemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+      schemaVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
       targetSchemaVersion: MEMORY_TARGET_SCHEMA_VERSION,
       revision: root.meta.revision,
       firstTick: root.meta.firstTick,
@@ -249,7 +284,7 @@ function transitionLegacyMigration(
       diagnostics: root.meta.diagnostics,
       migration: {
         id: MEMORY_MIGRATION_ID,
-        fromVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+        fromVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
         targetVersion: MEMORY_TARGET_SCHEMA_VERSION,
         nextStep: 0,
         stepCount: MEMORY_MIGRATION_STEP_COUNT,
@@ -261,7 +296,7 @@ function transitionLegacyMigration(
         lastProgressTick: tick,
       },
     },
-    ...emptyOwnerState(),
+    ...emptyIntermediateOwnerState(),
   };
   const next = fitRecognizedAuthorityState(root, base);
 
@@ -274,7 +309,10 @@ function finalizeCurrentMigration(
   root: MigratingMyrmexMemory,
   tick: number,
 ): MigrationAdvanceResult {
-  if (root.meta.migration.id !== MEMORY_MIGRATION_ID) {
+  if (
+    root.meta.migration.id !== MEMORY_MIGRATION_ID &&
+    root.meta.migration.id !== LAYOUT_MEMORY_MIGRATION_ID
+  ) {
     throw new Error("Cannot finalize current memory from a legacy migration cursor");
   }
 
@@ -300,6 +338,24 @@ function emptyPreviousOwnerState(): Record<PreviousPersistentStateOwner, Record<
     PreviousPersistentStateOwner,
     Record<string, never>
   >;
+}
+
+function emptyIntermediateOwnerState(): Record<
+  IntermediatePersistentStateOwner,
+  Record<string, never>
+> {
+  return Object.fromEntries(
+    INTERMEDIATE_PERSISTENT_STATE_OWNERS.map((owner) => [owner, {}]),
+  ) as Record<IntermediatePersistentStateOwner, Record<string, never>>;
+}
+
+function emptyLayoutPreviousOwnerState(): Record<
+  LayoutPreviousPersistentStateOwner,
+  Record<string, never>
+> {
+  return Object.fromEntries(
+    LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS.map((owner) => [owner, {}]),
+  ) as Record<LayoutPreviousPersistentStateOwner, Record<string, never>>;
 }
 
 /**
@@ -350,7 +406,7 @@ function recognizedAuthorityOwners(
   if (
     meta.schemaVersion === MEMORY_CURRENT_SCHEMA_VERSION ||
     meta.targetSchemaVersion === MEMORY_CURRENT_SCHEMA_VERSION ||
-    migrationId === MEMORY_MIGRATION_ID
+    migrationId === LAYOUT_MEMORY_MIGRATION_ID
   ) {
     return PERSISTENT_STATE_OWNERS;
   }
@@ -362,7 +418,28 @@ function recognizedAuthorityOwners(
     return PREVIOUS_PERSISTENT_STATE_OWNERS;
   }
 
+  if (meta.schemaVersion === LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION) {
+    return LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS;
+  }
+
+  if (
+    meta.schemaVersion === INTERMEDIATE_MEMORY_SCHEMA_VERSION ||
+    migrationId === MEMORY_MIGRATION_ID
+  ) {
+    return PREVIOUS_PERSISTENT_STATE_OWNERS;
+  }
+
   return [];
+}
+
+function isIntermediateMemory(value: unknown): value is IntermediateMyrmexMemory {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.meta) ||
+    value.meta.schemaVersion !== LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION
+  )
+    return false;
+  return LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS.every((owner) => isJsonObject(value[owner]));
 }
 
 function carriesMigrationId(source: unknown, id: string): boolean {

@@ -136,6 +136,28 @@ export interface ConstructionSiteSnapshot {
   readonly structureType: string;
 }
 
+export interface MineralSnapshot {
+  readonly id: string;
+  readonly mineralType: string;
+  readonly pos: PositionSnapshot;
+}
+
+export interface StructureSnapshot {
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly ownerUsername: string | null;
+  readonly ownership: "owned" | "foreign" | "unowned";
+  readonly pos: PositionSnapshot;
+  readonly structureType: string;
+}
+
+export interface TerrainSnapshot {
+  /** Exactly 2,500 y-major cells encoded as 0 plain, 1 wall, or 2 swamp. */
+  readonly cells: string;
+  readonly revision: string;
+}
+
 export interface DroppedResourceSnapshot {
   readonly amount: number;
   readonly id: string;
@@ -183,6 +205,8 @@ export interface RoomSnapshot {
   readonly energyCapacityAvailable: number;
   readonly droppedResources?: readonly DroppedResourceSnapshot[];
   readonly hostileCreeps: readonly CreepSnapshot[];
+  readonly exits?: readonly PositionSnapshot[];
+  readonly mineral?: MineralSnapshot | null;
   readonly name: string;
   readonly observedAt: number;
   readonly ownedCreeps: readonly CreepSnapshot[];
@@ -194,6 +218,9 @@ export interface RoomSnapshot {
   readonly ruins?: readonly RuinSnapshot[];
   readonly sources: readonly SourceSnapshot[];
   readonly storedStructures: readonly StoredStructureSnapshot[];
+  /** Every visible structure, including walls and ramparts, detached from live objects. */
+  readonly structures?: readonly StructureSnapshot[];
+  readonly terrain?: TerrainSnapshot;
   readonly tombstones?: readonly TombstoneSnapshot[];
   /** Absent only when an adapter cannot supply static terrain; path planning then fails closed. */
   readonly traversal?: StaticTraversalSnapshot;
@@ -253,6 +280,8 @@ export interface WorldSnapshot {
   readonly observation: SnapshotObservation;
   /** Backwards-compatible alias for observation.tick. */
   readonly observedAt: number;
+  /** Authoritative shard-global count from Game.constructionSites when observation is available. */
+  readonly ownedConstructionSiteCount: number;
   readonly ownedRooms: readonly OwnedRoomSnapshot[];
   readonly rooms: readonly RoomSnapshot[];
   readonly schemaVersion: typeof WORLD_SNAPSHOT_SCHEMA_VERSION;
@@ -270,6 +299,7 @@ export function emptyWorldSnapshot(observedAt: number, shard = "unknown"): World
       tick: observedAt,
     },
     observedAt,
+    ownedConstructionSiteCount: 0,
     ownedRooms: [],
     rooms: [],
     schemaVersion: WORLD_SNAPSHOT_SCHEMA_VERSION,

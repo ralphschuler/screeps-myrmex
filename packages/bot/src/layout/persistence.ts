@@ -1,0 +1,100 @@
+import {
+  LAYOUT_ALGORITHM_REVISION,
+  LAYOUT_OWNER_SCHEMA_VERSION,
+  MAX_LAYOUT_BLOCKERS,
+  MAX_LAYOUT_RECORDS,
+  type LayoutCommitment,
+  type LayoutRecord,
+  type LayoutsOwnerV1,
+} from "./contracts";
+
+export function emptyLayoutsOwner(): LayoutsOwnerV1 {
+  return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
+}
+export function parseLayoutsOwner(value: unknown): LayoutsOwnerV1 | null {
+  if (
+    !record(value) ||
+    value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION ||
+    !integer(value.revision) ||
+    !Array.isArray(value.records) ||
+    value.records.length > MAX_LAYOUT_RECORDS
+  )
+    return null;
+  const records: LayoutRecord[] = [];
+  for (const item of value.records) {
+    if (!validRecord(item)) return null;
+    records.push(item);
+  }
+  records.sort((a, b) => compare(a.roomName, b.roomName));
+  if (new Set(records.map((r) => r.roomName)).size !== records.length) return null;
+  return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: value.revision, records });
+}
+export function persistLayoutCommitment(
+  owner: LayoutsOwnerV1,
+  roomName: string,
+  commitment: LayoutCommitment,
+): LayoutsOwnerV1 {
+  const records = owner.records.filter((r) => r.roomName !== roomName);
+  records.push({ roomName, ...commitment });
+  records.sort((a, b) => compare(a.roomName, b.roomName));
+  return freeze({
+    schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
+    revision: owner.revision + 1,
+    records: records.slice(0, MAX_LAYOUT_RECORDS),
+  });
+}
+export function reconcileOwnedLayouts(
+  owner: LayoutsOwnerV1,
+  ownedRoomNames: readonly string[],
+): LayoutsOwnerV1 {
+  const owned = new Set(ownedRoomNames);
+  const records = owner.records.filter((r) => owned.has(r.roomName));
+  return records.length === owner.records.length
+    ? owner
+    : freeze({ ...owner, revision: owner.revision + 1, records });
+}
+function validRecord(v: unknown): v is LayoutRecord {
+  return (
+    record(v) &&
+    v.algorithmRevision === LAYOUT_ALGORITHM_REVISION &&
+    typeof v.roomName === "string" &&
+    v.roomName.length > 0 &&
+    v.roomName.length <= 16 &&
+    record(v.anchor) &&
+    v.anchor.roomName === v.roomName &&
+    coordinate(v.anchor.x) &&
+    coordinate(v.anchor.y) &&
+    integer(v.committedAt) &&
+    typeof v.fingerprint === "string" &&
+    v.fingerprint.length <= 128 &&
+    integer(v.transform) &&
+    v.transform <= 7 &&
+    Array.isArray(v.blockers) &&
+    v.blockers.length <= MAX_LAYOUT_BLOCKERS &&
+    v.blockers.every((b) => typeof b === "string" && b.length <= 32)
+  );
+}
+function record(v: unknown): v is Record<string, unknown> {
+  return (
+    v !== null &&
+    typeof v === "object" &&
+    !Array.isArray(v) &&
+    Object.getPrototypeOf(v) === Object.prototype
+  );
+}
+function integer(v: unknown): v is number {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+}
+function coordinate(v: unknown): v is number {
+  return integer(v) && v < 50;
+}
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+function freeze<T>(v: T): T {
+  if (v && typeof v === "object") {
+    for (const child of Object.values(v)) freeze(child);
+    Object.freeze(v);
+  }
+  return v;
+}

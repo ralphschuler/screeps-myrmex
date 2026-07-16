@@ -18,6 +18,7 @@ import {
   generatedSpawnCreepNameCandidates,
 } from "../src/spawn";
 import { TelemetryService } from "../src/telemetry/service";
+import { PLAIN_ROOM_TERRAIN } from "./support/room-terrain-fixture";
 
 const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
@@ -105,6 +106,7 @@ describe("tick lifecycle", () => {
       controller,
       energyAvailable: 300,
       energyCapacityAvailable: 300,
+      getTerrain: () => PLAIN_ROOM_TERRAIN,
       find: (kind: number): unknown[] =>
         kind === FIND_CREEPS_VALUE
           ? [hostile]
@@ -192,7 +194,7 @@ describe("tick lifecycle", () => {
       owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
       revision: 1,
     });
-    expect(memory.myrmex?.meta.schemaVersion).toBe(3);
+    expect(memory.myrmex?.meta.schemaVersion).toBe(4);
     expect(memory.myrmex?.contracts).toEqual({
       active: [],
       issuerFrontiers: [],
@@ -1974,6 +1976,7 @@ function economyGame(): {
       return world.spawnEnergy;
     },
     energyCapacityAvailable: 300,
+    getTerrain: () => PLAIN_ROOM_TERRAIN,
     name: "W1N1",
     find: (findType: number): unknown[] =>
       findType === FIND_CREEPS_VALUE
@@ -2091,6 +2094,7 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
     },
     energyAvailable: energy,
     energyCapacityAvailable: energyCapacity,
+    getTerrain: () => PLAIN_ROOM_TERRAIN,
     find: (findType: number): unknown[] => {
       if (findType === FIND_CREEPS_VALUE) {
         return includeCreep ? [creep] : [];

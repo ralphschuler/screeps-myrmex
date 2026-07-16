@@ -391,6 +391,7 @@ function snapshotFor(tick: number, stage: ColonyStage, reverse: boolean): WorldS
       schemaVersion: 1,
       observation: { age: 0, shard: "shard0", status: "observed", tick },
       observedAt: tick,
+      ownedConstructionSiteCount: 0,
       rooms: [],
       ownedRooms: [],
       visibility: {
@@ -480,6 +481,7 @@ function snapshotFor(tick: number, stage: ColonyStage, reverse: boolean): WorldS
     schemaVersion: 1,
     observation: { age: 0, shard: "shard0", status: "observed", tick },
     observedAt: tick,
+    ownedConstructionSiteCount: 0,
     rooms: [room],
     ownedRooms: owned ? [room as OwnedRoomSnapshot] : [],
     visibility: {

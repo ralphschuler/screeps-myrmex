@@ -125,6 +125,7 @@ function snapshot(
     schemaVersion: 1,
     observation: { age: 0, shard: "shard3", status: "observed", tick: 100 },
     observedAt: 100,
+    ownedConstructionSiteCount: 0,
     rooms: [room],
     ownedRooms: [room],
     visibility: {
