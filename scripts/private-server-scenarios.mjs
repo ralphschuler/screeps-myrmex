@@ -16,7 +16,7 @@ import {
 
 const checkout = cwd();
 const bundlePath = `${checkout}/dist/main.js`;
-const stateDirectory = ".myrmex-private-server/scenarios";
+const stateDirectory = ".myrmex-private-server";
 const identity = await privateServerBundleIdentity(bundlePath);
 const buildId = `bundle-${identity.sha256.slice("sha256:".length, "sha256:".length + 24)}`;
 const matrix = privateServerScenarioMatrix({ buildId });
