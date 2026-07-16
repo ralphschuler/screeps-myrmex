@@ -3,6 +3,16 @@ import {
   definePrivateServerManifest,
 } from "./private-server-evidence.mjs";
 
+export const PRIVATE_SERVER_CLI_FAILURE_KINDS = Object.freeze([
+  "closed",
+  "command-failed",
+  "command-limit",
+  "connection-failed",
+  "operation-rejected",
+  "response-limit",
+  "timeout",
+]);
+
 export const PRIVATE_SERVER_SCENARIOS = Object.freeze([
   {
     id: "cold-boot",
@@ -205,15 +215,16 @@ function scenarioFailureCode(error) {
       "cli-bootstrap-controlled-bot-failed",
       "cli-clear-fixture-failed",
       "cli-pause-failed",
-      "cli-pause-fixture-clear-command-failed",
       "cli-pause-fixture-clear-unacknowledged",
       "cli-pause-fixture-failed",
       "cli-pause-fixture-request-failed",
       "cli-reset-failed",
       "cli-resume-failed",
       "cli-sample-fixture-failed",
-      "cli-sample-fixture-quiescence-failed",
+      "cli-sample-fixture-quiescence-receipt-invalid",
       "cli-sample-controlled-not-ready",
+      ...cliFailureCodes("cli-pause-fixture-clear"),
+      ...cliFailureCodes("cli-sample-fixture-quiescence"),
     ].includes(error.message)
       ? error.message
       : null;
@@ -246,6 +257,10 @@ function scenarioFailureCode(error) {
   ].includes(error.message)
     ? error.message
     : null;
+}
+
+function cliFailureCodes(prefix) {
+  return PRIVATE_SERVER_CLI_FAILURE_KINDS.map((kind) => `${prefix}-${kind}`);
 }
 
 function authoringManifest(manifest) {

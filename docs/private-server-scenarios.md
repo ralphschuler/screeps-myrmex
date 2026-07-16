@@ -123,6 +123,13 @@ Evidence records the SHA-256 identity of the exact bundle indirectly through the
 Record observed artifact hashes in the issue or pull request after a credentialed run; do not add
 server state or artifacts to Git.
 
+Pause preparation and quiescence sampling preserve a fixed transport suffix when a command cannot
+complete: `connection-failed`, `closed`, `timeout`, `operation-rejected`, `response-limit`,
+`command-limit`, or `command-failed`. A syntactically complete but invalid quiescence projection is
+reported separately as `cli-sample-fixture-quiescence-receipt-invalid`. These codes contain no CLI
+text or child logs; they distinguish a missing backend connection from a storage-backed command
+rejection and from a malformed bounded receipt before any storage fallback is selected.
+
 The pinned standalone-server source is `screeps@4.3.0` (declared in the lifecycle module), and the
 command derives the exact bot source identity from the freshly built `dist/main.js` SHA-256. Record
 both that build id and the artifact hash with any live result.

@@ -210,7 +210,21 @@ describe("private-server scenario runner", () => {
     ["CliOperationFailure", "cli-pause-fixture-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-pause-fixture-request-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-sample-fixture-failed", "cli-operation-failed"],
-    ["CliOperationFailure", "cli-sample-fixture-quiescence-failed", "cli-operation-failed"],
+    [
+      "CliOperationFailure",
+      "cli-sample-fixture-quiescence-connection-failed",
+      "cli-operation-failed",
+    ],
+    [
+      "CliOperationFailure",
+      "cli-sample-fixture-quiescence-operation-rejected",
+      "cli-operation-failed",
+    ],
+    [
+      "CliOperationFailure",
+      "cli-sample-fixture-quiescence-receipt-invalid",
+      "cli-operation-failed",
+    ],
     ["StartupFailure", "cli-closed", "startup-failed"],
     ["StartupFailure", "cli-connection-failed", "startup-failed"],
     ["StartupFailure", "cli-port-unavailable", "startup-failed"],

@@ -18,10 +18,22 @@ import {
   writePrivateServerFixtureDefinition,
 } from "./lib/private-server-fixture-state.mjs";
 import {
+  PRIVATE_SERVER_CLI_FAILURE_KINDS,
   clearPrivateServerScenarioFixture,
   privateServerScenarioMatrix,
   runPrivateServerScenario,
 } from "./lib/private-server-scenario-runner.mjs";
+
+const PAUSE_FAILURE_CODES = new Set([
+  "cli-pause-failed",
+  "cli-pause-fixture-clear-unacknowledged",
+  "cli-pause-fixture-request-failed",
+  ...PRIVATE_SERVER_CLI_FAILURE_KINDS.map((kind) => `cli-pause-fixture-clear-${kind}`),
+]);
+const QUIESCENCE_FAILURE_CODES = new Set([
+  "cli-sample-fixture-quiescence-receipt-invalid",
+  ...PRIVATE_SERVER_CLI_FAILURE_KINDS.map((kind) => `cli-sample-fixture-quiescence-${kind}`),
+]);
 
 const checkout = cwd();
 const bundlePath = `${checkout}/dist/main.js`;
@@ -175,14 +187,7 @@ async function pauseFixtureBoundary(scenarioId, sequence) {
     const code = error instanceof Error ? error.message : "";
     throw namedError(
       "CliOperationFailure",
-      [
-        "cli-pause-failed",
-        "cli-pause-fixture-clear-command-failed",
-        "cli-pause-fixture-clear-unacknowledged",
-        "cli-pause-fixture-request-failed",
-      ].includes(code)
-        ? code
-        : "cli-pause-fixture-failed",
+      PAUSE_FAILURE_CODES.has(code) ? code : "cli-pause-fixture-failed",
     );
   }
   await waitForFixtureQuiescence(scenarioId, sequence);
@@ -282,8 +287,12 @@ async function waitForFixtureQuiescence(scenarioId, sequence) {
     let sample;
     try {
       sample = await samplePrivateServerFixtureQuiescence(scenarioId, sequence);
-    } catch {
-      throw namedError("CliOperationFailure", "cli-sample-fixture-quiescence-failed");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      throw namedError(
+        "CliOperationFailure",
+        QUIESCENCE_FAILURE_CODES.has(code) ? code : "cli-sample-fixture-quiescence-command-failed",
+      );
     }
     if (sample.quiescent === "rejected") {
       throw namedError("StartupFailure", "fixture-quiescence-rejected");
