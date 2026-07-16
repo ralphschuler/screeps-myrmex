@@ -41,6 +41,8 @@ describe("private-server CLI adapter", () => {
     const deployment = privateServerDeploymentCommand("module.exports.loop=()=>undefined;");
     expect(deployment).toContain('username:"myrmex-integration"');
     expect(deployment).toContain('modules:{main:"module.exports.loop=()=>undefined;"}');
+    expect(deployment).toContain("storage.db.users.update({_id:user._id},{$set:{active:10000}})");
+    expect(deployment).toContain("if(!result.modified)");
     expect(deployment).toContain("scrScriptCachedData");
     expect(() => privateServerDeploymentCommand("")).toThrow("non-empty");
   });
