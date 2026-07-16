@@ -2,12 +2,14 @@ import { spawn } from "node:child_process";
 import { cwd } from "node:process";
 import {
   deployPrivateServerBundle,
+  isTransientPrivateServerSampleError,
   preparePrivateServerFixtureTarget,
   privateServerBundleIdentity,
   runPrivateServerCli,
   samplePrivateServerBot,
   samplePrivateServerFixture,
 } from "./lib/private-server-cli.mjs";
+import { waitForPrivateServerSample } from "./lib/private-server-sample-polling.mjs";
 import { preparePrivateServerFixtureState } from "./lib/private-server-fixture-state.mjs";
 import {
   privateServerScenarioMatrix,
@@ -133,13 +135,15 @@ async function waitForFixtureTarget() {
 }
 
 async function waitForTerminalSample(manifest) {
-  const started = Date.now();
-  let previousTick = -1;
-  while (Date.now() - started < 30_000) {
-    const sample = await samplePrivateServerBot();
-    if (sample.tick > previousTick && sample.tick >= manifest.tickDeadline) return sample;
-    previousTick = sample.tick;
-    await delay(250);
+  const result = await waitForPrivateServerSample({
+    delay,
+    isTransientError: isTransientPrivateServerSampleError,
+    sample: samplePrivateServerBot,
+    tickDeadline: manifest.tickDeadline,
+  });
+  if (result.kind === "sample") return result.result;
+  if (result.kind === "not-ready") {
+    throw namedError("CliOperationFailure", "cli-sample-controlled-not-ready");
   }
   throw namedError("ScenarioTimeoutError", "Timed out waiting for the scenario tick deadline.");
 }
