@@ -342,7 +342,9 @@ function validateLease(
     return completion(lease, "work-complete");
   if (
     lease.execution.action === "repair" &&
-    (target.hits === null || target.hitsMax === null || target.hits >= target.hitsMax)
+    (target.hits === null ||
+      target.hitsMax === null ||
+      target.hits >= (lease.execution.completionHits ?? target.hitsMax))
   )
     return completion(lease, "work-complete");
   if (lease.execution.action === "upgrade-controller" && target.type !== "controller")

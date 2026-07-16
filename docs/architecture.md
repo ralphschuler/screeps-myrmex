@@ -938,6 +938,12 @@ closed to no command. Issue [#114](https://github.com/ralphschuler/screeps-myrme
 this projection; issue [#38](https://github.com/ralphschuler/screeps-myrmex/issues/38) consumes it
 as a pure producer.
 
+Repair terms may additionally declare an observed `completionHits` threshold. The threshold is
+repair-only and optional, retaining full-hit completion for older terms. ContractLedger derives
+repair retry eligibility from its bounded transition history; the agent reconciliation producer uses
+that projection for capped exponential retry after normalized executor failures. No repair queue,
+retry cache, or per-creep Memory is introduced. ADR 0011 records this boundary.
+
 Lease agents retain no task or role Memory. They correlate each proposal with contract ID and
 revision; the runtime's Reconcile phase feeds typed executor evidence through the existing contract
 request channel, while only `ContractLedger` validates and persists a transition. Current snapshot
