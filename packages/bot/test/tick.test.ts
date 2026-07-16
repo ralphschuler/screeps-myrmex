@@ -721,9 +721,10 @@ describe("tick lifecycle", () => {
     });
   });
 
-  it("contains a colony planning fault and still executes the mandatory tail", () => {
+  it("reports a repeated planner fault once, reminds, resolves once, and keeps the mandatory tail", () => {
     const observed: TickPhase[] = [];
     const memory = {} as Memory;
+    const firstLines: string[] = [];
 
     const outcome = runTick({
       game: {
@@ -740,6 +741,7 @@ describe("tick lifecycle", () => {
           throw new Error("injected planner fault");
         }
       },
+      consoleSink: { log: (line) => firstLines.push(line) },
     });
 
     expect(outcome.kernel.faults).toEqual([
@@ -756,6 +758,89 @@ describe("tick lifecycle", () => {
     expect(outcome.stateCommit).toMatchObject({ committed: true });
     expect(outcome.kernel.faults).toHaveLength(1);
     expect(outcome.telemetry).toMatchObject({ memoryStatus: "ready", ownedRooms: 0 });
+    expect(outcome.telemetry?.reporterTransitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "first", count: 1 }),
+    ]);
+    expect(outcome.reporterStatus.transitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "first", count: 1 }),
+    ]);
+    expect(firstLines).toEqual([expect.stringContaining("reporter signal kind=first")]);
+
+    const runLater = (time: number, fail: boolean, lines: string[]) =>
+      runTick({
+        game: {
+          cpu: { bucket: 8_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+          creeps: {},
+          rooms: {},
+          shard: { name: "shard3" },
+          time,
+        },
+        memory,
+        onPhase: (phase) => {
+          if (fail && phase === "plan") throw new Error("injected planner fault");
+        },
+        consoleSink: { log: (line) => lines.push(line) },
+      });
+    const reminderLines: string[] = [];
+    const resolvedLines: string[] = [];
+    const quietLines: string[] = [];
+    const reminder = runLater(53, true, reminderLines);
+    const resolved = runLater(54, false, resolvedLines);
+    const quiet = runLater(55, false, quietLines);
+
+    expect(reminder.telemetry?.reporterTransitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "reminder", count: 2 }),
+    ]);
+    expect(reminder.reporterStatus.transitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "reminder", count: 2 }),
+    ]);
+    expect(resolved.telemetry?.reporterTransitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "resolved", count: 2 }),
+    ]);
+    expect(resolved.reporterStatus.transitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "resolved", count: 2 }),
+    ]);
+    expect(quiet.telemetry?.reporterTransitions).toEqual([]);
+    expect(quiet.reporterStatus.transitions).toEqual([]);
+    expect(reminderLines).toEqual([expect.stringContaining("reporter signal kind=reminder")]);
+    expect(resolvedLines).toEqual([expect.stringContaining("reporter signal kind=resolved")]);
+    expect(quietLines).toEqual([]);
+    expect(
+      [outcome, reminder, resolved, quiet].every(({ stateCommit }) => stateCommit?.committed),
+    ).toBe(true);
+    expect(
+      [outcome, reminder, resolved, quiet]
+        .flatMap(({ reporterStatus }) => reporterStatus.transitions)
+        .filter((transition) => transition.category === "signal" && transition.kind === "resolved"),
+    ).toHaveLength(1);
+    expect(memory.myrmex).not.toHaveProperty("telemetry.reporter.events");
+    expect(JSON.stringify(memory.myrmex)).not.toContain("injected planner fault");
+  });
+
+  it("keeps gameplay receipts and commands identical when the console sink throws", () => {
+    const baselineSpawn = vi.fn(() => 0);
+    const isolatedSpawn = vi.fn(() => 0);
+    const baseline = runTick({
+      game: fundedContractGame(100, { includeCreep: false, spawnCreep: baselineSpawn }),
+      memory: {} as Memory,
+    });
+    const sink = vi.fn(() => {
+      throw new Error("console unavailable");
+    });
+    const isolated = runTick({
+      game: fundedContractGame(100, { includeCreep: false, spawnCreep: isolatedSpawn }),
+      memory: {} as Memory,
+      consoleSink: { log: sink },
+    });
+
+    expect(sink).toHaveBeenCalled();
+    expect(isolatedSpawn.mock.calls).toEqual(baselineSpawn.mock.calls);
+    expect(isolated.colony).toEqual(baseline.colony);
+    expect(isolated.contracts).toEqual(baseline.contracts);
+    expect(isolated.execution).toEqual(baseline.execution);
+    expect(isolated.movement).toEqual(baseline.movement);
+    expect(isolated.spawn).toEqual(baseline.spawn);
+    expect(isolated.stateCommit).toEqual(baseline.stateCommit);
   });
 
   it("preserves a non-empty assigned commitment when the funding view is unavailable", () => {
@@ -919,6 +1004,8 @@ describe("tick lifecycle", () => {
         expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
       ]),
     );
+    expect(outcome.telemetry?.reporterTransitions).toEqual([]);
+    expect(outcome.reporterStatus.transitions).toEqual([]);
     expect(memory.myrmex?.contracts).toEqual({});
   });
 
@@ -1092,6 +1179,7 @@ describe("tick lifecycle", () => {
     expect(outcome.kernel.faults).toEqual([
       expect.objectContaining({ systemId: "telemetry.minimum", stage: "run" }),
     ]);
+    expect(outcome.reporterStatus.transitions).toEqual([]);
   });
 
   it("continues boot with retired, duplicate, or malformed persisted kernel health", () => {
@@ -1167,6 +1255,44 @@ describe("tick lifecycle", () => {
       ]),
     );
     expect(recovered.stateCommit).toMatchObject({ committed: true });
+  });
+
+  it("keeps unpersistable mandatory-tail health out of durable reporter transitions", () => {
+    const memory = {} as Memory;
+    const gameAt = (time: number) => ({
+      cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+      creeps: {},
+      rooms: {},
+      shard: { name: "shard3" },
+      time,
+    });
+    runTick({ game: gameAt(80), memory });
+    if (memory.myrmex?.kernel === undefined) throw new Error("expected initialized kernel owner");
+    memory.myrmex.kernel.runtime = {
+      schemaVersion: 1,
+      cpuMode: "normal",
+      health: [
+        {
+          systemId: "state.reconcile",
+          consecutiveFailures: 1,
+          lastSuccessfulTick: 79,
+          nextProbeTick: null,
+        },
+        {
+          systemId: "telemetry.minimum",
+          consecutiveFailures: 1,
+          lastSuccessfulTick: 79,
+          nextProbeTick: null,
+        },
+      ],
+    };
+
+    const outcome = runTick({ game: gameAt(81), memory });
+
+    expect(outcome.kernel.faults).toEqual([]);
+    expect(outcome.telemetry?.reporterTransitions).toEqual([]);
+    expect(outcome.reporterStatus.transitions).toEqual([]);
+    expect(outcome.stateCommit).toMatchObject({ committed: true });
   });
 
   it("uses recovery admission while an interrupted migration advances", () => {

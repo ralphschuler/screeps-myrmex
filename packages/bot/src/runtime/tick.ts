@@ -748,6 +748,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 movement: context.movement,
                 snapshot: context.snapshot,
                 spawn: context.spawn,
+                reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
               });
               const telemetryTransaction = input.manager.transaction("telemetry");
               telemetryTransaction.replace(telemetry.owner);
@@ -808,6 +809,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
             movement: context.movement,
             snapshot: context.snapshot,
             spawn: context.spawn,
+            reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
           }).telemetry;
         return staged(() => {
           input.runtime.publishTelemetry(telemetry);
@@ -821,7 +823,7 @@ function telemetryBase(
   input: CompositionInput,
   context: TickContext,
   candidates: readonly SurvivalFlowCandidate[],
-): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress"> {
+): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress" | "reporterTransitions"> {
   return recordTickTelemetry({
     tick: context.tick,
     shard: context.shard,
@@ -839,6 +841,22 @@ function telemetryBase(
       context.colony,
     ),
   });
+}
+
+function reporterSignals(health: readonly SystemHealthRecord[]) {
+  return health
+    .filter(
+      ({ consecutiveFailures, systemId }) =>
+        consecutiveFailures > 0 &&
+        // A failing tail cannot commit aggregation state; its final report remains authoritative.
+        systemId !== "state.reconcile" &&
+        systemId !== "telemetry.minimum",
+    )
+    .map(({ systemId }) => ({
+      kind: "fault",
+      identity: systemId,
+      reasonCode: "unexpected-exception",
+    }));
 }
 
 function colonyDirectorSystem(

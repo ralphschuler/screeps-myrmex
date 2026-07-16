@@ -355,7 +355,29 @@ cache measurement and construction run inside the reserved `telemetry.minimum` b
 they form the tick result. `TelemetryService` owns the durable `telemetry` observer subtree and
 stages its capped hash history before the single Reconcile commit. It reads settled receipts only,
 has no gameplay readers, and exposes typed bounded status for the later ConsoleReporter rather than
-rendering text itself.
+rendering text itself. Its reporter owner retains only capped safe health metadata: opaque
+fingerprints, fixed reason codes, counters, reminder ticks, and aggregate recovery progress.
+Malformed or future reporter state is rebuilt safely. First occurrence, bounded-backoff reminder,
+single resolution, and stuck-recovery transitions leave the service only as capped tick-local
+records; the durable owner is not a replay queue.
+
+Reporter status schema v2 is the redaction boundary for those transition records. It accepts only
+the fixed signal and recovery shapes, re-opaques references, bounds scalar values, and rejects
+unknown or player-controlled fields. Reporter aggregation consumes the settled kernel health
+snapshot available at Reconcile; the final `KernelTickReport` separately supplies the current-tick
+fault projection. Zero-creep recovery is derived from fixed `bootstrapping` and `recovering` colony
+state counts as well as the tick-local Memory recovery condition. This allows normal colony recovery
+to remain observable when Memory itself is ready without making the observer a recovery authority.
+The `state.reconcile` and `telemetry.minimum` systems cannot durably update aggregation when their
+own tail boundary fails, so they remain final-report faults and are excluded from durable transition
+semantics rather than emitting misleading repeated `first` records.
+
+`ConsoleReporter` renders deterministic transition lines even when the heartbeat is not due:
+`first`, `reminder`, and recovery `stuck` use warning severity, while `resolved` is informational.
+The source defaults admit at most two immediate transitions, three total lines, and 1,536 UTF-8
+bytes per tick. Heartbeats and optional diagnostics share those line and byte ceilings. Silent mode
+and sink-failure isolation still apply, and neither projection nor rendering can change a gameplay
+receipt, reconciliation result, or command.
 
 ### 6.8 Executable composition
 
@@ -1400,7 +1422,8 @@ Structured diagnostics use bounded codes and stable opaque entity references. Th
 reaches telemetry, diagnostics, or a later console reporter; raw operational snapshots remain inside
 typed execution paths only. Free-form logs are for concise human context, not machine state. Each
 major decision includes a `reasonCode` and references its objective, contract, budget, or operation
-when applicable.
+when applicable. Reporter transition health is durable only as capped aggregation metadata;
+schema-v2 projected transitions are tick-local and are never retained as a console replay queue.
 
 General metrics MUST NOT use room names, issuers, objective IDs, reservation IDs, or request
 payloads as unbounded labels. Detailed immutable tick results may retain those stable IDs for direct

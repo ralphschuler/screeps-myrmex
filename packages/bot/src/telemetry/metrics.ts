@@ -66,6 +66,7 @@ export interface TickTelemetry {
   };
   readonly reporterPolicy: {
     readonly initialReminderDelayTicks: number;
+    readonly maximumImmediateEventsPerTick: number;
     readonly maximumFingerprints: number;
     readonly maximumReminderDelayTicks: number;
     readonly stuckRecoveryWindowTicks: number;
@@ -74,9 +75,30 @@ export interface TickTelemetry {
   readonly activity: TelemetryActivity;
   readonly status: TelemetryStatus;
   readonly recoveryProgress: RecoveryProgressTelemetry | null;
+  /** Bounded tick-local transitions; durable reporter state never becomes a replay queue. */
+  readonly reporterTransitions: readonly ReporterTransitionTelemetry[];
   /** Bounded current-tick survival-flow evidence; it is observational and never an authority. */
   readonly energyFlow: EnergyFlowTelemetry;
 }
+
+export type ReporterTransitionTelemetry =
+  | {
+      readonly category: "signal";
+      readonly kind: "first" | "reminder" | "resolved";
+      readonly fingerprint: string;
+      readonly count: number;
+      readonly reasonCode: string;
+    }
+  | {
+      readonly category: "recovery";
+      readonly kind: "stuck";
+      readonly owner: "colony";
+      readonly blockerReasonCode: string;
+      readonly blockerRef: string | null;
+      readonly lastProgressTick: number;
+      readonly reminderAtTick: number | null;
+      readonly reasonCode: "recovery-progress-unchanged";
+    };
 
 export interface RecoveryProgressTelemetry {
   readonly blockerReasonCode: string;
@@ -127,7 +149,7 @@ export interface TickTelemetryInput {
 /** Creates a bounded, immutable per-tick summary; durable history is a later telemetry policy. */
 export function recordTickTelemetry(
   input: TickTelemetryInput,
-): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress"> {
+): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress" | "reporterTransitions"> {
   return Object.freeze({
     tick: input.tick,
     shard: input.shard,
@@ -183,6 +205,7 @@ export function recordTickTelemetry(
     telemetryPolicy: Object.freeze({ ...input.config.policy.telemetry }),
     reporterPolicy: Object.freeze({
       initialReminderDelayTicks: input.config.policy.reporter.initialReminderDelayTicks,
+      maximumImmediateEventsPerTick: input.config.policy.reporter.maximumImmediateEventsPerTick,
       maximumFingerprints: input.config.policy.reporter.maximumFingerprints,
       maximumReminderDelayTicks: input.config.policy.reporter.maximumReminderDelayTicks,
       stuckRecoveryWindowTicks: input.config.policy.reporter.stuckRecoveryWindowTicks,
@@ -190,4 +213,16 @@ export function recordTickTelemetry(
     observerDiagnostic: input.config.observer.diagnostic,
     energyFlow: Object.freeze({ ...input.energyFlow }),
   });
+}
+
+/** Fixed observer-only recovery predicate shared by persistence and status projection. */
+export function recoveryObservationActive(
+  telemetry: Pick<TickTelemetry, "memoryStatus" | "colony">,
+): boolean {
+  return (
+    telemetry.memoryStatus === "recovery" ||
+    telemetry.colony.states.some(
+      ({ id, count }) => (id === "bootstrapping" || id === "recovering") && count > 0,
+    )
+  );
 }

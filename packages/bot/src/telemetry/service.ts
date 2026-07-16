@@ -8,10 +8,21 @@ import type { SpawnRuntimeResult } from "../spawn";
 import type { JsonObject } from "../state/schema";
 import type { WorldSnapshot } from "../world/snapshot";
 import { opaqueId, safeCode } from "../security";
-import { advanceRecoveryProgress, advanceReporterState } from "./reporter-state";
-import type { TickTelemetry } from "./metrics";
+import {
+  advanceRecoveryProgress,
+  advanceReporterState,
+  type ReporterSignal,
+} from "./reporter-state";
+import {
+  recoveryObservationActive,
+  type ReporterTransitionTelemetry,
+  type TickTelemetry,
+} from "./metrics";
 
-type TickTelemetryBase = Omit<TickTelemetry, "activity" | "status" | "recoveryProgress">;
+type TickTelemetryBase = Omit<
+  TickTelemetry,
+  "activity" | "status" | "recoveryProgress" | "reporterTransitions"
+>;
 
 export const TELEMETRY_OWNER_SCHEMA_VERSION = 2 as const;
 
@@ -38,6 +49,8 @@ export interface TelemetryServiceInput {
   readonly movement: MovementRuntimeResult;
   readonly snapshot: WorldSnapshot;
   readonly spawn: SpawnRuntimeResult;
+  /** Fixed tick-local signals derived from settled runtime health; never raw error payloads. */
+  readonly reporterSignals: readonly ReporterSignal[];
 }
 
 export interface TelemetryServiceResult {
@@ -69,10 +82,11 @@ export class TelemetryService {
       activity: activity(input),
       status,
     };
-    const persisted = writeOwner(owner, telemetryWithoutRecovery, details);
+    const persisted = writeOwner(owner, telemetryWithoutRecovery, details, input.reporterSignals);
     const telemetry = deepFreeze({
       ...telemetryWithoutRecovery,
       recoveryProgress: persisted.recoveryProgress,
+      reporterTransitions: persisted.reporterTransitions,
     });
     return deepFreeze({
       owner: persisted.owner,
@@ -123,9 +137,14 @@ function readOwner(value: unknown): ParsedOwner {
 
 function writeOwner(
   owner: ParsedOwner,
-  telemetry: Omit<TickTelemetry, "recoveryProgress">,
+  telemetry: Omit<TickTelemetry, "recoveryProgress" | "reporterTransitions">,
   details: readonly TelemetryDetail[],
-): { readonly owner: JsonObject; readonly recoveryProgress: TickTelemetry["recoveryProgress"] } {
+  reporterSignals: readonly ReporterSignal[],
+): {
+  readonly owner: JsonObject;
+  readonly recoveryProgress: TickTelemetry["recoveryProgress"];
+  readonly reporterTransitions: TickTelemetry["reporterTransitions"];
+} {
   const policy = telemetry.telemetryPolicy;
   const appended = [...owner.history, { tick: telemetry.tick, hash: telemetry.status.hash }];
   const bounded = appended.slice(-policy.maximumHistoryEntries);
@@ -135,11 +154,14 @@ function writeOwner(
   const reporter = advanceReporterState(
     reporterOwner.entries,
     telemetry.tick,
-    details.map((detail) => ({
-      kind: detail.domain,
-      identity: detail.entityId,
-      reasonCode: detail.reason,
-    })),
+    [
+      ...details.map((detail) => ({
+        kind: detail.domain,
+        identity: detail.entityId,
+        reasonCode: detail.reason,
+      })),
+      ...reporterSignals,
+    ],
     {
       maximumFingerprints: Math.min(24, telemetry.reporterPolicy.maximumFingerprints),
       initialReminderDelayTicks: telemetry.reporterPolicy.initialReminderDelayTicks,
@@ -150,14 +172,14 @@ function writeOwner(
   const recovery = advanceRecoveryProgress(
     reporterOwner.recovery,
     {
-      active: telemetry.memoryStatus === "recovery",
+      active: recoveryObservationActive(telemetry),
       blockerRef: blocker?.entityId ?? null,
       blockerReasonCode: blocker?.reason ?? "none",
       delivered: telemetry.energyFlow.delivered,
       harvested: telemetry.energyFlow.harvested,
       spawnDemand: telemetry.activity.spawnDemand,
       spawnScheduled: telemetry.activity.spawnScheduled,
-      status: telemetry.colony.status,
+      status: recoveryStateCode(telemetry),
       tick: telemetry.tick,
       unmet: telemetry.energyFlow.unmet,
     },
@@ -189,7 +211,37 @@ function writeOwner(
     history.shift();
     result.droppedHistory += 1;
   }
-  return { owner: result, recoveryProgress: recovery.status };
+  const transitions: ReporterTransitionTelemetry[] = [];
+  if (recovery.event !== null) {
+    transitions.push({
+      category: "recovery",
+      kind: "stuck",
+      owner: recovery.event.owner,
+      blockerReasonCode: recovery.event.blockerReasonCode,
+      blockerRef: recovery.event.blockerRef,
+      lastProgressTick: recovery.event.lastProgressTick,
+      reminderAtTick: recovery.event.reminderAtTick,
+      reasonCode: recovery.event.reasonCode,
+    });
+  }
+  transitions.push(
+    ...[...reporter.events]
+      .sort(compareReporterEvents)
+      .map((event): ReporterTransitionTelemetry => ({
+        category: "signal",
+        kind: event.kind,
+        fingerprint: event.fingerprint,
+        count: event.count,
+        reasonCode: event.reasonCode,
+      })),
+  );
+  return {
+    owner: result,
+    recoveryProgress: recovery.status,
+    reporterTransitions: Object.freeze(
+      transitions.slice(0, telemetry.reporterPolicy.maximumImmediateEventsPerTick),
+    ),
+  };
 }
 
 function reporterSections(value: unknown): {
@@ -200,10 +252,29 @@ function reporterSections(value: unknown): {
     return { entries: undefined, recovery: undefined };
   }
   const row = value as Record<string, unknown>;
+  if (row.schemaVersion !== 1 && row.schemaVersion !== 2) {
+    return { entries: undefined, recovery: undefined };
+  }
   return {
     entries: row.schemaVersion === 2 ? row.entries : row,
     recovery: row.schemaVersion === 2 ? row.recovery : undefined,
   };
+}
+
+function compareReporterEvents(
+  left: { readonly kind: "first" | "reminder" | "resolved"; readonly fingerprint: string },
+  right: { readonly kind: "first" | "reminder" | "resolved"; readonly fingerprint: string },
+): number {
+  const priority = { resolved: 0, first: 1, reminder: 2 } as const;
+  return (
+    priority[left.kind] - priority[right.kind] || left.fingerprint.localeCompare(right.fingerprint)
+  );
+}
+
+function recoveryStateCode(telemetry: Pick<TickTelemetry, "colony">): string {
+  const count = (id: "bootstrapping" | "recovering") =>
+    telemetry.colony.states.find((state) => state.id === id)?.count ?? 0;
+  return `bootstrapping-${String(count("bootstrapping"))}-recovering-${String(count("recovering"))}`;
 }
 
 function activity(input: TelemetryServiceInput): TickTelemetry["activity"] {

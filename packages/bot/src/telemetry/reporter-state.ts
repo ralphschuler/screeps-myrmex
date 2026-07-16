@@ -7,6 +7,12 @@ export interface ReporterEvent {
   readonly reasonCode: string;
 }
 
+export interface ReporterSignal {
+  readonly kind: string;
+  readonly identity: string;
+  readonly reasonCode: string;
+}
+
 export interface ReporterStatePolicy {
   readonly maximumFingerprints: number;
   readonly initialReminderDelayTicks: number;
@@ -167,11 +173,7 @@ interface Entry {
 export function advanceReporterState(
   owner: unknown,
   tick: number,
-  signals: readonly {
-    readonly kind: string;
-    readonly identity: string;
-    readonly reasonCode: string;
-  }[],
+  signals: readonly ReporterSignal[],
   policy: ReporterStatePolicy,
 ): { readonly owner: unknown; readonly events: readonly ReporterEvent[] } {
   const previous = read(owner);
@@ -241,30 +243,45 @@ export function advanceReporterState(
   const entries = next
     .sort((a, b) => a.lastTick - b.lastTick || a.fingerprint.localeCompare(b.fingerprint))
     .slice(-policy.maximumFingerprints);
-  return { owner: { schemaVersion: 1, entries }, events };
+  const retained = new Set(entries.map(({ fingerprint }) => fingerprint));
+  return {
+    owner: { schemaVersion: 1, entries },
+    events: events.filter(
+      ({ fingerprint, kind }) => kind === "resolved" || retained.has(fingerprint),
+    ),
+  };
 }
 
 function read(value: unknown): Map<string, Entry> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return new Map();
-  const entries = (value as Record<string, unknown>).entries;
+  const root = value as Record<string, unknown>;
+  if (root.schemaVersion !== 1) return new Map();
+  const entries = root.entries;
   if (!Array.isArray(entries)) return new Map();
   return new Map(
     entries
       .flatMap((entry) => {
         if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
         const row = entry as Record<string, unknown>;
-        return typeof row.fingerprint === "string" &&
+        return isOpaqueReference(row.fingerprint) &&
           typeof row.count === "number" &&
+          Number.isSafeInteger(row.count) &&
+          row.count >= 1 &&
           typeof row.lastTick === "number" &&
+          Number.isSafeInteger(row.lastTick) &&
+          row.lastTick >= 0 &&
           typeof row.nextReminderTick === "number" &&
-          typeof row.reasonCode === "string"
+          Number.isSafeInteger(row.nextReminderTick) &&
+          row.nextReminderTick >= 0 &&
+          typeof row.reasonCode === "string" &&
+          safeCode(row.reasonCode) === row.reasonCode
           ? [
               {
-                fingerprint: row.fingerprint.slice(0, 96),
-                count: Math.max(1, row.count),
-                lastTick: Math.max(0, row.lastTick),
-                nextReminderTick: Math.max(0, row.nextReminderTick),
-                reasonCode: safeCode(row.reasonCode),
+                fingerprint: row.fingerprint,
+                count: row.count,
+                lastTick: row.lastTick,
+                nextReminderTick: row.nextReminderTick,
+                reasonCode: row.reasonCode,
               },
             ]
           : [];
@@ -287,24 +304,34 @@ function readRecovery(value: unknown): RecoveryOwner | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
   return typeof row.signature === "string" &&
+    row.signature.length <= 256 &&
     typeof row.lastProgressTick === "number" &&
     Number.isSafeInteger(row.lastProgressTick) &&
+    row.lastProgressTick >= 0 &&
     typeof row.reminderCount === "number" &&
     Number.isSafeInteger(row.reminderCount) &&
-    (typeof row.reminderAtTick === "number" || row.reminderAtTick === null) &&
-    (typeof row.stuckReportedAtTick === "number" || row.stuckReportedAtTick === null) &&
-    (typeof row.blockerRef === "string" || row.blockerRef === null) &&
-    typeof row.blockerReasonCode === "string"
+    row.reminderCount >= 0 &&
+    isOptionalTick(row.reminderAtTick) &&
+    isOptionalTick(row.stuckReportedAtTick) &&
+    (isOpaqueReference(row.blockerRef) || row.blockerRef === null) &&
+    typeof row.blockerReasonCode === "string" &&
+    safeCode(row.blockerReasonCode) === row.blockerReasonCode
     ? {
-        signature: row.signature.slice(0, 256),
-        lastProgressTick: Math.max(0, row.lastProgressTick),
-        reminderCount: Math.max(0, row.reminderCount),
-        reminderAtTick:
-          typeof row.reminderAtTick === "number" ? Math.max(0, row.reminderAtTick) : null,
-        stuckReportedAtTick:
-          typeof row.stuckReportedAtTick === "number" ? Math.max(0, row.stuckReportedAtTick) : null,
-        blockerRef: typeof row.blockerRef === "string" ? row.blockerRef.slice(0, 96) : null,
-        blockerReasonCode: safeCode(row.blockerReasonCode),
+        signature: row.signature,
+        lastProgressTick: row.lastProgressTick,
+        reminderCount: row.reminderCount,
+        reminderAtTick: row.reminderAtTick,
+        stuckReportedAtTick: row.stuckReportedAtTick,
+        blockerRef: row.blockerRef,
+        blockerReasonCode: row.blockerReasonCode,
       }
     : null;
+}
+
+function isOptionalTick(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isSafeInteger(value) && value >= 0);
+}
+
+function isOpaqueReference(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z][a-z0-9-]{0,31}:[0-9a-f]{8}$/.test(value);
 }
