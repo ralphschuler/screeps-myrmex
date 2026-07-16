@@ -15,7 +15,6 @@ import {
 import { waitForPrivateServerSample } from "./lib/private-server-sample-polling.mjs";
 import {
   clearPrivateServerFixtureState,
-  preparePrivateServerFixtureModuleState,
   writePrivateServerFixtureDefinition,
 } from "./lib/private-server-fixture-state.mjs";
 import {
@@ -53,13 +52,17 @@ function scenarioDriver(options) {
   let fixtureTarget = null;
   let pauseSequence = 0;
   let started = false;
+  let startupCleanupFailure = null;
   return {
     async start(manifest) {
-      await preparePrivateServerFixtureModuleState({
-        checkout: options.checkout,
-        stateDirectory: options.stateDirectory,
-      });
-      await lifecycle("start", options.stateDirectory, manifest.id);
+      try {
+        await lifecycle("start", options.stateDirectory, manifest.id);
+      } catch (error) {
+        if (error instanceof Error && error.name === "CleanupFailure") {
+          startupCleanupFailure = error;
+        }
+        throw error;
+      }
       started = true;
     },
     async pause(manifest) {
@@ -144,6 +147,12 @@ function scenarioDriver(options) {
       }
     },
     async stop() {
+      if (startupCleanupFailure !== null) {
+        const failure = startupCleanupFailure;
+        startupCleanupFailure = null;
+        throw failure;
+      }
+      if (!started) return;
       await lifecycle("stop", options.stateDirectory);
       started = false;
     },
@@ -287,8 +296,11 @@ async function lifecycle(command, state, fixtureScenarioId = null) {
   const args = ["scripts/private-server.mjs", command, "--state-directory", state];
   if (fixtureScenarioId !== null) args.push("--fixture-scenario", fixtureScenarioId);
   const record = await execute(process.execPath, args);
-  if (!new Set(["started", "already-running", "stopped"]).has(record.kind)) {
-    throw namedError("StartupFailure", safeLifecycleReason(record));
+  if (!new Set(["started", "stopped"]).has(record.kind)) {
+    throw namedError(
+      record.kind === "cleanup-failed" ? "CleanupFailure" : "StartupFailure",
+      safeLifecycleReason(record),
+    );
   }
 }
 
@@ -316,18 +328,28 @@ function safeLifecycleReason(record) {
   if (typeof record.reason !== "string") return "health-timeout";
   return [
     "asset-directory-unavailable",
+    "cli-closed",
+    "cli-connection-failed",
+    "cli-port-unavailable",
+    "cli-timeout",
     "configuration-file-unavailable",
+    "existing-process-unverified",
     "health-timeout",
     "fixture-definition-rejected",
     "fixture-module-state-invalid",
     "fixture-ready-timeout",
     "fixture-quiescence-rejected",
     "fixture-quiescence-timeout",
+    "game-port-unavailable",
     "launcher-exited",
     "port-unavailable",
+    "readiness-receipt-invalid",
     "required-launch-option-missing",
     "shutdown-timeout",
     "steam-authentication",
+    "storage-not-ready",
+    "storage-readiness-rejected",
+    "unsupported-node-runtime",
   ].includes(record.reason)
     ? record.reason
     : "launcher-exited";

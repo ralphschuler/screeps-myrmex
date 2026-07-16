@@ -6,35 +6,54 @@ uploaded in its place.
 
 ## Command
 
-Provision the ignored local server state with a runtime-only Steam key, then run the matrix:
+Build the exact bundle with the repository's Node 24 toolchain. Then select Node 22.22.1, install
+the pinned private server without credentials, provision the ignored state with a runtime-only Steam
+key, and invoke the already-built matrix directly:
 
 ```bash
-SCREEPS_STEAM_API_KEY=... npm run private-server -- provision
-npm run private-server:scenarios
+npm ci
+npm run build
+node scripts/private-server.mjs install
+SCREEPS_STEAM_API_KEY=... node scripts/private-server.mjs provision
+SCREEPS_STEAM_API_KEY=... node scripts/private-server-scenarios.mjs
 ```
+
+`private-server:scenarios:run` is an explicitly run-only convenience script for the final Node 22
+step. It does not rebuild the bundle. There is deliberately no single npm command that both builds
+and runs the matrix, because that would select one Node runtime for two incompatible toolchain
+boundaries.
 
 Run one named scenario while investigating a bounded failure:
 
 ```bash
-npm run private-server:scenarios -- --scenario hostile-pressure
+SCREEPS_STEAM_API_KEY=... node scripts/private-server-scenarios.mjs --scenario hostile-pressure
 ```
 
 The GitHub Actions workflow **Private-server Phase 1 scenarios** is manual and restricted to `main`.
-It injects the repository `SCREEPS_STEAM_API_KEY` only into provisioning and scenario steps, then
-stops the ignored state even on failure. It uploads no private-server state or artifacts; its safe
-job output is the scenario id, exact bundle build id, artifact hash, and failure kind. When a
-source-controlled CLI operation fails, output also includes only its fixed operation code; the CLI
-transcript remains private.
+It builds on Node 24, switches to exact Node 22.22.1 for the private server, and runs installation
+without the repository `SCREEPS_STEAM_API_KEY`. The key is scoped only to provisioning and scenario
+wrapper steps, and direct MYRMEX lifecycle children receive a sanitized environment before the
+documented backend-only upstream handoff. The 45-minute job bound accommodates runtime installation
+and the five-row matrix while remaining finite. The workflow then stops the ignored state even on
+failure. It uploads no private-server state or artifacts; its safe job output is the scenario id,
+exact bundle build id, artifact hash, and failure kind. When a source-controlled CLI operation
+fails, output also includes only its fixed operation code; the CLI transcript remains private.
 
-The command builds first and prepares only the generated `mods.json` mapping. It starts one server
-run with the committed fixture module inert and waits for an acknowledged idle paused main-loop
-boundary before reset. Because `resetAllData()` restores `mainLoopPaused=0`, the runner immediately
-establishes a fresh acknowledged pause boundary before it creates the controlled account and deploys
-the exact bundle. It resumes long enough to obtain one controlled worker, requests another bounded
-idle pause boundary, atomically publishes the ignored definition, waits for both engine processes to
-acknowledge it, and resumes without a server restart. It emits only scenario id, artifact hash, and
-failure kind. A non-zero exit is required for assertion, timeout, bot-exception, startup, or cleanup
-failure.
+Before any world or scenario-definition mutation, start proves the launcher process, game listener,
+CLI listener, and a sequential read-only game-time/user-count storage receipt. The fixed inert mod
+mapping is prepared only after a non-mutating path/PID preflight. A failed stage remains startup
+evidence with one fixed readiness code; the runner does not attempt reset, pause, bootstrap,
+deployment, or fixture cleanup against a server that never became actively ready.
+
+The command uses the already-built bundle and prepares only the generated `mods.json` mapping. It
+starts one server run with the committed fixture module inert and waits for an acknowledged idle
+paused main-loop boundary before reset. Because `resetAllData()` restores `mainLoopPaused=0`, the
+runner immediately establishes a fresh acknowledged pause boundary before it creates the controlled
+account and deploys the exact bundle. It resumes long enough to obtain one controlled worker,
+requests another bounded idle pause boundary, atomically publishes the ignored definition, waits for
+both engine processes to acknowledge it, and resumes without a server restart. It emits only
+scenario id, artifact hash, and failure kind. A non-zero exit is required for assertion, timeout,
+bot-exception, startup, or cleanup failure.
 
 ## Fixture publication and cleanup
 

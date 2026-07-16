@@ -12,6 +12,7 @@ const OPERATIONS = new Set([
   "bootstrap-controlled-bot",
   "clear-fixture",
   "pause",
+  "probe-readiness",
   "prepare-fixture-pause",
   "prepare-fixture-target",
   "request-fixture-pause",
@@ -34,6 +35,10 @@ export function privateServerCliCommand(operation) {
   if (kind === "pause" || kind === "resume") {
     exactOperation(operation, ["kind"]);
     return `system.${kind === "pause" ? "pauseSimulation" : "resumeSimulation"}()`;
+  }
+  if (kind === "probe-readiness") {
+    exactOperation(operation, ["kind"]);
+    return "storage.env.get(storage.env.keys.GAMETIME).then(gameTime=>storage.db.users.count().then(users=>JSON.stringify({ready:gameTime!=null&&gameTime!==''&&Number.isSafeInteger(+gameTime)&&+gameTime>=0&&Number.isSafeInteger(users)&&users>=0})))";
   }
   if (kind === "prepare-fixture-pause") {
     exactOperation(operation, ["kind", "scenarioId"]);
@@ -125,6 +130,27 @@ export function privateServerCliCommand(operation) {
 export async function runPrivateServerCli(operation, options = {}) {
   const command = privateServerCliCommand(operation);
   return opaqueResult(await runPrivateServerCommand(command, options));
+}
+
+/** Proves that the loopback CLI can complete read-only env and database operations. */
+export async function probePrivateServerReadiness(options = {}) {
+  let result;
+  try {
+    result = await runPrivateServerCommand(
+      privateServerCliCommand({ kind: "probe-readiness" }),
+      options,
+    );
+  } catch (error) {
+    return Object.freeze({ ready: false, reason: readinessFailureCode(error) });
+  }
+  const row = parseJson(result);
+  if (row === null || !exactKeys(row, ["ready"]) || typeof row.ready !== "boolean") {
+    return Object.freeze({ ready: false, reason: "readiness-receipt-invalid" });
+  }
+  return Object.freeze({
+    ready: row.ready,
+    reason: row.ready ? null : "storage-not-ready",
+  });
 }
 
 /** Creates the controlled test bot and returns its transient, validated fixture coordinates. */
@@ -457,6 +483,30 @@ function parseJson(value) {
   } catch {
     return null;
   }
+}
+
+function readinessFailureCode(error) {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    new Set([
+      "ECONNREFUSED",
+      "ECONNRESET",
+      "EHOSTUNREACH",
+      "ENETUNREACH",
+      "EPIPE",
+      "ETIMEDOUT",
+    ]).has(error.code)
+  ) {
+    return "cli-connection-failed";
+  }
+  if (!(error instanceof Error)) return "storage-readiness-rejected";
+  if (error.message === "Private-server CLI timed out.") return "cli-timeout";
+  if (error.message === "Private-server CLI closed before a result.") return "cli-closed";
+  if (error.message === "Private-server CLI response exceeds the byte limit.") {
+    return "readiness-receipt-invalid";
+  }
+  return "storage-readiness-rejected";
 }
 
 function exactOperation(value, keys) {

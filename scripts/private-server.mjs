@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { cwd, env } from "node:process";
+import { cwd, env, execPath, versions } from "node:process";
+import { probePrivateServerReadiness } from "./lib/private-server-cli.mjs";
 import {
   PRIVATE_SERVER_LIMITS,
   classifyLauncherFailure,
@@ -10,15 +11,26 @@ import {
   lifecycleRecord,
   parseLifecycleArguments,
   prepareLauncherLog,
+  privateServerChildEnvironment,
+  privateServerLauncherInvocation,
+  privateServerLifecycleSucceeded,
+  privateServerNodeSupported,
+  privateServerNpmInvocation,
   privateServerProvisioningKey,
+  privateServerReadinessObservation,
+  privateServerStartPreflight,
   readPid,
   redactLifecycleError,
   scrubProvisionedConfig,
-  waitForHealth,
+  waitForPrivateServerReadiness,
   waitForShutdown,
   writePid,
 } from "./lib/private-server-lifecycle.mjs";
-import { validatePrivateServerFixtureModuleState } from "./lib/private-server-fixture-state.mjs";
+import {
+  preparePrivateServerFixtureModuleState,
+  validatePrivateServerFixtureModuleState,
+  validatePrivateServerFixtureStatePath,
+} from "./lib/private-server-fixture-state.mjs";
 
 const options = parseLifecycleArguments(process.argv.slice(2));
 const paths = lifecyclePaths(cwd(), options.stateDirectory);
@@ -30,15 +42,7 @@ const fixtureDefinition =
 try {
   const record = await run(options.command);
   process.stdout.write(`${JSON.stringify(record)}\n`);
-  if (
-    record.kind !== "installed" &&
-    record.kind !== "initialized" &&
-    record.kind !== "provisioned" &&
-    record.kind !== "healthy" &&
-    record.kind !== "stopped"
-  ) {
-    process.exitCode = 1;
-  }
+  if (!privateServerLifecycleSucceeded(record.kind)) process.exitCode = 1;
 } catch (error) {
   process.stdout.write(
     `${JSON.stringify(lifecycleRecord("lifecycle-failure", { reason: redactLifecycleError(error) }))}\n`,
@@ -47,12 +51,15 @@ try {
 }
 
 async function run(command) {
+  if (command !== "start" && command !== "stop" && !privateServerNodeSupported(versions.node)) {
+    return lifecycleRecord("startup-failed", { reason: "unsupported-node-runtime" });
+  }
   switch (command) {
     case "install":
-      return execute("npm", ["ci", "--prefix", runtimeDirectory], "installed");
+      return executeNpm(["ci", "--prefix", runtimeDirectory], "installed");
     case "init":
       await mkdir(paths.root, { recursive: true });
-      return execute(launcherExecutable, ["init"], "initialized", paths.root);
+      return executeLauncher(["init"], "initialized", paths.root);
     case "provision":
       return provision();
     case "start":
@@ -68,7 +75,8 @@ async function provision() {
   const key = privateServerProvisioningKey(env.SCREEPS_STEAM_API_KEY);
   if (key === null) return lifecycleRecord("provisioning-required");
   await mkdir(paths.root, { recursive: true });
-  const result = await executeWithInput(launcherExecutable, ["init"], key, paths.root);
+  const launcher = privateServerLauncherInvocation(execPath, launcherExecutable, ["init"]);
+  const result = await executeWithInput(launcher.command, launcher.args, key, paths.root);
   if (result.kind !== "initialized") return result;
   const configPath = `${paths.root}/.screepsrc`;
   await writeFile(configPath, scrubProvisionedConfig(await readFile(configPath, "utf8")), "utf8");
@@ -76,10 +84,9 @@ async function provision() {
 }
 
 async function start() {
-  if (await readPid(paths)) return lifecycleRecord("already-running");
   if (fixtureDefinition !== null) {
     try {
-      await validatePrivateServerFixtureModuleState({
+      await validatePrivateServerFixtureStatePath({
         checkout: cwd(),
         stateDirectory: options.stateDirectory,
       });
@@ -87,59 +94,98 @@ async function start() {
       return lifecycleRecord("startup-failed", { reason: "fixture-module-state-invalid" });
     }
   }
+  if (!privateServerNodeSupported(versions.node)) {
+    return lifecycleRecord("startup-failed", { reason: "unsupported-node-runtime" });
+  }
+  const existingPid = await readPid(paths);
+  let preflight;
+  try {
+    preflight = await privateServerStartPreflight({
+      discardPid: () => clearPid(paths),
+      existingPid,
+      fixtureScenarioId: options.fixtureScenarioId,
+      prepareFixture: async () => {
+        await preparePrivateServerFixtureModuleState({
+          checkout: cwd(),
+          stateDirectory: options.stateDirectory,
+        });
+        await validatePrivateServerFixtureModuleState({
+          checkout: cwd(),
+          stateDirectory: options.stateDirectory,
+        });
+      },
+      probeExisting: () =>
+        health({
+          ...PRIVATE_SERVER_LIMITS,
+          healthAttempts: 1,
+          healthIntervalMs: 0,
+        }),
+    });
+  } catch {
+    return lifecycleRecord("startup-failed", { reason: "fixture-module-state-invalid" });
+  }
+  if (preflight.kind === "reject") {
+    return lifecycleRecord("startup-failed", {
+      reason: "existing-process-unverified",
+      timeoutMs: PRIVATE_SERVER_LIMITS.startupTimeoutMs,
+    });
+  }
   await mkdir(paths.root, { recursive: true });
   await prepareLauncherLog(paths);
   const log = await open(paths.log, "a");
-  const child = spawn(
-    launcherExecutable,
-    [
-      "start",
-      "--db",
-      `${paths.root}/db.json`,
-      "--logdir",
-      paths.root,
-      "--assetdir",
-      `${paths.root}/assets`,
-      "--host",
-      "127.0.0.1",
-      "--port",
-      "21025",
-      "--cli_host",
-      "127.0.0.1",
-      "--cli_port",
-      "21026",
-      "--runner_threads",
-      "1",
-      "--processors_cnt",
-      "1",
-      ...(fixtureDefinition === null ? [] : ["--modfile", `${paths.root}/fixtures/mods.json`]),
-      ...(privateServerProvisioningKey(env.SCREEPS_STEAM_API_KEY) === null
-        ? []
-        : ["--steam_api_key", env.SCREEPS_STEAM_API_KEY]),
-    ],
-    {
-      cwd: paths.root,
-      detached: true,
-      env:
-        fixtureDefinition === null
-          ? undefined
-          : {
-              ...env,
-              MYRMEX_PRIVATE_SERVER_FIXTURE: fixtureDefinition,
-              MYRMEX_PRIVATE_SERVER_FIXTURE_ID: options.fixtureScenarioId,
-            },
-      stdio: ["ignore", log.fd, log.fd],
-    },
+  const provisioningKey = privateServerProvisioningKey(env.SCREEPS_STEAM_API_KEY);
+  const childEnvironment = privateServerChildEnvironment(
+    env,
+    fixtureDefinition === null
+      ? {}
+      : {
+          MYRMEX_PRIVATE_SERVER_FIXTURE: fixtureDefinition,
+          MYRMEX_PRIVATE_SERVER_FIXTURE_ID: options.fixtureScenarioId,
+        },
   );
+  const launcher = privateServerLauncherInvocation(execPath, launcherExecutable, [
+    "start",
+    "--db",
+    `${paths.root}/db.json`,
+    "--logdir",
+    paths.root,
+    "--assetdir",
+    `${paths.root}/assets`,
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "21025",
+    "--cli_host",
+    "127.0.0.1",
+    "--cli_port",
+    "21026",
+    "--runner_threads",
+    "1",
+    "--processors_cnt",
+    "1",
+    ...(fixtureDefinition === null ? [] : ["--modfile", `${paths.root}/fixtures/mods.json`]),
+    ...(provisioningKey === null ? [] : ["--steam_api_key", provisioningKey]),
+  ]);
+  const child = spawn(launcher.command, launcher.args, {
+    cwd: paths.root,
+    detached: true,
+    env: childEnvironment,
+    stdio: ["ignore", log.fd, log.fd],
+  });
   await log.close();
   child.unref();
   if (child.pid === undefined) return lifecycleRecord("startup-failed");
   await writePid(paths, child.pid);
   const result = await health();
   if (result.kind === "healthy") return lifecycleRecord("started", { pid: child.pid });
-  await stop();
+  const readinessReason =
+    result.reason === "launcher-exited"
+      ? classifyLauncherFailure(await readLauncherLog())
+      : result.reason;
+  const cleanup = await stop();
+  if (cleanup.kind !== "stopped") return cleanup;
   return lifecycleRecord("startup-failed", {
-    reason: classifyLauncherFailure(await readLauncherLog()),
+    reason: readinessReason ?? classifyLauncherFailure(await readLauncherLog()),
     timeoutMs: PRIVATE_SERVER_LIMITS.startupTimeoutMs,
   });
 }
@@ -154,7 +200,11 @@ async function readLauncherLog() {
 
 async function executeWithInput(command, args, input, commandCwd) {
   return new Promise((resolveRecord) => {
-    const child = spawn(command, args, { cwd: commandCwd, stdio: ["pipe", "ignore", "ignore"] });
+    const child = spawn(command, args, {
+      cwd: commandCwd,
+      env: privateServerChildEnvironment(env),
+      stdio: ["pipe", "ignore", "ignore"],
+    });
     child.once("error", (error) =>
       resolveRecord(lifecycleRecord("startup-failed", { reason: redactLifecycleError(error) })),
     );
@@ -167,10 +217,19 @@ async function executeWithInput(command, args, input, commandCwd) {
   });
 }
 
-async function health() {
+async function health(limits = PRIVATE_SERVER_LIMITS) {
   const pid = await readPid(paths);
   if (pid === null) return lifecycleRecord("not-running");
-  return waitForHealth(() => tcpProbe(21025));
+  return waitForPrivateServerReadiness(
+    () =>
+      privateServerReadinessObservation({
+        cliPort: () => tcpProbe(21026, limits.healthTcpProbeTimeoutMs),
+        gamePort: () => tcpProbe(21025, limits.healthTcpProbeTimeoutMs),
+        processStopped: () => processGroupStopped(pid),
+        storage: () => probePrivateServerReadiness({ timeoutMs: limits.healthCliProbeTimeoutMs }),
+      }),
+    limits,
+  );
 }
 
 async function stop() {
@@ -203,7 +262,11 @@ function processGroupStopped(pid) {
 
 async function execute(command, args, successKind, commandCwd = cwd()) {
   return new Promise((resolveRecord) => {
-    const child = spawn(command, args, { cwd: commandCwd, stdio: "ignore" });
+    const child = spawn(command, args, {
+      cwd: commandCwd,
+      env: privateServerChildEnvironment(env),
+      stdio: "ignore",
+    });
     child.once("error", (error) =>
       resolveRecord(lifecycleRecord("startup-failed", { reason: redactLifecycleError(error) })),
     );
@@ -215,10 +278,20 @@ async function execute(command, args, successKind, commandCwd = cwd()) {
   });
 }
 
-function tcpProbe(port) {
+function executeLauncher(args, successKind, commandCwd) {
+  const launcher = privateServerLauncherInvocation(execPath, launcherExecutable, args);
+  return execute(launcher.command, launcher.args, successKind, commandCwd);
+}
+
+function executeNpm(args, successKind) {
+  const npm = privateServerNpmInvocation(execPath, args);
+  return execute(npm.command, npm.args, successKind);
+}
+
+function tcpProbe(port, timeoutMs) {
   return new Promise((resolveProbe) => {
     const socket = createConnection({ host: "127.0.0.1", port });
-    socket.setTimeout(250);
+    socket.setTimeout(timeoutMs);
     socket.once("connect", () => {
       socket.destroy();
       resolveProbe(true);

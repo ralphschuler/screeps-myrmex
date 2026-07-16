@@ -7,6 +7,7 @@ import {
   preparePrivateServerFixtureModuleState,
   PRIVATE_SERVER_FIXTURE_STATE_LIMITS,
   validatePrivateServerFixtureModuleState,
+  validatePrivateServerFixtureStatePath,
   writePrivateServerFixtureDefinition,
 } from "../lib/private-server-fixture-state.mjs";
 
@@ -14,6 +15,12 @@ describe("private-server fixture state", () => {
   it("prepares, publishes, and clears only the fixed generated fixture paths", async () => {
     const checkout = await mkdtemp(join(tmpdir(), "myrmex-checkout-"));
     const stateDirectory = ".private-state";
+    await expect(
+      validatePrivateServerFixtureStatePath({ checkout, stateDirectory }),
+    ).resolves.toBeUndefined();
+    await expect(access(join(checkout, stateDirectory, "fixtures"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     const paths = await preparePrivateServerFixtureModuleState({ checkout, stateDirectory });
 
     expect(paths).toEqual({

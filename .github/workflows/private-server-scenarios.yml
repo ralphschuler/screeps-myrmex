@@ -15,7 +15,7 @@ jobs:
     name: Run exact-bundle scenario matrix
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -30,14 +30,27 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Build exact production bundle
+        run: npm run build
+
+      - name: Set up isolated private-server Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.1
+
+      - name: Install pinned private server without credentials
+        run: node scripts/private-server.mjs install
+
+      - name: Provision ignored private-server state
+        env:
+          SCREEPS_STEAM_API_KEY: ${{ secrets.SCREEPS_STEAM_API_KEY }}
+        run: node scripts/private-server.mjs provision
+
       - name: Run exact-bundle private-server matrix
         env:
           SCREEPS_STEAM_API_KEY: ${{ secrets.SCREEPS_STEAM_API_KEY }}
-        run: |
-          npm run private-server -- install
-          npm run private-server -- provision
-          npm run private-server:scenarios
+        run: node scripts/private-server-scenarios.mjs
 
       - name: Stop ignored private-server state
         if: always()
-        run: npm run private-server -- stop
+        run: node scripts/private-server.mjs stop
