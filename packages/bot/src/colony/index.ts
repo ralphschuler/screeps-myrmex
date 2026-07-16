@@ -3,3 +3,4 @@ export * from "./contracts";
 export * from "./director";
 export * from "./persistence";
 export * from "./rcl-policy";
+export * from "./population-policy";

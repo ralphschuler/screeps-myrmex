@@ -14,6 +14,26 @@ export const MAX_ALLOCATION_CONTRACTS = 64;
 export const MAX_ALLOCATION_ACTORS = 64;
 export const MAX_ALLOCATION_PAIRS = 4_096;
 export const MAX_SAFE_IDLE_ACTORS = 64;
+export const MAX_POPULATION_LOADS = 64;
+
+export interface NormalizedPopulationLoad {
+  readonly backlogWorkTicks: number;
+  readonly category: string;
+  readonly colonyId: string;
+  readonly contractId: string;
+  readonly measuredWorkTicks: number;
+  readonly minimumCapability: CapabilityVector;
+  readonly objectiveId: string;
+  readonly reservationId: string;
+  readonly revision: number;
+  readonly sourceCapacityWorkTicks: number;
+  readonly travelTicks: number;
+}
+
+export interface ContractPopulationView {
+  readonly loads: readonly NormalizedPopulationLoad[];
+  readonly status: "ready" | "unavailable";
+}
 
 export const WORK_CONTRACT_KINDS = [
   "harvest",

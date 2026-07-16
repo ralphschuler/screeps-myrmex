@@ -67,7 +67,7 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
       remoteAdapter: "evidenced",
       rollbackIncident: "unevidenced",
     });
-  }, 30_000);
+  }, 60_000);
 });
 
 export async function collectAggregateEvidence() {

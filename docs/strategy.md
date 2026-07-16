@@ -102,3 +102,11 @@ timeout, and diplomatic authorization.
 
 Owned-room defense, remote evacuation, hostile-remote denial, and combat intelligence precede
 sieges, boosted formations, nukes, strongholds, power operations, or cross-shard campaigns.
+
+## Funded Population Scaling
+
+Funded population scales from normalized productive capability-part ticks rather than role counts.
+Mandatory defense, replacement, spawn supply, controller safety, and critical maintenance retain
+precedence; threat, recovery, bootstrap, constrained CPU, controller risk, reserve collapse, and
+saturated spawn capacity suspend discretionary population. Expiring workers stop counting at the
+exact replacement lead, and stable funded identities suppress duplicate commitments across reset.

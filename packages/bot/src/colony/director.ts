@@ -1,6 +1,7 @@
 import { classifyPlayerRelation, isFeatureEnabled, type RuntimeConfig } from "../config";
 import type { CpuBudget, CpuMode } from "../runtime/kernel";
 import type { CreepSnapshot, RoomSnapshot, WorldSnapshot } from "../world/snapshot";
+import type { ContractPopulationView, WorkforceActor } from "../contracts";
 import { BudgetLedger, reservationIdFor } from "./budget-ledger";
 import {
   CPU_RESERVATION_UNITS_PER_CPU,
@@ -30,6 +31,7 @@ import {
 import { canonicalColoniesOwner, coloniesOwnerEquals, resolveColoniesOwner } from "./persistence";
 import { formatReservationId } from "./reservation-id";
 import { projectColonyRclPolicy } from "./rcl-policy";
+import { ColonyPopulationPolicy } from "./population-policy";
 
 export interface ColonyDirectorInput {
   readonly tick: number;
@@ -39,8 +41,11 @@ export interface ColonyDirectorInput {
   readonly cpuMode: CpuMode;
   readonly cpuBudget: CpuBudget;
   readonly requests?: readonly BudgetRequest[];
+  readonly population?: ContractPopulationView;
+  readonly committedPopulationDemandIds?: readonly string[];
   /** Undefined requests a provisional energy/CPU view; an array requests exact spawn authorization. */
   readonly recoverySpawnSelections?: readonly RecoverySpawnSelection[];
+  readonly populationSpawnSelections?: readonly RecoverySpawnSelection[];
   /** Stable objective IDs already represented by an observed or durable expected creep. */
   readonly satisfiedRecoveryObjectiveIds?: readonly string[];
 }
@@ -103,6 +108,7 @@ const EMPTY_TOTALS = Object.freeze({
   cpuReserved: 0,
   spawnTicksReserved: 0,
 });
+const populationPolicy = new ColonyPopulationPolicy();
 
 /**
  * Sole authority for current colony lifecycle state and colony-local budget authorization.
@@ -112,6 +118,7 @@ export class ColonyDirector {
   plan(input: ColonyDirectorInput): ColonyDirectorResult {
     if (
       input.recoverySpawnSelections !== undefined ||
+      input.populationSpawnSelections !== undefined ||
       input.satisfiedRecoveryObjectiveIds !== undefined
     ) {
       throw new TypeError("exact recovery planning requires a tick-local ColonyDirector session");
@@ -144,6 +151,10 @@ export class ColonyDirector {
       input.recoverySpawnSelections ?? [],
       input,
     );
+    const populationSelections = normalizePopulationSelections(
+      input.populationSpawnSelections ?? [],
+      input,
+    );
     const satisfiedRecoveryObjectives = normalizeSatisfiedObjectiveIds(
       input.satisfiedRecoveryObjectiveIds ?? [],
     );
@@ -173,7 +184,7 @@ export class ColonyDirector {
       if (room === null) {
         if (previous !== null) {
           records.push(previous);
-          views.push(viewForUnknown(previous, input.config, input.cpuMode));
+          views.push(viewForUnknown(previous, input));
         }
         continue;
       }
@@ -189,7 +200,7 @@ export class ColonyDirector {
         input.config.policyRevision,
       );
       records.push(record);
-      views.push(viewForVisible(record, facts, input.config, input.cpuMode));
+      views.push(viewForVisible(record, facts, input));
     }
 
     const knownNames = new Set(evidence.keys());
@@ -200,7 +211,21 @@ export class ColonyDirector {
     const eligibleRequests: BudgetRequest[] = [];
 
     const validExternalRequests: BudgetRequest[] = [];
-    for (const request of input.requests ?? []) {
+    for (const rawRequest of input.requests ?? []) {
+      const rawReservationId = safeReservationId(rawRequest);
+      const populationSelection =
+        rawReservationId === null ? undefined : populationSelections.get(rawReservationId);
+      const request =
+        populationSelection === undefined
+          ? rawRequest
+          : {
+              ...rawRequest,
+              energy: {
+                minimum: populationSelection.energyCost,
+                desired: populationSelection.energyCost,
+              },
+              spawn: populationSelection.spawn,
+            };
       if (safeReservationId(request) === null) {
         preDecisions.push(invalidExternalDecision(request));
       } else {
@@ -325,12 +350,28 @@ export class ColonyDirector {
             },
           ];
     });
+    const populationReservationIds = new Set(
+      views.flatMap(({ populationPolicy: { demands } }) =>
+        demands.map(({ reservationId }) => reservationId),
+      ),
+    );
+    const authorizedPopulationSpawns = [...populationSelections.values()].flatMap((selection) =>
+      populationReservationIds.has(selection.reservationId)
+        ? [
+            {
+              reservationId: selection.reservationId,
+              energyCost: selection.energyCost,
+              spawn: selection.spawn,
+            },
+          ]
+        : [],
+    );
     return new ColonyDirectorSession(
       result,
       currentOwner,
       replacement,
       mustInitialize,
-      authorizedRecoverySpawns,
+      [...authorizedRecoverySpawns, ...authorizedPopulationSpawns],
       input.tick,
     );
   }
@@ -351,13 +392,13 @@ export class ColonyDirectorSession {
     private readonly baseOwner: ColoniesOwnerV1 | null,
     private readonly draftOwner: ColoniesOwnerV1 | null,
     private readonly mustInitialize: boolean,
-    private readonly authorizedRecoverySpawns: readonly AuthorizedRecoverySpawn[],
+    private readonly authorizedSpawns: readonly AuthorizedRecoverySpawn[],
     private readonly plannedAt = 0,
   ) {
     this.draftResult = result;
     this.result =
       result.replacementOwner === null ? result : deepFreeze({ ...result, replacementOwner: null });
-    Object.freeze(this.authorizedRecoverySpawns);
+    Object.freeze(this.authorizedSpawns);
   }
 
   public settle(
@@ -370,9 +411,7 @@ export class ColonyDirectorSession {
     }
     const validatedSettlements = validateSpawnSettlements(settlements);
 
-    const authorized = new Map(
-      this.authorizedRecoverySpawns.map((entry) => [entry.reservationId, entry]),
-    );
+    const authorized = new Map(this.authorizedSpawns.map((entry) => [entry.reservationId, entry]));
     const byReservation = new Map<string, ColonySpawnCommandSettlement>();
     for (const settlement of validatedSettlements) {
       if (byReservation.has(settlement.reservationId)) {
@@ -415,14 +454,14 @@ export class ColonyDirectorSession {
       return this.draftResult;
     }
 
-    if (this.authorizedRecoverySpawns.length === 0) {
+    if (this.authorizedSpawns.length === 0) {
       this.settlementKey = settlementKey;
       this.settledResult = this.draftResult;
       return this.draftResult;
     }
     const ledger = new BudgetLedger(this.draftOwner.ledger);
     const settlementTransitions: LedgerTransition[] = [];
-    for (const authorization of [...this.authorizedRecoverySpawns].sort((left, right) =>
+    for (const authorization of [...this.authorizedSpawns].sort((left, right) =>
       compareStrings(left.reservationId, right.reservationId),
     )) {
       const settlement = byReservation.get(authorization.reservationId);
@@ -563,6 +602,39 @@ function normalizeRecoverySelections(
         energyCost: selection.energyCost,
         spawn: { ...selection.spawn },
       }),
+    );
+  }
+  return normalized;
+}
+
+function normalizePopulationSelections(
+  selections: readonly RecoverySpawnSelection[],
+  input: ColonyDirectorInput,
+): ReadonlyMap<string, RecoverySpawnSelection> {
+  if (selections.length > 8)
+    throw new RangeError("population spawn selections exceed the demand cap");
+  const normalized = new Map<string, RecoverySpawnSelection>();
+  for (const selection of selections) {
+    if (
+      !isBoundedIdentifier(selection.objectiveId, 256) ||
+      !isBoundedIdentifier(selection.colonyId, 64) ||
+      !isNonNegativeSafeInteger(selection.revision) ||
+      selection.revision === 0 ||
+      !isBoundedIdentifier(selection.reservationId, MAX_RESERVATION_ID_CODE_UNITS) ||
+      !isNonNegativeSafeInteger(selection.energyCost) ||
+      selection.energyCost === 0 ||
+      selection.energyCost > input.config.policy.spawn.maximumBodyEnergy ||
+      !isBoundedIdentifier(selection.spawn.spawnId, 128) ||
+      selection.spawn.startTick !== input.tick ||
+      !isNonNegativeSafeInteger(selection.spawn.endTick) ||
+      selection.spawn.endTick <= selection.spawn.startTick ||
+      selection.spawn.endTick - selection.spawn.startTick > MAX_SPAWN_INTERVAL_TICKS ||
+      normalized.has(selection.reservationId)
+    )
+      throw new TypeError("invalid exact population spawn selection");
+    normalized.set(
+      selection.reservationId,
+      deepFreeze({ ...selection, spawn: { ...selection.spawn } }),
     );
   }
   return normalized;
@@ -782,7 +854,7 @@ function applyTransition(
   });
 }
 
-function viewForUnknown(record: ColonyRecord, config: RuntimeConfig, cpuMode: CpuMode): ColonyView {
+function viewForUnknown(record: ColonyRecord, input: ColonyDirectorInput): ColonyView {
   return deepFreeze({
     id: record.roomName,
     roomName: record.roomName,
@@ -801,8 +873,24 @@ function viewForUnknown(record: ColonyRecord, config: RuntimeConfig, cpuMode: Cp
       energyCapacityAvailable: null,
       activeThreat: null,
       controllerRisk: null,
-      cpuMode,
-      protectedSpawnEnergy: config.policy.recovery.protectedSpawnEnergy,
+      cpuMode: input.cpuMode,
+      protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
+    }),
+    populationPolicy: populationPolicy.project({
+      activeThreat: null,
+      actors: [],
+      availableEnergy: 0,
+      colonyId: record.roomName,
+      committedDemandIds: input.committedPopulationDemandIds ?? [],
+      controllerRisk: null,
+      cpuMode: input.cpuMode,
+      funded: input.population ?? { loads: [], status: "unavailable" },
+      maximumBodyEnergy: input.config.policy.spawn.maximumBodyEnergy,
+      protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
+      replacementLeadTicks: input.config.policy.spawn.replacementSafetyMarginTicks + 9,
+      spawnUtilizationBasisPoints: 10_000,
+      state: record.state,
+      visibility: "unknown",
     }),
   });
 }
@@ -810,8 +898,7 @@ function viewForUnknown(record: ColonyRecord, config: RuntimeConfig, cpuMode: Cp
 function viewForVisible(
   record: ColonyRecord,
   facts: ColonyEvidence,
-  config: RuntimeConfig,
-  cpuMode: CpuMode,
+  input: ColonyDirectorInput,
 ): ColonyView {
   return deepFreeze({
     id: record.roomName,
@@ -831,10 +918,52 @@ function viewForVisible(
       energyCapacityAvailable: facts.room.energyCapacityAvailable,
       activeThreat: facts.activeThreat,
       controllerRisk: facts.owned ? facts.controllerRisk : null,
-      cpuMode,
-      protectedSpawnEnergy: config.policy.recovery.protectedSpawnEnergy,
+      cpuMode: input.cpuMode,
+      protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
+    }),
+    populationPolicy: populationPolicy.project({
+      activeThreat: facts.activeThreat,
+      actors: facts.room.ownedCreeps.map(populationActor),
+      availableEnergy: facts.room.energyAvailable,
+      colonyId: record.roomName,
+      committedDemandIds: input.committedPopulationDemandIds ?? [],
+      controllerRisk: facts.owned ? facts.controllerRisk : null,
+      cpuMode: input.cpuMode,
+      funded: input.population ?? { loads: [], status: "unavailable" },
+      maximumBodyEnergy: input.config.policy.spawn.maximumBodyEnergy,
+      protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
+      replacementLeadTicks: input.config.policy.spawn.replacementSafetyMarginTicks + 9,
+      spawnUtilizationBasisPoints:
+        facts.room.ownedSpawns.length === 0
+          ? 10_000
+          : Math.floor(
+              (facts.room.ownedSpawns.filter(({ spawning }) => spawning !== null).length * 10_000) /
+                facts.room.ownedSpawns.length,
+            ),
+      state: record.state,
+      visibility: "visible",
     }),
   });
+}
+
+function populationActor(creep: CreepSnapshot): WorkforceActor {
+  return {
+    capability: {
+      attack: creep.body.attack.active,
+      carry: creep.body.carry.active,
+      claim: creep.body.claim.active,
+      heal: creep.body.heal.active,
+      move: creep.body.move.active,
+      rangedAttack: creep.body.rangedAttack.active,
+      tough: creep.body.tough.active,
+      work: creep.body.work.active,
+    },
+    id: creep.id,
+    name: creep.name,
+    pos: creep.pos,
+    spawning: creep.spawning,
+    ticksToLive: creep.ticksToLive,
+  };
 }
 
 function requestDenial(
