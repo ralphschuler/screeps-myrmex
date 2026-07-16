@@ -67,6 +67,7 @@ export interface TickTelemetry {
   readonly reporterPolicy: {
     readonly initialReminderDelayTicks: number;
     readonly maximumImmediateEventsPerTick: number;
+    readonly maximumSignalsPerTick: number;
     readonly maximumFingerprints: number;
     readonly maximumReminderDelayTicks: number;
     readonly stuckRecoveryWindowTicks: number;
@@ -206,6 +207,7 @@ export function recordTickTelemetry(
     reporterPolicy: Object.freeze({
       initialReminderDelayTicks: input.config.policy.reporter.initialReminderDelayTicks,
       maximumImmediateEventsPerTick: input.config.policy.reporter.maximumImmediateEventsPerTick,
+      maximumSignalsPerTick: input.config.policy.reporter.maximumSignalsPerTick,
       maximumFingerprints: input.config.policy.reporter.maximumFingerprints,
       maximumReminderDelayTicks: input.config.policy.reporter.maximumReminderDelayTicks,
       stuckRecoveryWindowTicks: input.config.policy.reporter.stuckRecoveryWindowTicks,

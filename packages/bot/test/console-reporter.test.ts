@@ -94,28 +94,36 @@ describe("ConsoleReporter", () => {
     ).toEqual([]);
   });
 
-  it("rejects unknown transition fields and contains renderer faults", () => {
+  it("ignores unknown transition fields without enumerating them and contains renderer faults", () => {
     const base = runTick({ game: game(101), memory: {} as Memory }).reporterStatus;
     const hostile = {
       ...base,
       transitions: [
-        {
-          category: "signal",
-          kind: "first",
-          fingerprint: "reporter-transition:deadbeef",
-          count: 1,
-          reasonCode: "unexpected-exception",
-          rawPayload: "raw-player-W9N9",
-        },
+        new Proxy(
+          {
+            category: "signal",
+            kind: "first",
+            fingerprint: "reporter-transition:deadbeef",
+            count: 1,
+            reasonCode: "unexpected-exception",
+            rawPayload: "raw-player-W9N9",
+          },
+          {
+            ownKeys: () => {
+              throw new Error("must not enumerate hostile transition fields");
+            },
+          },
+        ),
       ],
     } as unknown as typeof base;
-    expect(
-      new ConsoleReporter().report(
-        hostile,
-        { ...buildRuntimeConfig().policy.reporter, heartbeatIntervalTicks: 10 },
-        { log: vi.fn() },
-      ),
-    ).toEqual([]);
+    const hostileLines = new ConsoleReporter().report(
+      hostile,
+      { ...buildRuntimeConfig().policy.reporter, heartbeatIntervalTicks: 10 },
+      { log: vi.fn() },
+    );
+    expect(hostileLines).toHaveLength(1);
+    expect(hostileLines[0]).toContain("reporter signal kind=first");
+    expect(hostileLines[0]).not.toContain("raw-player-W9N9");
 
     const throwing = Object.create(base) as typeof base;
     Object.defineProperty(throwing, "transitions", {
@@ -128,6 +136,114 @@ describe("ConsoleReporter", () => {
         log: vi.fn(),
       }),
     ).toEqual([]);
+  });
+
+  it("rejects oversized transitions before traversal and does not invoke accessors", () => {
+    const base = runTick({ game: game(101), memory: {} as Memory }).reporterStatus;
+    const policy = buildRuntimeConfig().policy.reporter;
+    let visited = 0;
+    const oversized = new Array<unknown>(2_000);
+    Object.defineProperty(oversized, "0", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        visited += 1;
+        throw new Error("must not render oversized input");
+      },
+    });
+    const oversizedStatus = { ...base, transitions: oversized } as unknown as typeof base;
+
+    expect(new ConsoleReporter().report(oversizedStatus, policy, { log: vi.fn() })).toEqual([]);
+    expect(visited).toBe(0);
+
+    const accessor = {
+      kind: "first",
+      fingerprint: "reporter-transition:deadbeef",
+      count: 1,
+      reasonCode: "unexpected-exception",
+    };
+    Object.defineProperty(accessor, "category", {
+      enumerable: true,
+      get: () => {
+        visited += 1;
+        return "signal";
+      },
+    });
+    const accessorStatus = { ...base, transitions: [accessor] } as unknown as typeof base;
+    expect(new ConsoleReporter().report(accessorStatus, policy, { log: vi.fn() })).toEqual([]);
+    expect(visited).toBe(0);
+  });
+
+  it("fails hostile numeric fields closed and bounds overflow without raw rendering", () => {
+    const base = runTick({ game: game(100), memory: {} as Memory }).reporterStatus;
+    const status = {
+      ...base,
+      runtime: {
+        ...base.runtime,
+        cpuMode: "\u001b[2J raw-player-mode",
+        cpuLimit: Number.MAX_SAFE_INTEGER,
+        cpuUsedMilli: "raw-player-cpu",
+      },
+      recovery: { ...base.recovery, spawnDemand: "raw-player-demand" },
+      transitions: [
+        {
+          category: "signal",
+          kind: "first",
+          fingerprint: "reporter-transition:deadbeef",
+          count: Number.MAX_SAFE_INTEGER,
+          reasonCode: "unexpected-exception",
+        },
+      ],
+    } as unknown as typeof base;
+    const lines = new ConsoleReporter().report(status, buildRuntimeConfig().policy.reporter, {
+      log: vi.fn(),
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("mode=invalid-code");
+    expect(lines[0]).toContain(`cpu=0/${String(Number.MAX_SAFE_INTEGER)}`);
+    expect(lines[0]).toContain("spawnDemand=0");
+    expect(lines.join("\n")).not.toContain("raw-player");
+    expect(lines.join("\n")).not.toContain("\u001b");
+  });
+
+  it("rejects oversized diagnostic categories before visiting their entries", () => {
+    const base = runTick({ game: game(100), memory: {} as Memory }).reporterStatus;
+    let visited = 0;
+    const categories = new Array<unknown>(2_000);
+    Object.defineProperty(categories, "0", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        visited += 1;
+        throw new Error("must not render oversized diagnostics");
+      },
+    });
+    const status = {
+      ...base,
+      diagnostic: { level: "trace", categories, expiresAtTick: 101 },
+    } as unknown as typeof base;
+    const lines = new ConsoleReporter().report(status, buildRuntimeConfig().policy.reporter, {
+      log: vi.fn(),
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain("diagnostic");
+    expect(visited).toBe(0);
+  });
+
+  it("does not render diagnostics at their exact expiry tick", () => {
+    const base = runTick({ game: game(100), memory: {} as Memory }).reporterStatus;
+    const status = {
+      ...base,
+      diagnostic: { level: "trace", categories: ["faults"], expiresAtTick: 100 },
+    } as const;
+    const lines = new ConsoleReporter().report(status, buildRuntimeConfig().policy.reporter, {
+      log: vi.fn(),
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain("diagnostic");
   });
 });
 

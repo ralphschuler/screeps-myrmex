@@ -12,6 +12,7 @@ import { planSurvivalFlow } from "../src/economy";
 import { runTick } from "../src/runtime/tick";
 import type { RuntimeGame } from "../src/runtime/context";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
+import { TelemetryService } from "../src/telemetry/service";
 
 const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
@@ -843,6 +844,126 @@ describe("tick lifecycle", () => {
     expect(isolated.stateCommit).toEqual(baseline.stateCommit);
   });
 
+  it("isolates a throwing telemetry service from gameplay persistence and mandatory completion", () => {
+    const baselineMemory = {} as Memory;
+    const isolatedMemory = {} as Memory;
+    const baselineSpawn = vi.fn(() => 0);
+    const isolatedSpawn = vi.fn(() => 0);
+    const baseline = runTick({
+      game: fundedContractGame(100, { includeCreep: false, spawnCreep: baselineSpawn }),
+      memory: baselineMemory,
+    });
+    const recordSpy = vi.spyOn(TelemetryService.prototype, "record").mockImplementation(() => {
+      throw new Error("injected reporter service failure");
+    });
+    const isolated = (() => {
+      try {
+        return runTick({
+          game: fundedContractGame(100, { includeCreep: false, spawnCreep: isolatedSpawn }),
+          memory: isolatedMemory,
+        });
+      } finally {
+        recordSpy.mockRestore();
+      }
+    })();
+
+    expect(isolatedSpawn.mock.calls).toEqual(baselineSpawn.mock.calls);
+    expect(isolated.colony).toEqual(baseline.colony);
+    expect(isolated.contracts).toEqual(baseline.contracts);
+    expect(isolated.execution).toEqual(baseline.execution);
+    expect(isolated.movement).toEqual(baseline.movement);
+    expect(isolated.spawn).toEqual(baseline.spawn);
+    expect(isolated.stateCommit).toMatchObject({ committed: true });
+    expect(isolated.kernel.systems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ systemId: "state.reconcile", status: "completed" }),
+        expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
+      ]),
+    );
+    expect(isolated.telemetry).toBeNull();
+    expect(isolated.reporterStatus).toMatchObject({
+      projectionStatus: "ready",
+      observer: { status: "unavailable" },
+      transitions: [],
+    });
+    if (baselineMemory.myrmex === undefined || isolatedMemory.myrmex === undefined) {
+      throw new Error("expected both roots to commit");
+    }
+    const { telemetry: _baselineTelemetry, ...baselineGameplayOwners } = baselineMemory.myrmex;
+    const { telemetry: _isolatedTelemetry, ...isolatedGameplayOwners } = isolatedMemory.myrmex;
+    void _baselineTelemetry;
+    void _isolatedTelemetry;
+    expect(isolatedGameplayOwners).toEqual(baselineGameplayOwners);
+  });
+
+  it("rebuilds oversized reporter metadata without changing gameplay or mandatory completion", () => {
+    const seeded = {} as Memory;
+    runTick({
+      game: {
+        cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+        creeps: {},
+        rooms: {},
+        shard: { name: "shard3" },
+        time: 90,
+      },
+      memory: seeded,
+    });
+    const baselineMemory = JSON.parse(JSON.stringify(seeded)) as Memory;
+    const hostileMemory = JSON.parse(JSON.stringify(seeded)) as Memory;
+    const hostileTelemetry = hostileMemory.myrmex?.telemetry as Record<string, unknown> | undefined;
+    if (hostileTelemetry === undefined) throw new Error("expected initialized telemetry owner");
+    hostileTelemetry.reporter = {
+      schemaVersion: 2,
+      entries: {
+        schemaVersion: 1,
+        entries: Array.from({ length: 128 }, (_, index) => ({
+          fingerprint: `fault:${index.toString(16).padStart(8, "0")}`,
+          count: Number.MAX_SAFE_INTEGER,
+          lastTick: 89,
+          nextReminderTick: 90,
+          reasonCode: "unexpected-exception",
+        })),
+      },
+      recovery: {
+        signature: "recovering",
+        lastProgressTick: 89,
+        reminderAtTick: 90,
+        reminderCount: Number.MAX_SAFE_INTEGER,
+        stuckReportedAtTick: 89,
+        blockerRef: "recovery-blocker:deadbeef",
+        blockerReasonCode: "none",
+      },
+    };
+    const baselineSpawn = vi.fn(() => 0);
+    const hostileSpawn = vi.fn(() => 0);
+
+    const baseline = runTick({
+      game: fundedContractGame(100, { includeCreep: false, spawnCreep: baselineSpawn }),
+      memory: baselineMemory,
+    });
+    const hostile = runTick({
+      game: fundedContractGame(100, { includeCreep: false, spawnCreep: hostileSpawn }),
+      memory: hostileMemory,
+    });
+
+    expect(hostileSpawn.mock.calls).toEqual(baselineSpawn.mock.calls);
+    expect(hostile.colony).toEqual(baseline.colony);
+    expect(hostile.contracts).toEqual(baseline.contracts);
+    expect(hostile.execution).toEqual(baseline.execution);
+    expect(hostile.movement).toEqual(baseline.movement);
+    expect(hostile.spawn).toEqual(baseline.spawn);
+    expect(hostile.stateCommit).toEqual(baseline.stateCommit);
+    expect(hostile.kernel.systems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ systemId: "state.reconcile", status: "completed" }),
+        expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
+      ]),
+    );
+    expect(hostile.telemetry).not.toBeNull();
+    expect(JSON.stringify(hostile.telemetry)).not.toContain(String(Number.MAX_SAFE_INTEGER));
+    expect(JSON.stringify(hostileMemory.myrmex)).not.toContain(String(Number.MAX_SAFE_INTEGER));
+  });
+
   it("preserves a non-empty assigned commitment when the funding view is unavailable", () => {
     const memory = {} as Memory;
     const game = fundedContractGame(43);
@@ -956,6 +1077,13 @@ describe("tick lifecycle", () => {
 
   it("clears a published contract result when the atomic root commit is rejected", () => {
     const memory = {} as Memory;
+    const gameAt = (time: number) => ({
+      cpu: { bucket: 9_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+      creeps: {},
+      rooms: {},
+      shard: { name: "shard3" },
+      time,
+    });
     const stageDescriptor = Object.getOwnPropertyDescriptor(ContractLedger.prototype, "stage");
     if (typeof stageDescriptor?.value !== "function") {
       throw new TypeError("ContractLedger.stage descriptor is unavailable");
@@ -975,13 +1103,7 @@ describe("tick lifecycle", () => {
     const outcome = (() => {
       try {
         return runTick({
-          game: {
-            cpu: { bucket: 9_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
-            creeps: {},
-            rooms: {},
-            shard: { name: "shard3" },
-            time: 45,
-          },
+          game: gameAt(45),
           memory,
         });
       } finally {
@@ -1007,6 +1129,75 @@ describe("tick lifecycle", () => {
     expect(outcome.telemetry?.reporterTransitions).toEqual([]);
     expect(outcome.reporterStatus.transitions).toEqual([]);
     expect(memory.myrmex?.contracts).toEqual({});
+  });
+
+  it("publishes reporter evidence only after its candidate owner commits", () => {
+    const memory = {} as Memory;
+    const gameAt = (time: number) => ({
+      cpu: { bucket: 9_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+      creeps: {},
+      rooms: {},
+      shard: { name: "shard3" },
+      time,
+    });
+    runTick({ game: gameAt(44), memory });
+    if (memory.myrmex?.kernel === undefined) throw new Error("expected initialized kernel owner");
+    memory.myrmex.kernel.runtime = {
+      schemaVersion: 1,
+      cpuMode: "normal",
+      health: [
+        {
+          systemId: "cache.sweep",
+          consecutiveFailures: 1,
+          lastSuccessfulTick: 44,
+          nextProbeTick: 100,
+        },
+      ],
+    };
+    const recordDescriptor = Object.getOwnPropertyDescriptor(TelemetryService.prototype, "record");
+    if (typeof recordDescriptor?.value !== "function") {
+      throw new TypeError("TelemetryService.record descriptor is unavailable");
+    }
+    const originalRecord = recordDescriptor.value as TelemetryService["record"];
+    let rootReplaced = false;
+    const recordSpy = vi.spyOn(TelemetryService.prototype, "record").mockImplementation(function (
+      this: TelemetryService,
+      owner,
+      input,
+    ) {
+      const result = originalRecord.call(this, owner, input);
+      if (!rootReplaced) {
+        if (memory.myrmex === undefined) throw new Error("expected initialized Memory root");
+        memory.myrmex = JSON.parse(JSON.stringify(memory.myrmex)) as NonNullable<Memory["myrmex"]>;
+        rootReplaced = true;
+      }
+      return result;
+    });
+    const rejected = (() => {
+      try {
+        return runTick({ game: gameAt(45), memory });
+      } finally {
+        recordSpy.mockRestore();
+      }
+    })();
+
+    expect(rejected.stateCommit).toEqual({
+      committed: false,
+      faults: [expect.objectContaining({ code: "stale-root" })],
+    });
+    expect(rejected.telemetry?.reporterTransitions).toEqual([]);
+    expect(rejected.reporterStatus.transitions).toEqual([]);
+
+    const recovered = runTick({ game: gameAt(46), memory });
+    const quiet = runTick({ game: gameAt(47), memory });
+    expect(recovered.telemetry?.reporterTransitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "first", count: 1 }),
+    ]);
+    expect(recovered.reporterStatus.transitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "first", count: 1 }),
+    ]);
+    expect(quiet.telemetry?.reporterTransitions).toEqual([]);
+    expect(quiet.reporterStatus.transitions).toEqual([]);
   });
 
   it("activates one valid candidate and retains it after an atomic rejection", () => {

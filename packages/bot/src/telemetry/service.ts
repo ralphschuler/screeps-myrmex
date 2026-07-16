@@ -9,9 +9,11 @@ import type { JsonObject } from "../state/schema";
 import type { WorldSnapshot } from "../world/snapshot";
 import { opaqueId, safeCode } from "../security";
 import {
+  advancePreparedReporterState,
   advanceRecoveryProgress,
-  advanceReporterState,
+  prepareReporterSignals,
   type ReporterSignal,
+  type ReporterSignalBatch,
 } from "./reporter-state";
 import {
   recoveryObservationActive,
@@ -64,7 +66,7 @@ export interface TelemetryServiceResult {
  */
 export class TelemetryService {
   public record(ownerValue: unknown, input: TelemetryServiceInput): TelemetryServiceResult {
-    const owner = readOwner(ownerValue);
+    const owner = readOwnerSafely(ownerValue, input.base.telemetryPolicy.maximumHistoryEntries);
     const detailLimit = input.base.telemetryPolicy.maximumDetailRecords;
     const allDetails = collectDetails(input);
     const details = allDetails
@@ -101,38 +103,256 @@ interface ParsedOwner {
   readonly reporter: unknown;
 }
 
-function readOwner(value: unknown): ParsedOwner {
+function readOwnerSafely(value: unknown, maximumHistoryEntries: number): ParsedOwner {
+  try {
+    return readOwner(value, maximumHistoryEntries);
+  } catch {
+    return emptyParsedOwner();
+  }
+}
+
+function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return { history: [], droppedHistory: 0, reporter: undefined };
+    return emptyParsedOwner();
   }
   const root = value as Record<string, unknown>;
-  if (Object.keys(root).length === 0)
-    return { history: [], droppedHistory: 0, reporter: undefined };
   if (
     (root.schemaVersion !== 1 && root.schemaVersion !== TELEMETRY_OWNER_SCHEMA_VERSION) ||
     !Array.isArray(root.history)
   ) {
-    return { history: [], droppedHistory: 0, reporter: undefined };
+    return emptyParsedOwner();
   }
-  const history: { tick: number; hash: string }[] = root.history.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
+  const reporter =
+    root.schemaVersion === TELEMETRY_OWNER_SCHEMA_VERSION ? root.reporter : undefined;
+  const priorDroppedHistory = readCounter(root.droppedHistory);
+  const retainedLimit = safeNonnegativeInteger(maximumHistoryEntries);
+  if (root.history.length > retainedLimit) {
+    return {
+      history: [],
+      droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
+      reporter,
+    };
+  }
+  const history: { tick: number; hash: string }[] = [];
+  for (const entry of root.history) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      return {
+        history: [],
+        droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
+        reporter,
+      };
+    }
     const row = entry as Record<string, unknown>;
     const tick = row.tick;
-    return typeof row.hash === "string" &&
-      typeof tick === "number" &&
-      Number.isSafeInteger(tick) &&
-      tick >= 0
-      ? [{ tick, hash: row.hash.slice(0, 64) }]
-      : [];
-  });
+    if (
+      typeof row.hash !== "string" ||
+      !/^fnv1a32-utf16:[0-9a-f]{8}$/.test(row.hash) ||
+      typeof tick !== "number" ||
+      !Number.isSafeInteger(tick) ||
+      tick < 0
+    ) {
+      return {
+        history: [],
+        droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
+        reporter,
+      };
+    }
+    history.push({ tick, hash: row.hash });
+  }
   return {
-    history: history.slice(-64),
-    droppedHistory:
-      typeof root.droppedHistory === "number" && Number.isSafeInteger(root.droppedHistory)
-        ? Math.max(0, root.droppedHistory)
-        : 0,
-    reporter: root.schemaVersion === TELEMETRY_OWNER_SCHEMA_VERSION ? root.reporter : undefined,
+    history,
+    droppedHistory: priorDroppedHistory,
+    reporter,
   };
+}
+
+function emptyParsedOwner(): ParsedOwner {
+  return { history: [], droppedHistory: 0, reporter: undefined };
+}
+
+function readCounter(value: unknown): number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+interface MutableTelemetryOwner {
+  schemaVersion: typeof TELEMETRY_OWNER_SCHEMA_VERSION;
+  last: {
+    tick: number;
+    hash: string;
+    droppedDetails: number;
+  };
+  history: { tick: number; hash: string }[];
+  droppedHistory: number;
+  reporter: {
+    schemaVersion: 2;
+    entries: JsonObject;
+    recovery: JsonObject | null;
+  };
+}
+
+function generatedReporterEntries(value: unknown): JsonObject[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+  const root = value as Record<string, unknown>;
+  return root.schemaVersion === 1 && Array.isArray(root.entries)
+    ? (root.entries as JsonObject[])
+    : [];
+}
+
+function retainedReporterFingerprints(value: unknown): Set<string> {
+  return new Set(
+    generatedReporterEntries(value).flatMap((entry) =>
+      typeof entry.fingerprint === "string" ? [entry.fingerprint] : [],
+    ),
+  );
+}
+
+function fitOwnerToByteBudget(owner: MutableTelemetryOwner, maximumBytes: number): void {
+  const exceedsBudget = () =>
+    utf8ByteLength(canonicalSerialize(owner)) > safeNonnegativeInteger(maximumBytes);
+  while (exceedsBudget() && owner.history.length > 0) {
+    owner.history.shift();
+    owner.droppedHistory = saturatingIncrement(owner.droppedHistory);
+  }
+  const entries = generatedReporterEntries(owner.reporter.entries);
+  while (exceedsBudget() && entries.length > 0) {
+    const ordinary = entries.findIndex(
+      (entry) =>
+        typeof entry.fingerprint !== "string" ||
+        !entry.fingerprint.startsWith("reporter-overflow:"),
+    );
+    entries.splice(ordinary < 0 ? 0 : ordinary, 1);
+  }
+  if (exceedsBudget()) owner.reporter.recovery = null;
+}
+
+const REPORTER_PREPARATION_FAILED = "reporter-preparation-failed" as const;
+type PreparedReporterInput = ReporterSignalBatch | null | typeof REPORTER_PREPARATION_FAILED;
+
+function safelyPrepareReporter(
+  details: readonly TelemetryDetail[],
+  reporterSignals: readonly ReporterSignal[],
+  policy: Pick<TickTelemetry["reporterPolicy"], "maximumSignalsPerTick">,
+): PreparedReporterInput {
+  try {
+    const boundedReporterSignals = readBoundedSignals(
+      reporterSignals,
+      policy.maximumSignalsPerTick,
+    );
+    if (boundedReporterSignals === null) return null;
+    return prepareReporterSignals(
+      [
+        ...details.map((detail) => ({
+          kind: detail.domain,
+          identity: detail.entityId,
+          reasonCode: detail.reason,
+        })),
+        ...boundedReporterSignals,
+      ],
+      saturatingAdd(policy.maximumSignalsPerTick, details.length),
+    );
+  } catch {
+    return REPORTER_PREPARATION_FAILED;
+  }
+}
+
+function safelyAdvanceReporter(
+  owner: unknown,
+  tick: number,
+  input: PreparedReporterInput,
+  maximumRetainedFingerprints: number,
+  policy: Pick<
+    TickTelemetry["reporterPolicy"],
+    | "maximumFingerprints"
+    | "maximumSignalsPerTick"
+    | "initialReminderDelayTicks"
+    | "maximumReminderDelayTicks"
+  >,
+): ReturnType<typeof advancePreparedReporterState> {
+  if (input === REPORTER_PREPARATION_FAILED) return emptyReporterResult();
+  try {
+    return advancePreparedReporterState(owner, tick, input, {
+      maximumFingerprints: policy.maximumFingerprints,
+      maximumRetainedFingerprints,
+      initialReminderDelayTicks: policy.initialReminderDelayTicks,
+      maximumReminderDelayTicks: policy.maximumReminderDelayTicks,
+    });
+  } catch {
+    return emptyReporterResult();
+  }
+}
+
+function emptyReporterResult(): ReturnType<typeof advancePreparedReporterState> {
+  return { owner: { schemaVersion: 1, entries: [] }, events: [] };
+}
+
+function readBoundedSignals(
+  value: readonly ReporterSignal[],
+  maximumLength: number,
+): readonly ReporterSignal[] | null {
+  try {
+    if (!Array.isArray(value)) return null;
+    const length = Object.getOwnPropertyDescriptor(value, "length");
+    const limit = safeNonnegativeInteger(maximumLength);
+    if (
+      length === undefined ||
+      !("value" in length) ||
+      !Number.isSafeInteger(length.value) ||
+      length.value < 0 ||
+      length.value > limit
+    )
+      return null;
+    const output: ReporterSignal[] = [];
+    for (let index = 0; index < length.value; index += 1) {
+      const entry = Object.getOwnPropertyDescriptor(value, String(index));
+      if (entry === undefined || !("value" in entry)) return null;
+      output.push(entry.value as ReporterSignal);
+    }
+    return output;
+  } catch {
+    return null;
+  }
+}
+
+function safelyAdvanceRecovery(
+  owner: unknown,
+  telemetry: Omit<TickTelemetry, "recoveryProgress" | "reporterTransitions">,
+  blocker: TelemetryDetail | null,
+): ReturnType<typeof advanceRecoveryProgress> {
+  try {
+    return advanceRecoveryProgress(
+      owner,
+      {
+        active: recoveryObservationActive(telemetry),
+        blockerRef: blocker?.entityId ?? null,
+        blockerReasonCode: blocker?.reason ?? "none",
+        delivered: telemetry.energyFlow.delivered,
+        harvested: telemetry.energyFlow.harvested,
+        spawnDemand: telemetry.activity.spawnDemand,
+        spawnScheduled: telemetry.activity.spawnScheduled,
+        status: recoveryStateCode(telemetry),
+        tick: telemetry.tick,
+        unmet: telemetry.energyFlow.unmet,
+      },
+      {
+        stuckWindowTicks: telemetry.reporterPolicy.stuckRecoveryWindowTicks,
+        initialReminderDelayTicks: telemetry.reporterPolicy.initialReminderDelayTicks,
+        maximumReminderDelayTicks: telemetry.reporterPolicy.maximumReminderDelayTicks,
+      },
+    );
+  } catch {
+    return { owner: null, event: null, status: null };
+  }
+}
+
+function safelyResolveReporterSections(value: unknown): {
+  readonly entries: unknown;
+  readonly recovery: unknown;
+} {
+  try {
+    return reporterSections(value);
+  } catch {
+    return { entries: undefined, recovery: undefined };
+  }
 }
 
 function writeOwner(
@@ -147,72 +367,58 @@ function writeOwner(
 } {
   const policy = telemetry.telemetryPolicy;
   const appended = [...owner.history, { tick: telemetry.tick, hash: telemetry.status.hash }];
-  const bounded = appended.slice(-policy.maximumHistoryEntries);
-  const droppedHistory = owner.droppedHistory + appended.length - bounded.length;
+  const bounded =
+    policy.maximumHistoryEntries === 0 ? [] : appended.slice(-policy.maximumHistoryEntries);
+  const droppedHistory = saturatingAdd(owner.droppedHistory, appended.length - bounded.length);
   const history = bounded.map(({ tick, hash }) => ({ tick, hash }));
-  const reporterOwner = reporterSections(owner.reporter);
-  const reporter = advanceReporterState(
-    reporterOwner.entries,
-    telemetry.tick,
-    [
-      ...details.map((detail) => ({
-        kind: detail.domain,
-        identity: detail.entityId,
-        reasonCode: detail.reason,
-      })),
-      ...reporterSignals,
-    ],
-    {
-      maximumFingerprints: Math.min(24, telemetry.reporterPolicy.maximumFingerprints),
-      initialReminderDelayTicks: telemetry.reporterPolicy.initialReminderDelayTicks,
-      maximumReminderDelayTicks: telemetry.reporterPolicy.maximumReminderDelayTicks,
-    },
-  );
+  const reporterOwner = safelyResolveReporterSections(owner.reporter);
   const blocker = details[0] ?? null;
-  const recovery = advanceRecoveryProgress(
-    reporterOwner.recovery,
-    {
-      active: recoveryObservationActive(telemetry),
-      blockerRef: blocker?.entityId ?? null,
-      blockerReasonCode: blocker?.reason ?? "none",
-      delivered: telemetry.energyFlow.delivered,
-      harvested: telemetry.energyFlow.harvested,
-      spawnDemand: telemetry.activity.spawnDemand,
-      spawnScheduled: telemetry.activity.spawnScheduled,
-      status: recoveryStateCode(telemetry),
-      tick: telemetry.tick,
-      unmet: telemetry.energyFlow.unmet,
-    },
-    {
-      stuckWindowTicks: telemetry.reporterPolicy.stuckRecoveryWindowTicks,
-      initialReminderDelayTicks: telemetry.reporterPolicy.initialReminderDelayTicks,
-      maximumReminderDelayTicks: telemetry.reporterPolicy.maximumReminderDelayTicks,
-    },
-  );
-  const result = {
-    schemaVersion: TELEMETRY_OWNER_SCHEMA_VERSION,
-    last: {
-      tick: telemetry.tick,
-      hash: telemetry.status.hash,
-      droppedDetails: telemetry.status.droppedDetails,
-    },
-    history,
-    droppedHistory,
-    reporter: {
-      schemaVersion: 2,
-      entries: reporter.owner as JsonObject,
-      recovery: recovery.owner as JsonObject | null,
-    },
+  const recovery = safelyAdvanceRecovery(reporterOwner.recovery, telemetry, blocker);
+  const reporterPolicy = {
+    maximumFingerprints: telemetry.reporterPolicy.maximumFingerprints,
+    maximumSignalsPerTick: telemetry.reporterPolicy.maximumSignalsPerTick,
+    initialReminderDelayTicks: telemetry.reporterPolicy.initialReminderDelayTicks,
+    maximumReminderDelayTicks: telemetry.reporterPolicy.maximumReminderDelayTicks,
   };
-  while (
-    utf8ByteLength(canonicalSerialize(result)) > policy.maximumHistoryBytes &&
-    history.length > 0
-  ) {
-    history.shift();
-    result.droppedHistory += 1;
+  const preparedReporter = safelyPrepareReporter(details, reporterSignals, reporterPolicy);
+  let maximumRetainedFingerprints = safeNonnegativeInteger(
+    telemetry.reporterPolicy.maximumFingerprints,
+  );
+  let reporter: ReturnType<typeof advancePreparedReporterState>;
+  let result: MutableTelemetryOwner;
+  for (;;) {
+    reporter = safelyAdvanceReporter(
+      reporterOwner.entries,
+      telemetry.tick,
+      preparedReporter,
+      maximumRetainedFingerprints,
+      reporterPolicy,
+    );
+    result = {
+      schemaVersion: TELEMETRY_OWNER_SCHEMA_VERSION,
+      last: {
+        tick: telemetry.tick,
+        hash: telemetry.status.hash,
+        droppedDetails: telemetry.status.droppedDetails,
+      },
+      history: history.map((entry) => ({ ...entry })),
+      droppedHistory,
+      reporter: {
+        schemaVersion: 2,
+        entries: reporter.owner as JsonObject,
+        recovery: recovery.owner as JsonObject | null,
+      },
+    };
+    const generatedEntries = generatedReporterEntries(result.reporter.entries).length;
+    fitOwnerToByteBudget(result, policy.maximumHistoryBytes);
+    const fittedEntries = generatedReporterEntries(result.reporter.entries).length;
+    if (fittedEntries >= generatedEntries) break;
+    maximumRetainedFingerprints = fittedEntries;
   }
+  const retainedFingerprints = retainedReporterFingerprints(result.reporter.entries);
+  const recoveryRetained = result.reporter.recovery !== null;
   const transitions: ReporterTransitionTelemetry[] = [];
-  if (recovery.event !== null) {
+  if (recovery.event !== null && recoveryRetained) {
     transitions.push({
       category: "recovery",
       kind: "stuck",
@@ -226,6 +432,7 @@ function writeOwner(
   }
   transitions.push(
     ...[...reporter.events]
+      .filter((event) => event.kind === "resolved" || retainedFingerprints.has(event.fingerprint))
       .sort(compareReporterEvents)
       .map((event): ReporterTransitionTelemetry => ({
         category: "signal",
@@ -236,8 +443,8 @@ function writeOwner(
       })),
   );
   return {
-    owner: result,
-    recoveryProgress: recovery.status,
+    owner: result as unknown as JsonObject,
+    recoveryProgress: recoveryRetained ? recovery.status : null,
     reporterTransitions: Object.freeze(
       transitions.slice(0, telemetry.reporterPolicy.maximumImmediateEventsPerTick),
     ),
@@ -265,10 +472,13 @@ function compareReporterEvents(
   left: { readonly kind: "first" | "reminder" | "resolved"; readonly fingerprint: string },
   right: { readonly kind: "first" | "reminder" | "resolved"; readonly fingerprint: string },
 ): number {
-  const priority = { resolved: 0, first: 1, reminder: 2 } as const;
-  return (
-    priority[left.kind] - priority[right.kind] || left.fingerprint.localeCompare(right.fingerprint)
-  );
+  const priority = (event: typeof left) => {
+    if (event.kind === "resolved") return 4;
+    const overflow = event.fingerprint.startsWith("reporter-overflow:");
+    if (overflow) return event.kind === "first" ? 0 : 1;
+    return event.kind === "first" ? 2 : 3;
+  };
+  return priority(left) - priority(right) || left.fingerprint.localeCompare(right.fingerprint);
 }
 
 function recoveryStateCode(telemetry: Pick<TickTelemetry, "colony">): string {
@@ -397,6 +607,22 @@ function utf8ByteLength(value: string): number {
     } else bytes += 3;
   }
   return bytes;
+}
+
+function safeNonnegativeInteger(value: number): number {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function saturatingAdd(left: number, right: number): number {
+  const safeLeft = safeNonnegativeInteger(left);
+  const safeRight = safeNonnegativeInteger(right);
+  return safeLeft > Number.MAX_SAFE_INTEGER - safeRight
+    ? Number.MAX_SAFE_INTEGER
+    : safeLeft + safeRight;
+}
+
+function saturatingIncrement(value: number): number {
+  return saturatingAdd(value, 1);
 }
 
 function deepFreeze<Value>(value: Value): Value {

@@ -219,7 +219,294 @@ describe("TelemetryService", () => {
     });
     expect(JSON.stringify(future)).not.toContain("future-player-value");
   });
+
+  it("retains the configured fingerprint cardinality when it fits and evicts deterministically by bytes", () => {
+    const fixture = serviceFixture(100);
+    const service = new TelemetryService();
+    const ordinarySignals = Array.from({ length: 2_000 }, (_, index) => ({
+      kind: "fault",
+      identity: `hostile-room-${String(index)}`,
+      reasonCode: "unexpected-exception",
+    }));
+    const ordinary = service.record({}, { ...fixture.input, reporterSignals: ordinarySignals });
+    expect(reporterEntries(ordinary.owner)).toHaveLength(64);
+    expect(ownerBytes(ordinary.owner)).toBeLessThanOrEqual(8_192);
+
+    const widestSafeCode = `a${"-".repeat(63)}`;
+    let sourceIdentityReads = 0;
+    const wideSignals = Array.from({ length: 2_000 }, (_, index) => {
+      const signal = {
+        kind: "a".repeat(32),
+        reasonCode: widestSafeCode,
+      } as {
+        kind: string;
+        identity: string;
+        reasonCode: string;
+      };
+      Object.defineProperty(signal, "identity", {
+        enumerable: true,
+        get: () => {
+          sourceIdentityReads += 1;
+          return `hostile-room-${String(index)}`;
+        },
+      });
+      return signal;
+    });
+    const forward = service.record({}, { ...fixture.input, reporterSignals: wideSignals });
+    expect(sourceIdentityReads).toBe(2_000);
+    const reversed = service.record(
+      {},
+      { ...fixture.input, reporterSignals: [...wideSignals].reverse() },
+    );
+    expect(forward.owner).toEqual(reversed.owner);
+    expect(forward.telemetry.reporterTransitions).toEqual(reversed.telemetry.reporterTransitions);
+    expect(reporterEntries(forward.owner).length).toBeGreaterThan(24);
+    expect(reporterEntries(forward.owner).length).toBeLessThan(64);
+    expect(ownerBytes(forward.owner)).toBeLessThanOrEqual(8_192);
+    expect(JSON.stringify(forward.owner)).not.toContain("hostile-room");
+
+    const byteLimitedSignals = wideSignals.slice(0, 64);
+    const byteLimitedFirst = service.record(
+      {},
+      { ...fixture.input, reporterSignals: byteLimitedSignals },
+    );
+    const byteLimitedEntries = reporterEntries(byteLimitedFirst.owner) as readonly {
+      readonly fingerprint?: string;
+    }[];
+    expect(byteLimitedEntries.length).toBeLessThan(64);
+    expect(
+      byteLimitedEntries.some(({ fingerprint }) => fingerprint?.startsWith("reporter-overflow:")),
+    ).toBe(true);
+    expect(byteLimitedFirst.telemetry.reporterTransitions[0]).toMatchObject({
+      category: "signal",
+      kind: "first",
+      reasonCode: "reporter-cardinality-overflow",
+    });
+    expect(ownerBytes(byteLimitedFirst.owner)).toBeLessThanOrEqual(8_192);
+
+    const byteLimitedQuiet = service.record(byteLimitedFirst.owner, {
+      ...fixture.input,
+      base: { ...fixture.input.base, tick: 101 },
+      reporterSignals: byteLimitedSignals,
+    });
+    expect(byteLimitedQuiet.telemetry.reporterTransitions).toEqual([]);
+
+    const byteLimitedReminder = service.record(byteLimitedQuiet.owner, {
+      ...fixture.input,
+      base: { ...fixture.input.base, tick: 110 },
+      reporterSignals: byteLimitedSignals,
+    });
+    expect(byteLimitedReminder.telemetry.reporterTransitions[0]).toMatchObject({
+      category: "signal",
+      kind: "reminder",
+      count: 2,
+      reasonCode: "reporter-cardinality-overflow",
+    });
+    expect(ownerBytes(byteLimitedReminder.owner)).toBeLessThanOrEqual(8_192);
+
+    const recoveryBase = {
+      ...fixture.input.base,
+      telemetryPolicy: { ...fixture.input.base.telemetryPolicy, maximumHistoryEntries: 0 },
+      colony: {
+        ...fixture.input.base.colony,
+        states: fixture.input.base.colony.states.map((state) => ({
+          ...state,
+          count: state.id === "bootstrapping" ? 1 : 0,
+        })),
+      },
+      reporterPolicy: {
+        ...fixture.input.base.reporterPolicy,
+        stuckRecoveryWindowTicks: 10,
+      },
+    };
+    const recoveryFirst = service.record(
+      {},
+      {
+        ...fixture.input,
+        base: recoveryBase,
+        reporterSignals: byteLimitedSignals,
+      },
+    );
+    const ownerWithMissingOrdinary = JSON.parse(JSON.stringify(recoveryFirst.owner)) as {
+      reporter: { entries: { entries: { fingerprint: string }[] } };
+    };
+    const recoveryEntries = ownerWithMissingOrdinary.reporter.entries.entries;
+    const removable = recoveryEntries
+      .map(({ fingerprint }, index) => ({ fingerprint, index }))
+      .filter(({ fingerprint }) => !fingerprint.startsWith("reporter-overflow:"))
+      .slice(-2)
+      .map(({ index }) => index);
+    ownerWithMissingOrdinary.reporter.entries.entries = recoveryEntries.filter(
+      (_entry, index) => !removable.includes(index),
+    );
+    const mixedPriority = service.record(ownerWithMissingOrdinary, {
+      ...fixture.input,
+      base: { ...recoveryBase, tick: 110 },
+      reporterSignals: byteLimitedSignals,
+    });
+    expect(mixedPriority.telemetry.reporterTransitions).toEqual([
+      expect.objectContaining({ category: "recovery", kind: "stuck" }),
+      expect.objectContaining({
+        category: "signal",
+        kind: "reminder",
+        reasonCode: "reporter-cardinality-overflow",
+      }),
+    ]);
+  });
+
+  it("prioritizes current first evidence ahead of a resolution flood", () => {
+    const fixture = serviceFixture(100);
+    const service = new TelemetryService();
+    const previous = service.record(
+      {},
+      {
+        ...fixture.input,
+        reporterSignals: Array.from({ length: 64 }, (_, index) => ({
+          kind: "fault",
+          identity: `prior-system-${String(index)}`,
+          reasonCode: "unexpected-exception",
+        })),
+      },
+    );
+
+    const current = service.record(previous.owner, {
+      ...fixture.input,
+      base: { ...fixture.input.base, tick: 101 },
+      reporterSignals: [
+        { kind: "fault", identity: "current-critical-system", reasonCode: "unexpected-exception" },
+      ],
+    });
+
+    expect(current.telemetry.reporterTransitions).toHaveLength(2);
+    expect(current.telemetry.reporterTransitions[0]).toMatchObject({
+      category: "signal",
+      kind: "first",
+      count: 1,
+    });
+    expect(current.telemetry.reporterTransitions[1]).toMatchObject({
+      category: "signal",
+      kind: "resolved",
+    });
+    expect(JSON.stringify(current)).not.toContain("current-critical-system");
+  });
+
+  it("rejects oversized durable arrays before traversal and saturates dropped history", () => {
+    const fixture = serviceFixture(100);
+    const oversizedHistory = new Array(17) as unknown[];
+    Object.defineProperty(oversizedHistory, 0, {
+      get: () => {
+        throw new Error("oversized history entry must not be read");
+      },
+    });
+    const oversizedEntries = new Array(65) as unknown[];
+    Object.defineProperty(oversizedEntries, 0, {
+      get: () => {
+        throw new Error("oversized reporter entry must not be read");
+      },
+    });
+    const result = new TelemetryService().record(
+      {
+        schemaVersion: 2,
+        history: oversizedHistory,
+        droppedHistory: Number.MAX_SAFE_INTEGER,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: oversizedEntries },
+          recovery: null,
+        },
+      },
+      {
+        ...fixture.input,
+        reporterSignals: [
+          { kind: "fault", identity: "system-a", reasonCode: "unexpected-exception" },
+        ],
+      },
+    );
+    expect(result.owner.droppedHistory).toBe(Number.MAX_SAFE_INTEGER);
+    expect(result.telemetry.reporterTransitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "first", count: 1 }),
+    ]);
+    expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
+  });
+
+  it("isolates reporter aggregation and recovery state exceptions with empty safe output", () => {
+    const fixture = serviceFixture(100);
+    const hostileSignal = { kind: "fault", reasonCode: "unexpected-exception" } as {
+      kind: string;
+      identity: string;
+      reasonCode: string;
+    };
+    Object.defineProperty(hostileSignal, "identity", {
+      get: () => {
+        throw new Error("reporter aggregation failed");
+      },
+    });
+    const hostileRecovery = {};
+    Object.defineProperty(hostileRecovery, "signature", {
+      get: () => {
+        throw new Error("recovery parsing failed");
+      },
+    });
+    const result = new TelemetryService().record(
+      {
+        schemaVersion: 2,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: hostileRecovery,
+        },
+      },
+      { ...fixture.input, reporterSignals: [hostileSignal] },
+    );
+    expect(reporterEntries(result.owner)).toEqual([]);
+    expect(result.owner).toMatchObject({ reporter: { recovery: null } });
+    expect(result.telemetry.recoveryProgress).toBeNull();
+    expect(result.telemetry.reporterTransitions).toEqual([]);
+    expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
+  });
 });
+
+function serviceFixture(time: number) {
+  const outcome = runTick({ game: game(time), memory: {} as Memory });
+  const telemetry = outcome.telemetry;
+  if (telemetry === null) throw new Error("expected telemetry");
+  const {
+    activity: _activity,
+    recoveryProgress: _recoveryProgress,
+    reporterTransitions: _reporterTransitions,
+    status: _status,
+    ...base
+  } = telemetry;
+  void _activity;
+  void _recoveryProgress;
+  void _reporterTransitions;
+  void _status;
+  return {
+    input: {
+      base,
+      colony: outcome.colony,
+      contracts: outcome.contracts,
+      execution: outcome.execution,
+      growth: [],
+      maintenance: [],
+      movement: outcome.movement,
+      snapshot: outcome.snapshot,
+      spawn: outcome.spawn,
+      reporterSignals: [],
+    },
+  };
+}
+
+function reporterEntries(owner: Record<string, unknown>): readonly unknown[] {
+  const reporter = owner.reporter as { entries?: { entries?: readonly unknown[] } } | undefined;
+  return reporter?.entries?.entries ?? [];
+}
+
+function ownerBytes(owner: unknown): number {
+  return JSON.stringify(owner).length;
+}
 
 function game(time: number) {
   return {
