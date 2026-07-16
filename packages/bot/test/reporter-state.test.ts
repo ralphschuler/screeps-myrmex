@@ -35,6 +35,25 @@ describe("reporter state", () => {
       policy,
     );
     expect((result.owner as { entries: unknown[] }).entries).toHaveLength(2);
+
+    const future = advanceReporterState(
+      {
+        schemaVersion: 99,
+        entries: [
+          {
+            fingerprint: "fault:deadbeef",
+            count: 4,
+            lastTick: 1,
+            nextReminderTick: 2,
+            reasonCode: "unexpected-exception",
+          },
+        ],
+      },
+      2,
+      [{ kind: "fault", identity: "a", reasonCode: "unexpected-exception" }],
+      policy,
+    );
+    expect(future.events).toEqual([expect.objectContaining({ kind: "first", count: 1 })]);
   });
 
   it("deduplicates thousands of reordered hostile signals without retaining hostile text", () => {
@@ -47,7 +66,7 @@ describe("reporter state", () => {
     const reversed = advanceReporterState(undefined, 10, [...hostile].reverse(), policy);
     expect(first).toEqual(reversed);
     expect((first.owner as { entries: readonly unknown[] }).entries).toHaveLength(2);
-    expect(first.events).toHaveLength(17);
+    expect(first.events).toHaveLength(2);
     expect(JSON.stringify(first)).not.toContain("alliance-secret-W9N9");
   });
 });
