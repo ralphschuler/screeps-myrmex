@@ -1704,6 +1704,23 @@ roadmap gate remains the work selector.
 
 ## 20. Contributor and AI-Agent Protocol
 
+### Phase 2 complete-colony policy projection
+
+`ColonyDirector` owns a versioned, read-only RCL2-RCL8 policy projection on each existing
+`ColonyView`. It is derived from immutable current-tick observation, CPU posture, and source policy;
+it is never persisted and emits no contracts, spawn demand, layouts, construction, domain work,
+telemetry, or commands. Unknown observation authorizes nothing. It publishes current-RCL unlock
+allowances, the complete spawn-pool target, protected reserve state, canonical capability postures,
+and one precedence-ordered progression decision. RCL8 remains blocked as
+`rcl8-health-evidence-unavailable`: [#44](https://github.com/ralphschuler/screeps-myrmex/issues/44)
+owns this seam, while [#225](https://github.com/ralphschuler/screeps-myrmex/issues/225) owns health
+reconciliation and final maturity. No authority or persistent schema is added.
+
+Sources consulted: the official [control guide](https://docs.screeps.com/control.html) (last updated
+May 29, 2026), [`StructureController`](https://docs.screeps.com/api/#StructureController),
+[`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn), and the community
+[RCL reference](https://wiki.screepspl.us/Room_Control_Level/).
+
 Before implementing behavior, a contributor or AI agent MUST answer:
 
 1. Which canonical system owns the decision?

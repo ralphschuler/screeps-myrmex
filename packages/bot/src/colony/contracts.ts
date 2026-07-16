@@ -278,6 +278,73 @@ export interface ColonyView {
   readonly legalWorkforce: boolean | null;
   readonly activeThreat: boolean | null;
   readonly controllerRisk: boolean | null;
+  readonly rclPolicy: ColonyRclPolicyProjection;
+}
+
+export const COLONY_CAPABILITY_DOMAINS = [
+  "mining",
+  "logistics",
+  "construction",
+  "maintenance",
+  "defense",
+  "storage",
+  "terminal",
+  "industry",
+] as const;
+export type ColonyCapabilityDomain = (typeof COLONY_CAPABILITY_DOMAINS)[number];
+export type ColonyCapabilityPosture = "locked" | "available";
+export const COLONY_RCL_POLICY_REASONS = [
+  "observation-unknown",
+  "colony-lost",
+  "outside-rcl2-rcl8",
+  "threat-preemption",
+  "recovery-preemption",
+  "bootstrap-preemption",
+  "constrained-cpu-preemption",
+  "controller-downgrade-risk",
+  "protected-spawn-reserve-unrestored",
+  "spawn-pool-capacity-below-target",
+  "rcl8-health-evidence-unavailable",
+  "active",
+  "sustaining",
+] as const;
+export type ColonyRclPolicyReason = (typeof COLONY_RCL_POLICY_REASONS)[number];
+export interface ColonyRclUnlockAllowances {
+  readonly spawns: number;
+  readonly extensions: number;
+  readonly towers: number;
+  readonly links: number;
+  readonly containers: number;
+  readonly ramparts: boolean;
+  readonly walls: boolean;
+  readonly storage: number;
+  readonly terminal: number;
+  readonly labs: number;
+  readonly extractor: number;
+  readonly factory: number;
+  readonly observer: number;
+  readonly powerSpawn: number;
+  readonly nuker: number;
+}
+export interface ColonyRclPolicyProjection {
+  readonly version: 1;
+  readonly level: number | null;
+  readonly spawnPoolCapacityTarget: number | null;
+  readonly unlocks: ColonyRclUnlockAllowances | null;
+  readonly protectedSpawnReserve: {
+    readonly target: number;
+    readonly available: number | null;
+    readonly state: "unknown" | "unrestored" | "restored";
+  };
+  readonly domains: readonly {
+    readonly domain: ColonyCapabilityDomain;
+    readonly posture: ColonyCapabilityPosture;
+  }[];
+  readonly progression: {
+    readonly status: "blocked" | "authorized" | "sustaining";
+    readonly authorized: boolean;
+    readonly reasonCode: ColonyRclPolicyReason;
+  };
 }
 
 export interface ColonyPlanningResult {

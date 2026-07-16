@@ -41,6 +41,7 @@ export type ConfigValidationReason =
   | "invariant";
 
 export interface RuntimePolicyOverrides {
+  /** Colony RCL policy is source-owned and intentionally absent from operational overrides. */
   readonly recovery?: Partial<RecoveryPolicy>;
   readonly leases?: Partial<LeasePolicy>;
   readonly retries?: Partial<RetryPolicy>;
@@ -715,6 +716,7 @@ export function mergePolicy(
   overrides: RuntimePolicyOverrides | undefined,
 ): SurvivalPolicy {
   return {
+    colony: defaults.colony,
     recovery: { ...defaults.recovery, ...overrides?.recovery },
     leases: { ...defaults.leases, ...overrides?.leases },
     retries: { ...defaults.retries, ...overrides?.retries },

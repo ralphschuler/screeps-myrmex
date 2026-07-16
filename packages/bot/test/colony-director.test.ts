@@ -52,6 +52,8 @@ describe("ColonyDirector owner boundary", () => {
     expect(result.colonies).toEqual([
       expect.objectContaining({ legalWorkforce: false, state: "bootstrapping" }),
     ]);
+    expect(result.colonies[0]?.rclPolicy.version).toBe(1);
+    expect(result.colonies[0]?.rclPolicy.progression.authorized).toBe(false);
     expect(result.objectives).toEqual([
       expect.objectContaining({ id: "colony/W1N1/restore-workforce", status: "funded" }),
     ]);

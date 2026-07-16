@@ -90,6 +90,12 @@ Operational Memory may disable available work but can never activate an unfinish
 
 ## Phase 2 — Complete Colony
 
+The first bounded Phase 2 slice is tracked by
+[issue #44](https://github.com/ralphschuler/screeps-myrmex/issues/44) and
+[`phase2-colony-policy-evidence.md`](phase2-colony-policy-evidence.md). It adds the tick-local
+RCL2-RCL8 projection and `runtime-config-source-v17`; final domain-health reconciliation and
+sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps-myrmex/issues/225).
+
 - Extend the existing colony authority from the survival lifecycle to complete RCL policy; do not
   create a second per-room kernel or state machine.
 - Static mining, logistics contracts, links, storage, terminal, and layouts.
