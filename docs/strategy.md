@@ -63,6 +63,20 @@ growth, and missing or unavailable offload infrastructure degrades to dropped en
 stalling extraction. Container state is evidence only for #47 hauling and #49 repair, while a nearby
 link is only a candidate until #48 authorizes link commands.
 
+Logistics uses one canonical resource-flow admission model across fresh visible owned rooms. Spawn
+and extension supply, survival towers, and controller supply are mandatory before optional storage
+or later-phase consumers. Observed source amounts and sink capacities are reserved once; mixed
+resources never share an inferred capacity, and stale, vanished, full, empty, inactive, or unknown
+facts fail closed. CARRY/MOVE recommendations converge from admitted flow, round-trip ticks, and a
+bounded planning horizon rather than independent haul opportunities.
+
+PR A remains data-only normalization and planning. PR B adds funded haul contracts, population,
+lease execution/reconciliation, and runtime activation; PR C adds telemetry, composed evidence, and
+gate activation. Terminal sends and link commands remain outside local hauling, with #48 owning link
+execution and #49 owning container repair. The exact official Store, storage, terminal, transfer,
+withdraw, Wiki Maturity Matrix, and Wiki Energy guidance consulted for this policy is recorded in
+[ADR 0018](adr/0018-logistics-planner-authority.md).
+
 Spawn decisions use one deterministic broker across every eligible local spawn. Emergency recovery
 precedes replacement, which precedes upgrading and construction; stable deadline, body-cost, and
 identity tie-breakers remove observation-order accidents. Multiple spawns share the room's one

@@ -1155,14 +1155,26 @@ partial command. The complete bounds and proof matrix are in
 
 ### 12.3 LogisticsPlanner
 
-Logistics is a resource-flow planner. It represents sources, sinks, buffers, capacities, deadlines,
-and transfer costs, then emits haul contracts or direct structure-transfer intents. It owns neither
-creep assignments nor movement.
+`LogisticsPlanner` is the sole resource-flow admission authority. Its PR A observation adapter reads
+only detached, fresh, visible, owned `RoomSnapshot` facts and emits canonical resource-specific
+nodes plus stable fail-closed blockers. The pure planner accepts caller-supplied normalized nodes
+and edges, reserves each observed source amount and sink capacity exactly once, admits mandatory
+deadlines first, and emits only projections, reservations, blockers, and bounded per-colony
+`CARRY`/`MOVE` recommendations. Room, node, edge, admitted-flow, and blocker caps bound all work.
 
 Mandatory flows are defense reserves, spawn/extensions, survival towers, and recovery. Optional
 flows such as upgrading, industry, and market staging consume only unreserved surplus. Resource
 requests use a common stock-policy vocabulary so labs, terminals, factories, nukers, and power
 spawns cannot each invent conflicting reserve rules.
+
+Unknown, stale, foreign, inactive, empty, full, or unobserved facts authorize no optimistic
+capacity. Generic later-phase stores expose contents only when represented by the snapshot;
+resource-specific sink acceptance remains blocked unless the snapshot proves it. PR B owns funded
+haul contracts, population demand, lease execution/reconciliation, and runtime activation. PR C owns
+telemetry, composed scenario evidence, and gate activation. Link commands remain #48, repair remains
+issue #49, and PR A never infers terminal sends, market value, hostile safety, or runtime commands.
+The authority decision and exact consulted Store/storage/terminal/transfer/withdraw and Wiki
+mechanics pages are recorded in [ADR 0018](adr/0018-logistics-planner-authority.md).
 
 ### 12.4 MovementArbiter
 
