@@ -1,0 +1,10 @@
+{
+  "name": "myrmex-private-server-runtime",
+  "private": true,
+  "engines": {
+    "node": ">=22.9.0"
+  },
+  "devDependencies": {
+    "screeps": "4.3.0"
+  }
+}

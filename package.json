@@ -22,6 +22,7 @@
     "lint": "eslint .",
     "package:bot": "node scripts/package-bot.mjs",
     "package:check": "node scripts/package-bot.mjs 0.0.0-development",
+    "private-server": "node scripts/private-server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --project packages/bot/tsconfig.json --noEmit && tsc --project packages/scenario-kit/tsconfig.json --noEmit"
