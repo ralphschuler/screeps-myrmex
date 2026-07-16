@@ -32,6 +32,7 @@ function attachFixture(config, definition = null, storage = loadStorage()) {
   let hostileInserted = false;
   let resetPublished = false;
   let resetObservationPending = false;
+  let botExceptionInjected = false;
 
   config.engine.on("processRoom", (room, _roomInfo, objects, terrain, gameTime, bulk) => {
     activeDefinition = latchDefinition(activeDefinition, env.MYRMEX_PRIVATE_SERVER_FIXTURE);
@@ -68,13 +69,26 @@ function attachFixture(config, definition = null, storage = loadStorage()) {
     writeReceipt(storage, activeDefinition, "ready-runner", { phase: "ready" });
     const definition = activeDefinition;
     if (resetObservationPending || `${userId}` !== definition.target.userId) return;
-    return storage.env.get(receiptKey(definition, "reset")).then((value) => {
+    return Promise.all([
+      storage.env.get(receiptKey(definition, "reset")),
+      storage.env.get(storage.env.keys.GAMETIME),
+    ]).then(([value, gameTime]) => {
       const receipt = safeReceipt(value, definition);
       if (
         receipt.phase !== "scheduled" ||
         sandbox.__myrmexFixtureGeneration === definition.scenarioId
-      )
+      ) {
+        if (!botExceptionInjected && definition.botExceptionAtTick === +gameTime) {
+          botExceptionInjected = true;
+          return writeReceipt(storage, definition, "bot-exception", {
+            phase: "injected",
+            tick: +gameTime,
+          }).then(() => {
+            throw new Error("myrmex fixture bot exception");
+          });
+        }
         return;
+      }
       resetObservationPending = true;
       sandbox.__myrmexFixtureGeneration = definition.scenarioId;
       return storage.env.set(
@@ -105,7 +119,14 @@ function latchDefinition(current, filename) {
 }
 
 function validateDefinition(value) {
-  const row = exact(value, ["heapResetAtTick", "hostile", "scenarioId", "schemaVersion", "target"]);
+  const row = exact(value, [
+    "botExceptionAtTick",
+    "heapResetAtTick",
+    "hostile",
+    "scenarioId",
+    "schemaVersion",
+    "target",
+  ]);
   if (row.schemaVersion !== 1 || !safeId(row.scenarioId))
     throw new TypeError("MYRMEX fixture identity is invalid.");
   const target = exact(row.target, ["room", "targetX", "targetY", "userId"]);
@@ -119,12 +140,16 @@ function validateDefinition(value) {
   if (row.heapResetAtTick !== null && !tick(row.heapResetAtTick)) {
     throw new TypeError("MYRMEX heap-reset fixture is invalid.");
   }
+  if (row.botExceptionAtTick !== null && !tick(row.botExceptionAtTick)) {
+    throw new TypeError("MYRMEX bot-exception fixture is invalid.");
+  }
   return Object.freeze({
     schemaVersion: 1,
     scenarioId: row.scenarioId,
     target: Object.freeze(target),
     hostile: Object.freeze(hostile),
     heapResetAtTick: row.heapResetAtTick,
+    botExceptionAtTick: row.botExceptionAtTick,
   });
 }
 

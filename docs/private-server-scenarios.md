@@ -48,7 +48,7 @@ counts and bounded ticks. The v1 evidence hash intentionally excludes those raw 
 valid when it satisfies the same manifest contract and produces a successful canonical artifact, not
 when its private world is byte-identical.
 
-The `bot-exception` terminal-path classification is covered with a test driver. A real-engine
-exception injection needs a fixture capability that observes a runner-side safe receipt without
-modifying the production bundle; keep that work explicitly tracked before treating that scenario as
-a live gate.
+For `bot-exception`, the fixture writes its fixed `injected` receipt immediately before a
+runner-side exception. The command samples only that receipt and emits the corresponding #143
+failure kind; it never reads the exception text or console output. A credentialed run is still
+required before treating that row as a live gate.

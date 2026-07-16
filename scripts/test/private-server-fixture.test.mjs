@@ -13,6 +13,7 @@ const definition = {
   target: { room: "W1N1", targetX: 20, targetY: 20, userId: "controlled-user" },
   hostile: { atTick: 7, body: "smallMelee", x: 25, y: 25 },
   heapResetAtTick: 9,
+  botExceptionAtTick: null,
 };
 
 describe("private-server fixture mod", () => {
@@ -36,6 +37,7 @@ describe("private-server fixture mod", () => {
       env: {
         get: async (key) => receipts.get(key),
         set: async (key, value) => receipts.set(key, value),
+        keys: { GAMETIME: "gameTime" },
       },
       pubsub: {
         keys: { RUNTIME_RESTART: "runtimeRestart" },
@@ -97,6 +99,32 @@ describe("private-server fixture mod", () => {
       { insert: (value) => inserted.push(value) },
     );
     expect(inserted).toEqual([]);
+  });
+
+  it("publishes a bounded bot-exception receipt before the runner-side injection", async () => {
+    const events = new Map();
+    const receipts = new Map([["gameTime", "11"]]);
+    const storage = {
+      env: {
+        get: async (key) => receipts.get(key),
+        keys: { GAMETIME: "gameTime" },
+        set: async (key, value) => receipts.set(key, value),
+      },
+      pubsub: { keys: { RUNTIME_RESTART: "runtimeRestart" }, publish: async () => undefined },
+    };
+    fixture(
+      { engine: { on: (name, handler) => events.set(name, handler) } },
+      fixture.validateDefinition({ ...definition, botExceptionAtTick: 11, heapResetAtTick: null }),
+      storage,
+    );
+    await expect(events.get("playerSandbox")({}, "controlled-user")).rejects.toThrow(
+      "fixture bot exception",
+    );
+    expect(JSON.parse(receipts.get("myrmexFixture:hostile-reset-v1:bot-exception"))).toEqual({
+      phase: "injected",
+      scenarioId: "hostile-reset-v1",
+      tick: 11,
+    });
   });
 
   it("rejects unsupported input before it can register a fixture", () => {

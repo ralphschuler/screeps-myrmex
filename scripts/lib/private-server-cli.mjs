@@ -15,6 +15,7 @@ const OPERATIONS = new Set([
   "reset",
   "resume",
   "sample-controlled",
+  "sample-fixture",
   "set-tick-duration",
 ]);
 const CONTROLLED_USERNAME = "myrmex-integration";
@@ -41,6 +42,12 @@ export function privateServerCliCommand(operation) {
   if (kind === "prepare-fixture-target") {
     exactOperation(operation, ["kind"]);
     return `storage.db.users.findOne({username:'${CONTROLLED_USERNAME}'}).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['rooms.objects'].find({user:user._id,type:'creep'}).then(creeps=>{const creep=creeps[0];if(!creep)throw new Error('controlled integration creep is missing');return Promise.all([storage.db['rooms.objects'].find({room:creep.room}),storage.db['rooms.terrain'].findOne({room:creep.room})]).then(([objects,terrain])=>{const candidate=[];for(let y=1;y<=48;y+=1)for(let x=1;x<=48;x+=1)if(Math.max(Math.abs(x-creep.x),Math.abs(y-creep.y))>=3&&Math.max(Math.abs(x-creep.x),Math.abs(y-creep.y))<=6&&!objects.some(item=>item.x===x&&item.y===y)&&(parseInt(terrain.terrain.charAt(y*50+x),10)&1)===0)candidate.push({x,y});const hostile=candidate[0];if(!hostile)throw new Error('safe hostile fixture cell is missing');return JSON.stringify({room:creep.room,targetX:creep.x,targetY:creep.y,userId:''+user._id,hostileX:hostile.x,hostileY:hostile.y})})})})`;
+  }
+  if (kind === "sample-fixture") {
+    exactOperation(operation, ["kind", "scenarioId"]);
+    if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
+    const key = JSON.stringify(`myrmexFixture:${operation.scenarioId}:bot-exception`);
+    return `storage.env.get(${key}).then(value=>{let receipt={};try{receipt=JSON.parse(value||'{}')}catch{};return JSON.stringify({botException:receipt.phase==='injected'?'injected':'absent'})})`;
   }
   if (!Number.isSafeInteger(operation.milliseconds)) {
     throw new TypeError("Tick duration must be a safe integer.");
@@ -80,6 +87,16 @@ export async function preparePrivateServerFixtureTarget(options = {}) {
   return parseFixtureTarget(
     await runPrivateServerCommand(
       privateServerCliCommand({ kind: "prepare-fixture-target" }),
+      options,
+    ),
+  );
+}
+
+/** Samples only the namespaced, fixed bot-exception receipt for one declared scenario. */
+export async function samplePrivateServerFixture(scenarioId, options = {}) {
+  return parseFixtureSample(
+    await runPrivateServerCommand(
+      privateServerCliCommand({ kind: "sample-fixture", scenarioId }),
       options,
     ),
   );
@@ -255,6 +272,14 @@ function parseFixtureTarget(value) {
     userId: row.userId,
     transcript: opaqueResult(value),
   });
+}
+
+function parseFixtureSample(value) {
+  const row = parseJson(value);
+  if (row === null || !["absent", "injected"].includes(row.botException)) {
+    throw new Error("Private-server fixture sample receipt is invalid.");
+  }
+  return Object.freeze({ botException: row.botException, transcript: opaqueResult(value) });
 }
 
 function parseJson(value) {
