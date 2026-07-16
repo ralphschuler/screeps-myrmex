@@ -822,14 +822,14 @@ function requestDenial(
     return "observation-unknown";
   }
   if (
-    request.category === "optional-growth" &&
+    (request.category === "bootstrap-controller" || request.category === "optional-growth") &&
     record.state !== "developing" &&
     record.state !== "mature"
   ) {
     return "posture-preempted";
   }
   if (
-    request.category === "optional-growth" &&
+    (request.category === "bootstrap-controller" || request.category === "optional-growth") &&
     (cpuMode === "recovery" || cpuMode === "emergency" || cpuMode === "constrained")
   ) {
     return "posture-preempted";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRuntimeConfig } from "../src/config/runtime-config";
 import { authorizedSurvivalGrowth, planSurvivalGrowth, renewGrowthBudgets } from "../src/growth";
+import type { ContractPlanningView } from "../src/contracts";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
@@ -82,10 +83,159 @@ describe("survival growth", () => {
       planSurvivalGrowth(world(), config).every(({ action }) => action === "upgrade-controller"),
     ).toBe(true);
   });
+
+  it("bridges RCL1 only from carried energy after the 300-energy spawn reserve is full", () => {
+    const config = buildRuntimeConfig();
+    const planned = planSurvivalGrowth(
+      world({
+        controllerLevel: 1,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 1,
+      }),
+      config,
+    );
+
+    expect(planned).toHaveLength(1);
+    expect(planned[0]).toMatchObject({
+      action: "upgrade-controller",
+      reasonCode: "rcl1-bootstrap-controller",
+      budgetRequest: {
+        category: "bootstrap-controller",
+        energy: null,
+      },
+    });
+    expect(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 1,
+          energy: 299,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 1,
+        }),
+        config,
+      ),
+    ).toEqual([]);
+    expect(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 1,
+          energy: 300,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 0,
+        }),
+        config,
+      ),
+    ).toEqual([]);
+    expect(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 2,
+          energy: 300,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 1,
+        }),
+        config,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps bootstrap demand reusable across temporary infeasibility and cancels when bootstrap phase exits", () => {
+    const config = buildRuntimeConfig();
+    const candidates = planSurvivalGrowth(
+      world({
+        controllerLevel: 1,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 1,
+      }),
+      config,
+    );
+    const bootstrap = candidates.find(
+      ({ budgetRequest }) => budgetRequest.category === "bootstrap-controller",
+    );
+    if (bootstrap === undefined) {
+      throw new Error("expected bootstrap candidate");
+    }
+    const planning: ContractPlanningView = {
+      status: "ready" as const,
+      contracts: [
+        {
+          budgetBinding: {
+            category: "bootstrap-controller",
+            issuer: bootstrap.budgetRequest.issuer,
+          },
+          contractId: "bootstrap-RCL1",
+          execution: {
+            action: "upgrade-controller" as const,
+            completion: "continuous" as const,
+            counterpartId: null,
+            resourceType: null,
+            version: 1,
+          },
+          issuer: bootstrap.budgetRequest.issuer,
+          owner: { id: "W1N1", kind: "colony" },
+          state: "funded" as const,
+          targetId: bootstrap.targetId,
+        },
+      ],
+    };
+
+    const transitionsDuringTemporaryHiccup = authorizedSurvivalGrowth(
+      [],
+      [],
+      planning,
+      110,
+      world({
+        controllerLevel: 1,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 0,
+      }),
+    ).transitions;
+    expect(transitionsDuringTemporaryHiccup).toEqual([]);
+
+    const transitionsAfterBootstrapPhase = authorizedSurvivalGrowth(
+      [],
+      [],
+      planning,
+      111,
+      world({
+        controllerLevel: 2,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 0,
+      }),
+    ).transitions;
+    expect(transitionsAfterBootstrapPhase).toEqual([
+      expect.objectContaining({
+        contractId: "bootstrap-RCL1",
+        reason: "growth-target-resolved",
+        tick: 111,
+        to: "cancelled",
+      }),
+    ]);
+  });
 });
 
 function world(
-  options: { downgrade?: number; hostile?: boolean; sites?: boolean } = {},
+  options: {
+    controllerLevel?: number;
+    downgrade?: number;
+    energy?: number;
+    energyCapacity?: number;
+    hostile?: boolean;
+    sites?: boolean;
+    spawn?: boolean;
+    workerEnergy?: number;
+  } = {},
 ): WorldSnapshot {
   return {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 100 },
@@ -117,7 +267,7 @@ function world(
           : [],
         controller: {
           id: "controller-a",
-          level: 1,
+          level: options.controllerLevel ?? 1,
           ownerUsername: "me",
           ownership: "owned",
           pos: position(10, 10),
@@ -131,14 +281,15 @@ function world(
           ticksToDowngrade: options.downgrade ?? 10_000,
           upgradeBlocked: null,
         },
-        energyAvailable: 800,
-        energyCapacityAvailable: 800,
+        energyAvailable: options.energy ?? 800,
+        energyCapacityAvailable: options.energyCapacity ?? 800,
         hostileCreeps: options.hostile ? [hostile()] : [],
         name: "W1N1",
         observedAt: 100,
-        ownedCreeps: [],
+        ownedCreeps:
+          options.workerEnergy === undefined ? [] : [worker(options.workerEnergy, position(9, 10))],
         ownedExtensions: [],
-        ownedSpawns: [],
+        ownedSpawns: options.spawn ? [spawn()] : [],
         ownedTowers: [],
         roads: [],
         sources: [],
@@ -163,6 +314,51 @@ function world(
       estimatedPayloadBytes: 1,
     },
     visibility: { absentRoomSemantics: "unknown", rooms: [], scope: "current-tick" },
+  };
+}
+function spawn() {
+  return {
+    active: true,
+    hits: 5_000,
+    hitsMax: 5_000,
+    id: "spawn-a",
+    name: "Spawn1",
+    pos: position(5, 5),
+    spawning: null,
+    store: { capacity: 300, freeCapacity: 0, resources: [], usedCapacity: 300 },
+  };
+}
+function worker(carriedEnergy: number, pos: ReturnType<typeof position>) {
+  const none = { active: 0, boosted: 0, total: 0 };
+  const one = { active: 1, boosted: 0, total: 1 };
+  return {
+    body: {
+      activeParts: 3,
+      attack: none,
+      carry: one,
+      claim: none,
+      heal: none,
+      move: one,
+      rangedAttack: none,
+      size: 3,
+      tough: none,
+      work: one,
+    },
+    fatigue: 0,
+    hits: 300,
+    hitsMax: 300,
+    id: "worker",
+    name: "worker",
+    ownerUsername: "me",
+    pos,
+    spawning: false,
+    store: {
+      capacity: 50,
+      freeCapacity: 50 - carriedEnergy,
+      resources: carriedEnergy === 0 ? [] : [{ amount: carriedEnergy, resourceType: "energy" }],
+      usedCapacity: carriedEnergy,
+    },
+    ticksToLive: 1_000,
   };
 }
 function hostile() {
