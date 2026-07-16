@@ -150,7 +150,7 @@ source-unavailable.
 | `phase1.movement`             | unavailable  | none                                                   |
 | `phase1.agents`               | unavailable  | `phase1.colony`, `phase1.contracts`, `phase1.movement` |
 | `phase1.economy`              | unavailable  | `phase1.agents`, `phase1.spawn`                        |
-| `phase1.recovery`             | unavailable  | `phase1.economy`                                       |
+| `phase1.recovery`             | available    | `phase1.economy`                                       |
 | `phase1.growth`               | unavailable  | `phase1.recovery`                                      |
 | `phase1.safety`               | unavailable  | `phase1.colony`, `phase1.movement`                     |
 | `phase1.telemetry`            | unavailable  | `phase1.agents`, `phase1.spawn`                        |

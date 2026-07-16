@@ -480,6 +480,7 @@ describe("tick lifecycle", () => {
     runTick({ game: world.game(210), memory });
     const planned = runTick({ game: world.game(211), memory });
     expect(planned.config.features.gates["phase1.economy"].enabled).toBe(true);
+    expect(planned.config.features.gates["phase1.recovery"].enabled).toBe(true);
     expect(planned.snapshot.rooms[0]?.sources).toHaveLength(1);
     expect(planned.snapshot.rooms[0]?.ownedCreeps).toHaveLength(1);
     expect(planSurvivalFlow(planned.snapshot)).toHaveLength(1);

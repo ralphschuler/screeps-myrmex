@@ -31,4 +31,5 @@ This avoids a new persistent authority before the Phase 1 telemetry/retry policy
   reserve and never substitutes for the later critical-maintenance policy.
 - Safe mode is limited to a legal observed controller, a qualifying local hostile, and a predicted
   near-term loss of a critically damaged owned spawn or tower.
-- `phase1.safety` is source-available under `runtime-config-source-v8`.
+- `phase1.safety` is source-available under `runtime-config-source-v8`; the later recovery-gate
+  activation advances the shared source revision to v9 without changing safety ownership.
