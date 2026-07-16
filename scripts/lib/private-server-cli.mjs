@@ -27,9 +27,13 @@ export function privateServerCliCommand(operation) {
   }
   const { kind } = operation;
   if (!OPERATIONS.has(kind)) throw new TypeError("Private-server CLI operation is not supported.");
-  if (kind === "pause" || kind === "reset" || kind === "resume") {
+  if (kind === "pause" || kind === "resume") {
     exactOperation(operation, ["kind"]);
-    return `system.${kind === "pause" ? "pauseSimulation" : kind === "reset" ? "resetAllData" : "resumeSimulation"}()`;
+    return `system.${kind === "pause" ? "pauseSimulation" : "resumeSimulation"}()`;
+  }
+  if (kind === "reset") {
+    exactOperation(operation, ["kind"]);
+    return "system.resetAllData().then(()=> 'OK')";
   }
   if (kind === "bootstrap-controlled-bot") {
     exactOperation(operation, ["kind"]);
