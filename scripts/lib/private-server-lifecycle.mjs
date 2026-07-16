@@ -5,6 +5,8 @@ export const PRIVATE_SERVER_RUNTIME_VERSION = "4.3.0";
 export const PRIVATE_SERVER_LIMITS = Object.freeze({
   healthAttempts: 60,
   healthIntervalMs: 500,
+  shutdownAttempts: 50,
+  shutdownIntervalMs: 100,
   shutdownTimeoutMs: 5_000,
   startupTimeoutMs: 30_000,
 });
@@ -111,6 +113,19 @@ export async function waitForHealth(probe, limits = PRIVATE_SERVER_LIMITS) {
     if (attempt < limits.healthAttempts) await delay(limits.healthIntervalMs);
   }
   return lifecycleRecord("health-timeout", { attempts: limits.healthAttempts });
+}
+
+/** Waits until the detached launcher process group is gone before its PID may be forgotten. */
+export async function waitForShutdown(probe, limits = PRIVATE_SERVER_LIMITS) {
+  for (let attempt = 1; attempt <= limits.shutdownAttempts; attempt += 1) {
+    if (await probe()) return lifecycleRecord("stopped", { attempt });
+    if (attempt < limits.shutdownAttempts) await delay(limits.shutdownIntervalMs);
+  }
+  return lifecycleRecord("cleanup-failed", {
+    attempts: limits.shutdownAttempts,
+    reason: "shutdown-timeout",
+    timeoutMs: limits.shutdownTimeoutMs,
+  });
 }
 
 export function redactLifecycleError(error) {

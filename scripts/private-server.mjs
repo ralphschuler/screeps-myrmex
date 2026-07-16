@@ -15,6 +15,7 @@ import {
   redactLifecycleError,
   scrubProvisionedConfig,
   waitForHealth,
+  waitForShutdown,
   writePid,
 } from "./lib/private-server-lifecycle.mjs";
 
@@ -163,11 +164,26 @@ async function stop() {
   try {
     process.kill(-pid, "SIGTERM");
   } catch (error) {
-    await clearPid(paths);
+    if (error instanceof Error && "code" in error && error.code === "ESRCH") {
+      await clearPid(paths);
+      return lifecycleRecord("stopped");
+    }
     return lifecycleRecord("cleanup-failed", { reason: redactLifecycleError(error) });
   }
+  const result = await waitForShutdown(() => processGroupStopped(pid));
+  if (result.kind !== "stopped") return result;
   await clearPid(paths);
   return lifecycleRecord("stopped");
+}
+
+function processGroupStopped(pid) {
+  try {
+    process.kill(-pid, 0);
+    return false;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ESRCH") return true;
+    throw error;
+  }
 }
 
 async function execute(command, args, successKind, commandCwd = cwd()) {

@@ -12,6 +12,7 @@ import {
   redactLifecycleError,
   scrubProvisionedConfig,
   waitForHealth,
+  waitForShutdown,
 } from "../lib/private-server-lifecycle.mjs";
 
 describe("private-server lifecycle", () => {
@@ -60,6 +61,35 @@ describe("private-server lifecycle", () => {
     expect(redactLifecycleError(new Error("token=abc\npassword=xyz"))).toBe(
       "token=[redacted] password=[redacted]",
     );
+  });
+
+  it("bounds process-group shutdown before clearing lifecycle state", async () => {
+    let attempts = 0;
+    const stopped = await waitForShutdown(
+      async () => {
+        attempts += 1;
+        return attempts === 2;
+      },
+      { shutdownAttempts: 3, shutdownIntervalMs: 0, shutdownTimeoutMs: 5 },
+    );
+    expect(stopped).toEqual({
+      attempt: 2,
+      kind: "stopped",
+      runtime: "screeps@4.3.0",
+    });
+    await expect(
+      waitForShutdown(async () => false, {
+        shutdownAttempts: 2,
+        shutdownIntervalMs: 0,
+        shutdownTimeoutMs: 5,
+      }),
+    ).resolves.toEqual({
+      attempts: 2,
+      kind: "cleanup-failed",
+      reason: "shutdown-timeout",
+      runtime: "screeps@4.3.0",
+      timeoutMs: 5,
+    });
   });
 
   it("exposes only fixed launcher failure codes", () => {
