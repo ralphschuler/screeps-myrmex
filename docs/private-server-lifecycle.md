@@ -17,9 +17,10 @@ npm run private-server -- stop
 ```
 
 Each command emits one sanitized JSON lifecycle record. Startup uses loopback-only ports, one
-runner, and one processor. Health polling and cleanup are bounded. A non-success record fails the
-command; later scenario work must treat that as infrastructure failure rather than gameplay
-evidence.
+runner, and one processor. Health polling and cleanup are bounded. Stop retains the launcher PID
+until the detached process group exits; a five-second timeout returns the fixed `shutdown-timeout`
+cleanup reason and prevents a competing restart. A non-success record fails the command; later
+scenario work must treat that as infrastructure failure rather than gameplay evidence.
 
 When a launcher cannot become healthy, the record may include only one fixed reason code:
 `asset-directory-unavailable`, `configuration-file-unavailable`, `required-launch-option-missing`,
