@@ -145,7 +145,11 @@ function safeError(error) {
 function scenarioFailureCode(error) {
   if (!(error instanceof Error)) return null;
   if (error.name === "BundleDeploymentFailure") {
-    return error.message === "bundle-deployment-failed" ? error.message : null;
+    return ["bundle-deployment-command-failed", "bundle-deployment-unacknowledged"].includes(
+      error.message,
+    )
+      ? error.message
+      : null;
   }
   if (error.name === "CliOperationFailure") {
     return [

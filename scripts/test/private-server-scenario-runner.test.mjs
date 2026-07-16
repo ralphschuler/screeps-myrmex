@@ -71,13 +71,13 @@ describe("private-server scenario runner", () => {
     });
     const deployment = await runPrivateServerScenario({
       driver: driver([], {
-        observeError: namedError("BundleDeploymentFailure", "bundle-deployment-failed"),
+        observeError: namedError("BundleDeploymentFailure", "bundle-deployment-unacknowledged"),
       }),
       manifest,
     });
     expect(deployment).toMatchObject({
       evidence: { failure: { kind: "bundle-deployment-failed" } },
-      failureCode: "bundle-deployment-failed",
+      failureCode: "bundle-deployment-unacknowledged",
       ok: false,
     });
     const cleanup = await runPrivateServerScenario({

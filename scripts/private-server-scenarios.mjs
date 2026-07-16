@@ -58,8 +58,14 @@ function scenarioDriver(options) {
     async deploy() {
       try {
         await deployPrivateServerBundle(options.bundlePath);
-      } catch {
-        throw namedError("BundleDeploymentFailure", "bundle-deployment-failed");
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        throw namedError(
+          "BundleDeploymentFailure",
+          ["bundle-deployment-command-failed", "bundle-deployment-unacknowledged"].includes(code)
+            ? code
+            : "bundle-deployment-failed",
+        );
       }
     },
     async resume() {

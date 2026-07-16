@@ -126,9 +126,14 @@ export function privateServerDeploymentCommand(bundle) {
 export async function deployPrivateServerBundle(bundlePath, options = {}) {
   const bundle = await readFile(bundlePath, "utf8");
   const command = privateServerDeploymentCommand(bundle);
-  const result = await runPrivateServerCommand(command, options);
+  let result;
+  try {
+    result = await runPrivateServerCommand(command, options);
+  } catch {
+    throw new Error("bundle-deployment-command-failed");
+  }
   if (parseJson(result) === null || parseJson(result).deployed !== true) {
-    throw new Error("Private-server bundle deployment was not acknowledged.");
+    throw new Error("bundle-deployment-unacknowledged");
   }
   return opaqueResult(result);
 }
