@@ -12,11 +12,11 @@ import {
 
 describe("layout persistence and cache", () => {
   const commitment = {
-    algorithmRevision: "owned-room-layout-v1",
+    algorithmRevision: "owned-room-layout-v2-source-services",
     anchor: { roomName: "W1N1", x: 25, y: 25 },
     blockers: [],
     committedAt: 10,
-    fingerprint: "layout-v1:a",
+    fingerprint: "layout-v2:a",
     transform: 0,
   } as const;
   it("persists bounded commitment metadata without placement arrays and drops lost rooms", () => {
@@ -27,6 +27,14 @@ describe("layout persistence and cache", () => {
     expect(
       parseLayoutsOwner({ ...owner, records: Array.from({ length: 65 }, () => owner.records[0]) }),
     ).toBeNull();
+  });
+  it("drops an old algorithm commitment as stale rebuild work instead of rejecting the owner", () => {
+    const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    const stale = {
+      ...owner,
+      records: [{ ...owner.records[0], algorithmRevision: "owned-room-layout-v1" }],
+    };
+    expect(parseLayoutsOwner(stale)).toMatchObject({ records: [], revision: owner.revision + 1 });
   });
   it("persists 32 canonical receipts and drops them on layout revision", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
@@ -51,7 +59,7 @@ describe("layout persistence and cache", () => {
   });
   it("is byte-equivalent with warm/cold layout.compiled.v1 cache and exact dependencies", () => {
     const deps = layoutCacheDependencies({
-      algorithmRevision: "owned-room-layout-v1",
+      algorithmRevision: "owned-room-layout-v2-source-services",
       factsRevision: "f",
       policyRevision: "p",
       terrainRevision: "t",

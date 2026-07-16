@@ -13,6 +13,9 @@ limit also require explicit adoption and later arbitration boundaries.
 
 - Add source-defined clean-room `owned-room-layout-v1` and the `phase2.layout` gate, dependent on
   `phase2.colony`; advance runtime config source revision to 19.
+- Issue #46 PR A supersedes the algorithm identity with `owned-room-layout-v2-source-services`.
+  Earlier records are valid stale rebuild work, not malformed owner memory; reconstructible source
+  placements remain excluded from persistence.
 - Keep `WorldObserver` authoritative and add detached raw terrain, exits, mineral, all visible
   structures, owned/foreign construction sites, and authoritative global owned-site count.
 - Add the distinct bounded `layouts` persistent owner and schema-4 migration. Persist no placements:

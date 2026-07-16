@@ -1237,6 +1237,19 @@ stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
 observed owned layout site enters the existing funded survival-growth build flow, while controller
 risk, recovery, maintenance, and protected reserves retain precedence.
 
+Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
+activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
+and `LayoutPlanner` commits at most one semantic `source-container` placement per source. Sources
+use binary ID order; each source inspects exactly eight adjacent positions in y/x order. Exact legal
+containers and matching owned sites precede bounded static route distance from committed storage or
+the primary spawn, then plain terrain, swamp terrain, y, and x. Walls, borders, incompatible primary
+placements, structures, sites, and duplicate assignments fail closed; roads and ramparts may
+overlap. Dynamic creeps, congestion, movement reservations, and role state never enter commitment or
+cache identity. A source without a legal reachable work tile produces a bounded source-specific
+blocker without invalidating safe assignments for other sources. Old algorithm commitments are
+discarded as stale rebuild work rather than corrupting the `layouts` owner, and placements remain
+heap-only.
+
 Mechanics grounding: official
 [`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite),
 [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite),
@@ -1245,6 +1258,14 @@ Mechanics grounding: official
 [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/) guidance. Community
 stamp/bunker terminology informed only the problem framing; the MYRMEX layout is source-defined and
 clean-room.
+
+Source-service mechanics additionally follow the official
+[`Source`](https://docs.screeps.com/api/#Source),
+[`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest),
+[`StructureContainer`](https://docs.screeps.com/api/#StructureContainer), and
+[`Room.Terrain`](https://docs.screeps.com/api/#Room.Terrain) contracts. The community
+[`Static Harvesting`](https://wiki.screepspl.us/Static_Harvesting/) article supplies terminology
+only; MYRMEX selection and authority boundaries are independently derived.
 
 ### 12.6 DefenseDirector
 

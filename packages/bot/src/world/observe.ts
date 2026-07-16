@@ -239,11 +239,12 @@ function snapshotController(controller: StructureController): ControllerSnapshot
 }
 
 function snapshotSource(source: Source): SourceSnapshot {
+  const id = String(source.id);
   return {
     energy: source.energy,
     energyCapacity: source.energyCapacity,
-    id: String(source.id),
-    pos: snapshotPosition(source.pos),
+    id,
+    pos: { ...snapshotPosition(source.pos), sourceId: id },
     ticksToRegeneration: nullableNumber(source.ticksToRegeneration),
   };
 }
@@ -304,6 +305,10 @@ function snapshotStoredStructure(
     pos: snapshotPosition(structure.pos),
     store: snapshotStore(structure.store),
     structureType: structure.structureType,
+    ticksToDecay:
+      structure.structureType === "container"
+        ? nullableNumber((structure as StructureContainer).ticksToDecay)
+        : null,
   };
 }
 
