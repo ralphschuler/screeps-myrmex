@@ -149,6 +149,10 @@ export interface SurvivalPolicy {
 /** Source-versioned complete-colony policy. Operational overrides cannot advance this version. */
 export interface ColonyPolicy {
   readonly rclPolicyVersion: 1;
+  readonly populationPolicyVersion: 1;
+  readonly populationPlanningHorizonTicks: 50;
+  readonly populationSpawnUtilizationCeilingBasisPoints: 9_000;
+  readonly populationMaximumDemandsPerColony: 8;
 }
 
 export interface ConfiguredRelations {

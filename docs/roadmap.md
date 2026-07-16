@@ -135,3 +135,7 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   strongholds, portals, and cross-shard strategy.
 
 **Exit:** operations meet objective, budget, loss-rate, and retaliation-risk targets.
+
+The final #44-owned slice adds bounded funded-objective population scaling under
+`runtime-config-source-v18`. Domain behavior remains in #45-#52 and cross-domain recovery and
+maturity remain in #225.

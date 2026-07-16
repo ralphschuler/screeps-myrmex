@@ -27,6 +27,7 @@ const MAX_ID_CODE_UNITS = 256;
 export const SPAWN_DEMAND_CATEGORIES = Object.freeze([
   "emergency-recovery",
   "replacement",
+  "funded-workforce",
   "upgrading",
   "construction",
 ] as const);

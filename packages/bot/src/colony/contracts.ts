@@ -1,3 +1,5 @@
+import type { CapabilityVector } from "../contracts";
+
 export const COLONY_OWNER_SCHEMA_VERSION = 1 as const;
 
 export const COLONY_STATES = [
@@ -279,6 +281,46 @@ export interface ColonyView {
   readonly activeThreat: boolean | null;
   readonly controllerRisk: boolean | null;
   readonly rclPolicy: ColonyRclPolicyProjection;
+  readonly populationPolicy: ColonyPopulationProjection;
+}
+
+export type ColonyPopulationReason =
+  | "observation-unknown"
+  | "colony-lost"
+  | "no-funded-objectives"
+  | "threat-preemption"
+  | "recovery-preemption"
+  | "bootstrap-preemption"
+  | "constrained-cpu-preemption"
+  | "controller-downgrade-preemption"
+  | "spawn-saturated"
+  | "protected-spawn-reserve"
+  | "insufficient-available-energy"
+  | "duplicate-commitment"
+  | "capability-satisfied"
+  | "demanded";
+
+export interface ColonyCapabilityDemand {
+  readonly category: BudgetCategory;
+  readonly colonyId: string;
+  readonly energyCap: number;
+  readonly id: string;
+  readonly objectiveId: string;
+  readonly requiredCapability: CapabilityVector;
+  readonly reservationId: string;
+  readonly revision: number;
+}
+
+export interface ColonyPopulationProjection {
+  readonly version: 1;
+  readonly status: "blocked" | "satisfied" | "demanded";
+  readonly reasonCode: ColonyPopulationReason;
+  readonly targetCapability: CapabilityVector;
+  readonly suppliedCapability: CapabilityVector;
+  readonly deficitCapability: CapabilityVector;
+  readonly demands: readonly ColonyCapabilityDemand[];
+  readonly truncatedObjectives: number;
+  readonly truncatedDemands: number;
 }
 
 export const COLONY_CAPABILITY_DOMAINS = [

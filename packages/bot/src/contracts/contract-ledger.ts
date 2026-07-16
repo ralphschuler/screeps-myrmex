@@ -7,6 +7,7 @@ import {
   MAX_CONTRACT_OUTCOMES,
   MAX_CONTRACT_REQUESTS_PER_TICK,
   MAX_CONTRACT_TRANSITIONS_PER_TICK,
+  MAX_POPULATION_LOADS,
   ContractValidationError,
   CONTRACT_FUNDING_AUTHORIZATION_STATUSES,
   capabilitySatisfies,
@@ -33,6 +34,8 @@ import {
   type WorkContractRecord,
   type WorkContractRequest,
   type WorkContractState,
+  type ContractPopulationView,
+  type NormalizedPopulationLoad,
 } from "./contracts";
 import {
   isLegalContractTransition,
@@ -46,6 +49,23 @@ import {
   type TravelEstimateView,
   type WorkforceAllocationResult,
 } from "./workforce-allocator";
+
+function validPopulationLoad(load: NormalizedPopulationLoad): boolean {
+  return (
+    load.objectiveId.length > 0 &&
+    load.objectiveId.length <= 128 &&
+    load.reservationId.length > 0 &&
+    load.reservationId.length <= 384 &&
+    Number.isSafeInteger(load.revision) &&
+    load.revision > 0 &&
+    [
+      load.measuredWorkTicks,
+      load.backlogWorkTicks,
+      load.sourceCapacityWorkTicks,
+      load.travelTicks,
+    ].every((value) => Number.isSafeInteger(value) && value >= 0)
+  );
+}
 
 export type ContractLedgerOpenResult =
   | { readonly ledger: ContractLedger; readonly status: "ready" }
@@ -223,6 +243,35 @@ export class ContractLedger {
       })
       .sort((left, right) => compareStrings(left.contractId, right.contractId));
     return deepFreeze({ contracts, status: "ready" });
+  }
+
+  /** Derives a bounded population-only projection without exposing contract owner bytes. */
+  public populationView(): ContractPopulationView {
+    const accepted = this.#active
+      .filter(
+        (record) =>
+          record.owner.kind === "colony" &&
+          (record.state === "funded" || record.state === "assigned" || record.state === "active"),
+      )
+      .map((record): NormalizedPopulationLoad => ({
+        backlogWorkTicks: record.quantity,
+        category: record.budgetBinding.category,
+        colonyId: record.owner.id,
+        contractId: record.id,
+        measuredWorkTicks: record.estimatedWorkTicks,
+        minimumCapability: { ...record.requiredCapability },
+        objectiveId: record.budgetBinding.issuer,
+        reservationId: record.id,
+        revision: record.revision,
+        sourceCapacityWorkTicks: Math.min(
+          Number.MAX_SAFE_INTEGER,
+          record.estimatedWorkTicks + record.quantity,
+        ),
+        travelTicks: record.maxAssignmentCost,
+      }))
+      .filter(validPopulationLoad)
+      .sort((left, right) => compareStrings(left.objectiveId, right.objectiveId));
+    return deepFreeze({ loads: accepted.slice(0, MAX_POPULATION_LOADS), status: "ready" });
   }
 
   public submit(request: WorkContractRequest, tick: number): ContractSubmissionResult {

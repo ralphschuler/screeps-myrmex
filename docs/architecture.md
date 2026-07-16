@@ -1827,3 +1827,14 @@ The wider Screeps Web API is not a stable public contract. Its adapter and deter
 an anti-corruption boundary: endpoint or payload changes must fail safely and be revalidated against
 the current official Screeps documentation, Screeps Wiki, and maintained API evidence before the
 workflow is changed.
+
+## Phase 2 Population Policy Completion
+
+The final issue #44 slice adds `ColonyPopulationPolicy`, a frozen tick-local projection over
+normalized funded objective load. Domain owners normalize measured work, backlog, travel, and source
+capacity into capability-part ticks; the colony authority applies the fixed 50-tick horizon,
+canonical budget-category precedence, replacement lead, available-energy and protected-reserve
+checks, and hard limits of 64 objectives, 8 demands, 8 copies per objective, 256 target parts, 9,000
+basis-point spawn saturation, and 150 travel ticks. `ContractLedger` exposes only a sanitized funded
+active view, `WorkforceAllocator` remains the sole assignment policy, and `SpawnBroker` retains
+body, name, energy, and slot authority. No role, queue, or population target is persisted.

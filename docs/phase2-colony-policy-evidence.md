@@ -31,3 +31,15 @@ Sources consulted: [control guide](https://docs.screeps.com/control.html) (last 
 Checks: focused
 `npm test -- --run packages/bot/test/colony-rcl-policy.test.ts packages/bot/test/colony-director.test.ts packages/bot/test/runtime-config.test.ts`;
 repository `npm run check`.
+
+## Population policy
+
+Normalized funded objectives use a fixed 50-tick horizon. Productive ticks are
+`min(source capacity, measured + min(backlog, 50))`; round-trip travel contributes
+`ceil(productive * min(2 * travel, 50) / 50)` actor ticks; copies are the ceiling of total actor
+ticks over 50, capped at eight. Evaluation is canonical and bounded to 64 objectives, 8 demands, 256
+target parts, 150 travel ticks, and 9,000 basis-point spawn saturation. Visible non-spawning actors
+count only when TTL is known and strictly greater than replacement lead. Unknown ownership, lost
+colonies, unavailable funding, unaffordable bodies, protected-reserve violations, and existing
+commitment IDs authorize no demand. Domain behavior remains in #45-#52; #225 owns cross-domain
+recovery and RCL8 maturity.

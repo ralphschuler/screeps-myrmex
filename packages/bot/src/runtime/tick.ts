@@ -37,6 +37,7 @@ import {
 } from "../movement";
 import { createScreepsLocalPathSearch } from "./local-path-adapter";
 import {
+  BUDGET_CATEGORIES,
   ColonyDirector,
   emptyColonyPlanningResult,
   recoverySpawnDemandBinding,
@@ -62,6 +63,7 @@ import {
   type ContractPlanningView,
   type ContractReconciliationResult,
   type ContractRequestChannel,
+  type ContractPopulationView,
 } from "../contracts";
 import {
   openMyrmexMemory,
@@ -181,6 +183,7 @@ export function runTick(input: TickInput): TickOutcome {
   const state = manager?.view() ?? null;
   const contractExecution = readContractExecution(manager);
   const contractPlanning = readContractPlanning(manager);
+  const contractPopulation = readContractPopulation(manager);
   const configResolution = runtimeConfigAuthority.resolve(
     manager?.ownerView("config") ?? null,
     input.game.time,
@@ -222,6 +225,7 @@ export function runTick(input: TickInput): TickOutcome {
     movementRuntime,
     configReplacement: configResolution.replacementOwner,
     contractChannel,
+    contractPopulation,
     onPhase: input.onPhase,
     getKernel: () => kernel,
   });
@@ -279,6 +283,7 @@ interface CompositionInput {
   readonly movementRuntime: MovementRuntime;
   readonly configReplacement: RuntimeConfigResolution["replacementOwner"];
   readonly contractChannel: ContractRequestChannel;
+  readonly contractPopulation: ContractPopulationView;
   readonly onPhase: ((phase: TickPhase) => void) | undefined;
   readonly getKernel: () => RuntimeKernel<TickContext>;
 }
@@ -943,19 +948,23 @@ function colonyDirectorSystem(
         requests: [...economyCandidates, ...maintenanceCandidates, ...growthCandidates].map(
           ({ budgetRequest }) => budgetRequest,
         ),
+        population: bindPopulationReservations(input.contractPopulation, owner),
       });
       const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
       const brokerResult = spawnEnabled
         ? spawnBroker.arbitrate({
             tick: context.tick,
             snapshot: context.snapshot,
-            demands: recoverySpawnDemands(
-              provisional.result,
-              owner,
-              context.snapshot,
-              context.config,
-              context.tick,
-            ),
+            demands: [
+              ...recoverySpawnDemands(
+                provisional.result,
+                owner,
+                context.snapshot,
+                context.config,
+                context.tick,
+              ),
+              ...populationSpawnDemands(provisional.result, context.tick),
+            ],
             expectations: recoverySpawnExpectations(owner, context.snapshot),
             policy: {
               maximumBodyParts: context.config.policy.spawn.maximumBodyParts,
@@ -981,7 +990,9 @@ function colonyDirectorSystem(
         ({ status }) => status === "funded",
       );
       const session =
-        spawnEnabled && !hasFundedRecoveryObjective
+        spawnEnabled &&
+        !hasFundedRecoveryObjective &&
+        !selections.some(({ category }) => category === "funded-workforce")
           ? provisional
           : colonyDirector.begin({
               tick: context.tick,
@@ -993,15 +1004,28 @@ function colonyDirectorSystem(
               requests: [...economyCandidates, ...maintenanceCandidates, ...growthCandidates].map(
                 ({ budgetRequest }) => budgetRequest,
               ),
-              recoverySpawnSelections: selections.map((selection) => ({
-                objectiveId: selection.demandId,
-                colonyId: selection.colonyId,
-                revision: selection.revision,
-                reservationId: selection.budgetId,
-                energyCost: selection.energyCost,
-                spawn: selection.spawnClaim,
-              })),
+              recoverySpawnSelections: selections
+                .filter(({ category }) => category === "emergency-recovery")
+                .map((selection) => ({
+                  objectiveId: selection.demandId,
+                  colonyId: selection.colonyId,
+                  revision: selection.revision,
+                  reservationId: selection.budgetId,
+                  energyCost: selection.energyCost,
+                  spawn: selection.spawnClaim,
+                })),
+              populationSpawnSelections: selections
+                .filter(({ category }) => category === "funded-workforce")
+                .map((selection) => ({
+                  objectiveId: selection.demandId,
+                  colonyId: selection.colonyId,
+                  revision: selection.revision,
+                  reservationId: selection.budgetId,
+                  energyCost: selection.energyCost,
+                  spawn: selection.spawnClaim,
+                })),
               satisfiedRecoveryObjectiveIds: satisfiedObjectiveIds,
+              population: bindPopulationReservations(input.contractPopulation, owner),
             });
       const intents = authorizedSpawnIntents(session, selections, context.tick);
       spawnDraft.session = session;
@@ -1194,6 +1218,71 @@ function recoverySpawnDemands(
     });
   }
   return Object.freeze(demands);
+}
+
+function readContractPopulation(manager: MemoryManager | null): ContractPopulationView {
+  if (manager === null) return Object.freeze({ loads: Object.freeze([]), status: "unavailable" });
+  const opened = ContractLedger.open(manager.ownerView("contracts"));
+  if (opened.status !== "ready")
+    return Object.freeze({ loads: Object.freeze([]), status: "unavailable" });
+  return opened.ledger.populationView();
+}
+
+function bindPopulationReservations(
+  population: ContractPopulationView,
+  ownerValue: unknown,
+): ContractPopulationView {
+  if (population.status !== "ready") return population;
+  const owner = resolveColoniesOwner(ownerValue).owner;
+  if (owner === null) return Object.freeze({ loads: Object.freeze([]), status: "unavailable" });
+  const loads = population.loads.flatMap((load) => {
+    const reservation = owner.ledger.find(
+      (entry) =>
+        entry.colonyId === load.colonyId &&
+        entry.category === load.category &&
+        entry.issuer === load.objectiveId &&
+        entry.status === "active",
+    );
+    return reservation === undefined
+      ? []
+      : [{ ...load, reservationId: reservation.reservationId, revision: reservation.revision }];
+  });
+  return Object.freeze({ loads: Object.freeze(loads), status: "ready" });
+}
+
+function populationSpawnDemands(
+  colony: ColonyPlanningResult,
+  tick: number,
+): readonly SpawnDemand[] {
+  return Object.freeze(
+    colony.colonies.flatMap(({ populationPolicy }) =>
+      populationPolicy.demands.map((demand) => ({
+        id: demand.id,
+        issuer: demand.objectiveId,
+        colonyId: demand.colonyId,
+        revision: demand.revision,
+        category: "funded-workforce" as const,
+        priorityValue: Math.max(0, 1_000 - BUDGET_CATEGORIES.indexOf(demand.category) * 100),
+        deadline: safeAddTick(tick, 50),
+        earliestTick: tick,
+        destinationRoomName: demand.colonyId,
+        replacementCreepName: null,
+        budgetId: demand.reservationId,
+        requiredPartCounts: {
+          tough: demand.requiredCapability.tough,
+          work: demand.requiredCapability.work,
+          carry: demand.requiredCapability.carry,
+          attack: demand.requiredCapability.attack,
+          ranged_attack: demand.requiredCapability.rangedAttack,
+          heal: demand.requiredCapability.heal,
+          claim: demand.requiredCapability.claim,
+          move: demand.requiredCapability.move,
+        },
+        energyCap: demand.energyCap,
+        nameBasis: null,
+      })),
+    ),
+  );
 }
 
 function recoverySpawnExpectations(
