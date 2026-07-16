@@ -103,7 +103,7 @@ Operational Memory may disable available work but can never activate an unfinish
 - Remote discovery, reservation, mining, hauling, suspension, evacuation, and resumption.
 - Full-cost profitability and threat-adjusted routing.
 
-**Exit:** only profitable remotes remain active during long private-server runs.
+**Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.
 
 ## Phase 4 — Expansion
 

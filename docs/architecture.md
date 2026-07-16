@@ -1550,8 +1550,14 @@ Every system contract is verified at the cheapest useful layer:
 5. **Property tests** are appropriate for deterministic ordering, budget conservation, state-machine
    validity, and idempotency.
 6. **Bundle checks** reject scenario-kit imports, generated artifacts, and forbidden dependencies.
-7. **Private-server gates** measure long-running survival, progression, profitability, and CPU
-   before roadmap exits.
+7. **Outcome gates** combine deterministic scenario matrices, reset/property/architecture checks,
+   exact production-bundle validation, and bounded replay soaks before roadmap exits. Controlled MMO
+   canary evidence is required only at the Phase 6 production gate.
+
+The repository does not provision or embed a Screeps engine. `packages/scenario-kit` is the sole
+development-only gameplay harness, and runtime code must never import it. Engine integration is
+validated through exact-bundle checks, inactive code-branch uploads where appropriate, and the
+controlled Phase 6 MMO canary rather than a repository-owned server workspace or control adapter.
 
 The Phase 1 colony gate additionally proves its survival lifecycle edges, exact-empty owner
 initialization, malformed/future preservation, configured threat exclusions, protected energy

@@ -10,7 +10,8 @@
 8. Military power projection
 9. Endgame and cross-shard operations
 
-Every phase ends in a private-server or MMO outcome gate. Feature count is not progress.
+Every phase ends in a deterministic outcome gate; Phase 6 additionally requires an MMO canary.
+Feature count is not progress.
 
 Phase 1 begins with one validated survival-policy authority, immutable planner config, a
 source-controlled feature-gate DAG, and fail-closed self/ally/NAP exclusions. Its first gameplay
