@@ -32,6 +32,7 @@ for (const manifest of selected) {
     artifactHash: result.evidence.artifactHash,
     buildId,
     failure: result.evidence.failure,
+    failureCode: result.failureCode,
     id: manifest.id,
   });
   process.stdout.write(`${JSON.stringify(results.at(-1))}\n`);
@@ -158,10 +159,9 @@ async function waitForBotException(scenarioId) {
 async function lifecycle(command, state, fixtureDefinition = null) {
   const args = ["scripts/private-server.mjs", command, "--state-directory", state];
   if (fixtureDefinition !== null) args.push("--fixture-definition", fixtureDefinition);
-  const output = await execute(process.execPath, args);
-  const record = JSON.parse(output.trim());
+  const record = await execute(process.execPath, args);
   if (!new Set(["started", "already-running", "stopped"]).has(record.kind)) {
-    throw new Error(`Private-server lifecycle ${command} did not complete.`);
+    throw namedError("StartupFailure", safeLifecycleReason(record));
   }
 }
 
@@ -172,11 +172,30 @@ function execute(command, args) {
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => (output += chunk));
     child.once("error", rejectResult);
-    child.once("exit", (code) => {
-      if (code === 0) resolveResult(output);
-      else rejectResult(new Error("Private-server lifecycle command failed."));
+    child.once("exit", () => {
+      try {
+        const record = JSON.parse(output.trim());
+        if (typeof record !== "object" || record === null || Array.isArray(record))
+          throw new Error();
+        resolveResult(record);
+      } catch {
+        rejectResult(namedError("StartupFailure", "launcher-exited"));
+      }
     });
   });
+}
+
+function safeLifecycleReason(record) {
+  if (typeof record.reason !== "string") return "health-timeout";
+  return [
+    "health-timeout",
+    "launch-configuration",
+    "launcher-exited",
+    "port-unavailable",
+    "steam-authentication",
+  ].includes(record.reason)
+    ? record.reason
+    : "launcher-exited";
 }
 
 function selectScenario(argv, matrix) {
