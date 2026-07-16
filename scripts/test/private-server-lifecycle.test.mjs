@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
+import { describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import {
   PRIVATE_SERVER_LIMITS,
   PRIVATE_SERVER_NODE_VERSION,
@@ -18,6 +21,7 @@ import {
   privateServerNodeSupported,
   privateServerNpmInvocation,
   privateServerProvisioningKey,
+  probePrivateServerPort,
   privateServerReadinessObservation,
   privateServerStartPreflight,
   redactLifecycleError,
@@ -191,6 +195,78 @@ describe("private-server lifecycle", () => {
       }),
     ).resolves.toEqual({ ready: false, reason: "launcher-exited", terminal: true });
     expect(calls).toEqual(["process"]);
+  });
+
+  it("closes successful listener probes gracefully and destroys failed probes", async () => {
+    const clientSockets = [];
+    const peers = [];
+    let acceptPeer = () => undefined;
+    const server = createServer((socket) => {
+      let resolveClosed;
+      const peer = {
+        closed: new Promise((resolve) => {
+          resolveClosed = resolve;
+        }),
+        ended: false,
+        errors: [],
+      };
+      peers.push(peer);
+      acceptPeer(peer);
+      const lines = createInterface({ input: socket });
+      lines.once("error", (error) => peer.errors.push(error.code ?? "readline-error"));
+      socket.once("error", (error) => peer.errors.push(error.code ?? "socket-error"));
+      socket.once("end", () => {
+        peer.ended = true;
+      });
+      socket.once("close", () => {
+        resolveClosed();
+      });
+      socket.write("< \r\n");
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("listener is unavailable");
+
+    for (let index = 0; index < 2; index += 1) {
+      const accepted = new Promise((resolve) => {
+        acceptPeer = resolve;
+      });
+      await expect(
+        probePrivateServerPort(address.port, 250, (options) => {
+          const socket = createConnection(options);
+          clientSockets.push(socket);
+          return socket;
+        }),
+      ).resolves.toBe(true);
+      const peer = await accepted;
+      await peer.closed;
+    }
+    await new Promise((resolve) => server.close(resolve));
+    expect(peers.map(({ ended, errors }) => ({ ended, errors }))).toEqual([
+      { ended: true, errors: [] },
+      { ended: true, errors: [] },
+    ]);
+    expect(
+      clientSockets.map(({ destroyed, readableLength }) => ({ destroyed, readableLength })),
+    ).toEqual([
+      { destroyed: true, readableLength: 0 },
+      { destroyed: true, readableLength: 0 },
+    ]);
+    await expect(probePrivateServerPort(address.port, 250)).resolves.toBe(false);
+
+    const timeoutSocket = new EventEmitter();
+    timeoutSocket.destroy = vi.fn();
+    timeoutSocket.end = vi.fn();
+    timeoutSocket.resume = vi.fn();
+    await expect(
+      probePrivateServerPort(21026, 5, () => {
+        queueMicrotask(() => timeoutSocket.emit("connect"));
+        return timeoutSocket;
+      }),
+    ).resolves.toBe(false);
+    expect(timeoutSocket.destroy).toHaveBeenCalledOnce();
+    expect(timeoutSocket.end).toHaveBeenCalledOnce();
+    expect(timeoutSocket.resume).toHaveBeenCalledOnce();
   });
 
   it("retains bounded readiness reasons, recovers, and exits early for a dead launcher", async () => {

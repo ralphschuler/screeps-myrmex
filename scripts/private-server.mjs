@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { mkdir, open, readFile, writeFile } from "node:fs/promises";
-import { createConnection } from "node:net";
 import { cwd, env, execPath, versions } from "node:process";
 import { probePrivateServerReadiness } from "./lib/private-server-cli.mjs";
 import {
@@ -17,6 +16,7 @@ import {
   privateServerNodeSupported,
   privateServerNpmInvocation,
   privateServerProvisioningKey,
+  probePrivateServerPort,
   privateServerReadinessObservation,
   privateServerStartPreflight,
   readPid,
@@ -223,8 +223,8 @@ async function health(limits = PRIVATE_SERVER_LIMITS) {
   return waitForPrivateServerReadiness(
     () =>
       privateServerReadinessObservation({
-        cliPort: () => tcpProbe(21026, limits.healthTcpProbeTimeoutMs),
-        gamePort: () => tcpProbe(21025, limits.healthTcpProbeTimeoutMs),
+        cliPort: () => probePrivateServerPort(21026, limits.healthTcpProbeTimeoutMs),
+        gamePort: () => probePrivateServerPort(21025, limits.healthTcpProbeTimeoutMs),
         processStopped: () => processGroupStopped(pid),
         storage: () => probePrivateServerReadiness({ timeoutMs: limits.healthCliProbeTimeoutMs }),
       }),
@@ -286,20 +286,4 @@ function executeLauncher(args, successKind, commandCwd) {
 function executeNpm(args, successKind) {
   const npm = privateServerNpmInvocation(execPath, args);
   return execute(npm.command, npm.args, successKind);
-}
-
-function tcpProbe(port, timeoutMs) {
-  return new Promise((resolveProbe) => {
-    const socket = createConnection({ host: "127.0.0.1", port });
-    socket.setTimeout(timeoutMs);
-    socket.once("connect", () => {
-      socket.destroy();
-      resolveProbe(true);
-    });
-    socket.once("error", () => resolveProbe(false));
-    socket.once("timeout", () => {
-      socket.destroy();
-      resolveProbe(false);
-    });
-  });
 }
