@@ -6,6 +6,8 @@ export type ControllerOwnership = "owned" | "foreign" | "reserved" | "neutral";
 
 export interface PositionSnapshot {
   readonly roomName: string;
+  /** Present only when this position is the detached position of a Source. */
+  readonly sourceId?: string;
   readonly x: number;
   readonly y: number;
 }
@@ -115,6 +117,8 @@ export interface StoredStructureSnapshot {
   readonly pos: PositionSnapshot;
   readonly store: StoreSnapshot;
   readonly structureType: string;
+  /** Runtime observations provide null for non-decaying stored structures. */
+  readonly ticksToDecay?: number | null;
 }
 
 /** Visible road facts are kept separately because roads have no store and may be repaired locally. */

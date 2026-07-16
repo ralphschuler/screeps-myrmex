@@ -1,6 +1,7 @@
 export * from "./contracts";
 export { compileOwnedRoomLayoutV1 } from "./layout-v1";
 export { planOwnedRoomLayout, planOwnedRoomLayouts } from "./planner";
+export { selectSourceServices } from "./source-services";
 export { compareLayoutSiteProposals, diffOwnedRoomLayout } from "./diff";
 export {
   arbitrateConstructionSites,

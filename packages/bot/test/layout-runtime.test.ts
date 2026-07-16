@@ -43,7 +43,7 @@ const planningInput = {
   policy,
   priorCommitment: null,
   roomName,
-  sources: [pos(10, 10)],
+  sources: [{ ...pos(10, 10), sourceId: "source-a" }],
   structures,
   terrain: { cells: "0".repeat(2500), revision: "plain" },
   tick: 100,

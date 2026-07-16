@@ -7,7 +7,7 @@ import type {
   TerrainSnapshot,
 } from "../world/snapshot";
 
-export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v1" as const;
+export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
 export const LAYOUT_OWNER_SCHEMA_VERSION = 1 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
@@ -27,7 +27,11 @@ export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
 
 export type LayoutTransform = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type LayoutLayer = "primary" | "road" | "rampart";
-export type LayoutAdoption = "planned" | "exact" | "compatible-external";
+export type LayoutAdoption = "planned" | "exact" | "matching-site" | "compatible-external";
+export interface LayoutSemanticService {
+  readonly kind: "source-container";
+  readonly sourceId: string;
+}
 export type LayoutBlocker =
   | "budget-exhausted"
   | "invalid-input"
@@ -43,13 +47,23 @@ export interface LayoutPlacement {
   readonly minimumRcl: number;
   readonly pos: PositionSnapshot;
   readonly structureType: string;
+  readonly service?: LayoutSemanticService;
+}
+export type SourceServiceBlockerReason = "missing-source-id" | "no-legal-position";
+export interface SourceServiceBlocker {
+  readonly kind: "source-container";
+  readonly pos: PositionSnapshot;
+  readonly reason: SourceServiceBlockerReason;
+  readonly sourceId: string;
 }
 export interface LayoutCommitment {
-  readonly algorithmRevision: typeof LAYOUT_ALGORITHM_REVISION;
+  /** Persistence validates this against LAYOUT_ALGORITHM_REVISION; older values are stale rebuild inputs. */
+  readonly algorithmRevision: string;
   readonly anchor: PositionSnapshot;
   readonly blockers: readonly LayoutBlocker[];
   readonly committedAt: number;
   readonly fingerprint: string;
+  readonly serviceBlockers?: readonly SourceServiceBlocker[];
   readonly transform: LayoutTransform;
 }
 export interface LayoutRecord extends LayoutCommitment {
@@ -228,6 +242,19 @@ export interface LayoutPlanningInput {
   readonly structures: readonly StructureSnapshot[];
   readonly terrain: TerrainSnapshot;
   readonly tick: number;
+}
+export interface SourceServicePlanningInput {
+  readonly constructionSites: readonly ConstructionSiteSnapshot[];
+  readonly placements: readonly LayoutPlacement[];
+  readonly roomName: string;
+  readonly sources: readonly PositionSnapshot[];
+  readonly structures: readonly StructureSnapshot[];
+  readonly terrain: TerrainSnapshot;
+}
+export interface SourceServicePlanningResult {
+  readonly blockers: readonly SourceServiceBlocker[];
+  readonly candidatesInspected: number;
+  readonly placements: readonly LayoutPlacement[];
 }
 export type LayoutPlanningResult =
   | {

@@ -23,13 +23,22 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV1 | null {
   )
     return null;
   const records: LayoutRecord[] = [];
+  let staleRecords = 0;
   for (const item of value.records) {
+    if (staleRecord(item)) {
+      staleRecords += 1;
+      continue;
+    }
     if (!validRecord(item)) return null;
     records.push(item);
   }
   records.sort((a, b) => compare(a.roomName, b.roomName));
   if (new Set(records.map((r) => r.roomName)).size !== records.length) return null;
-  return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: value.revision, records });
+  return freeze({
+    schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
+    revision: value.revision + (staleRecords > 0 ? 1 : 0),
+    records,
+  });
 }
 export function persistLayoutCommitment(
   owner: LayoutsOwnerV1,
@@ -91,7 +100,45 @@ function validRecord(v: unknown): v is LayoutRecord {
     Array.isArray(v.blockers) &&
     v.blockers.length <= MAX_LAYOUT_BLOCKERS &&
     v.blockers.every((b) => typeof b === "string" && b.length <= 32) &&
+    (v.serviceBlockers === undefined || validServiceBlockers(v.serviceBlockers, v.roomName)) &&
     (v.siteReceipts === undefined || validReceipts(v.siteReceipts, v.roomName))
+  );
+}
+function staleRecord(v: unknown): boolean {
+  return (
+    record(v) &&
+    typeof v.algorithmRevision === "string" &&
+    v.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
+    v.algorithmRevision.length <= 128 &&
+    typeof v.roomName === "string" &&
+    record(v.anchor) &&
+    v.anchor.roomName === v.roomName &&
+    coordinate(v.anchor.x) &&
+    coordinate(v.anchor.y) &&
+    integer(v.committedAt) &&
+    typeof v.fingerprint === "string" &&
+    integer(v.transform) &&
+    v.transform <= 7 &&
+    Array.isArray(v.blockers)
+  );
+}
+function validServiceBlockers(value: unknown, roomName: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_LAYOUT_BLOCKERS &&
+    value.every(
+      (item) =>
+        record(item) &&
+        item.kind === "source-container" &&
+        typeof item.sourceId === "string" &&
+        item.sourceId.length > 0 &&
+        item.sourceId.length <= 128 &&
+        ["missing-source-id", "no-legal-position"].includes(String(item.reason)) &&
+        record(item.pos) &&
+        item.pos.roomName === roomName &&
+        coordinate(item.pos.x) &&
+        coordinate(item.pos.y),
+    )
   );
 }
 function validReceipts(

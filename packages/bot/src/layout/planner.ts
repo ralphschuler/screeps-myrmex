@@ -1,5 +1,6 @@
 import type { PositionSnapshot, StructureSnapshot } from "../world/snapshot";
 import { compileOwnedRoomLayoutV1 } from "./layout-v1";
+import { selectSourceServices } from "./source-services";
 import {
   LAYOUT_ALGORITHM_REVISION,
   MAX_LAYOUT_CANDIDATES,
@@ -27,7 +28,7 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
       0,
       0,
     );
-  const cells = compileOwnedRoomLayoutV1(input.policy.unlocks);
+  const cells = compileOwnedRoomLayoutV1(input.policy.unlocks, input.sources.length);
   const anchors = candidateAnchors(input);
   let transforms = 0;
   let flood = 0;
@@ -53,20 +54,32 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
         blocker = "access-blocked";
         continue;
       }
-      const adopted = adopt(placements, input.structures);
-      const fingerprint = hash(JSON.stringify(adopted));
+      const adopted = adopt(placements, input.structures, sourceContainerIds(input));
+      const services = selectSourceServices({
+        constructionSites: input.constructionSites,
+        placements: adopted,
+        roomName: input.roomName,
+        sources: input.sources,
+        structures: input.structures,
+        terrain: input.terrain,
+      });
+      const committedPlacements = mergeSourceServices(adopted, services.placements);
+      const fingerprint = hash(
+        JSON.stringify({ placements: committedPlacements, blockers: services.blockers }),
+      );
       const commitment: LayoutCommitment = {
         algorithmRevision: LAYOUT_ALGORITHM_REVISION,
         anchor,
         blockers: [],
         committedAt: input.tick,
         fingerprint,
+        serviceBlockers: services.blockers,
         transform: t as LayoutTransform,
       };
       return freeze({
         status: "complete",
         commitment,
-        placements: adopted,
+        placements: committedPlacements,
         candidatesInspected: candidate + 1,
         transformsInspected: transforms,
         floodCellsInspected: flood,
@@ -202,11 +215,7 @@ function validateAccess(
         queue.push(n);
       }
   }
-  const services = [
-    input.controller,
-    ...input.sources,
-    ...(input.mineral ? [input.mineral.pos] : []),
-  ];
+  const services = [input.controller, ...(input.mineral ? [input.mineral.pos] : [])];
   const serviceOk = services.every((p) => neighbors(p).some((n) => seen.has(key(n))));
   const exitOk = input.exits.some((p) => neighbors(p).some((n) => seen.has(key(n))));
   const logisticsOk = placements
@@ -220,6 +229,7 @@ function validateAccess(
 function adopt(
   placements: readonly LayoutPlacement[],
   structures: readonly StructureSnapshot[],
+  reservedStructureIds: ReadonlySet<string>,
 ): readonly LayoutPlacement[] {
   const exact = new Map(structures.map((s) => [`${s.structureType}:${key(s.pos)}`, s]));
   const external = new Map<string, StructureSnapshot[]>();
@@ -228,7 +238,7 @@ function adopt(
     list.push(s);
     external.set(s.structureType, list);
   }
-  const used = new Set<string>();
+  const used = new Set<string>(reservedStructureIds);
   return placements
     .map((p) => {
       const e = exact.get(`${p.structureType}:${key(p.pos)}`);
@@ -245,6 +255,30 @@ function adopt(
     })
     .sort(placementOrder);
 }
+function sourceContainerIds(input: LayoutPlanningInput): ReadonlySet<string> {
+  const adjacentKeys = new Set(input.sources.flatMap((source) => neighbors(source).map(key)));
+  return new Set(
+    input.structures
+      .filter(
+        (structure) =>
+          structure.structureType === "container" && adjacentKeys.has(key(structure.pos)),
+      )
+      .map((structure) => structure.id),
+  );
+}
+function mergeSourceServices(
+  placements: readonly LayoutPlacement[],
+  services: readonly LayoutPlacement[],
+): readonly LayoutPlacement[] {
+  const servicePositions = new Set(services.map((placement) => key(placement.pos)));
+  return [
+    ...placements.filter(
+      (placement) =>
+        !(placement.structureType === "container" && servicePositions.has(key(placement.pos))),
+    ),
+    ...services,
+  ].sort(placementOrder);
+}
 function degraded(
   input: LayoutPlanningInput,
   blocker: LayoutBlocker,
@@ -255,7 +289,10 @@ function degraded(
   return freeze({
     status: "degraded",
     blocker,
-    commitment: input.priorCommitment,
+    commitment:
+      input.priorCommitment?.algorithmRevision === LAYOUT_ALGORITHM_REVISION
+        ? input.priorCommitment
+        : null,
     placements: [] as const,
     candidatesInspected,
     transformsInspected,
@@ -296,6 +333,9 @@ function placementOrder(a: LayoutPlacement, b: LayoutPlacement): number {
     a.minimumRcl - b.minimumRcl ||
     compare(a.layer, b.layer) ||
     compare(a.structureType, b.structureType) ||
+    compare(a.service?.kind ?? "", b.service?.kind ?? "") ||
+    compare(a.service?.sourceId ?? "", b.service?.sourceId ?? "") ||
+    compare(a.adoption, b.adoption) ||
     a.pos.y - b.pos.y ||
     a.pos.x - b.pos.x
   );
@@ -306,7 +346,7 @@ function hash(value: string): string {
     h ^= value.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return `layout-v1:${(h >>> 0).toString(36)}`;
+  return `layout-v2:${(h >>> 0).toString(36)}`;
 }
 function freeze<T>(value: T): T {
   if (value && typeof value === "object") {

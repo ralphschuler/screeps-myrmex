@@ -25,7 +25,7 @@ export function registerLayoutCompiledCache(
   return manager.register({
     id: LAYOUT_COMPILED_CACHE_ID,
     owner: "LayoutPlanner",
-    version: 1,
+    version: 2,
     capacity: 64,
     maxKeyLength: 256,
     maxEncodedLength: 65_536,

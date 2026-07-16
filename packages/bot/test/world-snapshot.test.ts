@@ -47,6 +47,11 @@ describe("WorldSnapshot", () => {
       "spawn-b",
       "tower-c",
     ]);
+    expect(forward.rooms[0]?.sources[0]?.pos.sourceId).toBe("source-a");
+    const container = forward.rooms[0]?.storedStructures.find(({ id }) => id === "container-a");
+    expect(container?.hits).toBe(250_000);
+    expect(container?.store.usedCapacity).toBe(1_100);
+    expect(container?.ticksToDecay).toBe(87);
     expect(forward.rooms[0]?.ownedSpawns[0]?.store.resources).toEqual([
       { amount: 200, resourceType: "energy" },
       { amount: 3, resourceType: "power" },
@@ -381,6 +386,7 @@ function makeOwnedRoom(
       pos: new LivePosition(11, 11, "W1N1"),
       store: makeStore({ energy: 1_100 }, 2_000),
       structureType: "container",
+      ticksToDecay: 87,
     },
   ];
   const hostileBody = Array.from({ length: hostileBodySize }, (_, index) => ({

@@ -84,8 +84,8 @@ function fixture(level: number, roomName = "W1N1"): LayoutPlanningInput {
     exits: Array.from({ length: 48 }, (_, x) => ({ roomName, x: x + 1, y: 0 })),
     controller: { roomName, x: 40, y: 40 },
     sources: [
-      { roomName, x: 8, y: 8 },
-      { roomName, x: 40, y: 8 },
+      { roomName, sourceId: "source-b", x: 8, y: 8 },
+      { roomName, sourceId: "source-a", x: 40, y: 8 },
     ],
     mineral: { id: "m", mineralType: "H", pos: { roomName, x: 8, y: 40 } },
     structures: [structure("spawn", 25, 25, "owned", roomName)],
@@ -121,11 +121,11 @@ function structure(
 }
 function completeCommitment() {
   return {
-    algorithmRevision: "owned-room-layout-v1",
+    algorithmRevision: "owned-room-layout-v2-source-services",
     anchor: { roomName: "W1N1", x: 25, y: 25 },
     blockers: [],
     committedAt: 90,
-    fingerprint: "layout-v1:prior",
+    fingerprint: "layout-v2:prior",
     transform: 0,
   } as const;
 }

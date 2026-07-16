@@ -18,7 +18,7 @@
       "measurements": {
         "ticks": 140,
         "modeledCpu": 0,
-        "persistentBytes": 16116,
+        "persistentBytes": 16154,
         "persistentGrowth": 2923,
         "telemetryBytes": 4721,
         "telemetryCardinality": 25,
@@ -238,8 +238,8 @@
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 603571,
-    "inputCount": 94,
-    "sha256": "sha256:b89ff5f1cb61299d21dcab4ffe5f950c71142ee462160345e4db9557f2a324bf"
+    "bytes": 612903,
+    "inputCount": 95,
+    "sha256": "sha256:97f0f7d7acfe94624b18873313f8b9766985f6bd9ce58dc33d0ba7381e5dcf0a"
   }
 }

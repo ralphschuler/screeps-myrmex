@@ -26,17 +26,20 @@ const ORDER: readonly [keyof ColonyRclUnlockAllowances, string, number][] = [
 
 export function compileOwnedRoomLayoutV1(
   unlocks: ColonyRclUnlockAllowances,
+  sourceServiceSlots = 0,
 ): readonly LayoutV1Cell[] {
   const offsets = spiralOffsets();
   const cells: LayoutV1Cell[] = [];
   let cursor = 0;
   for (const [field, structureType, minimumRcl] of ORDER) {
-    const count = typeof unlocks[field] === "number" ? unlocks[field] : 0;
+    const available = typeof unlocks[field] === "number" ? unlocks[field] : 0;
+    const count = field === "containers" ? Math.max(0, available - sourceServiceSlots) : available;
     for (let index = 0; index < count; index += 1) {
       const offset = offsets[cursor++];
       if (offset === undefined) break;
       cells.push({ ...offset, layer: "primary", minimumRcl, structureType });
     }
+    if (field === "containers") cursor += Math.min(sourceServiceSlots, available);
   }
   for (let delta = -8; delta <= 8; delta += 1) {
     cells.push({ dx: delta, dy: 0, layer: "road", minimumRcl: 2, structureType: "road" });
