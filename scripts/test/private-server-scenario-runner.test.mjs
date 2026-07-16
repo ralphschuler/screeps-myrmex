@@ -47,11 +47,17 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(timeout.evidence.failure).toEqual({ kind: "scenario-timeout" });
+    expect(timeout.failureCode).toBeNull();
     const bot = await runPrivateServerScenario({
       driver: driver([], { observeError: namedError("BotExceptionError") }),
       manifest,
     });
     expect(bot.evidence.failure).toEqual({ kind: "bot-exception" });
+    const startup = await runPrivateServerScenario({
+      driver: driver([], { observeError: namedError("StartupFailure", "port-unavailable") }),
+      manifest,
+    });
+    expect(startup).toMatchObject({ failureCode: "port-unavailable", ok: false });
     const cleanup = await runPrivateServerScenario({
       driver: driver([], { stopError: new Error("cannot stop") }),
       manifest,
@@ -95,8 +101,8 @@ function driver(calls, options = {}) {
   };
 }
 
-function namedError(name) {
-  const error = new Error(name);
+function namedError(name, message = name) {
+  const error = new Error(message);
   error.name = name;
   return error;
 }

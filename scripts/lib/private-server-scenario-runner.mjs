@@ -43,6 +43,7 @@ export const PRIVATE_SERVER_SCENARIOS = Object.freeze([
 export async function runPrivateServerScenario({ driver, manifest }) {
   const normalizedManifest = definePrivateServerManifest(authoringManifest(manifest));
   let failure = null;
+  let failureCode = null;
   let cleanup;
   let outcomes = [];
   let state = [];
@@ -69,6 +70,7 @@ export async function runPrivateServerScenario({ driver, manifest }) {
     }
   } catch (error) {
     failure ??= { kind: classifyScenarioError(error) };
+    failureCode = scenarioFailureCode(error);
     logs = [safeError(error)];
   } finally {
     try {
@@ -90,7 +92,7 @@ export async function runPrivateServerScenario({ driver, manifest }) {
     outcomes,
     state,
   });
-  return Object.freeze({ evidence, ok: failure === null && cleanup === "complete" });
+  return Object.freeze({ evidence, failureCode, ok: failure === null && cleanup === "complete" });
 }
 
 /** Constructs the fixed Phase 1 matrix with deterministic manifest values. */
@@ -136,6 +138,19 @@ function classifyScenarioError(error) {
 function safeError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return message.slice(0, 512);
+}
+
+function scenarioFailureCode(error) {
+  if (!(error instanceof Error) || error.name !== "StartupFailure") return null;
+  return [
+    "health-timeout",
+    "launch-configuration",
+    "launcher-exited",
+    "port-unavailable",
+    "steam-authentication",
+  ].includes(error.message)
+    ? error.message
+    : null;
 }
 
 function authoringManifest(manifest) {
