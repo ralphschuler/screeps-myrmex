@@ -119,7 +119,7 @@ export function privateServerDeploymentCommand(bundle) {
   }
   const source = JSON.stringify(bundle);
   const username = JSON.stringify(CONTROLLED_USERNAME);
-  return `storage.db.users.findOne({username:${username}}).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['users.code'].findOne({$and:[{user:user._id},{activeWorld:true}]}).then(code=>{if(!code)throw new Error('controlled integration branch is missing');return storage.db['users.code'].update({_id:code._id},{$set:{modules:{main:${source}},timestamp:Date.now()}}).then(()=>storage.env.del('scrScriptCachedData:'+user._id)).then(()=>storage.pubsub.publish('user:'+user._id+'/code',JSON.stringify({id:''+code._id,hash:${JSON.stringify(hash(bundle))}}))).then(()=>JSON.stringify({deployed:true}))})})`;
+  return `storage.db.users.findOne({username:${username}}).then(user=>{if(!user)throw new Error('controlled integration user is missing');const query={$and:[{user:user._id},{activeWorld:true}]};return storage.db.users.update({_id:user._id},{$set:{active:10000}}).then(()=>storage.db['users.code'].update(query,{$set:{modules:{main:${source}},timestamp:Date.now()}})).then(result=>{if(!result.modified)throw new Error('controlled integration branch is missing');return storage.env.del('scrScriptCachedData:'+user._id)}).then(()=>storage.db['users.code'].findOne(query)).then(code=>{if(!code)throw new Error('controlled integration branch is missing');return storage.pubsub.publish('user:'+user._id+'/code',JSON.stringify({id:''+code._id,hash:${JSON.stringify(hash(bundle))}}))}).then(()=>JSON.stringify({deployed:true}))})`;
 }
 
 /** Deploys a built bundle only to the fixed controlled test account on loopback. */
