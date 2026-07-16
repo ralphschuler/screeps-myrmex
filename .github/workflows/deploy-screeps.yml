@@ -53,3 +53,10 @@ jobs:
           SCREEPS_BRANCH: ${{ inputs.branch }}
           SCREEPS_TOKEN: ${{ secrets.SCREEPS_TOKEN }}
         run: node scripts/deploy-screeps.mjs
+
+      - name: Verify live telemetry advances
+        env:
+          SCREEPS_API_BASE_URL: ${{ vars.SCREEPS_API_BASE_URL || 'https://screeps.com/api' }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD || 'shard2' }}
+          SCREEPS_TOKEN: ${{ secrets.SCREEPS_TOKEN }}
+        run: node scripts/verify-screeps-runtime.mjs
