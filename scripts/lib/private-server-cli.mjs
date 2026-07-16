@@ -8,7 +8,14 @@ export const PRIVATE_SERVER_CLI_LIMITS = Object.freeze({
   timeoutMs: 5_000,
 });
 
-const OPERATIONS = new Set(["pause", "reset", "resume", "sample", "set-tick-duration"]);
+const OPERATIONS = new Set([
+  "bootstrap-controlled-bot",
+  "pause",
+  "reset",
+  "resume",
+  "sample-controlled",
+  "set-tick-duration",
+]);
 const CONTROLLED_USERNAME = "myrmex-integration";
 
 /** Maps a closed operation vocabulary to the pinned server's administrative CLI commands. */
@@ -18,15 +25,22 @@ export function privateServerCliCommand(operation) {
   }
   const { kind } = operation;
   if (!OPERATIONS.has(kind)) throw new TypeError("Private-server CLI operation is not supported.");
-  if (kind === "pause") return "system.pauseSimulation()";
-  if (kind === "reset") return "system.resetAllData()";
-  if (kind === "resume") return "system.resumeSimulation()";
-  if (kind === "sample") {
-    return "Promise.all([storage.env.get(storage.env.keys.GAMETIME),storage.db['rooms.objects'].count({type:'creep'}),storage.db['rooms.objects'].count({type:'spawn'})]).then(([gameTime,creeps,spawns])=>JSON.stringify({creeps,gameTime,spawns}))";
+  if (kind === "pause" || kind === "reset" || kind === "resume") {
+    exactOperation(operation, ["kind"]);
+    return `system.${kind === "pause" ? "pauseSimulation" : kind === "reset" ? "resetAllData" : "resumeSimulation"}()`;
   }
-  if (Object.keys(operation).length !== 2 || !Number.isSafeInteger(operation.milliseconds)) {
+  if (kind === "bootstrap-controlled-bot") {
+    exactOperation(operation, ["kind"]);
+    return `bots.spawn('simplebot','W1N1',{username:'${CONTROLLED_USERNAME}',cpu:100,gcl:1}).then(()=>storage.db.users.findOne({username:'${CONTROLLED_USERNAME}'})).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['rooms.objects'].findOne({$and:[{user:user._id},{type:'spawn'}]}).then(spawn=>{if(!spawn)throw new Error('controlled integration spawn is missing');return JSON.stringify({room:spawn.room,spawnX:spawn.x,spawnY:spawn.y,userId:''+user._id})})})`;
+  }
+  if (kind === "sample-controlled") {
+    exactOperation(operation, ["kind"]);
+    return `storage.db.users.findOne({username:'${CONTROLLED_USERNAME}'}).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['rooms.objects'].find({user:user._id}).then(objects=>{const spawn=objects.find(item=>item.type==='spawn');if(!spawn)throw new Error('controlled integration spawn is missing');return Promise.all([storage.env.get(storage.env.keys.GAMETIME),storage.db['rooms.objects'].find({room:spawn.room})]).then(([gameTime,roomObjects])=>JSON.stringify({hostileCreeps:roomObjects.filter(item=>item.type==='creep'&&''+item.user==='2').length,ownedCreeps:objects.filter(item=>item.type==='creep').length,ownedSpawns:objects.filter(item=>item.type==='spawn').length,tick:+gameTime}))})})`;
+  }
+  if (!Number.isSafeInteger(operation.milliseconds)) {
     throw new TypeError("Tick duration must be a safe integer.");
   }
+  exactOperation(operation, ["kind", "milliseconds"]);
   if (operation.milliseconds < 1 || operation.milliseconds > 10_000) {
     throw new RangeError("Tick duration is outside the bounded private-server range.");
   }
@@ -36,20 +50,24 @@ export function privateServerCliCommand(operation) {
 /** Runs one bounded, source-controlled administrative operation against loopback CLI only. */
 export async function runPrivateServerCli(operation, options = {}) {
   const command = privateServerCliCommand(operation);
-  const host = options.host ?? "127.0.0.1";
-  const port = options.port ?? 21026;
-  const timeoutMs = options.timeoutMs ?? PRIVATE_SERVER_CLI_LIMITS.timeoutMs;
-  if (host !== "127.0.0.1" || !Number.isSafeInteger(port) || port < 1 || port > 65_535) {
-    throw new TypeError("Private-server CLI is restricted to a loopback TCP port.");
-  }
-  if (
-    !Number.isSafeInteger(timeoutMs) ||
-    timeoutMs < 1 ||
-    timeoutMs > PRIVATE_SERVER_CLI_LIMITS.timeoutMs
-  ) {
-    throw new RangeError("Private-server CLI timeout is outside the bounded range.");
-  }
-  return exchange({ command, host, port, timeoutMs, connect: options.connect ?? createConnection });
+  return opaqueResult(await runPrivateServerCommand(command, options));
+}
+
+/** Creates the controlled test bot and returns its transient, validated fixture coordinates. */
+export async function bootstrapPrivateServerBot(options = {}) {
+  return parseBootstrap(
+    await runPrivateServerCommand(
+      privateServerCliCommand({ kind: "bootstrap-controlled-bot" }),
+      options,
+    ),
+  );
+}
+
+/** Samples only bounded aggregate outcomes for the controlled test bot. */
+export async function samplePrivateServerBot(options = {}) {
+  return parseSample(
+    await runPrivateServerCommand(privateServerCliCommand({ kind: "sample-controlled" }), options),
+  );
 }
 
 /**
@@ -72,7 +90,11 @@ export function privateServerDeploymentCommand(bundle) {
 export async function deployPrivateServerBundle(bundlePath, options = {}) {
   const bundle = await readFile(bundlePath, "utf8");
   const command = privateServerDeploymentCommand(bundle);
-  return runPrivateServerCommand(command, options);
+  const result = await runPrivateServerCommand(command, options);
+  if (parseJson(result) === null || parseJson(result).deployed !== true) {
+    throw new Error("Private-server bundle deployment was not acknowledged.");
+  }
+  return opaqueResult(result);
 }
 
 /** Reads and fingerprints the exact deployable bundle without retaining source in evidence. */
@@ -93,6 +115,7 @@ function exchange({ command, connect, host, port, timeoutMs }) {
   }
   return new Promise((resolveResult, rejectResult) => {
     let received = "";
+    let connected = false;
     let sent = false;
     let settled = false;
     const socket = connect({ host, port });
@@ -102,14 +125,13 @@ function exchange({ command, connect, host, port, timeoutMs }) {
       clearTimeout(timer);
       socket.destroy();
       if (error) rejectResult(error);
-      else
-        resolveResult(
-          Object.freeze({ bytes: Buffer.byteLength(result, "utf8"), hash: hash(result) }),
-        );
+      else resolveResult(result);
     };
     const timer = setTimeout(() => finish(new Error("Private-server CLI timed out.")), timeoutMs);
     socket.setEncoding("utf8");
-    socket.once("connect", () => socket.write(`${command}\r\n`, "utf8"));
+    socket.once("connect", () => {
+      connected = true;
+    });
     socket.on("data", (chunk) => {
       received += chunk;
       if (Buffer.byteLength(received, "utf8") > PRIVATE_SERVER_CLI_LIMITS.responseBytes) {
@@ -117,12 +139,17 @@ function exchange({ command, connect, host, port, timeoutMs }) {
         return;
       }
       const greetingPrompt = received.indexOf("< ");
-      if (!sent && greetingPrompt >= 0) {
+      if (connected && !sent && greetingPrompt >= 0) {
         sent = true;
         received = received.slice(greetingPrompt + 2);
+        socket.write(`${command}\r\n`, "utf8");
       }
       const resultPrompt = received.indexOf("< ");
-      if (sent && resultPrompt >= 0) finish(null, received.slice(0, resultPrompt).trim());
+      if (sent && resultPrompt >= 0) {
+        const result = received.slice(0, resultPrompt).trim();
+        if (/^Error:/i.test(result)) finish(new Error("Private-server CLI operation failed."));
+        else finish(null, result);
+      }
     });
     socket.once("error", (error) => finish(error));
     socket.once("end", () => finish(new Error("Private-server CLI closed before a result.")));
@@ -144,6 +171,84 @@ function runPrivateServerCommand(command, options) {
     throw new RangeError("Private-server CLI timeout is outside the bounded range.");
   }
   return exchange({ command, host, port, timeoutMs, connect: options.connect ?? createConnection });
+}
+
+function opaqueResult(value) {
+  return Object.freeze({ bytes: Buffer.byteLength(value, "utf8"), hash: hash(value) });
+}
+
+function parseBootstrap(value) {
+  const row = parseJson(value);
+  if (
+    row === null ||
+    !safeId(row.userId) ||
+    !roomName(row.room) ||
+    !cell(row.spawnX) ||
+    !cell(row.spawnY)
+  ) {
+    throw new Error("Private-server bootstrap receipt is invalid.");
+  }
+  return Object.freeze({
+    userId: row.userId,
+    room: row.room,
+    spawnX: row.spawnX,
+    spawnY: row.spawnY,
+    transcript: opaqueResult(value),
+  });
+}
+
+function parseSample(value) {
+  const row = parseJson(value);
+  if (
+    row === null ||
+    !count(row.hostileCreeps) ||
+    !count(row.ownedCreeps) ||
+    !count(row.ownedSpawns) ||
+    !Number.isSafeInteger(row.tick) ||
+    row.tick < 0
+  ) {
+    throw new Error("Private-server sample receipt is invalid.");
+  }
+  return Object.freeze({
+    hostileCreeps: row.hostileCreeps,
+    ownedCreeps: row.ownedCreeps,
+    ownedSpawns: row.ownedSpawns,
+    tick: row.tick,
+    transcript: opaqueResult(value),
+  });
+}
+
+function parseJson(value) {
+  const source = value.startsWith("'") && value.endsWith("'") ? value.slice(1, -1) : value;
+  try {
+    const row = JSON.parse(source);
+    return typeof row === "object" && row !== null && !Array.isArray(row) ? row : null;
+  } catch {
+    return null;
+  }
+}
+
+function exactOperation(value, keys) {
+  const actual = Object.keys(value).sort();
+  if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index])) {
+    throw new TypeError("Private-server CLI operation contains missing or unknown fields.");
+  }
+}
+
+function safeId(value) {
+  return typeof value === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(value);
+}
+
+function roomName(value) {
+  return typeof value === "string" && /^[WE][0-9]{1,3}[NS][0-9]{1,3}$/.test(value);
+}
+
+function cell(value) {
+  return Number.isSafeInteger(value) && value >= 1 && value <= 48;
+}
+
+function count(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 100_000;
 }
 
 function hash(value) {
