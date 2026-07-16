@@ -1395,9 +1395,12 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrices
 - intent arbitration and command-result summaries;
 - schema, build, source/config/policy revisions, config status/reason, and gate reason/blocker.
 
-Structured diagnostics use bounded codes and stable entity IDs. Free-form logs are for concise human
-context, not machine state. Each major decision includes a `reasonCode` and references its
-objective, contract, budget, or operation when applicable.
+Structured diagnostics use bounded codes and stable opaque entity references. The pure
+`security/redaction` boundary converts any player-controlled value or exception text before it
+reaches telemetry, diagnostics, or a later console reporter; raw operational snapshots remain inside
+typed execution paths only. Free-form logs are for concise human context, not machine state. Each
+major decision includes a `reasonCode` and references its objective, contract, budget, or operation
+when applicable.
 
 General metrics MUST NOT use room names, issuers, objective IDs, reservation IDs, or request
 payloads as unbounded labels. Detailed immutable tick results may retain those stable IDs for direct

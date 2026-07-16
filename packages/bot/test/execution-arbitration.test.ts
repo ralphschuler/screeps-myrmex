@@ -68,7 +68,7 @@ describe("intent arbitration", () => {
       {
         status: "rejected",
         reason: "precondition-failed",
-        detail: "failed:actor-owned",
+        detail: "redacted:precondition-detail:0636a67b",
       },
     ]);
   });

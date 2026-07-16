@@ -61,7 +61,7 @@ describe("command execution", () => {
     ]);
     expect(results[0]?.outcome).toMatchObject({
       state: "adapter-fault",
-      error: "Error: adapter unavailable",
+      error: "redacted:command-error:414bc9ea",
     });
   });
 

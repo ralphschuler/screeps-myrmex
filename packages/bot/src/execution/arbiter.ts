@@ -14,6 +14,7 @@ import {
   type UnacceptedIntentDecision,
 } from "./contracts";
 import { defineIntent } from "./intent";
+import { redactUntrusted } from "../security";
 
 const priorityRank = new Map(
   INTENT_PRIORITY_CLASSES.map((priorityClass, index) => [priorityClass, index] as const),
@@ -254,7 +255,7 @@ function evaluatePreconditions<Kind extends string, Payload extends IntentData>(
           intent,
           "rejected",
           "precondition-failed",
-          boundedText(evaluation.detail ?? precondition.key),
+          redactUntrusted("precondition-detail", evaluation.detail ?? precondition.key),
         );
       }
     } catch (error: unknown) {
@@ -356,9 +357,5 @@ function assertExactlyOneDecision(submitted: number, decided: number): void {
 }
 
 function compactError(error: unknown): string {
-  return boundedText(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
-}
-
-function boundedText(value: string): string {
-  return value.slice(0, 300);
+  return redactUntrusted("arbiter-error", error);
 }

@@ -156,33 +156,8 @@ function validateQuarantinePolicy(policy: QuarantinePolicy): void {
 }
 
 function compactError(error: unknown): CompactError {
-  try {
-    if (error instanceof Error) {
-      return Object.freeze({
-        name: safelyReadErrorField(error, "name", "Error"),
-        message: safelyReadErrorField(error, "message", "unreadable error"),
-      });
-    }
-  } catch {
-    // Fall through to the non-Error representation.
-  }
-
-  let message = "unprintable thrown value";
-  try {
-    message = String(error).slice(0, 300);
-  } catch {
-    // Keep the bounded fallback.
-  }
-  return Object.freeze({ name: "UnknownError", message });
-}
-
-function safelyReadErrorField(error: Error, field: "name" | "message", fallback: string): string {
-  try {
-    const value = error[field];
-    return typeof value === "string" ? value.slice(0, 300) : fallback;
-  } catch {
-    return fallback;
-  }
+  void error;
+  return Object.freeze({ name: "RuntimeFault", message: "unexpected-exception" });
 }
 
 function makeFault(

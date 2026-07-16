@@ -3,6 +3,7 @@ import {
   CREEP_SPAWN_TICKS_PER_PART,
   type SpawnBodyPart,
 } from "./body-builder";
+import { redactUntrusted } from "../security";
 
 export const MAX_SPAWN_COMMANDS_PER_BATCH = 128;
 export const MAX_SPAWN_BODY_PARTS = 50;
@@ -428,14 +429,7 @@ function cpuDelta(startedAt: number | null, endedAt: number | null): number {
 }
 
 function compactError(error: unknown): string {
-  try {
-    return (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(
-      0,
-      300,
-    );
-  } catch {
-    return "Unknown adapter fault";
-  }
+  return redactUntrusted("spawn-error", error);
 }
 
 function recordOf(value: unknown): Readonly<Record<string, unknown>> | null {
