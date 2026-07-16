@@ -11,6 +11,7 @@ import type {
   SafeModePolicy,
   SpawnPolicy,
   SurvivalPolicy,
+  TelemetryPolicy,
   TowerPolicy,
 } from "./contracts";
 import { FEATURE_GATE_IDS } from "./contracts";
@@ -45,6 +46,7 @@ export interface RuntimePolicyOverrides {
   readonly spawn?: Partial<SpawnPolicy>;
   readonly repair?: Partial<CriticalRepairPolicy>;
   readonly growth?: Partial<GrowthPolicy>;
+  readonly telemetry?: Partial<TelemetryPolicy>;
   readonly tower?: Partial<TowerPolicy>;
   readonly safeMode?: Partial<SafeModePolicy>;
 }
@@ -144,6 +146,12 @@ const GROWTH_FIELDS = {
   maximumActiveContractsPerRoom: { minimum: 1, maximum: 16 },
   maximumEnergyPerTick: { minimum: 1, maximum: 1_000 },
 } as const satisfies Readonly<Record<keyof GrowthPolicy, NumberFieldSpec>>;
+
+const TELEMETRY_FIELDS = {
+  maximumDetailRecords: { minimum: 1, maximum: 256 },
+  maximumHistoryEntries: { minimum: 0, maximum: 64 },
+  maximumHistoryBytes: { minimum: 512, maximum: 32_768 },
+} as const satisfies Readonly<Record<keyof TelemetryPolicy, NumberFieldSpec>>;
 
 const TOWER_FIELDS = {
   emergencyReserveEnergy: { minimum: 0, maximum: 1_000 },
@@ -461,6 +469,7 @@ function parsePolicyOverrides(value: unknown): ValidationResult<RuntimePolicyOve
     "spawn",
     "repair",
     "growth",
+    "telemetry",
     "tower",
     "safeMode",
   ]);
@@ -476,6 +485,7 @@ function parsePolicyOverrides(value: unknown): ValidationResult<RuntimePolicyOve
     ["spawn", SPAWN_FIELDS],
     ["repair", REPAIR_FIELDS],
     ["growth", GROWTH_FIELDS],
+    ["telemetry", TELEMETRY_FIELDS],
     ["tower", TOWER_FIELDS],
   ];
   for (const [name, fields] of groups) {
@@ -648,6 +658,7 @@ export function mergePolicy(
     spawn: { ...defaults.spawn, ...overrides?.spawn },
     repair: { ...defaults.repair, ...overrides?.repair },
     growth: { ...defaults.growth, ...overrides?.growth },
+    telemetry: { ...defaults.telemetry, ...overrides?.telemetry },
     tower: { ...defaults.tower, ...overrides?.tower },
     safeMode: { ...defaults.safeMode, ...overrides?.safeMode },
   };

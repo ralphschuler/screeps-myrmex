@@ -79,6 +79,13 @@ export interface GrowthPolicy {
   readonly maximumEnergyPerTick: number;
 }
 
+/** Hard caps for observer-only telemetry; never an input to gameplay admission. */
+export interface TelemetryPolicy {
+  readonly maximumDetailRecords: number;
+  readonly maximumHistoryEntries: number;
+  readonly maximumHistoryBytes: number;
+}
+
 export interface TowerPolicy {
   readonly emergencyReserveEnergy: number;
   readonly repairMinimumEnergy: number;
@@ -100,6 +107,7 @@ export interface SurvivalPolicy {
   readonly spawn: SpawnPolicy;
   readonly repair: CriticalRepairPolicy;
   readonly growth: GrowthPolicy;
+  readonly telemetry: TelemetryPolicy;
   readonly tower: TowerPolicy;
   readonly safeMode: SafeModePolicy;
 }

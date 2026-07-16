@@ -183,7 +183,7 @@ describe("tick lifecycle", () => {
     );
     expect(initialized.stateCommit).toEqual({
       committed: true,
-      owners: ["config", "kernel", "colonies", "contracts"],
+      owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
       revision: 1,
     });
     expect(memory.myrmex?.meta.schemaVersion).toBe(3);
@@ -195,7 +195,11 @@ describe("tick lifecycle", () => {
     });
 
     const stable = runTick({ game: gameAt(41), memory });
-    expect(stable.stateCommit).toEqual({ committed: true, owners: ["kernel"], revision: 2 });
+    expect(stable.stateCommit).toEqual({
+      committed: true,
+      owners: ["kernel", "telemetry"],
+      revision: 2,
+    });
     expect(memory.myrmex?.contracts).toEqual({
       active: [],
       issuerFrontiers: [],
@@ -242,7 +246,7 @@ describe("tick lifecycle", () => {
         expect.objectContaining({ status: "completed", systemId: "telemetry.minimum" }),
       ]),
     );
-    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel"] });
+    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel", "telemetry"] });
     expect(JSON.stringify(memory.myrmex.contracts)).toBe(before);
   });
 
@@ -331,7 +335,7 @@ describe("tick lifecycle", () => {
     });
     expect(first.stateCommit).toEqual({
       committed: true,
-      owners: ["config", "kernel", "colonies", "contracts"],
+      owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
       revision: 1,
     });
     const scheduledName = first.spawn.execution[0]?.command.name;
@@ -544,7 +548,7 @@ describe("tick lifecycle", () => {
     ]);
     expect(outcome.stateCommit).toMatchObject({
       committed: true,
-      owners: ["config", "kernel", "colonies", "contracts"],
+      owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
     });
   });
 
@@ -587,7 +591,7 @@ describe("tick lifecycle", () => {
     ]);
     expect(outcome.stateCommit).toMatchObject({
       committed: true,
-      owners: ["config", "kernel", "colonies"],
+      owners: ["config", "kernel", "colonies", "telemetry"],
     });
   });
 
@@ -633,7 +637,7 @@ describe("tick lifecycle", () => {
         expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
       ]),
     );
-    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel"] });
+    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel", "telemetry"] });
     expect(JSON.stringify(memory.myrmex.contracts)).toBe(ownerBytes);
   });
 
@@ -670,6 +674,11 @@ describe("tick lifecycle", () => {
           cpuMode: "normal",
         },
       },
+      telemetry: {
+        schemaVersion: 1,
+        last: { tick: 42 },
+        history: [{ tick: 42 }],
+      },
     });
     expect(outcome.configResolution).toEqual({
       status: "source-defaults",
@@ -705,6 +714,10 @@ describe("tick lifecycle", () => {
       harvested: 0,
       requested: 0,
       unmet: 0,
+    });
+    expect(outcome.telemetry).toMatchObject({
+      activity: { hostileRooms: 0, movementBlocked: 0, spawnScheduled: 0 },
+      status: { droppedDetails: 0 },
     });
   });
 
@@ -796,7 +809,7 @@ describe("tick lifecycle", () => {
         expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
       ]),
     );
-    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel"] });
+    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel", "telemetry"] });
     expect(JSON.stringify(memory.myrmex.contracts)).toBe(ownerBytes);
   });
 
@@ -851,7 +864,7 @@ describe("tick lifecycle", () => {
     );
     expect(outcome.stateCommit).toMatchObject({
       committed: true,
-      owners: ["config", "kernel", "colonies"],
+      owners: ["config", "kernel", "colonies", "telemetry"],
     });
     expect(memory.myrmex?.contracts).toEqual({});
   });
@@ -951,7 +964,10 @@ describe("tick lifecycle", () => {
       lastValid: { candidateRevision: number } | null;
     };
     expect(acceptedOwner.lastValid?.candidateRevision).toBe(91_001);
-    expect(accepted.stateCommit).toMatchObject({ committed: true, owners: ["config", "kernel"] });
+    expect(accepted.stateCommit).toMatchObject({
+      committed: true,
+      owners: ["config", "kernel", "telemetry"],
+    });
 
     acceptedOwner.candidate = {
       revision: 91_002,
@@ -975,7 +991,10 @@ describe("tick lifecycle", () => {
       configRevision: accepted.config.revision,
       policyRevision: accepted.config.policyRevision,
     });
-    expect(rejected.stateCommit).toMatchObject({ committed: true, owners: ["kernel"] });
+    expect(rejected.stateCommit).toMatchObject({
+      committed: true,
+      owners: ["kernel", "telemetry"],
+    });
     expect(memory.myrmex?.config?.candidate).toMatchObject({ revision: 91_002 });
   });
 
@@ -1033,7 +1052,7 @@ describe("tick lifecycle", () => {
     const phaseCpu = outcome.kernel.phases.reduce((total, phase) => total + phase.cpuUsed, 0);
     expect(metricsCalls).toBe(1);
     expect(outcome.kernel.cpu.usedAtStart).toBe(0);
-    expect(telemetrySystem).toMatchObject({ status: "completed", cpuUsed: 0.75 });
+    expect(telemetrySystem).toMatchObject({ status: "completed", cpuUsed: 0 });
     expect(outcome.kernel.cpuUsed).toBe(2.75);
     expect(outcome.kernel.overheadCpu).toBe(2);
     expect(phaseCpu + outcome.kernel.overheadCpu).toBe(outcome.kernel.cpuUsed);

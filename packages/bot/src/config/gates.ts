@@ -38,7 +38,7 @@ export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze
   },
   {
     id: "phase1.telemetry",
-    available: false,
+    available: true,
     prerequisites: ["phase1.agents", "phase1.spawn"],
   },
   {

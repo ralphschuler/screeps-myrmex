@@ -2,7 +2,7 @@ import { deepFreeze } from "./canonical";
 import type { ConfiguredRelations, SurvivalPolicy } from "./contracts";
 
 /** Bump whenever defaults, validation meaning, or the source gate manifest changes. */
-export const RUNTIME_CONFIG_SOURCE_REVISION = "runtime-config-source-v11" as const;
+export const RUNTIME_CONFIG_SOURCE_REVISION = "runtime-config-source-v12" as const;
 
 export const DEFAULT_SURVIVAL_POLICY: SurvivalPolicy = deepFreeze({
   recovery: {
@@ -42,6 +42,11 @@ export const DEFAULT_SURVIVAL_POLICY: SurvivalPolicy = deepFreeze({
     minimumSurplusEnergy: 100,
     maximumActiveContractsPerRoom: 2,
     maximumEnergyPerTick: 100,
+  },
+  telemetry: {
+    maximumDetailRecords: 64,
+    maximumHistoryEntries: 16,
+    maximumHistoryBytes: 8_192,
   },
   tower: {
     emergencyReserveEnergy: 400,

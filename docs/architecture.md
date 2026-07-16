@@ -352,9 +352,10 @@ Phase 0 exposes two immutable tick-local records from `runTick`. `KernelTickRepo
 status, faults, mode, system/phase CPU, and unattributed kernel overhead. The bounded
 `TickTelemetry` summary contains snapshot size, cache size, bucket, and environment status; its
 cache measurement and construction run inside the reserved `telemetry.minimum` boundary. Together
-they form the tick result. A future durable ring MUST be prepared before Reconcile or written
-through `SegmentManager`; it MUST NOT add a second `Memory.myrmex` assignment after the reconcile
-commit.
+they form the tick result. `TelemetryService` owns the durable `telemetry` observer subtree and
+stages its capped hash history before the single Reconcile commit. It reads settled receipts only,
+has no gameplay readers, and exposes typed bounded status for the later ConsoleReporter rather than
+rendering text itself.
 
 ### 6.8 Executable composition
 

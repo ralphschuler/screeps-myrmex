@@ -91,7 +91,7 @@ describe("Phase 1 runtime config scenario", () => {
     expect(reset.outcomes[4]?.configRevision).toBe(reset.outcomes[1]?.configRevision);
     expect(reset.outcomes[5]?.configBytes).toBe(reset.outcomes[0]?.configBytes);
     expect(
-      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v11"),
+      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v12"),
     ).toBe(true);
 
     for (const outcome of reset.outcomes.slice(1, 5)) {
@@ -131,11 +131,10 @@ describe("Phase 1 runtime config scenario", () => {
           id === "phase1.economy" ||
           id === "phase1.safety" ||
           id === "phase1.recovery" ||
+          id === "phase1.telemetry" ||
           id === "phase1.critical-maintenance"
             ? enabled && reason === "enabled"
-            : id === "phase1.growth"
-              ? (enabled && reason === "enabled") || (!enabled && reason === "operator-disabled")
-              : !enabled && reason === "source-unavailable",
+            : (enabled && reason === "enabled") || (!enabled && reason === "operator-disabled"),
         ),
       ),
     ).toBe(true);
