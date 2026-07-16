@@ -54,6 +54,13 @@ they never reset a greeting that the accepted application connection is still wr
 timeout or connection error destroys the probe socket. This makes health observation non-mutating
 for the launcher's supervised game and CLI children.
 
+The fixed CLI adapter applies the same rule after it parses a complete terminal result. It stops
+interpreting further output, drains the peer, sends FIN, and settles only after the local descriptor
+closes. An over-limit response stops accumulating bytes immediately and follows that bounded drain
+path, so a multiline or oversized rejection cannot reset the pinned backend and hide the original
+failure behind a launcher restart. The absolute CLI deadline still destroys a peer that does not
+close, while connection and transport errors remain fail-closed.
+
 When a launcher cannot become healthy, the record may include only one fixed reason code:
 `asset-directory-unavailable`, `configuration-file-unavailable`, `required-launch-option-missing`,
 `steam-authentication`, `port-unavailable`, `launcher-exited`, `health-timeout`,

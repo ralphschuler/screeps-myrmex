@@ -1,9 +1,11 @@
-import { createServer } from "node:net";
+import { EventEmitter } from "node:events";
+import { createConnection, createServer } from "node:net";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { runInNewContext } from "node:vm";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PRIVATE_SERVER_CLI_LIMITS,
   bootstrapPrivateServerBot,
@@ -208,6 +210,92 @@ describe("private-server CLI adapter", () => {
     ).rejects.toThrow("loopback");
   });
 
+  it("drains backend-style terminal responses before closing the CLI connection", async () => {
+    const clientSockets = [];
+    const peers = [];
+    let commands = 0;
+    const server = createServer((socket) => {
+      let resolveClosed;
+      const peer = {
+        closed: new Promise((resolve) => {
+          resolveClosed = resolve;
+        }),
+        ended: false,
+        errors: [],
+      };
+      peers.push(peer);
+      const lines = createInterface({ input: socket, output: socket });
+      lines.once("error", (error) => peer.errors.push(error.code ?? "readline-error"));
+      socket.once("error", (error) => peer.errors.push(error.code ?? "socket-error"));
+      socket.once("end", () => {
+        peer.ended = true;
+      });
+      socket.once("close", resolveClosed);
+      socket.write("Screeps CLI greeting\r\n< \r\n");
+      lines.once("line", () => {
+        commands += 1;
+        socket.write(
+          commands === 1
+            ? `< ${"x".repeat(PRIVATE_SERVER_CLI_LIMITS.responseBytes * 16)}\r\n`
+            : "< OK\r\n",
+        );
+      });
+    });
+    servers.push(server);
+    const port = await listen(server);
+    const connect = (options) => {
+      const socket = createConnection(options);
+      clientSockets.push(socket);
+      return socket;
+    };
+
+    await expect(runPrivateServerCli({ kind: "resume" }, { connect, port })).rejects.toThrow(
+      "byte limit",
+    );
+    await expect(runPrivateServerCli({ kind: "resume" }, { connect, port })).resolves.toMatchObject(
+      { bytes: 2 },
+    );
+    await Promise.all(peers.map(({ closed }) => closed));
+
+    expect(peers.map(({ ended, errors }) => ({ ended, errors }))).toEqual([
+      { ended: true, errors: [] },
+      { ended: true, errors: [] },
+    ]);
+    expect(
+      clientSockets.map(({ destroyed, readableLength }) => ({ destroyed, readableLength })),
+    ).toEqual([
+      { destroyed: true, readableLength: 0 },
+      { destroyed: true, readableLength: 0 },
+    ]);
+  });
+
+  it("bounds a stalled graceful response-limit close without losing its first failure", async () => {
+    const socket = new EventEmitter();
+    socket.destroy = vi.fn();
+    socket.end = vi.fn();
+    socket.resume = vi.fn();
+    socket.setEncoding = vi.fn();
+    socket.write = vi.fn(() => {
+      queueMicrotask(() =>
+        socket.emit("data", "x".repeat(PRIVATE_SERVER_CLI_LIMITS.responseBytes + 1)),
+      );
+    });
+    const connect = () => {
+      queueMicrotask(() => {
+        socket.emit("connect");
+        socket.emit("data", "< \r\n");
+      });
+      return socket;
+    };
+
+    await expect(
+      runPrivateServerCli({ kind: "resume" }, { connect, port: 21026, timeoutMs: 5 }),
+    ).rejects.toThrow("response exceeds the byte limit");
+    expect(socket.resume).toHaveBeenCalledOnce();
+    expect(socket.end).toHaveBeenCalledOnce();
+    expect(socket.destroy).toHaveBeenCalledOnce();
+  });
+
   it("returns only validated transient bootstrap and aggregate sample receipts", async () => {
     const responses = [
       `'${JSON.stringify({ room: "W1N1", spawnX: 20, spawnY: 21, userId: "controlled-user" })}'`,
@@ -262,7 +350,7 @@ describe("private-server CLI adapter", () => {
   it("classifies each independently acknowledged fixture pause boundary", async () => {
     const cases = [
       {
-        code: "cli-pause-fixture-clear-command-failed",
+        code: "cli-pause-fixture-clear-operation-rejected",
         responses: ["Error: rejected"],
       },
       {
@@ -302,6 +390,37 @@ describe("private-server CLI adapter", () => {
       expect(connections).toBe(expectedConnections);
       expect(responses).toEqual([]);
     }
+  });
+
+  it("classifies quiescence transport, operation, and receipt failures separately", async () => {
+    const cases = [
+      {
+        code: "cli-sample-fixture-quiescence-operation-rejected",
+        response: "Error: rejected",
+      },
+      {
+        code: "cli-sample-fixture-quiescence-receipt-invalid",
+        response: `'${JSON.stringify({ quiescent: "invalid" })}'`,
+      },
+    ];
+    for (const { code, response } of cases) {
+      const server = createServer((socket) => {
+        socket.write("< \r\n");
+        socket.once("data", () => socket.end(`< ${response}\r\n`));
+      });
+      servers.push(server);
+      const port = await listen(server);
+      await expect(
+        samplePrivateServerFixtureQuiescence("hostile-reset-v1", 2, { port }),
+      ).rejects.toThrow(code);
+    }
+
+    const unavailable = createServer();
+    const port = await listen(unavailable);
+    await new Promise((resolve) => unavailable.close(resolve));
+    await expect(
+      samplePrivateServerFixtureQuiescence("hostile-reset-v1", 2, { port }),
+    ).rejects.toThrow("cli-sample-fixture-quiescence-connection-failed");
   });
 
   it("validates the complete pause request before opening a CLI connection", async () => {

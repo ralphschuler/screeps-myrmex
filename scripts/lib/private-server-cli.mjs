@@ -23,6 +23,14 @@ const OPERATIONS = new Set([
   "sample-fixture-quiescence",
   "set-tick-duration",
 ]);
+const CLI_CONNECTION_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EPIPE",
+  "ETIMEDOUT",
+]);
 const CONTROLLED_USERNAME = "myrmex-integration";
 
 /** Maps a closed operation vocabulary to the pinned server's administrative CLI commands. */
@@ -204,8 +212,8 @@ export async function pausePrivateServerFixture(scenarioId, sequence, options = 
   let preparation;
   try {
     preparation = await runPrivateServerCommand(prepareCommand, options);
-  } catch {
-    throw new Error("cli-pause-fixture-clear-command-failed");
+  } catch (error) {
+    throw new Error(`cli-pause-fixture-clear-${cliFailureKind(error)}`, { cause: error });
   }
   try {
     parseFixturePausePreparation(preparation);
@@ -226,12 +234,20 @@ export async function pausePrivateServerFixture(scenarioId, sequence, options = 
 
 /** Samples only whether the main loop acknowledged the requested paused boundary. */
 export async function samplePrivateServerFixtureQuiescence(scenarioId, sequence, options = {}) {
-  return parseFixtureQuiescence(
-    await runPrivateServerCommand(
+  let result;
+  try {
+    result = await runPrivateServerCommand(
       privateServerCliCommand({ kind: "sample-fixture-quiescence", scenarioId, sequence }),
       options,
-    ),
-  );
+    );
+  } catch (error) {
+    throw new Error(`cli-sample-fixture-quiescence-${cliFailureKind(error)}`, { cause: error });
+  }
+  try {
+    return parseFixtureQuiescence(result);
+  } catch {
+    throw new Error("cli-sample-fixture-quiescence-receipt-invalid");
+  }
 }
 
 /** Tombstones and verifies only the fixed namespaced receipts for one declared scenario. */
@@ -294,29 +310,48 @@ function exchange({ command, connect, host, port, timeoutMs }) {
   }
   return new Promise((resolveResult, rejectResult) => {
     let received = "";
+    let closing = false;
     let connected = false;
+    let outcome = null;
     let sent = false;
     let settled = false;
     const socket = connect({ host, port });
-    const finish = (error, result) => {
+    const finish = (error, result, destroy = true) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      socket.destroy();
+      if (destroy) socket.destroy();
       if (error) rejectResult(error);
       else resolveResult(result);
     };
-    const timer = setTimeout(() => finish(new Error("Private-server CLI timed out.")), timeoutMs);
+    const closeGracefully = (error, result) => {
+      if (settled || closing) return;
+      closing = true;
+      outcome = { error, result };
+      socket.resume();
+      socket.end();
+    };
+    const timer = setTimeout(
+      () =>
+        finish(
+          closing && outcome.error ? outcome.error : new Error("Private-server CLI timed out."),
+        ),
+      timeoutMs,
+    );
     socket.setEncoding("utf8");
     socket.once("connect", () => {
       connected = true;
     });
     socket.on("data", (chunk) => {
-      received += chunk;
-      if (Buffer.byteLength(received, "utf8") > PRIVATE_SERVER_CLI_LIMITS.responseBytes) {
-        finish(new RangeError("Private-server CLI response exceeds the byte limit."));
+      if (closing) return;
+      if (
+        Buffer.byteLength(received, "utf8") + Buffer.byteLength(chunk, "utf8") >
+        PRIVATE_SERVER_CLI_LIMITS.responseBytes
+      ) {
+        closeGracefully(new RangeError("Private-server CLI response exceeds the byte limit."));
         return;
       }
+      received += chunk;
       const greetingPrompt = received.indexOf("< ");
       if (connected && !sent && greetingPrompt >= 0) {
         sent = true;
@@ -328,12 +363,22 @@ function exchange({ command, connect, host, port, timeoutMs }) {
       if (sent && resultPrefix >= 0 && resultEnd >= 0) {
         const result = received.slice(resultPrefix + 2, resultEnd).trim();
         if (/(?:^|\s)(?:[A-Za-z]*Error):/i.test(result)) {
-          finish(new Error("Private-server CLI operation failed."));
-        } else finish(null, result);
+          closeGracefully(new Error("Private-server CLI operation failed."));
+        } else closeGracefully(null, result);
       }
     });
-    socket.once("error", (error) => finish(error));
-    socket.once("end", () => finish(new Error("Private-server CLI closed before a result.")));
+    socket.once("error", (error) => finish(closing && outcome.error ? outcome.error : error));
+    socket.once("end", () => {
+      if (!closing) finish(new Error("Private-server CLI closed before a result."));
+    });
+    socket.once("close", (hadError) => {
+      if (settled) return;
+      if (closing && (!hadError || outcome.error)) {
+        finish(outcome.error, outcome.result, false);
+      } else {
+        finish(new Error("Private-server CLI closed before a result."), undefined, false);
+      }
+    });
   });
 }
 
@@ -489,18 +534,7 @@ function parseJson(value) {
 }
 
 function readinessFailureCode(error) {
-  if (
-    error instanceof Error &&
-    "code" in error &&
-    new Set([
-      "ECONNREFUSED",
-      "ECONNRESET",
-      "EHOSTUNREACH",
-      "ENETUNREACH",
-      "EPIPE",
-      "ETIMEDOUT",
-    ]).has(error.code)
-  ) {
+  if (error instanceof Error && "code" in error && CLI_CONNECTION_ERROR_CODES.has(error.code)) {
     return "cli-connection-failed";
   }
   if (!(error instanceof Error)) return "storage-readiness-rejected";
@@ -510,6 +544,23 @@ function readinessFailureCode(error) {
     return "readiness-receipt-invalid";
   }
   return "storage-readiness-rejected";
+}
+
+function cliFailureKind(error) {
+  if (error instanceof Error && "code" in error && CLI_CONNECTION_ERROR_CODES.has(error.code)) {
+    return "connection-failed";
+  }
+  if (!(error instanceof Error)) return "command-failed";
+  if (error.message === "Private-server CLI timed out.") return "timeout";
+  if (error.message === "Private-server CLI closed before a result.") return "closed";
+  if (error.message === "Private-server CLI response exceeds the byte limit.") {
+    return "response-limit";
+  }
+  if (error.message === "Private-server CLI command exceeds the byte limit.") {
+    return "command-limit";
+  }
+  if (error.message === "Private-server CLI operation failed.") return "operation-rejected";
+  return "command-failed";
 }
 
 function exactOperation(value, keys) {
