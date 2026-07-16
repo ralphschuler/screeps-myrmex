@@ -29,7 +29,9 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
 
   it("matches checked-in component outputs and keeps unavailable measurements explicit", async () => {
     const actual = await collectAggregateEvidence();
-    expect(actual).toEqual(checkedResult);
+    const { productionBundle, ...checkedAggregate } = checkedResult;
+    expect(productionBundle).toBeDefined();
+    expect(actual).toEqual(checkedAggregate);
 
     for (const row of actual.rows) {
       for (const value of Object.values(row.measurements)) {

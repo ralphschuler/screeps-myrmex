@@ -57,6 +57,14 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
     expect(document).toContain("persistent-growth");
     expect(document).toContain("phase1-gate-results.json");
     expect(results.status).toBe("blocked");
+    expect(results.productionBundle).toEqual({
+      buildSha: "phase1-gate-evidence",
+      bytes: expect.any(Number),
+      inputCount: expect.any(Number),
+      sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+    });
+    expect(results.productionBundle.bytes).toBeGreaterThan(0);
+    expect(results.productionBundle.inputCount).toBeGreaterThan(0);
     expect(results.rows.map((row) => row.id)).toEqual(rows.map((row) => row.id));
     expect(results.externalLive).toEqual({
       deployment: "unevidenced",

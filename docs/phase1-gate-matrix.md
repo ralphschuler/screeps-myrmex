@@ -50,23 +50,26 @@ open.
   and outcome hash. Reset metadata may change the transcript hash; reorder must not change the
   outcome hash. A future aggregate may use a different execution order only if this equivalence is
   preserved.
-- The production artifact must contain no `packages/scenario-kit` input. The bundle-boundary check
-  is composed by the focused test below; this document does not claim a built artifact was produced.
+- The production artifact must contain no `packages/scenario-kit` input. The exact build uses the
+  production esbuild options, checks its real metafile, and matches checked byte-count and SHA-256
+  evidence.
 - The runtime rows now record persistent bytes/growth, telemetry bytes/channel cardinality,
   controller margin/risk, spawn utilization, energy flow, recovery time, CPU, ticks, and row hashes.
   RCL1 also records replacement lateness against its predeclared post-death deadline.
 
 ## Reproduction
 
-Run the aggregate and matrix contract tests from the repository root:
+Run the complete matrix, exact production build evidence, and repository gates from the repository
+root:
 
 ```bash
-npm exec vitest -- run packages/scenario-kit/test/phase1-gate-aggregate.test.ts scripts/test/phase1-gate-matrix.test.mjs
+npm run check
 ```
 
-This command compares exported deterministic row outputs with the checked-in JSON, checks the
-manifest, and composes the production bundle boundary. It does not substitute for unavailable
-runtime measurements or live Screeps evidence.
+This command compares exported deterministic row outputs with the checked-in JSON, validates every
+budget, rebuilds and hashes the exact production bundle, checks its real esbuild input graph, and
+packages that bundle. It does not substitute for unavailable component runtime measurements or live
+Screeps evidence.
 
 ## Explicit remaining risks
 
