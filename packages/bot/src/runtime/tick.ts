@@ -88,6 +88,7 @@ import {
   type EnergyFlowTelemetry,
   type TickTelemetry,
 } from "../telemetry/metrics";
+import { TelemetryService } from "../telemetry/service";
 import { observeWorld } from "../world/observe";
 import { emptyWorldSnapshot, type WorldSnapshot } from "../world/snapshot";
 import type { RuntimeGame, TickContext } from "./context";
@@ -108,6 +109,7 @@ const runtimeConfigAuthority = new RuntimeConfigAuthority();
 const colonyDirector = new ColonyDirector();
 const spawnBroker = new SpawnBroker();
 const spawnExecutor = new SpawnExecutor();
+const telemetryService = new TelemetryService();
 
 export interface TickInput {
   readonly game: RuntimeGame;
@@ -291,6 +293,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let survivalCandidates: readonly SurvivalFlowCandidate[] = Object.freeze([]);
   let maintenanceCandidates: readonly CriticalMaintenanceCandidate[] = Object.freeze([]);
   let growthCandidates: readonly GrowthCandidate[] = Object.freeze([]);
+  let collectedTelemetry: TickTelemetry | null = null;
   return Object.freeze([
     configBootSystem(input),
     {
@@ -706,7 +709,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         admitInRecovery: true,
         mandatoryTail: true,
       },
-      run: ({ mode }) => {
+      run: ({ context, mode }) => {
         input.onPhase?.("reconcile");
         const persistentKernelState = serializeKernelState(input.getKernel(), mode);
         let rootCommitted = false;
@@ -714,6 +717,26 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           () => {
             if (input.manager === null) {
               return;
+            }
+            if (isFeatureEnabled(context.config, "phase1.telemetry")) {
+              const telemetry = telemetryService.record(input.manager.ownerView("telemetry"), {
+                base: telemetryBase(input, context, survivalCandidates),
+                colony: context.colony,
+                contracts: context.contracts,
+                execution: context.execution,
+                growth: growthCandidates,
+                maintenance: maintenanceCandidates,
+                movement: context.movement,
+                snapshot: context.snapshot,
+                spawn: context.spawn,
+              });
+              const telemetryTransaction = input.manager.transaction("telemetry");
+              telemetryTransaction.replace(telemetry.owner);
+              const telemetryStaged = telemetryTransaction.stage();
+              if (!telemetryStaged.staged) {
+                throw new Error(telemetryStaged.fault?.message ?? "telemetry staging failed");
+              }
+              collectedTelemetry = telemetry.telemetry;
             }
             const transaction = input.manager.transaction("kernel");
             transaction.mutate((draft) => {
@@ -754,29 +777,49 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
       run: ({ context }) => {
         input.onPhase?.("telemetry");
-        const telemetry = recordTickTelemetry({
-          tick: context.tick,
-          shard: context.shard,
-          memoryStatus: context.memoryStatus,
-          cpuBucket: input.game.cpu.bucket,
-          snapshot: context.snapshot,
-          cache: input.cacheManager.metrics(),
-          config: context.config,
-          configResolution: context.configResolution,
-          colony: context.colony,
-          energyFlow: survivalEnergyFlowTelemetry(
-            context.snapshot,
-            context.movement,
-            survivalCandidates,
-            context.colony,
-          ),
-        });
+        const telemetry =
+          collectedTelemetry ??
+          telemetryService.record(undefined, {
+            base: telemetryBase(input, context, survivalCandidates),
+            colony: context.colony,
+            contracts: context.contracts,
+            execution: context.execution,
+            growth: growthCandidates,
+            maintenance: maintenanceCandidates,
+            movement: context.movement,
+            snapshot: context.snapshot,
+            spawn: context.spawn,
+          }).telemetry;
         return staged(() => {
           input.runtime.publishTelemetry(telemetry);
         });
       },
     },
   ]);
+}
+
+function telemetryBase(
+  input: CompositionInput,
+  context: TickContext,
+  candidates: readonly SurvivalFlowCandidate[],
+): Omit<TickTelemetry, "activity" | "status"> {
+  return recordTickTelemetry({
+    tick: context.tick,
+    shard: context.shard,
+    memoryStatus: context.memoryStatus,
+    cpuBucket: input.game.cpu.bucket,
+    snapshot: context.snapshot,
+    cache: input.cacheManager.metrics(),
+    config: context.config,
+    configResolution: context.configResolution,
+    colony: context.colony,
+    energyFlow: survivalEnergyFlowTelemetry(
+      context.snapshot,
+      context.movement,
+      candidates,
+      context.colony,
+    ),
+  });
 }
 
 function colonyDirectorSystem(

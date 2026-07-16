@@ -331,9 +331,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v11");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v12");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v11",
+      "runtime-config-source-v12",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -591,9 +591,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("makes completed safety, recovery, maintenance, and growth source-available under v11", () => {
+  it("makes completed safety, recovery, maintenance, growth, and telemetry source-available under v12", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v11");
+    expect(config.sourceRevision).toBe("runtime-config-source-v12");
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.spawn")).toBe(true);
@@ -606,16 +606,19 @@ describe("source feature gates", () => {
     expect(
       FEATURE_GATE_IDS.filter(
         (id) =>
-          id !== "phase1.colony" &&
-          id !== "phase1.contracts" &&
-          id !== "phase1.spawn" &&
-          id !== "phase1.movement" &&
-          id !== "phase1.agents" &&
-          id !== "phase1.economy" &&
-          id !== "phase1.safety" &&
-          id !== "phase1.recovery" &&
-          id !== "phase1.growth" &&
-          id !== "phase1.critical-maintenance",
+          ![
+            "phase1.colony",
+            "phase1.contracts",
+            "phase1.spawn",
+            "phase1.movement",
+            "phase1.agents",
+            "phase1.economy",
+            "phase1.safety",
+            "phase1.recovery",
+            "phase1.growth",
+            "phase1.telemetry",
+            "phase1.critical-maintenance",
+          ].includes(id),
       ).every((id) => !isFeatureEnabled(config, id)),
     ).toBe(true);
     expect(config.features.gates["phase1.growth"]).toEqual({

@@ -14,6 +14,7 @@ import {
   type RuntimeConfigResolutionMetadata,
 } from "../config";
 import type { WorldSnapshot } from "../world/snapshot";
+import type { TelemetryStatus } from "./service";
 
 export interface FeatureGateTelemetry {
   readonly id: FeatureGateId;
@@ -58,8 +59,31 @@ export interface TickTelemetry {
   readonly configAcceptedCandidateRevision: number | null;
   readonly featureGates: readonly FeatureGateTelemetry[];
   readonly colony: ColonyTelemetry;
+  readonly telemetryPolicy: {
+    readonly maximumDetailRecords: number;
+    readonly maximumHistoryEntries: number;
+    readonly maximumHistoryBytes: number;
+  };
+  readonly activity: TelemetryActivity;
+  readonly status: TelemetryStatus;
   /** Bounded current-tick survival-flow evidence; it is observational and never an authority. */
   readonly energyFlow: EnergyFlowTelemetry;
+}
+
+export interface TelemetryActivity {
+  readonly activeContracts: number;
+  readonly contractFundingDenied: number;
+  readonly contractReleases: number;
+  readonly controllerRisks: number;
+  readonly criticalMaintenance: number;
+  readonly growthCandidates: number;
+  readonly hostileRooms: number;
+  readonly intentAccepted: number;
+  readonly intentDenied: number;
+  readonly leaseCount: number;
+  readonly movementBlocked: number;
+  readonly spawnDemand: number;
+  readonly spawnScheduled: number;
 }
 
 export interface EnergyFlowTelemetry {
@@ -85,7 +109,9 @@ export interface TickTelemetryInput {
 }
 
 /** Creates a bounded, immutable per-tick summary; durable history is a later telemetry policy. */
-export function recordTickTelemetry(input: TickTelemetryInput): TickTelemetry {
+export function recordTickTelemetry(
+  input: TickTelemetryInput,
+): Omit<TickTelemetry, "activity" | "status"> {
   return Object.freeze({
     tick: input.tick,
     shard: input.shard,
@@ -138,6 +164,7 @@ export function recordTickTelemetry(input: TickTelemetryInput): TickTelemetry {
       cpuReserved: input.colony.totals.cpuReserved,
       spawnTicksReserved: input.colony.totals.spawnTicksReserved,
     }),
+    telemetryPolicy: Object.freeze({ ...input.config.policy.telemetry }),
     energyFlow: Object.freeze({ ...input.energyFlow }),
   });
 }

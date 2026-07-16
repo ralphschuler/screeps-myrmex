@@ -62,6 +62,9 @@ merged.
 - Survival-budgeted controller progress and existing critical construction are tracked by
   [issue #28](https://github.com/ralphschuler/screeps-myrmex/issues/28) and
   [`phase1-growth-evidence.md`](phase1-growth-evidence.md).
+- Bounded survival accounting and explainable structured status are tracked by
+  [issue #39](https://github.com/ralphschuler/screeps-myrmex/issues/39) and
+  [`phase1-telemetry-evidence.md`](phase1-telemetry-evidence.md).
 
 The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`
@@ -73,7 +76,8 @@ available under `runtime-config-source-v3`; issue #24 makes `phase1.spawn` avail
 `runtime-config-source-v8`; issue #124 makes `phase1.recovery` available under
 `runtime-config-source-v9`; issue #40 makes `phase1.critical-maintenance` available under
 `runtime-config-source-v10`; issue #28 makes `phase1.growth` available under
-`runtime-config-source-v11`. Every later gate remains source-unavailable. Each subsequent outcome
+`runtime-config-source-v11`; issue #39 makes `phase1.telemetry` available under
+`runtime-config-source-v12`. Every later gate remains source-unavailable. Each subsequent outcome
 change may mark only its own gate available after its prerequisites and outcome test exist.
 Operational Memory may disable available work but can never activate an unfinished gate.
 
