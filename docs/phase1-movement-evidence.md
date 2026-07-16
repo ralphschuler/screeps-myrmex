@@ -21,9 +21,18 @@ terrain/static-structure traversal data, builds the cache from that projection, 
 restriction, configured operation/cost propagation, static cache cold/warm behavior, CPU deferral,
 and typed adapter faults.
 
+The issue #26 repair also composes that service with contract allocation. A runtime-owned,
+tick-local adapter combines cached route cost with current fatigue, active `MOVE`, and conservative
+non-`MOVE` body weight. It converts PathFinder's 1/5 plain/swamp cost scale to the 2/10 movement
+fatigue scale and deliberately overestimates arrival rather than equating directions with ticks.
+Cold searches cost 0.5 scheduler CPU only from allowance left after the enclosing contract/agent
+system's base estimate; cache hits remain available when that allowance is exhausted. Geometry is
+memoized up to the allocator pair cap, and cross-room or unavailable routes fail closed. Neither
+`WorkforceAllocator` nor economy policy receives `PathFinder` or a live game object.
+
 Current-tick occupancy and reservations are overlaid by `MovementArbiter` after a path is selected;
-they are never cached. Agents, contract translation, source/sink selection, and economic execution
-are intentionally not part of this evidence. They remain tracked by #38 and #26.
+they are never cached. Agents and economic execution remain tracked by #38 and #26; the allocator
+adapter establishes route feasibility but does not take movement or collision authority.
 
 Mechanics consulted: [Creep.move](https://docs.screeps.com/api/#Creep-move),
 [PathFinder](https://docs.screeps.com/api/#PathFinder), the scoped

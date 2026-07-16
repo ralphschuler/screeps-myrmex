@@ -507,12 +507,12 @@ describe("tick lifecycle", () => {
       expect.objectContaining({ systemId: "economy.contracts", status: "completed" }),
     );
     expect(world.workerEnergy).toBeGreaterThan(0);
-    expect(harvested.telemetry?.energyFlow).toMatchObject({ harvested: 1 });
+    expect(harvested.telemetry?.energyFlow).toMatchObject({ harvested: 2 });
 
     // Simulate a heap reset: only serialized authorities may carry this flow forward.
     const resumedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
     let delivered: ReturnType<typeof runTick> | undefined;
-    for (const tick of [213, 214, 215, 216, 217, 218, 219, 220]) {
+    for (const tick of Array.from({ length: 120 }, (_, index) => 213 + index)) {
       const outcome = runTick({ game: world.game(tick), memory: resumedMemory });
       if (outcome.movement.actionExecution.some(({ intent }) => intent.kind === "transfer")) {
         delivered = outcome;
@@ -523,7 +523,7 @@ describe("tick lifecycle", () => {
     if (delivered === undefined) throw new Error("expected one transfer action");
     expect(world.spawnEnergy).toBeGreaterThan(100);
     expect(world.workerEnergy).toBeLessThan(50);
-    expect(delivered.telemetry?.energyFlow).toMatchObject({ delivered: 1 });
+    expect(delivered.telemetry?.energyFlow).toMatchObject({ delivered: 50 });
   });
 
   it("schedules one distinct successor at the proactive boundary and deduplicates it after reset", () => {
@@ -1008,6 +1008,7 @@ describe("tick lifecycle", () => {
       delivered: 0,
       dropped: 0,
       harvested: 0,
+      harvestedIsLowerBound: false,
       requested: 0,
       unmet: 0,
     });
@@ -1881,8 +1882,9 @@ function economyGame(): {
     ticksToLive: 100,
     harvest: () => {
       if (world.workerEnergy >= 50 || source.energy <= 0) return -8;
-      world.workerEnergy = 50;
-      source.energy -= 50;
+      const harvested = Math.min(2, 50 - world.workerEnergy, source.energy);
+      world.workerEnergy += harvested;
+      source.energy -= harvested;
       return 0;
     },
     transfer: () => {

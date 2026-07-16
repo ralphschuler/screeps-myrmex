@@ -126,11 +126,19 @@ export interface TelemetryActivity {
 }
 
 export interface EnergyFlowTelemetry {
+  /** Beginning-of-tick energy stock held by owned creeps in owned rooms. */
   readonly carried: number;
+  /** Energy scheduled for owned spawn/extension delivery by successful current-tick commands. */
   readonly delivered: number;
+  /** Beginning-of-tick dropped-energy stock in owned rooms. */
   readonly dropped: number;
+  /** Base energy scheduled by successful current-tick harvest commands; exact for unboosted WORK. */
   readonly harvested: number;
+  /** True when boosted WORK makes `harvested` a guaranteed lower bound rather than an exact sum. */
+  readonly harvestedIsLowerBound: boolean;
+  /** Beginning-of-tick deficit in active owned spawn/extension room capacity. */
   readonly requested: number;
+  /** Remaining refill deficit after successfully scheduled current-tick deliveries. */
   readonly unmet: number;
 }
 

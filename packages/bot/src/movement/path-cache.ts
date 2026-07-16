@@ -17,6 +17,7 @@ export interface StaticTraversalMatrix {
 
 export interface LocalPath {
   readonly [field: string]: JsonValue;
+  readonly cost: number;
   readonly directions: readonly number[];
   readonly roomName: string;
 }
@@ -60,6 +61,7 @@ export interface LocalPathPlanRequest {
 
 export type LocalPathPlanResult =
   | {
+      readonly cost: number;
       readonly directions: readonly DirectionConstant[];
       readonly source: "cache" | "search";
       readonly status: "ready";
@@ -152,8 +154,9 @@ export class LocalPathPlanner {
         dependencies: { staticMatrixRevision: request.staticMatrixRevision },
         tick: request.tick,
       });
-      if (cached.hit)
+      if (cached.hit && isValidLocalPath(cached.value, request.origin.roomName))
         return Object.freeze({
+          cost: cached.value.cost,
           directions: Object.freeze([...cached.value.directions]) as readonly DirectionConstant[],
           source: "cache",
           status: "ready",
@@ -183,15 +186,17 @@ export class LocalPathPlanner {
       });
       if (
         result.incomplete ||
-        !Number.isFinite(result.cost) ||
-        result.cost < 0 ||
+        !Number.isSafeInteger(result.cost) ||
+        result.cost <= 0 ||
         result.cost > this.policy.maximumPathCost ||
+        result.directions.length === 0 ||
         !result.directions.every(isDirection)
       )
         return Object.freeze({ reason: "incomplete", status: "no-path" });
 
       const directions = Object.freeze([...result.directions]);
       const path: LocalPath = Object.freeze({
+        cost: result.cost,
         directions,
         roomName: request.origin.roomName,
       });
@@ -199,7 +204,7 @@ export class LocalPathPlanner {
         dependencies: { staticMatrixRevision: request.staticMatrixRevision },
         tick: request.tick,
       });
-      return Object.freeze({ directions, source: "search", status: "ready" });
+      return Object.freeze({ cost: result.cost, directions, source: "search", status: "ready" });
     } catch {
       return Object.freeze({ reason: "adapter-fault", status: "no-path" });
     }
@@ -228,9 +233,9 @@ export function getMovementPathCache(manager: CacheManager): MovementPathCache {
     codec: createJsonCacheCodec<StaticTraversalMatrix>(),
   });
   const localPaths = manager.register<readonly [string, string], LocalPath>({
-    id: "movement.local-path.v1",
+    id: "movement.local-path.v2",
     owner: "movement.path-cache",
-    version: 1,
+    version: 2,
     capacity: 256,
     maxKeyLength: 512,
     maxEncodedLength: 2_048,
@@ -286,6 +291,16 @@ function isValidStaticMatrix(
     matrix.roomName === roomName &&
     matrix.revision === revision &&
     isValidWalkability(matrix.walkability)
+  );
+}
+
+function isValidLocalPath(path: LocalPath, roomName: string): boolean {
+  return (
+    path.roomName === roomName &&
+    Number.isSafeInteger(path.cost) &&
+    path.cost > 0 &&
+    path.directions.length > 0 &&
+    path.directions.every(isDirection)
   );
 }
 

@@ -16,7 +16,7 @@ import {
 const TICK = 100;
 
 describe("WorkforceAllocator", () => {
-  it("assigns harvest and transfer only to actors with the matching current cargo state", () => {
+  it("keeps partially loaded actors eligible for harvest batching", () => {
     const empty = makeActor("actor:empty", {
       capability: capability({ carry: 1, move: 1, work: 1 }),
       energy: 0,
@@ -48,8 +48,10 @@ describe("WorkforceAllocator", () => {
       requiredCapability: capability({ carry: 1 }),
     });
 
-    expect(allocate([empty, carrying], [harvest, transfer]).assignments).toEqual([
-      expect.objectContaining({ actorId: empty.id, contractId: harvest.id }),
+    expect(allocate([carrying], [harvest]).assignments).toEqual([
+      expect.objectContaining({ actorId: carrying.id, contractId: harvest.id }),
+    ]);
+    expect(allocate([empty, carrying], [transfer]).assignments).toEqual([
       expect.objectContaining({ actorId: carrying.id, contractId: transfer.id }),
     ]);
   });

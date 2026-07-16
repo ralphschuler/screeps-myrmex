@@ -340,7 +340,11 @@ export interface WorkforceActor {
   readonly energy?: number;
   /** Null means an unbounded or unknown store; undefined preserves legacy pure-fixture behavior. */
   readonly freeCapacity?: number | null;
+  /** Current observed fatigue; optional only for pure legacy fixtures. */
+  readonly fatigue?: number;
   readonly name: string;
+  /** Conservative fatigue-generating body weight, including inactive and empty CARRY parts. */
+  readonly movementWeight?: number;
   readonly pos: PositionSnapshot;
   readonly spawning: boolean;
   readonly ticksToLive: number | null;
@@ -494,7 +498,9 @@ export function workforceActorFromCreep(creep: CreepSnapshot): WorkforceActor {
     energy:
       creep.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0,
     freeCapacity: creep.store.freeCapacity,
+    fatigue: creep.fatigue,
     name: creep.name,
+    movementWeight: Math.max(0, creep.body.size - creep.body.move.total),
     pos: { ...creep.pos },
     spawning: creep.spawning,
     ticksToLive: creep.ticksToLive,

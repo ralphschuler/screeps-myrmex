@@ -56,7 +56,6 @@ import {
   createContractRequestChannel,
   emptyContractExecutionView,
   emptyContractPlanningView,
-  inRangeOrUnknownTravel,
   workforceActorFromCreep,
   type ContractFundingView,
   type ContractExecutionView,
@@ -86,11 +85,8 @@ import {
   type SpawnSelection,
 } from "../spawn";
 import type { JsonObject, StateView } from "../state/schema";
-import {
-  recordTickTelemetry,
-  type EnergyFlowTelemetry,
-  type TickTelemetry,
-} from "../telemetry/metrics";
+import { recordTickTelemetry, type TickTelemetry } from "../telemetry/metrics";
+import { measureSurvivalEnergyFlow } from "../telemetry/energy-flow";
 import { TelemetryService } from "../telemetry/service";
 import { ConsoleReporter, type ConsoleSink } from "../telemetry/console-reporter";
 import { projectReporterStatus, type ReporterStatus } from "../telemetry/reporter-status";
@@ -107,6 +103,7 @@ import {
   type TickSystem,
 } from "./kernel";
 import type { TickPhase } from "./phases";
+import { createLocalPathTravelEstimateView, localPathSearchAllowance } from "./local-path-travel";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
@@ -371,7 +368,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         admitInRecovery: true,
         mandatoryTail: false,
       },
-      run: ({ context }) => {
+      run: ({ context, budget }) => {
         if (!isFeatureEnabled(context.config, "phase1.contracts")) {
           input.contractChannel.seal();
           return staged(() => undefined);
@@ -412,7 +409,12 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           requests: batch.requests,
           tick: context.tick,
           transitions: batch.transitions,
-          travel: inRangeOrUnknownTravel,
+          travel: createLocalPathTravelEstimateView({
+            availableCpu: localPathSearchAllowance(budget),
+            paths: context.localPathPlanning,
+            snapshot: context.snapshot,
+            tick: context.tick,
+          }),
         });
 
         return staged(
@@ -477,7 +479,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           context.colony.reservations,
           context.contractPlanning,
           context.tick,
-          new Set(context.snapshot.rooms.flatMap((room) => room.ownedCreeps.map(({ id }) => id))),
+          context.snapshot,
         );
         for (const request of flow.requests) scope.producer.submit(request);
         for (const transition of flow.transitions) scope.producer.transition(transition);
@@ -579,7 +581,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           });
         }
         const planned = planLeaseAgents({
-          availablePathCpu: budget.available,
+          availablePathCpu: localPathSearchAllowance(budget),
           execution: context.contractExecution,
           paths: context.localPathPlanning,
           snapshot: context.snapshot,
@@ -744,7 +746,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
             if (isFeatureEnabled(context.config, "phase1.telemetry")) {
               try {
                 const telemetry = telemetryService.record(input.manager.ownerView("telemetry"), {
-                  base: telemetryBase(input, context, survivalCandidates),
+                  base: telemetryBase(input, context),
                   colony: context.colony,
                   contracts: context.contracts,
                   execution: context.execution,
@@ -811,7 +813,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           try {
             telemetry = withoutDurableReporterState(
               telemetryService.record(undefined, {
-                base: telemetryBase(input, context, survivalCandidates),
+                base: telemetryBase(input, context),
                 colony: context.colony,
                 contracts: context.contracts,
                 execution: context.execution,
@@ -838,7 +840,6 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
 function telemetryBase(
   input: CompositionInput,
   context: TickContext,
-  candidates: readonly SurvivalFlowCandidate[],
 ): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress" | "reporterTransitions"> {
   return recordTickTelemetry({
     tick: context.tick,
@@ -850,12 +851,7 @@ function telemetryBase(
     config: context.config,
     configResolution: context.configResolution,
     colony: context.colony,
-    energyFlow: survivalEnergyFlowTelemetry(
-      context.snapshot,
-      context.movement,
-      candidates,
-      context.colony,
-    ),
+    energyFlow: measureSurvivalEnergyFlow(context.snapshot, context.movement),
   });
 }
 
@@ -906,7 +902,7 @@ function colonyDirectorSystem(
       input.onPhase?.("plan");
       resetSpawnDraft(spawnDraft);
       const plannedEconomyCandidates = isFeatureEnabled(context.config, "phase1.economy")
-        ? planSurvivalFlow(context.snapshot)
+        ? planSurvivalFlow(context.snapshot, context.contractExecution, context.contractPlanning)
         : Object.freeze([]);
       const owner = input.manager?.ownerView("colonies") ?? null;
       const economyCandidates = renewSurvivalFlowBudgets(
@@ -1596,52 +1592,6 @@ function readContractPlanning(manager: MemoryManager | null): ContractPlanningVi
   if (manager === null) return emptyContractPlanningView();
   const opened = ContractLedger.open(manager.ownerView("contracts"));
   return opened.status === "ready" ? opened.ledger.planningView() : emptyContractPlanningView();
-}
-
-function survivalEnergyFlowTelemetry(
-  snapshot: WorldSnapshot,
-  movement: MovementRuntimeResult,
-  candidates: readonly SurvivalFlowCandidate[],
-  colony: ColonyPlanningResult,
-): EnergyFlowTelemetry {
-  const carried = snapshot.rooms
-    .flatMap((room) => room.ownedCreeps)
-    .reduce(
-      (total, creep) =>
-        total +
-        (creep.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0),
-      0,
-    );
-  const dropped = snapshot.rooms
-    .flatMap((room) => room.droppedResources ?? [])
-    .filter(({ resourceType }) => resourceType === "energy")
-    .reduce((total, resource) => total + resource.amount, 0);
-  const executed = movement.actionExecution.filter(
-    ({ reason, status }) => reason === "executed" && status === "executed",
-  );
-  const harvested = executed
-    .filter(({ intent }) => intent.kind === "harvest")
-    .reduce((total, { intent }) => total + (intent.amount ?? 0), 0);
-  const delivered = executed
-    .filter(({ intent }) => intent.kind === "transfer")
-    .reduce((total, { intent }) => total + (intent.amount ?? 0), 0);
-  const unmet = candidates.filter(
-    ({ budgetRequest }) =>
-      !colony.reservations.some(
-        (reservation) =>
-          reservation.status === "active" &&
-          reservation.category === "harvesting-filling" &&
-          reservation.issuer === budgetRequest.issuer,
-      ),
-  ).length;
-  return Object.freeze({
-    carried,
-    delivered,
-    dropped,
-    harvested,
-    requested: candidates.length,
-    unmet,
-  });
 }
 
 function serializeKernelState(kernel: RuntimeKernel<TickContext>, mode: CpuMode): JsonObject {

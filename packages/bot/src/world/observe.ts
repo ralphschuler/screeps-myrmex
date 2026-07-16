@@ -236,6 +236,7 @@ function snapshotSpawn(spawn: StructureSpawn): OwnedSpawnSnapshot {
 
 function snapshotExtension(extension: StructureExtension): OwnedExtensionSnapshot {
   return {
+    active: extension.isActive(),
     hits: extension.hits,
     hitsMax: extension.hitsMax,
     id: String(extension.id),

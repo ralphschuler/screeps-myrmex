@@ -390,7 +390,13 @@ function needsEnergy(action: LeasedWorkExecution["execution"]["action"]): boolea
 function actionIntent(lease: LeasedWorkExecution): CreepActionIntent {
   return {
     actorId: lease.actorId,
-    amount: lease.quantity,
+    // A continuous fill lease owns a sink slot, not one energy unit. Omitting the Screeps amount
+    // transfers the assigned actor's available cargo without conflating contract quantity with a
+    // resource amount.
+    amount:
+      lease.execution.action === "transfer" && lease.execution.completion === "continuous"
+        ? null
+        : lease.quantity,
     contractId: lease.contractId,
     contractRevision: lease.revision,
     deadline: actionDeadline(lease),
