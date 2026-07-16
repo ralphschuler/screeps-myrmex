@@ -73,9 +73,7 @@ interface BlockerHeap {
 
 describe("Phase 1 spawn blocker recovery replay", () => {
   it("defers busy and underfunded spawns, then issues exactly one command after recovery", () => {
-    const warm = runScenario(spawnBlockerScenario(false));
-    const reset = runScenario(spawnBlockerScenario(true));
-    const reordered = runScenario(spawnBlockerScenario(true, true));
+    const { warm, reset, reordered } = collectSpawnBlockerEvidence();
 
     expect(reset.outcomes).toEqual(warm.outcomes);
     expect(reset.finalWorld).toEqual(warm.finalWorld);
@@ -129,6 +127,14 @@ describe("Phase 1 spawn blocker recovery replay", () => {
     expect(reset.finalWorld.expectations).toHaveLength(1);
   });
 });
+
+export function collectSpawnBlockerEvidence() {
+  return Object.freeze({
+    warm: runScenario(spawnBlockerScenario(false)),
+    reset: runScenario(spawnBlockerScenario(true)),
+    reordered: runScenario(spawnBlockerScenario(true, true)),
+  });
+}
 
 function spawnBlockerScenario(
   resetBetweenTicks: boolean,

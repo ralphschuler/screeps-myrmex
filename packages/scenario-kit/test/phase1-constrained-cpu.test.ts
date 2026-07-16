@@ -78,9 +78,7 @@ interface CpuHeap {
 
 describe("Phase 1 constrained CPU replay (#30)", () => {
   it("preserves mandatory safety, spawn, execution, reconciliation, and telemetry", () => {
-    const warm = runScenario(constrainedCpuScenario(false, false));
-    const reset = runScenario(constrainedCpuScenario(true, false));
-    const reordered = runScenario(constrainedCpuScenario(true, true));
+    const { warm, reset, reordered } = collectConstrainedCpuEvidence();
 
     expect(reset.outcomes).toEqual(warm.outcomes);
     expect(reset.finalWorld).toEqual(warm.finalWorld);
@@ -117,6 +115,14 @@ describe("Phase 1 constrained CPU replay (#30)", () => {
     }
   });
 });
+
+export function collectConstrainedCpuEvidence() {
+  return Object.freeze({
+    warm: runScenario(constrainedCpuScenario(false, false)),
+    reset: runScenario(constrainedCpuScenario(true, false)),
+    reordered: runScenario(constrainedCpuScenario(true, true)),
+  });
+}
 
 function constrainedCpuScenario(
   resetHeap: boolean,

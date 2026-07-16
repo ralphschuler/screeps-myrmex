@@ -39,9 +39,7 @@ type RecoveryHeap = object;
 
 describe("Phase 1 path and target recovery replay (#30)", () => {
   it("replays blocked/no-path and stale-target outcomes into one valid command", () => {
-    const warm = runScenario(recoveryScenario(false));
-    const reset = runScenario(recoveryScenario(true));
-    const reordered = runScenario(recoveryScenario(true, true));
+    const { warm, reset, reordered } = collectPathTargetEvidence();
 
     expect(reset.outcomes).toEqual(warm.outcomes);
     expect(reset.finalWorld).toEqual(warm.finalWorld);
@@ -75,6 +73,14 @@ describe("Phase 1 path and target recovery replay (#30)", () => {
     expect(reset.outcomes.flatMap(({ commands }) => commands)).toEqual(["creep-worker:3"]);
   });
 });
+
+export function collectPathTargetEvidence() {
+  return Object.freeze({
+    warm: runScenario(recoveryScenario(false)),
+    reset: runScenario(recoveryScenario(true)),
+    reordered: runScenario(recoveryScenario(true, true)),
+  });
+}
 
 function recoveryScenario(
   resetHeap: boolean,

@@ -30,10 +30,12 @@ machine-checkable without pretending that a missing measurement is zero.
 | reset-reorder-equivalence | partial     | [contracts evidence](phase1-contracts-evidence.md), [spawn evidence](phase1-spawn-evidence.md)         |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
 | aggregate-phase1-matrix   | unevidenced | [gate evidence](phase1-gate-evidence.md)                                                               |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
 
-The aggregate row remains `unevidenced`: the component documents explicitly leave full matrix
-budgets, hashes, telemetry/persistent-growth measurements, replacement lateness, controller margin,
-and remaining-risk review open. In particular, no replacement-lateness or controller-margin number
-above should be read as observed performance.
+The machine-readable local result is checked in as
+[`phase1-gate-results.json`](phase1-gate-results.json). It records actual warm, reset, and reordered
+outputs for the four exported deterministic component rows. A `null` measurement is paired with its
+field name in `unevidenced`; missing measurements are never represented as zero. The aggregate row
+remains `unevidenced` because the runtime RCL1/RCL2 fixtures do not yet export independent variants,
+several component seams do not own Memory or telemetry, and external live evidence remains open.
 
 ## Evidence policy
 
@@ -52,21 +54,22 @@ above should be read as observed performance.
 
 ## Reproduction
 
-Run the matrix contract test from the repository root:
+Run the aggregate and matrix contract tests from the repository root:
 
 ```bash
-npm exec vitest -- run scripts/test/phase1-gate-matrix.test.mjs
+npm exec vitest -- run packages/scenario-kit/test/phase1-gate-aggregate.test.ts scripts/test/phase1-gate-matrix.test.mjs
 ```
 
-This command checks the checked-in metadata and composes the existing production bundle-boundary
-assertion with a clean manifest. It is not a substitute for the missing aggregate replay.
+This command compares exported deterministic row outputs with the checked-in JSON, checks the
+manifest, and composes the production bundle boundary. It does not substitute for unavailable
+runtime measurements or live Screeps evidence.
 
 ## Explicit remaining risks
 
-- No single run currently measures every row against every declared budget.
+- The local aggregate covers only the four currently exported scenario-kit component rows.
 - Replacement lateness and controller margin/risk remain acceptance dimensions, not proven values.
 - Persistent-memory growth and telemetry byte/cardinality measurements are not yet joined to row
   hashes.
-- The aggregate reset/reorder proof and production artifact manifest proof still need CI evidence.
+- RCL1 and RCL2 runtime fixtures still need independently exported warm/reset/reordered results.
 - Live Screeps timing, engine inflows, hostile pressure, and deployment behavior remain outside this
   deterministic metadata contract.
