@@ -3,6 +3,11 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export const PRIVATE_SERVER_FIXTURE_STATE_LIMITS = Object.freeze({ maximumDefinitionBytes: 4_096 });
 
+/** Checks the fixed ignored fixture path without creating, deleting, or following any component. */
+export async function validatePrivateServerFixtureStatePath({ checkout, stateDirectory }) {
+  await fixturePaths(checkout, stateDirectory);
+}
+
 /** Prepares only the fixed committed mod mapping; the definition remains absent until paused. */
 export async function preparePrivateServerFixtureModuleState({ checkout, stateDirectory }) {
   const paths = await fixturePaths(checkout, stateDirectory);

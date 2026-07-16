@@ -13,6 +13,7 @@ import {
   privateServerDeploymentCommand,
   privateServerBundleIdentity,
   privateServerCliCommand,
+  probePrivateServerReadiness,
   preparePrivateServerFixtureTarget,
   runPrivateServerCli,
   samplePrivateServerBot,
@@ -41,6 +42,9 @@ describe("private-server CLI adapter", () => {
     expect(privateServerCliCommand({ kind: "set-tick-duration", milliseconds: 1 })).toBe(
       "system.setTickDuration(1)",
     );
+    expect(privateServerCliCommand({ kind: "probe-readiness" })).toBe(
+      "storage.env.get(storage.env.keys.GAMETIME).then(gameTime=>storage.db.users.count().then(users=>JSON.stringify({ready:gameTime!=null&&gameTime!==''&&Number.isSafeInteger(+gameTime)&&+gameTime>=0&&Number.isSafeInteger(users)&&users>=0})))",
+    );
     expect(() => privateServerCliCommand({ kind: "evaluate", source: "process.exit()" })).toThrow(
       "not supported",
     );
@@ -54,6 +58,96 @@ describe("private-server CLI adapter", () => {
     expect(deployment).toContain("if(!result.modified)");
     expect(deployment).toContain("scrScriptCachedData");
     expect(() => privateServerDeploymentCommand("")).toThrow("non-empty");
+  });
+
+  it("proves read-only storage readiness sequentially", async () => {
+    const calls = [];
+    const storage = {
+      db: {
+        users: {
+          async count() {
+            calls.push("users.count");
+            return 0;
+          },
+        },
+      },
+      env: {
+        keys: { GAMETIME: "gameTime" },
+        async get(key) {
+          calls.push(`env.get:${key}`);
+          return "0";
+        },
+      },
+    };
+
+    await expect(
+      runInNewContext(privateServerCliCommand({ kind: "probe-readiness" }), {
+        JSON,
+        Number,
+        storage,
+      }),
+    ).resolves.toBe(JSON.stringify({ ready: true }));
+    expect(calls).toEqual(["env.get:gameTime", "users.count"]);
+    expect(() => privateServerCliCommand({ kind: "probe-readiness", source: "ignored" })).toThrow(
+      "unknown",
+    );
+  });
+
+  it("returns only closed active-readiness results", async () => {
+    const cases = [
+      {
+        response: `'${JSON.stringify({ ready: true })}'`,
+        expected: { ready: true, reason: null },
+      },
+      {
+        response: `'${JSON.stringify({ ready: false })}'`,
+        expected: { ready: false, reason: "storage-not-ready" },
+      },
+      {
+        response: `'${JSON.stringify({ ready: true, raw: "forbidden" })}'`,
+        expected: { ready: false, reason: "readiness-receipt-invalid" },
+      },
+      {
+        response: "Error: storage rejected",
+        expected: { ready: false, reason: "storage-readiness-rejected" },
+      },
+    ];
+    for (const { expected, response } of cases) {
+      const server = createServer((socket) => {
+        socket.write("< \r\n");
+        socket.once("data", () => socket.end(`< ${response}\r\n`));
+      });
+      servers.push(server);
+      const port = await listen(server);
+      await expect(probePrivateServerReadiness({ port })).resolves.toEqual(expected);
+    }
+
+    const closed = createServer((socket) => {
+      socket.write("< \r\n");
+      socket.once("data", () => socket.end());
+    });
+    servers.push(closed);
+    await expect(probePrivateServerReadiness({ port: await listen(closed) })).resolves.toEqual({
+      ready: false,
+      reason: "cli-closed",
+    });
+
+    const silent = createServer((socket) => {
+      socket.write("< \r\n");
+      socket.once("data", () => setTimeout(() => socket.end(), 50));
+    });
+    servers.push(silent);
+    await expect(
+      probePrivateServerReadiness({ port: await listen(silent), timeoutMs: 20 }),
+    ).resolves.toEqual({ ready: false, reason: "cli-timeout" });
+
+    const unavailable = createServer();
+    const unavailablePort = await listen(unavailable);
+    await new Promise((resolve) => unavailable.close(resolve));
+    await expect(probePrivateServerReadiness({ port: unavailablePort })).resolves.toEqual({
+      ready: false,
+      reason: "cli-connection-failed",
+    });
   });
 
   it("prepares and publishes a fresh bounded fixture pause through fixed operations", () => {

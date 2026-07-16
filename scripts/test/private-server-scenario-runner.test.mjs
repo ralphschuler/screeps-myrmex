@@ -164,6 +164,40 @@ describe("private-server scenario runner", () => {
     expect(result.evidence.logs).toHaveLength(2);
   });
 
+  it("attempts terminal cleanup when active readiness fails during startup", async () => {
+    const calls = [];
+    const result = await runPrivateServerScenario({
+      driver: driver(calls, {
+        startError: namedError("StartupFailure", "storage-not-ready"),
+      }),
+      manifest,
+    });
+    expect(result).toMatchObject({
+      evidence: { cleanup: "complete", failure: { kind: "startup-failed" } },
+      failureCode: "storage-not-ready",
+      ok: false,
+    });
+    expect(calls).toEqual(["start", "clearFixture", "stop"]);
+  });
+
+  it("preserves a partial-start teardown failure as incomplete cleanup", async () => {
+    const calls = [];
+    const cleanupFailure = namedError("CleanupFailure", "shutdown-timeout");
+    const result = await runPrivateServerScenario({
+      driver: driver(calls, {
+        startError: cleanupFailure,
+        stopError: cleanupFailure,
+      }),
+      manifest,
+    });
+    expect(result).toMatchObject({
+      evidence: { cleanup: "incomplete", failure: { kind: "cleanup-failed" } },
+      failureCode: "shutdown-timeout",
+      ok: false,
+    });
+    expect(calls).toEqual(["start", "clearFixture", "stop"]);
+  });
+
   it.each([
     ["CliOperationFailure", "cli-pause-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-pause-fixture-clear-failed", "cli-operation-failed"],
@@ -171,11 +205,21 @@ describe("private-server scenario runner", () => {
     ["CliOperationFailure", "cli-pause-fixture-request-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-sample-fixture-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-sample-fixture-quiescence-failed", "cli-operation-failed"],
+    ["StartupFailure", "cli-closed", "startup-failed"],
+    ["StartupFailure", "cli-connection-failed", "startup-failed"],
+    ["StartupFailure", "cli-port-unavailable", "startup-failed"],
+    ["StartupFailure", "cli-timeout", "startup-failed"],
+    ["StartupFailure", "existing-process-unverified", "startup-failed"],
     ["StartupFailure", "fixture-definition-rejected", "startup-failed"],
     ["StartupFailure", "fixture-module-state-invalid", "startup-failed"],
     ["StartupFailure", "fixture-ready-timeout", "startup-failed"],
     ["StartupFailure", "fixture-quiescence-rejected", "startup-failed"],
     ["StartupFailure", "fixture-quiescence-timeout", "startup-failed"],
+    ["StartupFailure", "game-port-unavailable", "startup-failed"],
+    ["StartupFailure", "readiness-receipt-invalid", "startup-failed"],
+    ["StartupFailure", "storage-not-ready", "startup-failed"],
+    ["StartupFailure", "storage-readiness-rejected", "startup-failed"],
+    ["StartupFailure", "unsupported-node-runtime", "startup-failed"],
   ])("preserves the bounded %s code %s", async (name, code, kind) => {
     const result = await runPrivateServerScenario({
       driver: driver([], { observeError: namedError(name, code) }),
@@ -197,7 +241,10 @@ describe("private-server scenario runner", () => {
 function driver(calls, options = {}) {
   const step = (name) => async () => calls.push(name);
   return {
-    start: step("start"),
+    start: async () => {
+      calls.push("start");
+      if (options.startError) throw options.startError;
+    },
     pause: step("pause"),
     reset: step("reset"),
     bootstrap: step("bootstrap"),

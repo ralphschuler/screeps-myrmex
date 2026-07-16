@@ -1,15 +1,38 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export const PRIVATE_SERVER_RUNTIME_VERSION = "4.3.0";
+export const PRIVATE_SERVER_NODE_VERSION = "22.22.1";
 export const PRIVATE_SERVER_LIMITS = Object.freeze({
-  healthAttempts: 60,
+  healthAttempts: 32,
+  healthCliProbeTimeoutMs: 500,
   healthIntervalMs: 500,
+  healthTcpProbeTimeoutMs: 250,
   shutdownAttempts: 50,
   shutdownIntervalMs: 100,
   shutdownTimeoutMs: 5_000,
-  startupTimeoutMs: 30_000,
+  startupTimeoutMs: 60_000,
 });
+
+const READINESS_FAILURE_CODES = new Set([
+  "cli-closed",
+  "cli-connection-failed",
+  "cli-port-unavailable",
+  "cli-timeout",
+  "game-port-unavailable",
+  "launcher-exited",
+  "readiness-receipt-invalid",
+  "storage-not-ready",
+  "storage-readiness-rejected",
+]);
+const SUCCESS_KINDS = new Set([
+  "healthy",
+  "initialized",
+  "installed",
+  "provisioned",
+  "started",
+  "stopped",
+]);
 
 /** Creates a secret-free, bounded lifecycle record suitable for later evidence artifacts. */
 export function lifecycleRecord(kind, details = {}) {
@@ -18,6 +41,61 @@ export function lifecycleRecord(kind, details = {}) {
     runtime: `screeps@${PRIVATE_SERVER_RUNTIME_VERSION}`,
     ...details,
   });
+}
+
+export function privateServerLifecycleSucceeded(kind) {
+  return SUCCESS_KINDS.has(kind);
+}
+
+/** Discards a dead PID and never reuses or kills a live PID without process identity evidence. */
+export function privateServerExistingProcessAction(healthKind, healthReason) {
+  if (healthKind === "health-timeout" && healthReason === "launcher-exited") return "discard";
+  return "reject";
+}
+
+/** Rejects an unverified PID before any fixture preparation can mutate ignored state. */
+export async function privateServerStartPreflight({
+  discardPid,
+  existingPid,
+  fixtureScenarioId,
+  prepareFixture,
+  probeExisting,
+}) {
+  if (existingPid !== null) {
+    const health = await probeExisting();
+    const action = privateServerExistingProcessAction(health.kind, health.reason);
+    if (action === "reject") return Object.freeze({ kind: "reject" });
+    await discardPid();
+  }
+  if (fixtureScenarioId !== null) await prepareFixture();
+  return Object.freeze({ kind: "ready" });
+}
+
+/** Runs the pinned launcher through the already-validated Node executable, never its env shebang. */
+export function privateServerLauncherInvocation(nodeExecutable, launcherExecutable, args) {
+  if (
+    typeof nodeExecutable !== "string" ||
+    nodeExecutable.length === 0 ||
+    typeof launcherExecutable !== "string" ||
+    launcherExecutable.length === 0 ||
+    !Array.isArray(args) ||
+    args.some((argument) => typeof argument !== "string")
+  ) {
+    throw new TypeError("Private-server launcher invocation is invalid.");
+  }
+  return Object.freeze({
+    args: Object.freeze([launcherExecutable, ...args]),
+    command: nodeExecutable,
+  });
+}
+
+/** Runs npm's CLI with the same validated Node executable instead of resolving npm through PATH. */
+export function privateServerNpmInvocation(nodeExecutable, args) {
+  return privateServerLauncherInvocation(
+    nodeExecutable,
+    resolve(dirname(nodeExecutable), "../lib/node_modules/npm/bin/npm-cli.js"),
+    args,
+  );
 }
 
 export function parseLifecycleArguments(argv) {
@@ -62,6 +140,20 @@ export function privateServerProvisioningKey(value) {
     return null;
   }
   return value;
+}
+
+/** Restricts the standalone runtime to the observed working Node 22 line. */
+export function privateServerNodeSupported(version) {
+  if (typeof version !== "string") return false;
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  return match !== null && Number(match[1]) === 22 && Number(match[2]) >= 9;
+}
+
+/** Copies the process environment without forwarding the runtime-only Steam credential. */
+export function privateServerChildEnvironment(source, additions = {}) {
+  const child = { ...source, ...additions };
+  delete child.SCREEPS_STEAM_API_KEY;
+  return child;
 }
 
 /** Removes the upstream initializer's persisted Steam key while retaining all non-secret settings. */
@@ -113,6 +205,45 @@ export async function waitForHealth(probe, limits = PRIVATE_SERVER_LIMITS) {
     if (attempt < limits.healthAttempts) await delay(limits.healthIntervalMs);
   }
   return lifecycleRecord("health-timeout", { attempts: limits.healthAttempts });
+}
+
+/** Waits for the process, both loopback listeners, and a read-only storage-backed CLI receipt. */
+export async function waitForPrivateServerReadiness(probe, limits = PRIVATE_SERVER_LIMITS) {
+  let reason = "game-port-unavailable";
+  for (let attempt = 1; attempt <= limits.healthAttempts; attempt += 1) {
+    const result = await probe();
+    if (result?.ready === true) return lifecycleRecord("healthy", { attempt });
+    reason = READINESS_FAILURE_CODES.has(result?.reason)
+      ? result.reason
+      : "storage-readiness-rejected";
+    if (result?.terminal === true) {
+      return lifecycleRecord("health-timeout", { attempt, reason });
+    }
+    if (attempt < limits.healthAttempts) await delay(limits.healthIntervalMs);
+  }
+  return lifecycleRecord("health-timeout", {
+    attempts: limits.healthAttempts,
+    reason,
+  });
+}
+
+/** Probes each readiness boundary in order and stops at the first unavailable stage. */
+export async function privateServerReadinessObservation({
+  cliPort,
+  gamePort,
+  processStopped,
+  storage,
+}) {
+  if (await processStopped()) {
+    return Object.freeze({ ready: false, reason: "launcher-exited", terminal: true });
+  }
+  if (!(await gamePort())) {
+    return Object.freeze({ ready: false, reason: "game-port-unavailable" });
+  }
+  if (!(await cliPort())) {
+    return Object.freeze({ ready: false, reason: "cli-port-unavailable" });
+  }
+  return storage();
 }
 
 /** Waits until the detached launcher process group is gone before its PID may be forgotten. */

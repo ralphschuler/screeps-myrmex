@@ -213,21 +213,31 @@ function scenarioFailureCode(error) {
       ? error.message
       : null;
   }
-  if (error.name !== "StartupFailure") return null;
+  if (!new Set(["CleanupFailure", "StartupFailure"]).has(error.name)) return null;
   return [
     "asset-directory-unavailable",
+    "cli-closed",
+    "cli-connection-failed",
+    "cli-port-unavailable",
+    "cli-timeout",
     "configuration-file-unavailable",
+    "existing-process-unverified",
     "health-timeout",
     "fixture-definition-rejected",
     "fixture-module-state-invalid",
     "fixture-ready-timeout",
     "fixture-quiescence-rejected",
     "fixture-quiescence-timeout",
+    "game-port-unavailable",
     "launcher-exited",
     "port-unavailable",
+    "readiness-receipt-invalid",
     "required-launch-option-missing",
     "shutdown-timeout",
     "steam-authentication",
+    "storage-not-ready",
+    "storage-readiness-rejected",
+    "unsupported-node-runtime",
   ].includes(error.message)
     ? error.message
     : null;

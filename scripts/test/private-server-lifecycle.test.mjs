@@ -4,21 +4,35 @@ import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  PRIVATE_SERVER_LIMITS,
+  PRIVATE_SERVER_NODE_VERSION,
   lifecyclePaths,
   classifyLauncherFailure,
   lifecycleRecord,
   parseLifecycleArguments,
   prepareLauncherLog,
+  privateServerChildEnvironment,
+  privateServerExistingProcessAction,
+  privateServerLauncherInvocation,
+  privateServerLifecycleSucceeded,
+  privateServerNodeSupported,
+  privateServerNpmInvocation,
   privateServerProvisioningKey,
+  privateServerReadinessObservation,
+  privateServerStartPreflight,
   redactLifecycleError,
   scrubProvisionedConfig,
   waitForHealth,
+  waitForPrivateServerReadiness,
   waitForShutdown,
 } from "../lib/private-server-lifecycle.mjs";
 
 describe("private-server lifecycle", () => {
   it("uses a pinned runtime and rejects unsafe lifecycle arguments", () => {
     expect(lifecycleRecord("healthy")).toEqual({ kind: "healthy", runtime: "screeps@4.3.0" });
+    expect(privateServerLifecycleSucceeded("started")).toBe(true);
+    expect(privateServerLifecycleSucceeded("already-running")).toBe(false);
+    expect(privateServerLifecycleSucceeded("startup-failed")).toBe(false);
     expect(parseLifecycleArguments(["start", "--state-directory", ".private/state"])).toEqual({
       command: "start",
       fixtureScenarioId: null,
@@ -54,6 +68,81 @@ describe("private-server lifecycle", () => {
     ).toBe("assetdir = assets\nport = 21025\n");
   });
 
+  it("pins Node 22 and removes the Steam key from every child environment", () => {
+    expect(PRIVATE_SERVER_NODE_VERSION).toBe("22.22.1");
+    expect(privateServerNodeSupported("22.9.0")).toBe(true);
+    expect(privateServerNodeSupported("22.22.1")).toBe(true);
+    for (const version of ["22.8.9", "23.0.0", "24.18.0", "22", "invalid"]) {
+      expect(privateServerNodeSupported(version)).toBe(false);
+    }
+    const source = { PATH: "/runtime/bin", SCREEPS_STEAM_API_KEY: "runtime-secret" };
+    const child = privateServerChildEnvironment(source, {
+      MYRMEX_PRIVATE_SERVER_FIXTURE_ID: "cold-boot",
+    });
+    expect(child).toEqual({
+      PATH: "/runtime/bin",
+      MYRMEX_PRIVATE_SERVER_FIXTURE_ID: "cold-boot",
+    });
+    expect(source.SCREEPS_STEAM_API_KEY).toBe("runtime-secret");
+    expect(
+      privateServerLauncherInvocation("/node22/bin/node", "/runtime/screeps.js", ["start"]),
+    ).toEqual({
+      args: ["/runtime/screeps.js", "start"],
+      command: "/node22/bin/node",
+    });
+    expect(() => privateServerLauncherInvocation("", "/runtime/screeps.js", [])).toThrow("invalid");
+    expect(privateServerNpmInvocation("/node22/bin/node", ["ci"])).toEqual({
+      args: ["/node22/lib/node_modules/npm/bin/npm-cli.js", "ci"],
+      command: "/node22/bin/node",
+    });
+    expect(privateServerExistingProcessAction("healthy", null)).toBe("reject");
+    expect(privateServerExistingProcessAction("health-timeout", "storage-not-ready")).toBe(
+      "reject",
+    );
+    expect(privateServerExistingProcessAction("health-timeout", "launcher-exited")).toBe("discard");
+  });
+
+  it("keeps existing-process recovery, fresh readiness, and teardown inside the startup budget", () => {
+    const oneProbe =
+      PRIVATE_SERVER_LIMITS.healthTcpProbeTimeoutMs * 2 +
+      PRIVATE_SERVER_LIMITS.healthCliProbeTimeoutMs;
+    const worstCase =
+      oneProbe * (PRIVATE_SERVER_LIMITS.healthAttempts + 1) +
+      PRIVATE_SERVER_LIMITS.healthIntervalMs * (PRIVATE_SERVER_LIMITS.healthAttempts - 1) +
+      PRIVATE_SERVER_LIMITS.shutdownTimeoutMs;
+    expect(worstCase).toBe(53_500);
+    expect(worstCase).toBeLessThanOrEqual(PRIVATE_SERVER_LIMITS.startupTimeoutMs);
+  });
+
+  it("rejects an unverified live PID before fixture preparation can write", async () => {
+    const calls = [];
+    await expect(
+      privateServerStartPreflight({
+        discardPid: async () => calls.push("discard"),
+        existingPid: 42,
+        fixtureScenarioId: "cold-boot",
+        prepareFixture: async () => calls.push("prepare"),
+        probeExisting: async () => (calls.push("probe"), lifecycleRecord("healthy")),
+      }),
+    ).resolves.toEqual({ kind: "reject" });
+    expect(calls).toEqual(["probe"]);
+
+    calls.length = 0;
+    await expect(
+      privateServerStartPreflight({
+        discardPid: async () => calls.push("discard"),
+        existingPid: 42,
+        fixtureScenarioId: "cold-boot",
+        prepareFixture: async () => calls.push("prepare"),
+        probeExisting: async () => (
+          calls.push("probe"),
+          lifecycleRecord("health-timeout", { reason: "launcher-exited" })
+        ),
+      }),
+    ).resolves.toEqual({ kind: "ready" });
+    expect(calls).toEqual(["probe", "discard", "prepare"]);
+  });
+
   it("bounds health polling and sanitizes lifecycle failure records", async () => {
     let attempts = 0;
     const timeout = await waitForHealth(
@@ -68,6 +157,83 @@ describe("private-server lifecycle", () => {
     expect(redactLifecycleError(new Error("token=abc\npassword=xyz"))).toBe(
       "token=[redacted] password=[redacted]",
     );
+  });
+
+  it("probes process, game port, CLI port, and storage in order", async () => {
+    const calls = [];
+    const observation = await privateServerReadinessObservation({
+      processStopped: async () => (calls.push("process"), false),
+      gamePort: async () => (calls.push("game"), true),
+      cliPort: async () => (calls.push("cli"), true),
+      storage: async () => (calls.push("storage"), { ready: true, reason: null }),
+    });
+    expect(observation).toEqual({ ready: true, reason: null });
+    expect(calls).toEqual(["process", "game", "cli", "storage"]);
+
+    calls.length = 0;
+    await expect(
+      privateServerReadinessObservation({
+        processStopped: async () => (calls.push("process"), false),
+        gamePort: async () => (calls.push("game"), false),
+        cliPort: async () => (calls.push("cli"), true),
+        storage: async () => (calls.push("storage"), { ready: true, reason: null }),
+      }),
+    ).resolves.toEqual({ ready: false, reason: "game-port-unavailable" });
+    expect(calls).toEqual(["process", "game"]);
+
+    calls.length = 0;
+    await expect(
+      privateServerReadinessObservation({
+        processStopped: async () => (calls.push("process"), true),
+        gamePort: async () => (calls.push("game"), true),
+        cliPort: async () => (calls.push("cli"), true),
+        storage: async () => (calls.push("storage"), { ready: true, reason: null }),
+      }),
+    ).resolves.toEqual({ ready: false, reason: "launcher-exited", terminal: true });
+    expect(calls).toEqual(["process"]);
+  });
+
+  it("retains bounded readiness reasons, recovers, and exits early for a dead launcher", async () => {
+    const observations = [
+      { ready: false, reason: "game-port-unavailable" },
+      { ready: false, reason: "cli-port-unavailable" },
+      { ready: true, reason: null },
+    ];
+    await expect(
+      waitForPrivateServerReadiness(async () => observations.shift(), {
+        healthAttempts: 3,
+        healthIntervalMs: 0,
+      }),
+    ).resolves.toEqual({ attempt: 3, kind: "healthy", runtime: "screeps@4.3.0" });
+
+    await expect(
+      waitForPrivateServerReadiness(async () => ({ ready: false, reason: "storage-not-ready" }), {
+        healthAttempts: 2,
+        healthIntervalMs: 0,
+      }),
+    ).resolves.toEqual({
+      attempts: 2,
+      kind: "health-timeout",
+      reason: "storage-not-ready",
+      runtime: "screeps@4.3.0",
+    });
+
+    let attempts = 0;
+    await expect(
+      waitForPrivateServerReadiness(
+        async () => {
+          attempts += 1;
+          return { ready: false, reason: "launcher-exited", terminal: true };
+        },
+        { healthAttempts: 40, healthIntervalMs: 0 },
+      ),
+    ).resolves.toEqual({
+      attempt: 1,
+      kind: "health-timeout",
+      reason: "launcher-exited",
+      runtime: "screeps@4.3.0",
+    });
+    expect(attempts).toBe(1);
   });
 
   it("bounds process-group shutdown before clearing lifecycle state", async () => {
