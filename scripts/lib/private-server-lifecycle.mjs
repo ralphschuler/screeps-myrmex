@@ -21,7 +21,7 @@ export function lifecycleRecord(kind, details = {}) {
 export function parseLifecycleArguments(argv) {
   const values = { command: "health", stateDirectory: ".myrmex-private-server" };
   const [command = "health", ...rest] = argv;
-  if (!new Set(["install", "init", "start", "health", "stop"]).has(command)) {
+  if (!new Set(["install", "init", "provision", "start", "health", "stop"]).has(command)) {
     throw new Error(`Unsupported private-server command: ${command}`);
   }
   values.command = command;
@@ -39,6 +39,20 @@ export function parseLifecycleArguments(argv) {
     throw new Error(`Unsupported private-server option: ${option}`);
   }
   return Object.freeze(values);
+}
+
+/** Accepts only a runtime-provided secret that can be passed to upstream initialization via stdin. */
+export function privateServerProvisioningKey(value) {
+  if (typeof value !== "string" || value.length < 8 || value.length > 256 || /[\r\n]/.test(value)) {
+    return null;
+  }
+  return value;
+}
+
+/** Removes the upstream initializer's persisted Steam key while retaining all non-secret settings. */
+export function scrubProvisionedConfig(value) {
+  if (typeof value !== "string") throw new TypeError("Private-server configuration must be text.");
+  return value.replace(/^steam_api_key\s*=.*(?:\r?\n|$)/m, "");
 }
 
 export function lifecyclePaths(cwd, stateDirectory) {

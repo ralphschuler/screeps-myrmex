@@ -3,7 +3,9 @@ import {
   lifecyclePaths,
   lifecycleRecord,
   parseLifecycleArguments,
+  privateServerProvisioningKey,
   redactLifecycleError,
+  scrubProvisionedConfig,
   waitForHealth,
 } from "../lib/private-server-lifecycle.mjs";
 
@@ -14,10 +16,22 @@ describe("private-server lifecycle", () => {
       command: "start",
       stateDirectory: ".private/state",
     });
+    expect(parseLifecycleArguments(["provision"])).toEqual({
+      command: "provision",
+      stateDirectory: ".myrmex-private-server",
+    });
     expect(() => parseLifecycleArguments(["start", "--password", "secret"])).toThrow(
       "Unsupported private-server option",
     );
     expect(() => lifecyclePaths("/work/repo", "../outside")).toThrow("inside the checkout");
+  });
+
+  it("accepts a runtime-only provisioning key and scrubs it from initialized state", () => {
+    expect(privateServerProvisioningKey("12345678")).toBe("12345678");
+    expect(privateServerProvisioningKey("secret\nvalue")).toBeNull();
+    expect(
+      scrubProvisionedConfig("assetdir = assets\nsteam_api_key = secret-value\nport = 21025\n"),
+    ).toBe("assetdir = assets\nport = 21025\n");
   });
 
   it("bounds health polling and sanitizes lifecycle failure records", async () => {
