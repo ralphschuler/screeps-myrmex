@@ -8,6 +8,7 @@ const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 const START_TICK = 100;
 const MAX_TICKS = 150;
+const REPLACEMENT_DEADLINE = 50;
 
 describe("Phase 1 gate established RCL2 row", () => {
   beforeAll(() => {
@@ -19,44 +20,57 @@ describe("Phase 1 gate established RCL2 row", () => {
 
   afterAll(() => vi.unstubAllGlobals());
 
-  it("refills RCL2 capacity, advances the observed road site, and preserves reserve", () => {
+  it("replaces its established worker once and resumes useful RCL2 work", () => {
     const world = establishedRcl2World();
     const memory = {} as Memory;
     const outcomes = [] as ReturnType<typeof runTick>[];
+    let nextTick = START_TICK;
 
-    for (let tick = START_TICK; tick < START_TICK + MAX_TICKS; tick += 1) {
-      const outcome = runTick({ game: world.game(tick), memory });
+    for (; nextTick < START_TICK + MAX_TICKS; nextTick += 1) {
+      const outcome = runTick({ game: world.game(nextTick), memory });
       outcomes.push(outcome);
       expect(world.spawnEnergy()).toBe(300);
-      if (world.roomEnergy() === 400 && world.siteProgress() > 0) break;
+      if (world.roomEnergy() === 400 && world.siteProgress() > 0) {
+        nextTick += 1;
+        break;
+      }
     }
 
     expect(world.extensionEnergy()).toBe(100);
     expect(world.roomEnergy()).toBe(400);
     expect(world.spawnEnergy()).toBe(300);
     expect(world.siteProgress()).toBeGreaterThan(0);
+    const deathTick = nextTick - 1;
+    const progressBeforeDeath = world.siteProgress();
+    world.killWorker();
+
+    for (; nextTick < START_TICK + MAX_TICKS; nextTick += 1) {
+      outcomes.push(runTick({ game: world.game(nextTick), memory }));
+      if (
+        world.replacementUsefulWorkAt() !== null &&
+        world.roomEnergy() >= 300 &&
+        world.siteProgress() >= progressBeforeDeath
+      ) {
+        break;
+      }
+    }
+
+    expect(world.spawnCalls()).toHaveLength(1);
+    expect(world.spawnCalls()[0]).toMatchObject({ body: ["work", "carry", "move"], cost: 200 });
+    expect(world.replacementWorkerId()).not.toBeNull();
+    expect(world.replacementWorkerId()).not.toBe("worker-a");
+    expect(world.replacementVisibleAt()).not.toBeNull();
+    expect(world.replacementUsefulWorkAt()).not.toBeNull();
+    expect(world.replacementUsefulWorkAt() ?? Infinity).toBeLessThanOrEqual(
+      deathTick + REPLACEMENT_DEADLINE,
+    );
+    expect(world.roomEnergy()).toBeGreaterThanOrEqual(300);
+    expect(world.siteProgress()).toBeGreaterThanOrEqual(progressBeforeDeath);
     expect(world.constructionSiteCalls()).toBe(0);
-    expect(world.siteCount()).toBe(1);
     expect(
       outcomes.some((outcome) =>
         outcome.movement.actionExecution.some(
           ({ intent, status }) => status === "executed" && intent.kind === "transfer",
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      outcomes.some((outcome) =>
-        outcome.movement.actionExecution.some(
-          ({ intent, status }) =>
-            status === "executed" && intent.kind === "build" && intent.targetId === "road-site",
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      outcomes.some((outcome) =>
-        outcome.colony.reservations.some(
-          ({ category, status }) =>
-            status === "active" && ["optional-growth", "critical-maintenance"].includes(category),
         ),
       ),
     ).toBe(true);

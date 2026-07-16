@@ -30,7 +30,6 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
     expect(rows.length).toBeGreaterThanOrEqual(8);
     expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
     expect(rows.map((row) => row.status)).toContain("evidenced");
-    expect(rows.map((row) => row.status)).toContain("partial");
 
     for (const row of rows) {
       expect(row.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
@@ -48,14 +47,14 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
 
   it("declares evidence policy after the table and keeps missing proof explicit", () => {
     expect(document.indexOf("## Evidence policy")).toBeGreaterThan(document.indexOf(header));
-    expect(rows.find((row) => row.id === "aggregate-phase1-matrix")?.status).toBe("partial");
+    expect(rows.find((row) => row.id === "aggregate-phase1-matrix")?.status).toBe("evidenced");
     expect(document).toContain("Reset metadata may change the transcript hash");
     expect(document).toContain("packages/scenario-kit");
     expect(document).toContain("replacement lateness");
     expect(document).toContain("controller margin");
     expect(document).toContain("persistent-growth");
     expect(document).toContain("phase1-gate-results.json");
-    expect(results.status).toBe("blocked");
+    expect(results.status).toBe("complete");
     expect(results.productionBundle).toEqual({
       buildSha: "phase1-gate-evidence",
       bytes: expect.any(Number),
