@@ -46,3 +46,10 @@ npm exec vitest -- run packages/scenario-kit/test/phase1-constrained-cpu.test.ts
   remaining-risk review before #44 is unblocked.
 
 This file proves only the constrained-CPU row. It does not claim that #30 is complete.
+
+## Production runtime composition
+
+The aggregate gate drives the real production runtime at bucket `3000` for four ticks. Every
+mandatory execute/reconcile/telemetry tail completes, `growth.contracts` defers with `cpu-mode`,
+telemetry remains present, and the same persistent lifecycle later replaces the sole worker. Warm,
+heap-reset, and source-reordered composition outcomes are equivalent.

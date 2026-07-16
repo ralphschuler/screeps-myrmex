@@ -3,17 +3,11 @@
   "issue": 30,
   "status": "blocked",
   "productionBundleExclusion": "evidenced-local",
-  "productionBundle": {
-    "buildSha": "phase1-gate-evidence",
-    "bytes": 533715,
-    "inputCount": 82,
-    "sha256": "sha256:31ed66eb54b0186dbe4700f5d02ed5e0e9b006455d9c8fafe9e4791ca9b85ea6"
-  },
   "externalLive": {
-    "deployment": "unevidenced",
-    "engineTiming": "unevidenced",
+    "deployment": "evidenced",
+    "engineTiming": "evidenced",
     "hostilePressure": "unevidenced",
-    "remoteAdapter": "unevidenced",
+    "remoteAdapter": "evidenced",
     "rollbackIncident": "unevidenced"
   },
   "rows": [
@@ -75,228 +69,177 @@
     },
     {
       "id": "spawn-blocker-recovery",
-      "status": "partial",
-      "scope": "deterministic-component",
+      "status": "evidenced",
+      "scope": "composed-runtime-and-focused-component",
       "measurements": {
         "ticks": 4,
         "modeledCpu": 2,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
+        "persistentBytes": 4236,
+        "persistentGrowth": 818,
+        "telemetryBytes": 4156,
+        "telemetryCardinality": 25,
         "spawnUtilizationPct": 25,
         "energyFlow": 200,
-        "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "replacementLateness": 0,
+        "controllerMargin": 9783,
+        "controllerRisk": 0,
         "recoveryTime": 2
       },
       "hashes": {
-        "warmOutcome": "fnv1a64-utf16:d66d9079e4f76777",
-        "resetOutcome": "fnv1a64-utf16:d66d9079e4f76777",
-        "reorderedOutcome": "fnv1a64-utf16:d66d9079e4f76777",
-        "warmTranscript": "fnv1a64-utf16:9b10d1abeaf9d7f2",
-        "resetTranscript": "fnv1a64-utf16:e81682f2be3a22d1",
-        "reorderedTranscript": "fnv1a64-utf16:76fda2692bd1fc0f"
+        "warmOutcome": "87c8166f",
+        "resetOutcome": "87c8166f",
+        "reorderedOutcome": "87c8166f",
+        "warmTranscript": "e181ac7f",
+        "resetTranscript": "e72c05d1",
+        "reorderedTranscript": "f05529bd"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk"
-      ]
+      "unevidenced": []
     },
     {
       "id": "path-target-recovery",
-      "status": "partial",
-      "scope": "deterministic-component",
+      "status": "evidenced",
+      "scope": "composed-runtime-and-focused-component",
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
+        "persistentBytes": 7212,
+        "persistentGrowth": 238,
+        "telemetryBytes": 4003,
+        "telemetryCardinality": 25,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
-        "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "replacementLateness": 0,
+        "controllerMargin": 9783,
+        "controllerRisk": 0,
         "recoveryTime": 3
       },
       "hashes": {
-        "warmOutcome": "fnv1a64-utf16:579ded7dc76cfd3f",
-        "resetOutcome": "fnv1a64-utf16:579ded7dc76cfd3f",
-        "reorderedOutcome": "fnv1a64-utf16:579ded7dc76cfd3f",
-        "warmTranscript": "fnv1a64-utf16:aa4578cc08f26f0f",
-        "resetTranscript": "fnv1a64-utf16:bd454b91a5eaede1",
-        "reorderedTranscript": "fnv1a64-utf16:26c3ac9d551ce140"
+        "warmOutcome": "df53697a",
+        "resetOutcome": "df53697a",
+        "reorderedOutcome": "df53697a",
+        "warmTranscript": "789319b9",
+        "resetTranscript": "51b7e691",
+        "reorderedTranscript": "c3acde59"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk"
-      ]
+      "unevidenced": []
     },
     {
       "id": "hostile-pressure-recovery",
-      "status": "partial",
-      "scope": "deterministic-component",
+      "status": "evidenced",
+      "scope": "composed-runtime-and-focused-component",
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
+        "persistentBytes": 7405,
+        "persistentGrowth": 260,
+        "telemetryBytes": 3808,
+        "telemetryCardinality": 25,
         "spawnUtilizationPct": 0,
-        "energyFlow": null,
-        "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "energyFlow": 0,
+        "replacementLateness": 0,
+        "controllerMargin": 9783,
+        "controllerRisk": 0,
         "recoveryTime": 3
       },
       "hashes": {
-        "warmOutcome": "fnv1a64-utf16:720ac3e9d79f7d40",
-        "resetOutcome": "fnv1a64-utf16:720ac3e9d79f7d40",
-        "reorderedOutcome": "fnv1a64-utf16:720ac3e9d79f7d40",
-        "warmTranscript": "fnv1a64-utf16:ba1fea8f6cda528f",
-        "resetTranscript": "fnv1a64-utf16:347a958b839ad5d2",
-        "reorderedTranscript": "fnv1a64-utf16:58a726ac850747d3"
+        "warmOutcome": "f329c328",
+        "resetOutcome": "f329c328",
+        "reorderedOutcome": "f329c328",
+        "warmTranscript": "aba391b6",
+        "resetTranscript": "574d4a88",
+        "reorderedTranscript": "fba91c41"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "energyFlow",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk"
-      ]
+      "unevidenced": []
     },
     {
       "id": "constrained-cpu",
-      "status": "partial",
-      "scope": "deterministic-component",
+      "status": "evidenced",
+      "scope": "composed-runtime-and-focused-component",
       "measurements": {
         "ticks": 4,
         "modeledCpu": 5,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
+        "persistentBytes": 7606,
+        "persistentGrowth": 201,
+        "telemetryBytes": 3908,
+        "telemetryCardinality": 25,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
-        "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "replacementLateness": 0,
+        "controllerMargin": 9783,
+        "controllerRisk": 0,
         "recoveryTime": 4
       },
       "hashes": {
-        "warmOutcome": "fnv1a64-utf16:9b74bd85da4f11a6",
-        "resetOutcome": "fnv1a64-utf16:9b74bd85da4f11a6",
-        "reorderedOutcome": "fnv1a64-utf16:9b74bd85da4f11a6",
-        "warmTranscript": "fnv1a64-utf16:52a0a9c6838459b4",
-        "resetTranscript": "fnv1a64-utf16:27db2b2a8f017b55",
-        "reorderedTranscript": "fnv1a64-utf16:5e36a5b331738c41"
+        "warmOutcome": "4b8c61be",
+        "resetOutcome": "4b8c61be",
+        "reorderedOutcome": "4b8c61be",
+        "warmTranscript": "78792cdf",
+        "resetTranscript": "dddd6c01",
+        "reorderedTranscript": "60597956"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk"
-      ]
+      "unevidenced": []
     },
     {
       "id": "reset-reorder-equivalence",
-      "status": "partial",
-      "scope": "deterministic-component-equivalence",
+      "status": "evidenced",
+      "scope": "composed-runtime-equivalence",
       "measurements": {
         "ticks": 1494,
         "modeledCpu": 5,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
-        "spawnUtilizationPct": null,
-        "energyFlow": null,
-        "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "persistentBytes": 28229,
+        "persistentGrowth": 3682,
+        "telemetryBytes": 4386,
+        "telemetryCardinality": 25,
+        "spawnUtilizationPct": 25,
+        "energyFlow": 250,
+        "replacementLateness": 0,
+        "controllerMargin": 8599,
+        "controllerRisk": 0,
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "ae5bb254",
-        "resetOutcome": "ae5bb254",
-        "reorderedOutcome": "ae5bb254",
-        "warmTranscript": "9fcf42a6",
-        "resetTranscript": "0020bc26",
-        "reorderedTranscript": "3f5ac53e"
+        "warmOutcome": "a45b03a2",
+        "resetOutcome": "a45b03a2",
+        "reorderedOutcome": "a45b03a2",
+        "warmTranscript": "d3cc2518",
+        "resetTranscript": "f2db8ca3",
+        "reorderedTranscript": "f5202d1d"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "spawnUtilizationPct",
-        "energyFlow",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk"
-      ]
+      "unevidenced": []
     },
     {
       "id": "aggregate-phase1-matrix",
-      "status": "unevidenced",
-      "scope": "local-component-subset",
+      "status": "partial",
+      "scope": "local-composed-runtime",
       "measurements": {
         "ticks": 1494,
         "modeledCpu": 5,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
-        "spawnUtilizationPct": null,
-        "energyFlow": null,
-        "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "persistentBytes": 28229,
+        "persistentGrowth": 3682,
+        "telemetryBytes": 4386,
+        "telemetryCardinality": 25,
+        "spawnUtilizationPct": 25,
+        "energyFlow": 250,
+        "replacementLateness": 0,
+        "controllerMargin": 8599,
+        "controllerRisk": 0,
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "f61bfbfa",
-        "resetOutcome": "f61bfbfa",
-        "reorderedOutcome": "f61bfbfa",
-        "warmTranscript": null,
-        "resetTranscript": null,
-        "reorderedTranscript": null
+        "warmOutcome": "e93deab0",
+        "resetOutcome": "e93deab0",
+        "reorderedOutcome": "e93deab0",
+        "warmTranscript": "d3cc2518",
+        "resetTranscript": "f2db8ca3",
+        "reorderedTranscript": "f5202d1d"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "spawnUtilizationPct",
-        "energyFlow",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk",
-        "warmTranscript",
-        "resetTranscript",
-        "reorderedTranscript",
-        "externalLive"
-      ]
+      "unevidenced": ["externalLive.hostilePressure", "externalLive.rollbackIncident"]
     }
-  ]
+  ],
+  "productionBundle": {
+    "buildSha": "phase1-gate-evidence",
+    "bytes": 533715,
+    "inputCount": 82,
+    "sha256": "sha256:31ed66eb54b0186dbe4700f5d02ed5e0e9b006455d9c8fafe9e4791ca9b85ea6"
+  }
 }

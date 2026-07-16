@@ -17,15 +17,18 @@ export interface SpawnCall {
 }
 
 export interface SurvivalWorld {
+  readonly constrainedCpuObservations: number;
   readonly cargoAtFirstDelivery: number | null;
   readonly firstDeliveryAt: number | null;
   readonly firstHarvestAt: number | null;
   readonly firstHarvestTargetId: string | null;
   readonly fatiguedObservations: number;
   readonly fullSinkObservations: number;
+  readonly hostileObservations: number;
   readonly moveCalls: number;
   readonly pathSearch: LocalPathSearch;
   readonly pathSearchCalls: number;
+  readonly pathUnavailableObservations: number;
   readonly sourceAEnergy: number;
   readonly sourceBDelivered: number;
   readonly sourceBHarvested: number;
@@ -35,14 +38,22 @@ export interface SurvivalWorld {
   readonly sinkVanishedAt: number | null;
   readonly sinkResolverMisses: number;
   readonly spawnCalls: readonly SpawnCall[];
+  readonly spawnBusyObservations: number;
+  readonly spawnEnergyBlockerObservations: number;
   readonly spawnEnergy: number;
   readonly workerEnergy: number;
   readonly workerId: string;
   readonly workerVisibleAt: number | null;
+  readonly targetMissingObservations: number;
   reverseSources: boolean;
   assertEnergyConserved(): void;
   game(tick: number): RuntimeGame;
   killWorker(): void;
+  setCpuBucket(bucket: number): void;
+  setHostilePressure(active: boolean): void;
+  setPathUnavailable(unavailable: boolean): void;
+  setSpawnBlocker(blocker: "busy" | "energy" | null): void;
+  setTargetResolverUnavailable(unavailable: boolean): void;
 }
 
 export function survivalWorld(): SurvivalWorld {
@@ -50,6 +61,8 @@ export function survivalWorld(): SurvivalWorld {
   const initialSourceEnergy = 50 + 3_000;
   const state = {
     cargoAtFirstDelivery: null as number | null,
+    constrainedCpuObservations: 0,
+    cpuBucket: 10_000,
     currentTick: START_TICK - 1,
     firstDeliveryAt: null as number | null,
     firstHarvestAt: null as number | null,
@@ -57,10 +70,14 @@ export function survivalWorld(): SurvivalWorld {
     fatiguedObservations: 0,
     fullSinkInjected: false,
     fullSinkObservations: 0,
+    hostileActive: false,
+    hostileObservations: 0,
     injectedSpawnEnergy: 0,
     lastAdvancedTick: START_TICK - 1,
     moveCalls: 0,
     pathSearchCalls: 0,
+    pathUnavailable: false,
+    pathUnavailableObservations: 0,
     pendingSpawn: null as { readonly name: string; readonly readyAt: number } | null,
     reverseSources: false,
     sinkFullUntil: null as number | null,
@@ -76,8 +93,14 @@ export function survivalWorld(): SurvivalWorld {
     controllerUpgradeCalls: 0,
     lostWorkerEnergy: 0,
     spawnCalls: [] as SpawnCall[],
+    spawnBlocker: null as "busy" | "energy" | null,
+    spawnBusyObservations: 0,
     spawnEnergy: initialSpawnEnergy,
+    spawnEnergyBlockerObservations: 0,
     successfulSpawnCost: 0,
+    targetMissingObservations: 0,
+    targetResolverUnavailable: false,
+    withheldSpawnEnergy: 0,
     workerEnergy: 0,
     workerFatigue: 0,
     workerName: null as string | null,
@@ -99,6 +122,9 @@ export function survivalWorld(): SurvivalWorld {
     pos: { roomName: "W1N1", x: 10, y: 10 },
     room: roomReference,
     get spawning() {
+      if (state.spawnBlocker === "busy") {
+        return { name: "external-busy", needTime: 3, remainingTime: 1 };
+      }
       const pending = state.pendingSpawn;
       return pending === null
         ? null
@@ -209,6 +235,23 @@ export function survivalWorld(): SurvivalWorld {
     },
     withdraw: () => -7,
   } as unknown as Creep;
+  const hostile = {
+    body: [
+      { hits: 100, type: "attack" },
+      { hits: 100, type: "move" },
+    ],
+    fatigue: 0,
+    hits: 200,
+    hitsMax: 200,
+    id: "hostile-1",
+    my: false,
+    name: "Invader1",
+    owner: { username: "Invader" },
+    pos: { roomName: "W1N1", x: 12, y: 10 },
+    spawning: false,
+    store: energyStore(() => 0, 0),
+    ticksToLive: 100,
+  } as unknown as Creep;
   const controller = {
     id: "controller-1",
     get level() {
@@ -235,9 +278,10 @@ export function survivalWorld(): SurvivalWorld {
     energyCapacityAvailable: 300,
     find: (findType: number): unknown[] =>
       findType === FIND_CREEPS_VALUE
-        ? state.workerName === null
-          ? []
-          : [worker]
+        ? [
+            ...(state.workerName === null ? [] : [worker]),
+            ...(state.hostileActive ? [hostile] : []),
+          ]
         : findType === FIND_STRUCTURES_VALUE
           ? [spawn]
           : findType === FIND_SOURCES_VALUE
@@ -257,6 +301,10 @@ export function survivalWorld(): SurvivalWorld {
   const pathSearch: LocalPathSearch = {
     search(input: LocalPathSearchInput) {
       state.pathSearchCalls += 1;
+      if (state.pathUnavailable) {
+        state.pathUnavailableObservations += 1;
+        return { cost: 0, directions: [], incomplete: true };
+      }
       const directions = straightPath(input);
       return { cost: directions.length, directions, incomplete: false };
     },
@@ -297,8 +345,15 @@ export function survivalWorld(): SurvivalWorld {
       state.sinkResolverFailurePending = true;
     }
     if (state.workerName !== null && state.workerFatigue > 0) state.fatiguedObservations += 1;
+    if (state.spawnBlocker === "busy") state.spawnBusyObservations += 1;
+    if (state.spawnBlocker === "energy") state.spawnEnergyBlockerObservations += 1;
+    if (state.hostileActive) state.hostileObservations += 1;
+    if (state.cpuBucket < 5_000) state.constrainedCpuObservations += 1;
   };
   const world: SurvivalWorld = {
+    get constrainedCpuObservations() {
+      return state.constrainedCpuObservations;
+    },
     get cargoAtFirstDelivery() {
       return state.cargoAtFirstDelivery;
     },
@@ -317,12 +372,18 @@ export function survivalWorld(): SurvivalWorld {
     get fullSinkObservations() {
       return state.fullSinkObservations;
     },
+    get hostileObservations() {
+      return state.hostileObservations;
+    },
     get moveCalls() {
       return state.moveCalls;
     },
     pathSearch,
     get pathSearchCalls() {
       return state.pathSearchCalls;
+    },
+    get pathUnavailableObservations() {
+      return state.pathUnavailableObservations;
     },
     get reverseSources() {
       return state.reverseSources;
@@ -348,6 +409,12 @@ export function survivalWorld(): SurvivalWorld {
     get spawnCalls() {
       return state.spawnCalls;
     },
+    get spawnBusyObservations() {
+      return state.spawnBusyObservations;
+    },
+    get spawnEnergyBlockerObservations() {
+      return state.spawnEnergyBlockerObservations;
+    },
     get spawnEnergy() {
       return state.spawnEnergy;
     },
@@ -367,6 +434,9 @@ export function survivalWorld(): SurvivalWorld {
     get workerVisibleAt() {
       return state.workerVisibleAt;
     },
+    get targetMissingObservations() {
+      return state.targetMissingObservations;
+    },
     assertEnergyConserved: () => {
       const harvested = initialSourceEnergy - state.sourceAEnergy - state.sourceBEnergy;
       expect(initialSpawnEnergy + harvested + state.injectedSpawnEnergy).toBe(
@@ -374,7 +444,8 @@ export function survivalWorld(): SurvivalWorld {
           state.workerEnergy +
           state.successfulSpawnCost +
           state.controllerUpgradeCalls +
-          state.lostWorkerEnergy,
+          state.lostWorkerEnergy +
+          state.withheldSpawnEnergy,
       );
     },
     game: (tick: number): RuntimeGame => {
@@ -382,7 +453,7 @@ export function survivalWorld(): SurvivalWorld {
       let cpuUsed = 0;
       return {
         cpu: {
-          bucket: 10_000,
+          bucket: state.cpuBucket,
           getUsed: () => {
             const sample = cpuUsed;
             cpuUsed += 0.001;
@@ -403,9 +474,16 @@ export function survivalWorld(): SurvivalWorld {
             return spawn;
           }
           if (id === worker.id) return state.workerName === null ? null : worker;
-          if (id === sourceA.id) return state.sourceAEnergy > 0 ? sourceA : null;
+          if (id === sourceA.id) {
+            if (state.targetResolverUnavailable) {
+              state.targetMissingObservations += 1;
+              return null;
+            }
+            return state.sourceAEnergy > 0 ? sourceA : null;
+          }
           if (id === sourceB.id) return sourceB;
           if (id === controller.id) return controller;
+          if (id === hostile.id) return state.hostileActive ? hostile : null;
           return null;
         },
         rooms: { W1N1: room },
@@ -419,6 +497,29 @@ export function survivalWorld(): SurvivalWorld {
       state.workerFatigue = 0;
       state.workerName = null;
       state.workerTicksToLive = null;
+    },
+    setCpuBucket: (bucket: number) => {
+      state.cpuBucket = bucket;
+    },
+    setHostilePressure: (active: boolean) => {
+      state.hostileActive = active;
+    },
+    setPathUnavailable: (unavailable: boolean) => {
+      state.pathUnavailable = unavailable;
+    },
+    setSpawnBlocker: (blocker: "busy" | "energy" | null) => {
+      if (state.spawnBlocker === "energy" && blocker !== "energy") {
+        state.spawnEnergy += state.withheldSpawnEnergy;
+        state.withheldSpawnEnergy = 0;
+      }
+      if (blocker === "energy" && state.spawnBlocker !== "energy") {
+        state.withheldSpawnEnergy = Math.min(200, state.spawnEnergy);
+        state.spawnEnergy -= state.withheldSpawnEnergy;
+      }
+      state.spawnBlocker = blocker;
+    },
+    setTargetResolverUnavailable: (unavailable: boolean) => {
+      state.targetResolverUnavailable = unavailable;
     },
   };
   return world;

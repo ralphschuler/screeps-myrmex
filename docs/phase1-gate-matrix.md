@@ -22,24 +22,29 @@ minimum permitted integer margin in ticks before the configured controller-risk 
 `controller-risk` is encoded as `0` (not asserted) or `1` (risk allowed and must be handled). These
 definitions make the table machine-checkable without pretending that a missing measurement is zero.
 
-| row-id                    | status      | evidence                                                                                               | max-ticks | max-modeled-cpu | max-persistent-bytes | max-persistent-growth | max-telemetry-bytes | max-telemetry-cardinality | max-spawn-utilization-pct | max-energy-flow | max-replacement-lateness | min-controller-margin | controller-risk | max-recovery-time |
-| ------------------------- | ----------- | ------------------------------------------------------------------------------------------------------ | --------: | --------------: | -------------------: | --------------------: | ------------------: | ------------------------: | ------------------------: | --------------: | -----------------------: | --------------------: | --------------: | ----------------: |
-| rcl2-established          | evidenced   | [gate evidence](phase1-gate-evidence.md)                                                               |       150 |             500 |                32768 |                  4096 |                8192 |                        64 |                       100 |             400 |                       50 |                     1 |               1 |               150 |
-| rcl1-cold-boot-growth     | evidenced   | [growth evidence](phase1-growth-evidence.md), [economy evidence](phase1-economy-evidence.md)           |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
-| spawn-blocker-recovery    | partial     | [spawn-blocker evidence](phase1-spawn-blocker-evidence.md), [spawn evidence](phase1-spawn-evidence.md) |       200 |            1000 |                32768 |                  4096 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |               200 |
-| path-target-recovery      | partial     | [path/target evidence](phase1-path-target-evidence.md)                                                 |         3 |               3 |                32768 |                  1024 |                8192 |                        64 |                       100 |              50 |                       50 |                     1 |               1 |                 3 |
-| hostile-pressure-recovery | partial     | [hostile-pressure evidence](phase1-hostile-pressure-evidence.md)                                       |       100 |            1000 |                32768 |                  4096 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |               100 |
-| constrained-cpu           | partial     | [constrained CPU evidence](phase1-constrained-cpu-evidence.md)                                         |         8 |               8 |                32768 |                  1024 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |                 8 |
-| reset-reorder-equivalence | partial     | [contracts evidence](phase1-contracts-evidence.md), [spawn evidence](phase1-spawn-evidence.md)         |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
-| aggregate-phase1-matrix   | unevidenced | [gate evidence](phase1-gate-evidence.md)                                                               |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
+| row-id                    | status    | evidence                                                                                               | max-ticks | max-modeled-cpu | max-persistent-bytes | max-persistent-growth | max-telemetry-bytes | max-telemetry-cardinality | max-spawn-utilization-pct | max-energy-flow | max-replacement-lateness | min-controller-margin | controller-risk | max-recovery-time |
+| ------------------------- | --------- | ------------------------------------------------------------------------------------------------------ | --------: | --------------: | -------------------: | --------------------: | ------------------: | ------------------------: | ------------------------: | --------------: | -----------------------: | --------------------: | --------------: | ----------------: |
+| rcl2-established          | evidenced | [gate evidence](phase1-gate-evidence.md)                                                               |       150 |             500 |                32768 |                  4096 |                8192 |                        64 |                       100 |             400 |                       50 |                     1 |               1 |               150 |
+| rcl1-cold-boot-growth     | evidenced | [growth evidence](phase1-growth-evidence.md), [economy evidence](phase1-economy-evidence.md)           |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
+| spawn-blocker-recovery    | evidenced | [spawn-blocker evidence](phase1-spawn-blocker-evidence.md), [spawn evidence](phase1-spawn-evidence.md) |       200 |            1000 |                32768 |                  4096 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |               200 |
+| path-target-recovery      | evidenced | [path/target evidence](phase1-path-target-evidence.md)                                                 |         3 |               3 |                32768 |                  1024 |                8192 |                        64 |                       100 |              50 |                       50 |                     1 |               1 |                 3 |
+| hostile-pressure-recovery | evidenced | [hostile-pressure evidence](phase1-hostile-pressure-evidence.md)                                       |       100 |            1000 |                32768 |                  4096 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |               100 |
+| constrained-cpu           | evidenced | [constrained CPU evidence](phase1-constrained-cpu-evidence.md)                                         |         8 |               8 |                32768 |                  1024 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |                 8 |
+| reset-reorder-equivalence | evidenced | [contracts evidence](phase1-contracts-evidence.md), [spawn evidence](phase1-spawn-evidence.md)         |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
+| aggregate-phase1-matrix   | partial   | [gate evidence](phase1-gate-evidence.md)                                                               |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
 
 The machine-readable local result is checked in as
 [`phase1-gate-results.json`](phase1-gate-results.json). It records actual warm, reset, and reordered
-outputs for two runtime rows and four exported deterministic component rows. A `null` measurement is
-paired with its field name in `unevidenced`; missing measurements are never represented as zero. The
-aggregate row remains `unevidenced` because the RCL2 fixture does not yet export independent
-variants, several component seams do not own Memory or telemetry, and external live evidence remains
-open.
+outputs for two focused runtime rows and four focused component rows composed through one production
+`runTick` recovery timeline. The composition retains one persistent Memory lifecycle while
+exercising spawn blockers, stale targets, unavailable paths, hostile pressure, constrained CPU,
+worker death, and replacement. The aggregate remains `partial` only where external live evidence is
+still open.
+
+Production deploy run
+[`29523801688`](https://github.com/ralphschuler/screeps-myrmex/actions/runs/29523801688) evidences
+exact deployment, the remote adapter, and engine timing on `shard2`: bounded telemetry advanced from
+tick `75869667` to `75869670`. It does not claim live hostile-pressure or rollback behavior.
 
 ## Evidence policy
 
@@ -73,9 +78,10 @@ Screeps evidence.
 
 ## Explicit remaining risks
 
-- The local aggregate covers six deterministic rows: the RCL1 and RCL2 runtime rows plus four
-  scenario-kit component rows.
-- The four component-only rows do not own runtime Memory, telemetry, replacement, or controller
-  observations; those columns remain explicit per-row gaps rather than inferred zeroes.
-- Live Screeps timing, engine inflows, hostile pressure, and deployment behavior remain outside this
-  deterministic metadata contract.
+- The local aggregate covers six deterministic rows: RCL1 and RCL2 focused runtime rows plus four
+  focused components joined to one production-runtime recovery timeline.
+- Live hostile-pressure behavior remains unevidenced; the deterministic hostile interval is not an
+  MMO combat claim.
+- Rollback and incident behavior remains owned by
+  [#108](https://github.com/ralphschuler/screeps-myrmex/issues/108) and is not inferred from a
+  successful deployment.
