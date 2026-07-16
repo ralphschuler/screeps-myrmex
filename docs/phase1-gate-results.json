@@ -55,42 +55,37 @@
     {
       "id": "rcl1-cold-boot-growth",
       "status": "partial",
-      "scope": "focused-runtime-not-exported",
+      "scope": "focused-runtime-export",
       "measurements": {
-        "ticks": null,
-        "modeledCpu": null,
+        "ticks": 1401,
+        "modeledCpu": 96.90100000000211,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
         "telemetryCardinality": null,
-        "spawnUtilizationPct": null,
-        "energyFlow": null,
+        "spawnUtilizationPct": 1.28,
+        "energyFlow": 250,
         "replacementLateness": null,
         "controllerMargin": null,
         "controllerRisk": null,
-        "recoveryTime": null
+        "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": null,
-        "resetOutcome": null,
-        "reorderedOutcome": null,
-        "warmTranscript": null,
-        "resetTranscript": null,
-        "reorderedTranscript": null
+        "warmOutcome": "09e32b5c",
+        "resetOutcome": "09e32b5c",
+        "reorderedOutcome": "09e32b5c",
+        "warmTranscript": "cd0a5bdd",
+        "resetTranscript": "0c07bcda",
+        "reorderedTranscript": "d0cbe6b0"
       },
       "unevidenced": [
-        "ticks",
-        "modeledCpu",
         "persistentBytes",
         "persistentGrowth",
         "telemetryBytes",
         "telemetryCardinality",
-        "spawnUtilizationPct",
-        "energyFlow",
         "replacementLateness",
         "controllerMargin",
-        "controllerRisk",
-        "recoveryTime"
+        "controllerRisk"
       ]
     },
     {
@@ -243,8 +238,8 @@
       "status": "partial",
       "scope": "deterministic-component-equivalence",
       "measurements": {
-        "ticks": 14,
-        "modeledCpu": 40,
+        "ticks": 1415,
+        "modeledCpu": 136.9010000000021,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
@@ -254,15 +249,15 @@
         "replacementLateness": null,
         "controllerMargin": null,
         "controllerRisk": null,
-        "recoveryTime": 4
+        "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "f263eb2e",
-        "resetOutcome": "f263eb2e",
-        "reorderedOutcome": "f263eb2e",
-        "warmTranscript": "97b8789a",
-        "resetTranscript": "d4b0d8dc",
-        "reorderedTranscript": "0beab4ac"
+        "warmOutcome": "ecc8fe11",
+        "resetOutcome": "ecc8fe11",
+        "reorderedOutcome": "ecc8fe11",
+        "warmTranscript": "0caa7b65",
+        "resetTranscript": "5bb5dedc",
+        "reorderedTranscript": "f8ae4f34"
       },
       "unevidenced": [
         "persistentBytes",
@@ -281,8 +276,8 @@
       "status": "unevidenced",
       "scope": "local-component-subset",
       "measurements": {
-        "ticks": 14,
-        "modeledCpu": 40,
+        "ticks": 1415,
+        "modeledCpu": 136.9010000000021,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
@@ -292,12 +287,12 @@
         "replacementLateness": null,
         "controllerMargin": null,
         "controllerRisk": null,
-        "recoveryTime": 4
+        "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "aad93f00",
-        "resetOutcome": "aad93f00",
-        "reorderedOutcome": "aad93f00",
+        "warmOutcome": "577c3ba5",
+        "resetOutcome": "577c3ba5",
+        "reorderedOutcome": "577c3ba5",
         "warmTranscript": null,
         "resetTranscript": null,
         "reorderedTranscript": null
@@ -315,7 +310,6 @@
         "warmTranscript",
         "resetTranscript",
         "reorderedTranscript",
-        "rcl1RuntimeExport",
         "rcl2RuntimeExport",
         "externalLive"
       ]
