@@ -4,6 +4,7 @@ declare const console: ConsoleSink;
 
 const MAXIMUM_RENDERABLE_TRANSITIONS = 64;
 const MAXIMUM_RENDERABLE_DIAGNOSTIC_CATEGORIES = 3;
+const MAXIMUM_RENDERABLE_BLOCKER_DETAILS = 3;
 const MAXIMUM_TRANSITION_COUNT = 1_000_000;
 
 export interface ConsoleSink {
@@ -36,6 +37,7 @@ export class ConsoleReporter {
       const shardRef = reference(status.runtime.shardRef);
       const transitions = transitionLines(
         status.transitions,
+        status.blockers,
         boundedPolicy.maximumImmediateEventsPerTick,
         shardRef,
         status.tick,
@@ -83,6 +85,7 @@ function heartbeatLine(
 
 function transitionLines(
   value: unknown,
+  statusBlockers: unknown,
   maximumTransitions: number,
   shardRef: string,
   tick: number,
@@ -138,11 +141,30 @@ function transitionLines(
       recovery.reasonCode === "recovery-progress-unchanged"
     ) {
       lines.push(
-        `${prefix}WARN][${shardRef}][t=${text(tick)}] reporter recovery kind=stuck owner=colony blocker=${recovery.blockerRef ?? "none"} blockerReason=${recovery.blockerReasonCode} lastProgress=${text(recovery.lastProgressTick)} reminderAt=${text(recovery.reminderAtTick ?? 0)} reason=recovery-progress-unchanged`,
+        `${prefix}WARN][${shardRef}][t=${text(tick)}] reporter recovery kind=stuck owner=colony blocker=${recovery.blockerRef ?? "none"} blockerReason=${recovery.blockerReasonCode} blockerDetails=representative:${recovery.blockerReasonCode} other=${blockerDetails(statusBlockers, recovery.blockerReasonCode)} lastProgress=${text(recovery.lastProgressTick)} reminderAt=${text(recovery.reminderAtTick ?? 0)} reason=recovery-progress-unchanged`,
       );
     }
   }
   return lines;
+}
+
+function blockerDetails(value: unknown, representative: string): string {
+  const blockers = readBoundedDataArray(value, MAXIMUM_RENDERABLE_BLOCKER_DETAILS);
+  if (blockers === null) return "none";
+  const details: string[] = [];
+  for (const value of blockers) {
+    const blocker = readDataRecord(value, ["domain", "status", "reasonCode"]);
+    if (
+      blocker !== null &&
+      isCode(blocker.domain) &&
+      isCode(blocker.status) &&
+      isCode(blocker.reasonCode) &&
+      blocker.reasonCode !== representative
+    ) {
+      details.push(`${blocker.domain}:${blocker.reasonCode}`);
+    }
+  }
+  return details.length === 0 ? "none" : details.join(",");
 }
 
 function diagnosticLines(
