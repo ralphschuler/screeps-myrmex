@@ -37,6 +37,7 @@ export function planSurvivalFlow(
 ): readonly SurvivalFlowCandidate[] {
   const candidates: SurvivalFlowCandidate[] = [];
   const activeActionByActor = activeSurvivalActionByActor(execution, planning);
+  const staticallyBound = staticSourceBindings(planning);
   for (const room of snapshot.rooms.filter((value) => value.controller?.ownership === "owned")) {
     const reservedSources = new Set<string>();
     const reservedSinks = new Set<string>();
@@ -50,7 +51,9 @@ export function planSurvivalFlow(
       const carriedEnergy = resourceAmount(actor, "energy");
       const canHarvest =
         actor.store.freeCapacity === null ? carriedEnergy === 0 : actor.store.freeCapacity > 0;
-      const harvestTarget = canHarvest ? source(room, actor.pos, reservedSources) : null;
+      const harvestTarget = canHarvest
+        ? source(room, actor.pos, reservedSources, staticallyBound.get(room.name) ?? new Set())
+        : null;
       const transferTarget = carriedEnergy > 0 ? sink(room, actor.pos, reservedSinks) : null;
       const activeAction = activeActionByActor.get(actor.id);
       const action =
@@ -194,6 +197,16 @@ export function authorizedSurvivalFlow(
           to: "funded",
         });
       } else if (
+        contract.execution.action === "harvest" &&
+        staticSourceBindings(planning).get(contract.owner.id)?.has(contract.targetId)
+      ) {
+        transitions.push({
+          contractId: contract.contractId,
+          reason: "static-binding-funded",
+          tick,
+          to: "cancelled",
+        });
+      } else if (
         !currentIssuers.has(contract.issuer) &&
         observation !== null &&
         survivalEndpointRetired(contract, observation)
@@ -308,16 +321,40 @@ function source(
   room: RoomSnapshot,
   from: PositionSnapshot,
   reserved: ReadonlySet<string>,
+  staticallyBound: ReadonlySet<string>,
 ): { readonly id: string; readonly pos: PositionSnapshot } | null {
   return (
     room.sources
-      .filter((value) => value.energy > 0 && !reserved.has(value.id))
+      .filter(
+        (value) => value.energy > 0 && !reserved.has(value.id) && !staticallyBound.has(value.id),
+      )
       .slice()
       .sort(
         (left, right) =>
           distance(from, left.pos) - distance(from, right.pos) || compareStrings(left.id, right.id),
       )[0] ?? null
   );
+}
+function staticSourceBindings(
+  planning: ContractPlanningView,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const result = new Map<string, Set<string>>();
+  if (planning.status !== "ready") return result;
+  for (const contract of planning.contracts) {
+    const [scope, colonyId, sourceId, ...extra] = contract.issuer.split("/");
+    if (
+      scope !== "mining" ||
+      colonyId === undefined ||
+      sourceId === undefined ||
+      extra.length > 0 ||
+      !["funded", "assigned", "active"].includes(contract.state)
+    )
+      continue;
+    const ids = result.get(colonyId) ?? new Set<string>();
+    ids.add(sourceId);
+    result.set(colonyId, ids);
+  }
+  return result;
 }
 function resourceAmount(
   actor: {

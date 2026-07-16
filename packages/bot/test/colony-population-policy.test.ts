@@ -128,6 +128,38 @@ describe("ColonyPopulationPolicy", () => {
     expect(p.project(input({ actors: [actor(59)] })).demands).toHaveLength(2);
     expect(p.project(input({ actors: [actor(60)] })).demands).toHaveLength(1);
   });
+  it("includes travel, spawn time, and current spawn-busy time at the stationary lead edge", () => {
+    const p = new ColonyPopulationPolicy();
+    const stationary = input({
+      funded: { loads: [load({ mode: "stationary" })], status: "ready" },
+      spawnBusyTicks: 5,
+    });
+    // replacement lead 59 + travel 10 + WCM spawn time 9 + current busy time 5 = 83
+    expect(p.project({ ...stationary, actors: [actor(83)] }).demands).toHaveLength(1);
+    expect(p.project({ ...stationary, actors: [actor(84)] }).demands).toEqual([]);
+  });
+  it("keeps one stable stationary demand identity across death, expiry, reset, and commitment", () => {
+    const p = new ColonyPopulationPolicy();
+    const stationary = input({
+      funded: { loads: [load({ mode: "stationary" })], status: "ready" },
+    });
+    expect(p.project({ ...stationary, actors: [actor(79)] }).demands).toEqual([]);
+    const expired = p.project({ ...stationary, actors: [actor(78)] });
+    const dead = p.project({ ...stationary, actors: [] });
+    const reset = new ColonyPopulationPolicy().project(
+      JSON.parse(JSON.stringify({ ...stationary, actors: [] })) as ColonyPopulationPolicyInput,
+    );
+    expect(expired.demands).toHaveLength(1);
+    expect(dead.demands.map(({ id }) => id)).toEqual(expired.demands.map(({ id }) => id));
+    expect(reset.demands.map(({ id }) => id)).toEqual(dead.demands.map(({ id }) => id));
+    expect(
+      p.project({
+        ...stationary,
+        actors: [],
+        committedDemandIds: dead.demands.map(({ id }) => id),
+      }).demands,
+    ).toEqual([]);
+  });
   it("suppresses duplicate unaffordable and reserve violations", () => {
     const p = new ColonyPopulationPolicy();
     const first = p.project(input());

@@ -104,6 +104,49 @@ describe("lease agents", () => {
     ]);
   });
 
+  it("moves v2 harvest leases to the exact work tile and idles during depletion", () => {
+    const lease = harvestLease({
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 2,
+        workPosition: position(11, 10),
+      },
+    });
+    const moving = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [lease], status: "ready" },
+      paths,
+      snapshot: snapshot({ actor: position(10, 10), source: position(12, 10) }),
+      tick: 10,
+    });
+    expect(moving.movement[0]).toMatchObject({ goal: position(11, 10), range: 0 });
+    const working = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [lease], status: "ready" },
+      paths,
+      snapshot: snapshot({ actor: position(11, 10), source: position(12, 10) }),
+      tick: 10,
+    });
+    expect(working.actions).toEqual([
+      expect.objectContaining({ kind: "harvest", targetId: "source-a" }),
+    ]);
+    const depleted = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [lease], status: "ready" },
+      paths,
+      snapshot: snapshot({
+        actor: position(11, 10),
+        source: position(12, 10),
+        sourceEnergy: 0,
+      }),
+      tick: 10,
+    });
+    expect(depleted).toMatchObject({ actions: [], dispositions: [], movement: [] });
+  });
+
   it("reconciles only a matching scheduled action into assigned-to-active progress", () => {
     const lease = harvestLease();
     const result: MovementRuntimeResult = {
@@ -255,6 +298,7 @@ function snapshot(input: {
     readonly pos: ReturnType<typeof position>;
   };
   energy?: number;
+  sourceEnergy?: number;
 }): WorldSnapshot {
   const store = {
     capacity: 50,
@@ -298,7 +342,7 @@ function snapshot(input: {
         ruins: [],
         sources: [
           {
-            energy: 3000,
+            energy: input.sourceEnergy ?? 3000,
             energyCapacity: 3000,
             id: "source-a",
             pos: input.source,

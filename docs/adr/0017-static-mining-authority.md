@@ -1,6 +1,6 @@
 # ADR 0017: Static mining authority foundation
 
-Status: accepted (partial foundation)
+Status: accepted (PR B extraction projection)
 
 ## Context
 
@@ -10,6 +10,10 @@ must be deterministic across observation order and heap reset while preserving t
 construction-site, contract, workforce, spawn, movement, and action authorities.
 
 ## Decision
+
+PR B adds the pure extraction projection, stationary population semantics, v2 exact-work-position
+lease terms, and deterministic mobile-to-static retirement. The `phase2.mining` gate remains
+source-unavailable; composed runtime evidence, activation, and policy telemetry belong to PR C.
 
 - `WorldObserver` remains the sole Source and container fact reader. Source snapshots retain the
   Source ID on their detached position; stored container facts include hits, store, and nullable

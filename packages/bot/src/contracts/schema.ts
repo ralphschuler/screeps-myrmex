@@ -78,6 +78,7 @@ const EXECUTION_KEYS = [
   "resourceType",
   "version",
 ] as const;
+const EXECUTION_V2_KEYS = [...EXECUTION_KEYS, "workPosition"] as const;
 
 const RECORD_KEYS = [
   ...REQUEST_KEYS,
@@ -367,7 +368,13 @@ function parseRequest(
   const execution =
     record.execution === undefined
       ? undefined
-      : requireRecord(record.execution, `${path}.execution`, EXECUTION_KEYS);
+      : requireRecord(
+          record.execution,
+          `${path}.execution`,
+          isRecord(record.execution) && record.execution.version === 2
+            ? EXECUTION_V2_KEYS
+            : EXECUTION_KEYS,
+        );
   const request = {
     budgetBinding,
     conditions,

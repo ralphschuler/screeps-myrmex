@@ -48,6 +48,11 @@ one bundle, one composition root, one tick loop, and internal modules with stric
 
 ## 2. Non-Negotiable Invariants
 
+`StaticMiningPlanner` is the sole owned-source extraction projection. It consumes visible source
+facts and fresh semantic source-service placements, emits stable `mining/{colonyId}/{sourceId}`
+contracts, and owns neither commands nor persistent mining state. ContractLedger, population policy,
+SpawnBroker, movement arbitration, and executors retain their existing authorities.
+
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
 3. `main.ts` exports the Screeps loop and performs no gameplay planning.

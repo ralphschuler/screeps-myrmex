@@ -268,6 +268,7 @@ export class ContractLedger {
           record.estimatedWorkTicks + record.quantity,
         ),
         travelTicks: record.maxAssignmentCost,
+        ...(record.issuer.startsWith("mining/") ? { mode: "stationary" as const } : {}),
       }))
       .filter(validPopulationLoad)
       .sort((left, right) => compareStrings(left.objectiveId, right.objectiveId));

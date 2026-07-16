@@ -6,6 +6,7 @@ import {
   type ConstructionSiteAttemptReceipt,
   type LayoutCommitment,
   type LayoutRecord,
+  type LayoutPlacement,
   type LayoutsOwnerV1,
 } from "./contracts";
 import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
@@ -44,15 +45,40 @@ export function persistLayoutCommitment(
   owner: LayoutsOwnerV1,
   roomName: string,
   commitment: LayoutCommitment,
+  placements: readonly LayoutPlacement[] = [],
 ): LayoutsOwnerV1 {
   const records = owner.records.filter((r) => r.roomName !== roomName);
-  records.push({ roomName, ...commitment });
+  const sourceServices = placements.filter(
+    (placement) => placement.service?.kind === "source-container",
+  );
+  records.push({
+    roomName,
+    ...commitment,
+    ...(sourceServices.length === 0 ? {} : { sourceServices }),
+  });
   records.sort((a, b) => compare(a.roomName, b.roomName));
   return freeze({
     schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
     revision: owner.revision + 1,
     records: records.slice(0, MAX_LAYOUT_RECORDS),
   });
+}
+export function freshSourceServicePlacements(
+  owner: LayoutsOwnerV1,
+  roomName: string,
+): readonly LayoutPlacement[] {
+  const record = owner.records.find((item) => item.roomName === roomName);
+  if (record?.algorithmRevision !== LAYOUT_ALGORITHM_REVISION) return Object.freeze([]);
+  return Object.freeze(
+    [...(record.sourceServices ?? [])]
+      .filter((placement) => placement.service?.kind === "source-container")
+      .sort(
+        (a, b) =>
+          (a.service?.sourceId ?? "").localeCompare(b.service?.sourceId ?? "") ||
+          a.pos.y - b.pos.y ||
+          a.pos.x - b.pos.x,
+      ),
+  );
 }
 export function reconcileOwnedLayouts(
   owner: LayoutsOwnerV1,
@@ -101,7 +127,33 @@ function validRecord(v: unknown): v is LayoutRecord {
     v.blockers.length <= MAX_LAYOUT_BLOCKERS &&
     v.blockers.every((b) => typeof b === "string" && b.length <= 32) &&
     (v.serviceBlockers === undefined || validServiceBlockers(v.serviceBlockers, v.roomName)) &&
+    (v.sourceServices === undefined || validSourceServices(v.sourceServices, v.roomName)) &&
     (v.siteReceipts === undefined || validReceipts(v.siteReceipts, v.roomName))
+  );
+}
+function validSourceServices(value: unknown, roomName: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length <= 8 &&
+    value.every(
+      (item) =>
+        record(item) &&
+        item.structureType === "container" &&
+        item.layer === "primary" &&
+        ["planned", "exact", "matching-site", "compatible-external"].includes(
+          String(item.adoption),
+        ) &&
+        integer(item.minimumRcl) &&
+        record(item.pos) &&
+        item.pos.roomName === roomName &&
+        coordinate(item.pos.x) &&
+        coordinate(item.pos.y) &&
+        record(item.service) &&
+        item.service.kind === "source-container" &&
+        typeof item.service.sourceId === "string" &&
+        item.service.sourceId.length > 0 &&
+        item.service.sourceId.length <= 128,
+    )
   );
 }
 function staleRecord(v: unknown): boolean {
