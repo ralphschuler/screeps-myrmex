@@ -86,6 +86,11 @@ export async function samplePrivateServerBot(options = {}) {
   );
 }
 
+/** Identifies the one receipt failure that can occur while a restarted engine becomes sample-ready. */
+export function isTransientPrivateServerSampleError(error) {
+  return error instanceof Error && error.message === "Private-server sample receipt is invalid.";
+}
+
 /** Selects transient, engine-validated fixture coordinates without exposing room state. */
 export async function preparePrivateServerFixtureTarget(options = {}) {
   return parseFixtureTarget(

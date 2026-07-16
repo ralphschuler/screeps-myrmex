@@ -59,7 +59,9 @@ cache, and publishes its source hash. Account creation and deterministic world s
 work, not upload behavior. Controlled-bot bootstrap selects an unowned controller from the pinned
 world instead of assuming a particular room is available. `npm run private-server:deploy` builds
 before attempting that upload and fails closed until a provisioned local server has created the
-controlled fixture account.
+controlled fixture account. After a fixture-process restart, controlled-bot sampling retries only
+the bounded not-ready receipt until its scenario deadline; persistent unready sampling is reported
+as a fixed CLI failure code rather than a startup failure.
 
 World seeding, deterministic hostile/reset fixtures, and scenario assertions remain ordered under
 issues #149 and #150 (parent [#144](https://github.com/ralphschuler/screeps-myrmex/issues/144)).

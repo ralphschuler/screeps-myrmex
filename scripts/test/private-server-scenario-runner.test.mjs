@@ -69,6 +69,17 @@ describe("private-server scenario runner", () => {
       failureCode: "cli-bootstrap-controlled-bot-failed",
       ok: false,
     });
+    const sample = await runPrivateServerScenario({
+      driver: driver([], {
+        observeError: namedError("CliOperationFailure", "cli-sample-controlled-not-ready"),
+      }),
+      manifest,
+    });
+    expect(sample).toMatchObject({
+      evidence: { failure: { kind: "cli-operation-failed" } },
+      failureCode: "cli-sample-controlled-not-ready",
+      ok: false,
+    });
     const deployment = await runPrivateServerScenario({
       driver: driver([], {
         observeError: namedError("BundleDeploymentFailure", "bundle-deployment-unacknowledged"),

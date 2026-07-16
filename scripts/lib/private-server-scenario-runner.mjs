@@ -157,6 +157,7 @@ function scenarioFailureCode(error) {
       "cli-pause-failed",
       "cli-reset-failed",
       "cli-resume-failed",
+      "cli-sample-controlled-not-ready",
     ].includes(error.message)
       ? error.message
       : null;
