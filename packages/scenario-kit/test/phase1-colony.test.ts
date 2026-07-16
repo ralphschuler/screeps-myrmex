@@ -422,7 +422,9 @@ function snapshotFor(tick: number, stage: ColonyStage, reverse: boolean): WorldS
         : owned
           ? 300
           : 0;
-  const workerTtl = stage === "replacement-competition" ? 50 : 1_200;
+  // This stage tests a competing replacement claim while the incumbent is still viable. The
+  // director's own handoff trigger is 9 spawn ticks plus the default 50-tick margin.
+  const workerTtl = stage === "replacement-competition" ? 60 : 1_200;
   const ownedCreeps = hasWorker
     ? order(
         [

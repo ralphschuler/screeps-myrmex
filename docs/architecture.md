@@ -907,9 +907,14 @@ adds a detected delay. Equality is viable at both boundaries, and an exact-bound
 remains feasible as its lifetime and modeled work decrease together. Unknown travel fails closed.
 Issue [#25](https://github.com/ralphschuler/screeps-myrmex/issues/25) owns pathfinding and movement
 estimates; this foundation does not approximate a route. Issue
-[#27](https://github.com/ralphschuler/screeps-myrmex/issues/27) owns proactive replacement deadlines
-and timing; issue #24's spawn authority handles the zero-worker emergency order without inventing
-those future estimates. No task or lease is mirrored into per-creep Memory.
+[#27](https://github.com/ralphschuler/screeps-myrmex/issues/27) makes this deadline executable: the
+colony treats a worker as no longer sustaining the room when its remaining lifetime is no more than
+the nine spawn ticks for the minimal `WORK,CARRY,MOVE` successor plus
+`policy.spawn.replacementSafetyMarginTicks`. It then reuses the colony director's stable recovery
+objective and the spawn authority's tick-local authorization/settlement sequence; a scheduled
+successor remains deduplicated through the durable ledger after a heap reset. This intentionally
+does not create a second replacement queue or per-creep Memory. Issue #24's spawn authority still
+handles the zero-worker order. No task or lease is mirrored into per-creep Memory.
 
 A creep agent reads its lease and emits at most:
 

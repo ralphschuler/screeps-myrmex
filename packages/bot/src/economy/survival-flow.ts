@@ -106,6 +106,7 @@ export function authorizedSurvivalFlow(
   }[],
   planning: ContractPlanningView,
   tick: number,
+  observedActorIds: ReadonlySet<string> = new Set(),
 ): SurvivalFlowPlan {
   const authorized = candidates.filter((candidate) =>
     reservations.some(
@@ -139,8 +140,11 @@ export function authorizedSurvivalFlow(
         });
       } else if (
         !currentIssuers.has(contract.issuer) &&
-        replacementActions.has(contractActionKey(contract.issuer))
+        (replacementActions.has(contractActionKey(contract.issuer)) ||
+          (observedActorIds.size > 0 && !observedActorIds.has(contractActorId(contract.issuer))))
       ) {
+        // The actor disappeared, its target vanished, or its authority was released. Keeping a
+        // continuous contract in any of those cases creates a ghost lease until expiry.
         transitions.push({
           contractId: contract.contractId,
           reason: "survival-target-replaced",
@@ -157,6 +161,22 @@ export function authorizedSurvivalFlow(
       transitions.sort((left, right) => compareStrings(left.contractId, right.contractId)),
     ),
   });
+}
+
+function contractActorId(issuer: string): string {
+  const parts = issuer.split("/");
+  return parts.length === 5 ? (parts[2] ?? "") : "";
+}
+
+function contractActionKey(issuer: string): string {
+  const parts = issuer.split("/");
+  const [, colonyId, actorId, action] = parts;
+  return parts.length === 5 &&
+    colonyId !== undefined &&
+    actorId !== undefined &&
+    action !== undefined
+    ? `${colonyId}/${actorId}/${action}`
+    : "";
 }
 
 function candidate(
@@ -257,16 +277,6 @@ function resourceAmount(
   return (
     actor.store.resources.find((resource) => resource.resourceType === resourceType)?.amount ?? 0
   );
-}
-function contractActionKey(issuer: string): string {
-  const parts = issuer.split("/");
-  const [, colonyId, actorId, action] = parts;
-  return parts.length === 5 &&
-    colonyId !== undefined &&
-    actorId !== undefined &&
-    action !== undefined
-    ? `${colonyId}/${actorId}/${action}`
-    : "";
 }
 function sink(
   room: RoomSnapshot,
