@@ -185,6 +185,8 @@ export type ContractExecutionDisposition = (typeof CONTRACT_EXECUTION_DISPOSITIO
 export interface ContractExecutionTerms {
   readonly action: ContractExecutionAction;
   readonly completion: ContractExecutionDisposition;
+  /** Repair-only observed hit-point threshold; null preserves full-hit completion. */
+  readonly completionHits?: number | null;
   readonly counterpartId: string | null;
   readonly resourceType: ResourceConstant | null;
   readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION;
@@ -276,6 +278,8 @@ export interface ContractPlanningRecord {
   readonly execution: ContractExecutionTerms;
   readonly issuer: string;
   readonly owner: ContractOwnerScope;
+  /** Retry evidence derived by ContractLedger from bounded durable transition history. */
+  readonly repairRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
   readonly state: ActiveWorkContractState;
   readonly targetId: string;
 }
@@ -584,6 +588,7 @@ function normalizeExecutionTerms(
   value: Readonly<{
     readonly action: unknown;
     readonly completion: unknown;
+    readonly completionHits?: unknown;
     readonly counterpartId: unknown;
     readonly resourceType: unknown;
     readonly version: unknown;
@@ -618,6 +623,17 @@ function normalizeExecutionTerms(
     invalid("execution-kind-mismatch", "$.execution.action", "is not authorized by contract kind");
   }
   const completion = value.completion as ContractExecutionDisposition;
+  const completionHits =
+    value.completionHits === undefined || value.completionHits === null
+      ? null
+      : positiveInteger(value.completionHits, "$.execution.completionHits");
+  if (action !== "repair" && completionHits !== null) {
+    invalid(
+      "execution-completion-hits-mismatch",
+      "$.execution.completionHits",
+      "is only authorized for repair actions",
+    );
+  }
   const counterpartId = nullableBoundedString(
     value.counterpartId,
     "$.execution.counterpartId",
@@ -643,6 +659,7 @@ function normalizeExecutionTerms(
   return {
     action,
     completion,
+    completionHits,
     counterpartId,
     resourceType,
     version: 1,

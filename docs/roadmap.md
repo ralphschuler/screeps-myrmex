@@ -49,6 +49,10 @@ merged.
   [issue #115](https://github.com/ralphschuler/screeps-myrmex/issues/115).
 - Generic lease-to-intent translation and typed action-result reconciliation are tracked by
   [issue #38](https://github.com/ralphschuler/screeps-myrmex/issues/38).
+- Repair completion thresholds and bounded command-failure retry are tracked by
+  [issue #122](https://github.com/ralphschuler/screeps-myrmex/issues/122) and
+  [`phase1-repair-foundation-evidence.md`](phase1-repair-foundation-evidence.md); this is the
+  execution foundation for the recovery-critical maintenance policy in issue #40.
 
 The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`

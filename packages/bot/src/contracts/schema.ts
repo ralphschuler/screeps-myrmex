@@ -72,6 +72,7 @@ const REQUEST_KEYS = [
 const EXECUTION_KEYS = [
   "action",
   "completion",
+  "completionHits",
   "counterpartId",
   "resourceType",
   "version",

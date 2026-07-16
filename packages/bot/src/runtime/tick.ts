@@ -9,6 +9,7 @@ import {
 import {
   dispositionTransitions,
   planLeaseAgents,
+  repairRetryTransitions,
   reconcileLeaseAgentActions,
   type LeaseAgentPlan,
 } from "../agents";
@@ -296,6 +297,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           ...reconcileLeaseAgentActions(
             context.contractExecution.leases,
             context.movement,
+            context.tick,
+          ),
+          ...repairRetryTransitions(
+            context.contractPlanning,
+            context.config.policy.retries,
             context.tick,
           ),
         ].sort((left, right) => left.contractId.localeCompare(right.contractId));

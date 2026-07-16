@@ -215,6 +215,7 @@ export class ContractLedger {
             execution: { ...record.execution },
             issuer: record.issuer,
             owner: { ...record.owner },
+            repairRetry: repairRetryEvidence(record),
             state: record.state,
             targetId: record.targetId,
           },
@@ -651,6 +652,18 @@ export class ContractLedger {
     this.#issuerFrontiers.push(deepFreeze({ issuer, retiredThrough: sequence }));
     this.#issuerFrontiers.sort((left, right) => compareStrings(left.issuer, right.issuer));
   }
+}
+
+function repairRetryEvidence(
+  record: WorkContractRecord,
+): { readonly attempts: number; readonly eligibleAt: number } | null {
+  if (record.execution?.action !== "repair" || record.state !== "suspended") return null;
+  const failures = record.history.filter(({ reason }) =>
+    ["agent-adapter-fault", "agent-unexpected-game-rejection"].includes(reason),
+  );
+  const latest = failures[failures.length - 1];
+  if (latest === undefined) return null;
+  return { attempts: failures.length, eligibleAt: latest.tick };
 }
 
 function normalizeFundingView(value: ContractFundingView): ContractFundingView {

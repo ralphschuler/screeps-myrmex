@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dispositionTransitions, planLeaseAgents, reconcileLeaseAgentActions } from "../src/agents";
-import type { LeasedWorkExecution } from "../src/contracts";
+import {
+  dispositionTransitions,
+  planLeaseAgents,
+  reconcileLeaseAgentActions,
+  repairRetryTransitions,
+} from "../src/agents";
+import type { ContractPlanningView, LeasedWorkExecution } from "../src/contracts";
 import type { LocalPathPlanningService, MovementRuntimeResult } from "../src/movement";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
@@ -102,6 +107,69 @@ describe("lease agents", () => {
       { contractId: "contract-a", reason: "agent-action-scheduled", tick: 10, to: "active" },
     ]);
   });
+
+  it("completes repair at its explicit threshold and bounds command-failure retries", () => {
+    const lease = repairLease();
+    const atThreshold = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [lease], status: "ready" },
+      paths,
+      snapshot: snapshot({
+        actor: position(11, 10),
+        source: position(12, 10),
+        structure: { hits: 800, hitsMax: 1_000, pos: position(12, 10) },
+        energy: 1,
+      }),
+      tick: 10,
+    });
+    expect(atThreshold.actions).toEqual([]);
+    expect(atThreshold.dispositions).toEqual([
+      expect.objectContaining({ reason: "work-complete", to: "suspended" }),
+    ]);
+
+    const repairPlanningRecord = {
+      budgetBinding: { category: "critical-maintenance", issuer: "maintenance/W1N1/spawn" },
+      contractId: "contract-repair",
+      execution: lease.execution,
+      issuer: "maintenance/W1N1/spawn",
+      owner: { id: "W1N1", kind: "colony" } as const,
+      repairRetry: { attempts: 2, eligibleAt: 10 },
+      state: "suspended" as const,
+      targetId: "spawn-a",
+    };
+    const planning: ContractPlanningView = {
+      status: "ready",
+      contracts: [repairPlanningRecord],
+    };
+    expect(
+      repairRetryTransitions(
+        planning,
+        { initialDelayTicks: 2, maximumAttempts: 3, maximumDelayTicks: 16 },
+        13,
+      ),
+    ).toEqual([]);
+    expect(
+      repairRetryTransitions(
+        planning,
+        { initialDelayTicks: 2, maximumAttempts: 3, maximumDelayTicks: 16 },
+        14,
+      ),
+    ).toEqual([
+      { contractId: "contract-repair", reason: "repair-retry-due", tick: 14, to: "funded" },
+    ]);
+    expect(
+      repairRetryTransitions(
+        {
+          ...planning,
+          contracts: [{ ...repairPlanningRecord, repairRetry: { attempts: 3, eligibleAt: 10 } }],
+        },
+        { initialDelayTicks: 2, maximumAttempts: 3, maximumDelayTicks: 16 },
+        11,
+      ),
+    ).toEqual([
+      { contractId: "contract-repair", reason: "repair-retry-exhausted", tick: 11, to: "failed" },
+    ]);
+  });
 });
 
 function harvestLease(overrides: Partial<LeasedWorkExecution> = {}): LeasedWorkExecution {
@@ -130,11 +198,40 @@ function harvestLease(overrides: Partial<LeasedWorkExecution> = {}): LeasedWorkE
   };
 }
 
+function repairLease(): LeasedWorkExecution {
+  return {
+    ...harvestLease({
+      contractId: "contract-repair",
+      target: position(12, 10),
+      targetId: "spawn-a",
+    }),
+    execution: {
+      action: "repair",
+      completion: "work-complete",
+      completionHits: 800,
+      counterpartId: null,
+      resourceType: null,
+      version: 1,
+    },
+  };
+}
+
 function snapshot(input: {
   actor: ReturnType<typeof position>;
   source: ReturnType<typeof position>;
+  structure?: {
+    readonly hits: number;
+    readonly hitsMax: number;
+    readonly pos: ReturnType<typeof position>;
+  };
+  energy?: number;
 }): WorldSnapshot {
-  const store = { capacity: 50, freeCapacity: 50, resources: [], usedCapacity: 0 };
+  const store = {
+    capacity: 50,
+    freeCapacity: 50,
+    resources: input.energy === undefined ? [] : [{ amount: input.energy, resourceType: "energy" }],
+    usedCapacity: input.energy ?? 0,
+  };
   return {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 10 },
     observedAt: 10,
@@ -177,7 +274,21 @@ function snapshot(input: {
             ticksToRegeneration: null,
           },
         ],
-        storedStructures: [],
+        storedStructures:
+          input.structure === undefined
+            ? []
+            : [
+                {
+                  hits: input.structure.hits,
+                  hitsMax: input.structure.hitsMax,
+                  id: "spawn-a",
+                  ownerUsername: "me",
+                  ownership: "owned",
+                  pos: input.structure.pos,
+                  store,
+                  structureType: "spawn",
+                },
+              ],
         tombstones: [],
       },
     ],
