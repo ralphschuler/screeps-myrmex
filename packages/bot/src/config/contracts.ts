@@ -86,6 +86,22 @@ export interface TelemetryPolicy {
   readonly maximumHistoryBytes: number;
 }
 
+export const REPORTER_LEVELS = ["silent", "error", "warn", "info", "debug", "trace"] as const;
+export type ReporterLevel = (typeof REPORTER_LEVELS)[number];
+
+/** Source-controlled ceilings for observer-only console reporting. */
+export interface ReporterPolicy {
+  readonly baseLevel: ReporterLevel;
+  readonly heartbeatIntervalTicks: number;
+  readonly maximumLinesPerTick: number;
+  readonly maximumBytesPerTick: number;
+  readonly maximumImmediateEventsPerTick: number;
+  readonly maximumFingerprints: number;
+  readonly initialReminderDelayTicks: number;
+  readonly maximumReminderDelayTicks: number;
+  readonly maximumDiagnosticDurationTicks: number;
+}
+
 export interface TowerPolicy {
   readonly emergencyReserveEnergy: number;
   readonly repairMinimumEnergy: number;
@@ -108,6 +124,7 @@ export interface SurvivalPolicy {
   readonly repair: CriticalRepairPolicy;
   readonly growth: GrowthPolicy;
   readonly telemetry: TelemetryPolicy;
+  readonly reporter: ReporterPolicy;
   readonly tower: TowerPolicy;
   readonly safeMode: SafeModePolicy;
 }
