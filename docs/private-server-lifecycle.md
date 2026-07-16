@@ -29,8 +29,8 @@ setup; MYRMEX does not store that setup, credentials, or server state in the rep
 
 ## Boundaries
 
-This lifecycle establishes only install/start/health/stop controls. World seeding, fault injection,
-evidence manifests, bundle deployment, and scenario assertions are deliberately owned by issues
-[#143](https://github.com/ralphschuler/screeps-myrmex/issues/143) and
+This lifecycle establishes only install/start/health/stop controls. The sanitized evidence manifest
+and artifact contract is documented in [private-server-evidence.md](private-server-evidence.md).
+World seeding, fault injection, bundle deployment, and scenario assertions remain owned by issue
 [#144](https://github.com/ralphschuler/screeps-myrmex/issues/144). Runtime production code does not
 import these scripts.
