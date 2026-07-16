@@ -26,8 +26,18 @@ limit also require explicit adoption and later arbitration boundaries.
   layers. Exact and compatible manual structures are adopted deterministically; conflicts are
   bounded and no removal is proposed.
 - Publish a plan only when complete. Exhaustion returns a stable blocker and retains the prior
-  commitment. Construction-site intents, global/per-room arbitration, API execution, and result
-  reconciliation are explicitly deferred to PR B/C.
+  commitment.
+- PR B adds a pure diff and makes `ConstructionSiteArbiter` the sole global/per-room site-slot
+  authority. It reserves five slots below the official cap of 100, accepts at most two globally and
+  one per room per tick, inspects 64 proposals per room, and pauses rooms at ten active sites.
+- Existing/adopted structures and matching owned sites suppress proposals. Unknown/lost rooms,
+  foreign or different occupancy, policy/RCL denial, over-allowance, and conflicted commitments fail
+  closed. No decision authorizes dismantling.
+- The schema-4 layouts owner stores up to 32 attempt receipts per room. Fingerprinted receipts make
+  successful expectations and command failures reset-safe without creating retry storms; a new
+  layout commitment invalidates them.
+- Arbitration emits detached create-site intents only. API execution and result reconciliation are
+  explicitly deferred to PR C.
 
 ## Consequences
 
@@ -38,6 +48,8 @@ limit also require explicit adoption and later arbitration boundaries.
   cache capacity, not persistent Memory.
 - No code in this slice can call `createConstructionSite`, remove/destroy/dismantle, or retain a
   live `Room`.
+- Reordered proposals, rooms, and receipts produce byte-identical decisions, and heap reset cannot
+  erase retry suppression because receipts belong to the bounded persistent layout record.
 
 ## Sources consulted
 
