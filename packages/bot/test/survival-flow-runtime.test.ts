@@ -8,7 +8,7 @@ const FIND_SOURCES_VALUE = 105;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 const START_TICK = 100;
-const LAST_TICK = START_TICK + 249;
+const LAST_TICK = START_TICK + 1_499;
 const MAX_CPU_PER_DELIVERED_ENERGY = 1;
 
 describe("survival-flow runtime recovery", () => {
@@ -50,7 +50,7 @@ describe("survival-flow runtime recovery", () => {
         memoryResetAt = tick;
       }
 
-      if (world.sourceBDelivered >= 50 && world.spawnEnergy >= 200) break;
+      if (world.controllerLevel >= 2) break;
     }
 
     expect(world.spawnCalls).toEqual([
@@ -73,6 +73,9 @@ describe("survival-flow runtime recovery", () => {
     expect(world.sourceBHarvested).toBeGreaterThanOrEqual(50);
     expect(world.sourceBDelivered).toBeGreaterThanOrEqual(50);
     expect(world.spawnEnergy).toBeGreaterThanOrEqual(200);
+    expect(world.spawnEnergy).toBe(300);
+    expect(world.controllerLevel).toBe(2);
+    expect(world.controllerUpgradeCalls).toBeGreaterThan(0);
     expect(world.fullSinkObservations).toBeGreaterThan(0);
     expect(world.fatiguedObservations).toBeGreaterThan(0);
     expect(world.sinkVanishedAt).not.toBeNull();
@@ -133,7 +136,7 @@ describe("survival-flow runtime recovery", () => {
       localPathSearch: world.pathSearch,
       memory,
     });
-    expect(afterDeath.contracts?.transitions).not.toContainEqual(
+    expect(afterDeath.contracts?.transitions).toContainEqual(
       expect.objectContaining({ contractId: liveContractId, to: "cancelled" }),
     );
     expect(afterDeath.contracts?.allocation.assignments).toEqual([]);
@@ -172,7 +175,7 @@ describe("survival-flow runtime recovery", () => {
         .flatMap(({ outcome }) => outcome.movement.actionExecution)
         .some(({ intent, status }) => status === "executed" && intent.kind === "transfer"),
     ).toBe(true);
-  });
+  }, 15_000);
 });
 
 interface SpawnCall {
@@ -195,6 +198,8 @@ interface SurvivalWorld {
   readonly sourceAEnergy: number;
   readonly sourceBDelivered: number;
   readonly sourceBHarvested: number;
+  readonly controllerLevel: number;
+  readonly controllerUpgradeCalls: number;
   readonly sinkVanishedAt: number | null;
   readonly sinkResolverMisses: number;
   readonly spawnCalls: readonly SpawnCall[];
@@ -234,6 +239,10 @@ function survivalWorld(): SurvivalWorld {
     sourceBEnergy: 3_000,
     sourceBDelivered: 0,
     sourceBHarvested: 0,
+    controllerLevel: 1,
+    controllerProgress: 0,
+    controllerUpgradeCalls: 0,
+    lostWorkerEnergy: 0,
     spawnCalls: [] as SpawnCall[],
     spawnEnergy: initialSpawnEnergy,
     successfulSpawnCost: 0,
@@ -354,16 +363,31 @@ function survivalWorld(): SurvivalWorld {
       state.firstDeliveryAt ??= state.currentTick;
       return 0;
     },
-    upgradeController: () => -7,
+    upgradeController: () => {
+      if (range(state.workerPosition, controller.pos) > 3) return -9;
+      if (state.workerEnergy <= 0) return -6;
+      state.workerEnergy -= 1;
+      state.controllerProgress += 1;
+      state.controllerUpgradeCalls += 1;
+      if (state.controllerProgress >= 200) {
+        state.controllerLevel = 2;
+        state.controllerProgress = 0;
+      }
+      return 0;
+    },
     withdraw: () => -7,
   } as unknown as Creep;
   const controller = {
     id: "controller-1",
-    level: 1,
+    get level() {
+      return state.controllerLevel;
+    },
     my: true,
     owner: { username: "Myrmex" },
     pos: { roomName: "W1N1", x: 25, y: 25 },
-    progress: 0,
+    get progress() {
+      return state.controllerProgress;
+    },
     progressTotal: 200,
     safeMode: undefined,
     safeModeAvailable: 1,
@@ -495,6 +519,12 @@ function survivalWorld(): SurvivalWorld {
     get spawnEnergy() {
       return state.spawnEnergy;
     },
+    get controllerLevel() {
+      return state.controllerLevel;
+    },
+    get controllerUpgradeCalls() {
+      return state.controllerUpgradeCalls;
+    },
     get workerEnergy() {
       return state.workerEnergy;
     },
@@ -505,7 +535,11 @@ function survivalWorld(): SurvivalWorld {
     assertEnergyConserved: () => {
       const harvested = initialSourceEnergy - state.sourceAEnergy - state.sourceBEnergy;
       expect(initialSpawnEnergy + harvested + state.injectedSpawnEnergy).toBe(
-        state.spawnEnergy + state.workerEnergy + state.successfulSpawnCost,
+        state.spawnEnergy +
+          state.workerEnergy +
+          state.successfulSpawnCost +
+          state.controllerUpgradeCalls +
+          state.lostWorkerEnergy,
       );
     },
     game: (tick: number): RuntimeGame => {
@@ -545,6 +579,7 @@ function survivalWorld(): SurvivalWorld {
       };
     },
     killWorker: () => {
+      state.lostWorkerEnergy += state.workerEnergy;
       state.workerEnergy = 0;
       state.workerFatigue = 0;
       state.workerName = null;

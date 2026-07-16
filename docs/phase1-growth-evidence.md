@@ -24,6 +24,11 @@ site-placement authority.
 - Bootstrap growth uses a new `bootstrap-controller` budget category with a null room-energy claim
   so controller progress spends carried creep energy first and leaves the protected reserve intact
   until RCL2.
+- `survival-flow-runtime.test.ts` composes the recovery and bootstrap paths from an empty Memory
+  RCL1 world with one 300-capacity spawn: it accounts controller spend separately from room and
+  creep energy, reaches RCL2 by tick 1,599 (a 1,500-tick replay deadline), and asserts the spawn
+  reserve is restored to 300 while `upgradeController` work executes. The same replay preserves
+  heap-reset, reordered-source, movement, replacement, and single-authority assertions.
 - The planner selects only observed owned spawn, extension, container, road, and tower sites. It
   creates no construction sites and retains no layout, topology, or placement state.
 
