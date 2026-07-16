@@ -67,7 +67,7 @@ describe("TelemetryService", () => {
       ...input,
       base: { ...input.base, tick: 101 },
     });
-    expect(next.owner).toMatchObject({ schemaVersion: 1, history: [{ tick: 101 }] });
+    expect(next.owner).toMatchObject({ schemaVersion: 2, history: [{ tick: 101 }] });
     expect(next.owner.droppedHistory).toBe(1);
   });
 });
