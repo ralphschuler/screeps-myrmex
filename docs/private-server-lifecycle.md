@@ -49,6 +49,11 @@ environment identity immutable. The 32 fresh-start attempts, 500-millisecond int
 conservative existing-PID probe followed by a failed fresh start within the declared 60-second I/O
 timeout budget.
 
+Successful listener probes close their writable side with a graceful FIN and drain the peer close;
+they never reset a greeting that the accepted application connection is still writing. Only a
+timeout or connection error destroys the probe socket. This makes health observation non-mutating
+for the launcher's supervised game and CLI children.
+
 When a launcher cannot become healthy, the record may include only one fixed reason code:
 `asset-directory-unavailable`, `configuration-file-unavailable`, `required-launch-option-missing`,
 `steam-authentication`, `port-unavailable`, `launcher-exited`, `health-timeout`,

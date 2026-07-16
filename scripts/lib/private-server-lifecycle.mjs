@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createConnection } from "node:net";
 import { dirname, join, resolve } from "node:path";
 
 export const PRIVATE_SERVER_RUNTIME_VERSION = "4.3.0";
@@ -45,6 +46,30 @@ export function lifecycleRecord(kind, details = {}) {
 
 export function privateServerLifecycleSucceeded(kind) {
   return SUCCESS_KINDS.has(kind);
+}
+
+/** Probes one loopback listener without resetting an application greeting already in flight. */
+export function probePrivateServerPort(port, timeoutMs, connect = createConnection) {
+  return new Promise((resolveProbe) => {
+    let connected = false;
+    let settled = false;
+    const socket = connect({ host: "127.0.0.1", port });
+    const timer = setTimeout(() => finish(false, true), timeoutMs);
+    const finish = (available, destroy) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (destroy) socket.destroy();
+      resolveProbe(available);
+    };
+    socket.once("connect", () => {
+      connected = true;
+      socket.resume();
+      socket.end();
+    });
+    socket.once("close", (hadError) => finish(connected && !hadError, false));
+    socket.once("error", () => finish(false, true));
+  });
 }
 
 /** Discards a dead PID and never reuses or kills a live PID without process identity evidence. */
