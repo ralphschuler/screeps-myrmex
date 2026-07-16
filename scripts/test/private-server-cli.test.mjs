@@ -30,6 +30,10 @@ describe("private-server CLI adapter", () => {
     expect(privateServerCliCommand({ kind: "reset" })).toBe(
       "system.resetAllData().then(()=> 'OK')",
     );
+    const bootstrap = privateServerCliCommand({ kind: "bootstrap-controlled-bot" });
+    expect(bootstrap).toContain("find({type:'controller'})");
+    expect(bootstrap).toContain("controllers.find(item=>!item.user)");
+    expect(bootstrap).not.toContain("'W1N1'");
     expect(privateServerCliCommand({ kind: "set-tick-duration", milliseconds: 1 })).toBe(
       "system.setTickDuration(1)",
     );

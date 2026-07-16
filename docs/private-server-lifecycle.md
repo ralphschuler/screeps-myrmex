@@ -56,8 +56,10 @@ returns only opaque response metadata. It never accepts a caller-supplied expres
 credential, or raw CLI transcript. Its only upload path serializes the locally built bundle as data
 into the pre-defined `myrmex-integration` test account, invalidates the pinned backend's script
 cache, and publishes its source hash. Account creation and deterministic world setup are fixture
-work, not upload behavior. `npm run private-server:deploy` builds before attempting that upload and
-fails closed until a provisioned local server has created the controlled fixture account.
+work, not upload behavior. Controlled-bot bootstrap selects an unowned controller from the pinned
+world instead of assuming a particular room is available. `npm run private-server:deploy` builds
+before attempting that upload and fails closed until a provisioned local server has created the
+controlled fixture account.
 
 World seeding, deterministic hostile/reset fixtures, and scenario assertions remain ordered under
 issues #149 and #150 (parent [#144](https://github.com/ralphschuler/screeps-myrmex/issues/144)).
