@@ -62,13 +62,19 @@ scheduling and runner observation communicate only through separate fixed namesp
 receipts, never module-local state. Receipt bodies and transient definition identities are not
 admitted to evidence.
 
+Every pause boundary first serially deletes and verifies the previous request and acknowledgement,
+uses the fixed system pause operation, and verifies the paused flag while publishing the new
+sequenced request. These are independently acknowledged CLI operations with fixed failure codes;
+same-store env mutations are never issued concurrently.
+
 Cleanup first waits for a fresh idle paused main-loop acknowledgement. It then removes the generated
 fixture publication (`definition.json`, its pending file, and `mods.json`) before deleting and
-verifying exactly seven namespaced keys: `pause-request`, `quiescent-main`, `ready-processor`,
-`ready-runner`, `hostile`, `reset`, and `bot-exception`. The scenario runner attempts the bounded
-process-group stop even if publication or receipt cleanup fails. A subsequent scenario recreates the
-module mapping without a definition and uses a new server run; incomplete acknowledgement,
-symlink-safe file cleanup, receipt cleanup, or process cleanup is terminal evidence failure.
+verifying exactly seven namespaced keys serially: `pause-request`, `quiescent-main`,
+`ready-processor`, `ready-runner`, `hostile`, `reset`, and `bot-exception`. The scenario runner
+attempts the bounded process-group stop even if publication or receipt cleanup fails. A subsequent
+scenario recreates the module mapping without a definition and uses a new server run; incomplete
+acknowledgement, symlink-safe file cleanup, receipt cleanup, or process cleanup is terminal evidence
+failure.
 
 ## Consequences
 

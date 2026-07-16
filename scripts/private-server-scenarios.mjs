@@ -161,8 +161,18 @@ async function clearFixtureReceipts(scenarioId) {
 async function pauseFixtureBoundary(scenarioId, sequence) {
   try {
     await pausePrivateServerFixture(scenarioId, sequence);
-  } catch {
-    throw namedError("CliOperationFailure", "cli-pause-fixture-failed");
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    throw namedError(
+      "CliOperationFailure",
+      [
+        "cli-pause-failed",
+        "cli-pause-fixture-clear-failed",
+        "cli-pause-fixture-request-failed",
+      ].includes(code)
+        ? code
+        : "cli-pause-fixture-failed",
+    );
   }
   await waitForFixtureQuiescence(scenarioId, sequence);
 }

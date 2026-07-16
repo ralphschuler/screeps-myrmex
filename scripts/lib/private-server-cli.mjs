@@ -12,8 +12,9 @@ const OPERATIONS = new Set([
   "bootstrap-controlled-bot",
   "clear-fixture",
   "pause",
-  "pause-fixture",
+  "prepare-fixture-pause",
   "prepare-fixture-target",
+  "request-fixture-pause",
   "reset",
   "resume",
   "sample-controlled",
@@ -34,15 +35,21 @@ export function privateServerCliCommand(operation) {
     exactOperation(operation, ["kind"]);
     return `system.${kind === "pause" ? "pauseSimulation" : "resumeSimulation"}()`;
   }
-  if (kind === "pause-fixture") {
+  if (kind === "prepare-fixture-pause") {
+    exactOperation(operation, ["kind", "scenarioId"]);
+    if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
+    const acknowledgementKey = JSON.stringify(
+      `myrmexFixture:${operation.scenarioId}:quiescent-main`,
+    );
+    const requestKey = JSON.stringify(`myrmexFixture:${operation.scenarioId}:pause-request`);
+    return `storage.env.del(${acknowledgementKey}).then(()=>storage.env.del(${requestKey})).then(()=>Promise.all([storage.env.get(${acknowledgementKey}),storage.env.get(${requestKey})])).then(values=>JSON.stringify({prepared:values.every(value=>value==null)}))`;
+  }
+  if (kind === "request-fixture-pause") {
     exactOperation(operation, ["kind", "scenarioId", "sequence"]);
     if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
     if (!pauseSequence(operation.sequence)) {
       throw new RangeError("Fixture pause sequence is outside the bounded range.");
     }
-    const acknowledgementKey = JSON.stringify(
-      `myrmexFixture:${operation.scenarioId}:quiescent-main`,
-    );
     const requestKey = JSON.stringify(`myrmexFixture:${operation.scenarioId}:pause-request`);
     const request = JSON.stringify(
       JSON.stringify({
@@ -50,7 +57,7 @@ export function privateServerCliCommand(operation) {
         sequence: operation.sequence,
       }),
     );
-    return `Promise.all([storage.env.del(${acknowledgementKey}),storage.env.del(${requestKey})]).then(()=>system.pauseSimulation()).then(()=>storage.env.set(${requestKey},${request})).then(()=>JSON.stringify({paused:true}))`;
+    return `storage.env.get(storage.env.keys.MAIN_LOOP_PAUSED).then(paused=>{if(+paused!==1)throw new Error('simulation is not paused');return storage.env.set(${requestKey},${request})}).then(()=>storage.env.get(${requestKey})).then(value=>JSON.stringify({paused:value===${request}}))`;
   }
   if (kind === "reset") {
     exactOperation(operation, ["kind"]);
@@ -102,7 +109,7 @@ export function privateServerCliCommand(operation) {
       "pause-request",
       "quiescent-main",
     ]);
-    return `Promise.all(${JSON.stringify(keys)}.map(key=>storage.env.del(key))).then(()=>Promise.all(${JSON.stringify(keys)}.map(key=>storage.env.get(key)))).then(values=>JSON.stringify({cleared:values.every(value=>value==null)}))`;
+    return `${sequentialEnvDeletes(keys)}.then(()=>Promise.all(${JSON.stringify(keys)}.map(key=>storage.env.get(key)))).then(values=>JSON.stringify({cleared:values.every(value=>value==null)}))`;
   }
   if (!Number.isSafeInteger(operation.milliseconds)) {
     throw new TypeError("Tick duration must be a safe integer.");
@@ -164,12 +171,28 @@ export async function samplePrivateServerFixture(scenarioId, options = {}) {
 
 /** Requests a fresh main-loop pause boundary for one declared fixture scenario. */
 export async function pausePrivateServerFixture(scenarioId, sequence, options = {}) {
-  return parseFixturePause(
-    await runPrivateServerCommand(
-      privateServerCliCommand({ kind: "pause-fixture", scenarioId, sequence }),
-      options,
-    ),
-  );
+  const prepareCommand = privateServerCliCommand({ kind: "prepare-fixture-pause", scenarioId });
+  const pauseCommand = privateServerCliCommand({ kind: "pause" });
+  const requestCommand = privateServerCliCommand({
+    kind: "request-fixture-pause",
+    scenarioId,
+    sequence,
+  });
+  try {
+    parseFixturePausePreparation(await runPrivateServerCommand(prepareCommand, options));
+  } catch {
+    throw new Error("cli-pause-fixture-clear-failed");
+  }
+  try {
+    await runPrivateServerCommand(pauseCommand, options);
+  } catch {
+    throw new Error("cli-pause-failed");
+  }
+  try {
+    return parseFixturePauseRequest(await runPrivateServerCommand(requestCommand, options));
+  } catch {
+    throw new Error("cli-pause-fixture-request-failed");
+  }
 }
 
 /** Samples only whether the main loop acknowledged the requested paused boundary. */
@@ -398,7 +421,15 @@ function parseFixtureClearance(value) {
   return Object.freeze({ cleared: true, transcript: opaqueResult(value) });
 }
 
-function parseFixturePause(value) {
+function parseFixturePausePreparation(value) {
+  const row = parseJson(value);
+  if (row === null || !exactKeys(row, ["prepared"]) || row.prepared !== true) {
+    throw new Error("Private-server fixture pause preparation was not acknowledged.");
+  }
+  return Object.freeze({ prepared: true, transcript: opaqueResult(value) });
+}
+
+function parseFixturePauseRequest(value) {
   const row = parseJson(value);
   if (row === null || !exactKeys(row, ["paused"]) || row.paused !== true) {
     throw new Error("Private-server fixture pause was not acknowledged.");
@@ -442,6 +473,15 @@ function exactKeys(value, keys) {
 
 function fixtureReceiptKeys(scenarioId, kinds) {
   return kinds.map((kind) => `myrmexFixture:${scenarioId}:${kind}`);
+}
+
+function sequentialEnvDeletes(keys) {
+  return keys
+    .slice(1)
+    .reduce(
+      (command, key) => `${command}.then(()=>storage.env.del(${JSON.stringify(key)}))`,
+      `storage.env.del(${JSON.stringify(keys[0])})`,
+    );
 }
 
 function safeId(value) {
