@@ -30,6 +30,7 @@ for (const manifest of selected) {
   });
   results.push({
     artifactHash: result.evidence.artifactHash,
+    buildId,
     failure: result.evidence.failure,
     id: manifest.id,
   });
