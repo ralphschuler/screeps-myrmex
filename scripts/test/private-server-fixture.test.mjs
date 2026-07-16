@@ -159,6 +159,12 @@ describe("private-server fixture mod", () => {
     expect(writes).toEqual([]);
 
     values.set("mainLoopPaused", "1");
+    values.set(pauseRequestKey, null);
+    await mainLoopStage("start");
+    await mainLoopStage("finish");
+    expect(writes).toEqual([]);
+
+    values.set(pauseRequestKey, JSON.stringify({ scenarioId: "hostile-reset-v1", sequence: 1 }));
     await mainLoopStage("start");
     await mainLoopStage("getUsers");
     await mainLoopStage("finish");

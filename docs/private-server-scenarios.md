@@ -36,8 +36,9 @@ wrapper steps, and direct MYRMEX lifecycle children receive a sanitized environm
 documented backend-only upstream handoff. The 45-minute job bound accommodates runtime installation
 and the five-row matrix while remaining finite. The workflow then stops the ignored state even on
 failure. It uploads no private-server state or artifacts; its safe job output is the scenario id,
-exact bundle build id, artifact hash, and failure kind. When a source-controlled CLI operation
-fails, output also includes only its fixed operation code; the CLI transcript remains private.
+exact bundle build id, artifact hash, failure kind, and separate nullable primary and cleanup
+failure codes. Cleanup may determine the terminal failure kind, but it cannot overwrite the primary
+execution code. The CLI transcript remains private.
 
 Before any world or scenario-definition mutation, start proves the launcher process, game listener,
 CLI listener, and a sequential read-only game-time/user-count storage receipt. The fixed inert mod
@@ -52,8 +53,8 @@ runner immediately establishes a fresh acknowledged pause boundary before it cre
 account and deploys the exact bundle. It resumes long enough to obtain one controlled worker,
 requests another bounded idle pause boundary, atomically publishes the ignored definition, waits for
 both engine processes to acknowledge it, and resumes without a server restart. It emits only
-scenario id, artifact hash, and failure kind. A non-zero exit is required for assertion, timeout,
-bot-exception, startup, or cleanup failure.
+scenario id, artifact hash, failure kind, and the two fixed nullable failure codes. A non-zero exit
+is required for assertion, timeout, bot-exception, startup, or cleanup failure.
 
 ## Fixture publication and cleanup
 
@@ -69,21 +70,26 @@ redirected mapping.
 
 `system.pauseSimulation()` sets the paused flag but does not prove that an already-started main-loop
 pass has drained. Before reset, publication, or cleanup, the runner uses three independently
-acknowledged fixed CLI operations: it serially deletes and verifies the old request and
-acknowledgement, pauses the simulation, then verifies the paused flag while publishing a fresh
-sequenced request. Splitting those writes avoids overlapping env mutations, isolates each
-acknowledgement, and gives each failed boundary its own fixed operation code. The runner then waits
-at most 30 seconds for the fixed mod in the main process to acknowledge an idle paused
-`mainLoopStage` boundary. The mod acknowledges only a start-to-finish pass with no intervening work
-while the pinned paused flag is set. A rejection or missing acknowledgement fails closed; reset
-requires another barrier because it clears that paused flag.
+acknowledged fixed CLI operations: it serially replaces the old request and acknowledgement with
+`null` tombstones and verifies their current-store readback, pauses the simulation, then verifies
+the paused flag while publishing a fresh sequenced request. The pinned embedded Loki adapter skips
+falsy values and does not mark `storage.env.del` dirty, while `storage.env.set` accepts `null` and
+marks the record for autosave. Immediate readback is not treated as a disk-flush acknowledgement;
+every new run re-tombstones these keys before it accepts a request or publication. Splitting those
+writes avoids overlapping env mutations, isolates each acknowledgement, and gives each failed
+boundary its own fixed operation code. The runner then waits at most 30 seconds for the fixed mod in
+the main process to acknowledge an idle paused `mainLoopStage` boundary. The mod acknowledges only a
+start-to-finish pass with no intervening work while the pinned paused flag is set. A rejection or
+missing acknowledgement fails closed; reset requires another barrier because it clears that paused
+flag.
 
 After controlled-bot bootstrap and target selection, the runner waits for that publication barrier,
-then deletes and verifies exactly seven fixed receipts for the selected scenario: `pause-request`,
-`quiescent-main`, `ready-processor`, `ready-runner`, `hostile`, `reset`, and `bot-exception`. These
-are the only request, acknowledgement, readiness, and action keys admitted by the protocol. The
-runner then publishes `definition.json.pending` as `definition.json` with an atomic rename. No raw
-room, user, coordinate, definition, or receipt value is admitted to command output or evidence.
+then writes and verifies `null` tombstones for exactly seven fixed receipts for the selected
+scenario: `pause-request`, `quiescent-main`, `ready-processor`, `ready-runner`, `hostile`, `reset`,
+and `bot-exception`. These are the only request, acknowledgement, readiness, and action keys
+admitted by the protocol. The runner then publishes `definition.json.pending` as `definition.json`
+with an atomic rename. No raw room, user, coordinate, definition, or receipt value is admitted to
+command output or evidence.
 
 The processor and runner independently validate the first complete definition they observe. Each
 requires the separately supplied scenario id and records its own fixed `ready` or `rejected` env
@@ -95,12 +101,12 @@ persistent absence fails as `fixture-ready-timeout`.
 
 Every terminal path attempts cleanup. While the server is available, the runner requests and waits
 for a fresh idle paused main-loop boundary. It then removes the generated fixture publication—the
-definition, pending file, and `mods.json`—before deleting and verifying the same seven fixed
+definition, pending file, and `mods.json`—before tombstoning and verifying the same seven fixed
 receipts. This ordering prevents a later engine observation from republishing an action receipt
-after receipt clearance. Receipt deletions are issued serially and then read back together. The
-runner then attempts the bounded process-group stop even when an earlier cleanup step failed. Any
-missing acknowledgement, symlink rejection, file-removal failure, receipt clearance failure, or
-shutdown timeout makes cleanup incomplete and prevents successful evidence.
+after receipt clearance. Receipt tombstones and verification reads are issued serially. The runner
+then attempts the bounded process-group stop even when an earlier cleanup step failed. Any missing
+acknowledgement, symlink rejection, file-removal failure, receipt clearance failure, or shutdown
+timeout makes cleanup incomplete and prevents successful evidence.
 
 ## Matrix and evidence
 
@@ -109,7 +115,9 @@ and `bot-exception`. Manifests are bounded by the evidence contract; fixture tar
 processor/runner readiness, and bot-exception observation use bounded wall-clock waits in addition
 to each scenario's tick deadline. Results are canonical #143 evidence artifacts; raw code,
 coordinates, world state, console output, Memory, launcher logs, credentials, definitions, receipts,
-and database data are not printed or committed.
+and database data are not printed or committed. `primaryFailureCode` identifies the execution
+boundary and `cleanupFailureCode` independently identifies fixture/process teardown, so a cleanup
+failure cannot hide the operation that first failed.
 
 Evidence records the SHA-256 identity of the exact bundle indirectly through the manifest build id.
 Record observed artifact hashes in the issue or pull request after a credentialed run; do not add

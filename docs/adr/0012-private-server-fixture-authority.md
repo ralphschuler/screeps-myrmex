@@ -62,13 +62,19 @@ scheduling and runner observation communicate only through separate fixed namesp
 receipts, never module-local state. Receipt bodies and transient definition identities are not
 admitted to evidence.
 
-Every pause boundary first serially deletes and verifies the previous request and acknowledgement,
-uses the fixed system pause operation, and verifies the paused flag while publishing the new
-sequenced request. These are independently acknowledged CLI operations with fixed failure codes;
-same-store env mutations are never issued concurrently.
+Every pause boundary first serially overwrites the previous request and acknowledgement with `null`
+tombstones and verifies their current-store readback, uses the fixed system pause operation, and
+verifies the paused flag while publishing the new sequenced request. The pinned embedded Loki
+adapter skips falsy values and does not mark its `storage.env.del` mutation dirty, while
+`storage.env.set` accepts `null` and marks the record for autosave; fixture readers already treat
+`null` as absent. The protocol does not treat immediate readback as a disk-flush acknowledgement.
+Every transition, including the first transition after a new server start, reapplies and verifies
+the tombstones before accepting a newer request or fixture publication. These are independently
+acknowledged CLI operations with fixed failure codes, and same-store env mutations are never issued
+concurrently.
 
 Cleanup first waits for a fresh idle paused main-loop acknowledgement. It then removes the generated
-fixture publication (`definition.json`, its pending file, and `mods.json`) before deleting and
+fixture publication (`definition.json`, its pending file, and `mods.json`) before tombstoning and
 verifying exactly seven namespaced keys serially: `pause-request`, `quiescent-main`,
 `ready-processor`, `ready-runner`, `hostile`, `reset`, and `bot-exception`. The scenario runner
 attempts the bounded process-group stop even if publication or receipt cleanup fails. A subsequent
@@ -87,7 +93,7 @@ failure.
   not part of the fixture contract.
 - Paused state is not quiescence; each destructive or publication transition requires a fresh,
   bounded acknowledgement from the idle main-loop boundary.
-- Generated publication is removed before receipt clearance, and symbolic-link components fail
+- Generated publication is removed before receipt tombstoning, and symbolic-link components fail
   closed rather than being traversed.
 - Rejected definitions require a new process run. In-place correction is deliberately unsupported.
 - This is an intentionally version-pinned extension contract. Any runtime dependency update must

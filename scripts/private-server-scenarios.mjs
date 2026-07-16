@@ -40,9 +40,10 @@ for (const manifest of selected) {
   results.push({
     artifactHash: result.evidence.artifactHash,
     buildId,
+    cleanupFailureCode: result.cleanupFailureCode,
     failure: result.evidence.failure,
-    failureCode: result.failureCode,
     id: manifest.id,
+    primaryFailureCode: result.primaryFailureCode,
   });
   process.stdout.write(`${JSON.stringify(results.at(-1))}\n`);
   if (!result.ok) process.exitCode = 1;
@@ -176,7 +177,8 @@ async function pauseFixtureBoundary(scenarioId, sequence) {
       "CliOperationFailure",
       [
         "cli-pause-failed",
-        "cli-pause-fixture-clear-failed",
+        "cli-pause-fixture-clear-command-failed",
+        "cli-pause-fixture-clear-unacknowledged",
         "cli-pause-fixture-request-failed",
       ].includes(code)
         ? code
