@@ -945,8 +945,15 @@ pre-Execute Observe snapshot, so reconciliation applies one modeled current Exec
 before comparing that evidence with the post-Execute lease schedule; only worse aligned evidence
 adds a detected delay. Equality is viable at both boundaries, and an exact-boundary lease therefore
 remains feasible as its lifetime and modeled work decrease together. Unknown travel fails closed.
-Issue [#25](https://github.com/ralphschuler/screeps-myrmex/issues/25) owns pathfinding and movement
-estimates; this foundation does not approximate a route. Issue
+Runtime composition adapts the canonical local-path service into one tick-local
+`TravelEstimateView`. Cached route cost is converted from PathFinder's terrain weights to a
+fatigue-safe upper bound using current fatigue, active `MOVE`, and conservative non-`MOVE` body
+weight; direction count alone is never called travel time. Cold search is admitted in 0.5 CPU
+increments only from scheduler allowance above the enclosing system's base estimate. Geometry
+memoization is capped by the 4,096-pair allocator bound, while cross-room, deferred, malformed, or
+unavailable routes remain unknown. `WorkforceAllocator` does not pathfind and never receives live
+Screeps objects. Issue [#25](https://github.com/ralphschuler/screeps-myrmex/issues/25) retains
+pathfinding and movement authority. Issue
 [#27](https://github.com/ralphschuler/screeps-myrmex/issues/27) makes this deadline executable: the
 colony treats a worker as no longer sustaining the room when its remaining lifetime is no more than
 the nine spawn ticks for the minimal `WORK,CARRY,MOVE` successor plus
@@ -983,6 +990,17 @@ repair-only and optional, retaining full-hit completion for older terms. Contrac
 repair retry eligibility from its bounded transition history; the agent reconciliation producer uses
 that projection for capped exponential retry after normalized executor failures. No repair queue,
 retry cache, or per-creep Memory is introduced. ADR 0011 records this boundary.
+
+The Phase 1 `EconomyPlanner` alternates recovery workers between visible sources and active owned
+spawn/extension sinks through stable endpoint-demand `harvesting-filling` contracts. The allocator,
+not an actor-shaped issuer, selects the eligible lease holder. Partial cargo retains that actual
+lease holder's phase from `ContractExecutionView`: harvest batches until full and continuous fill
+omits the Screeps transfer amount so all available cargo is offered. `ContractPlanningView` remains
+the renewal/endpoint-retirement projection. This introduces no role Memory or flow ledger. Tick
+telemetry reports owned-room refill demand and scheduled harvest/delivery in energy units; observed
+cargo/drops remain stock gauges, successful command receipts are not treated as settled world
+deltas, and boosted harvest explicitly marks its base-yield total as a lower bound. ADR 0009 records
+the projection boundary.
 
 The Phase 1 `CriticalMaintenancePlanner` has no durable owner. It reads one current room snapshot
 and can emit budgeted repair contracts only for a critically damaged spawn, sole container, or

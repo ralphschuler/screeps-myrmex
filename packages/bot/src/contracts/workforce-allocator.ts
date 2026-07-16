@@ -264,8 +264,7 @@ function actionEligible(actor: WorkforceActor, contract: WorkContractRecord): bo
     return actor.energy === undefined || actor.energy > 0;
   if (contract.execution.action === "harvest")
     return (
-      (actor.energy === undefined || actor.energy === 0) &&
-      (actor.freeCapacity === undefined || actor.freeCapacity === null || actor.freeCapacity > 0)
+      actor.freeCapacity === undefined || actor.freeCapacity === null || actor.freeCapacity > 0
     );
   return true;
 }

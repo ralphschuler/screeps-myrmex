@@ -26,7 +26,7 @@ describe("movement path cache", () => {
     const first = getMovementPathCache(firstManager);
     expect(getMovementPathCache(firstManager)).toBe(first);
     expect(firstManager.registeredNamespaceIds()).toEqual([
-      "movement.local-path.v1",
+      "movement.local-path.v2",
       "movement.static-matrix.v1",
     ]);
 
@@ -42,6 +42,7 @@ describe("movement path cache", () => {
     first.localPaths.set(
       ["W1N1", "origin:goal"],
       {
+        cost: 4,
         directions: [3, 3],
         roomName: "W1N1",
       },

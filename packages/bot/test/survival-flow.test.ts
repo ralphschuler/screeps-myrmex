@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { authorizedSurvivalFlow, planSurvivalFlow, renewSurvivalFlowBudgets } from "../src/economy";
+import {
+  contractIdFor,
+  normalizeContractRequest,
+  requestSignature,
+  WorkforceAllocator,
+  workforceActorFromCreep,
+  type ContractExecutionView,
+  type ContractPlanningView,
+  type WorkContractRecord,
+} from "../src/contracts";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
 
 describe("survival flow", () => {
-  it("selects the deterministic source or sink from the worker's carried energy", () => {
+  it("batches partial cargo at a deterministic source before selecting a sink", () => {
     const plan = planSurvivalFlow(snapshot());
     expect(plan.map(({ budgetRequest }) => budgetRequest.issuer)).toEqual([
-      "economy/W1N1/worker-a/harvest/source-near",
+      "economy/W1N1/harvest/source-near",
     ]);
     expect(
       plan.every(
@@ -16,8 +26,96 @@ describe("survival flow", () => {
       ),
     ).toBe(true);
     expect(planSurvivalFlow(snapshot(25)).map(({ budgetRequest }) => budgetRequest.issuer)).toEqual(
-      ["economy/W1N1/worker-a/transfer/spawn-near"],
+      ["economy/W1N1/harvest/source-near"],
     );
+    expect(planSurvivalFlow(snapshot(50)).map(({ budgetRequest }) => budgetRequest.issuer)).toEqual(
+      ["economy/W1N1/transfer/spawn-near"],
+    );
+    expect(
+      planSurvivalFlow(snapshot(25, { sourceEnergy: 0 })).map(
+        ({ budgetRequest }) => budgetRequest.issuer,
+      ),
+    ).toEqual(["economy/W1N1/transfer/spawn-near"]);
+    expect(
+      planSurvivalFlow(
+        snapshot(25),
+        activeFlowExecution("transfer"),
+        activeFlowPlanning("transfer"),
+      ).map(({ budgetRequest }) => budgetRequest.issuer),
+    ).toEqual(["economy/W1N1/transfer/spawn-near"]);
+    expect(
+      planSurvivalFlow(
+        snapshot(25),
+        activeFlowExecution("harvest"),
+        activeFlowPlanning("harvest"),
+      ).map(({ budgetRequest }) => budgetRequest.issuer),
+    ).toEqual(["economy/W1N1/harvest/source-near"]);
+    expect(
+      planSurvivalFlow(
+        snapshot(25),
+        activeFlowExecution("transfer"),
+        activeFlowPlanning("transfer", false),
+      ).map(({ budgetRequest }) => budgetRequest.issuer),
+    ).toEqual(["economy/W1N1/harvest/source-near"]);
+
+    const wrongBudget = activeFlowPlanning("transfer");
+    const wrongBudgetContract = wrongBudget.contracts[0];
+    if (wrongBudgetContract === undefined) throw new Error("expected active flow contract");
+    expect(
+      planSurvivalFlow(snapshot(25), activeFlowExecution("transfer"), {
+        ...wrongBudget,
+        contracts: [
+          {
+            ...wrongBudgetContract,
+            budgetBinding: {
+              ...wrongBudgetContract.budgetBinding,
+              category: "optional-growth",
+            },
+          },
+        ],
+      }).map(({ budgetRequest }) => budgetRequest.issuer),
+    ).toEqual(["economy/W1N1/harvest/source-near"]);
+  });
+
+  it("excludes full and inactive sinks while retaining a farther active sink", () => {
+    expect(planSurvivalFlow(snapshot(50, { sinkFree: 0 }))).toEqual([]);
+    expect(planSurvivalFlow(snapshot(50, { spawnActive: false }))).toEqual([]);
+
+    const base = snapshot(50, { spawnActive: false });
+    const room = base.rooms[0];
+    const inactive = room?.ownedSpawns[0];
+    if (room === undefined || inactive === undefined) throw new Error("expected spawn fixture");
+    const withFarActive: WorldSnapshot = {
+      ...base,
+      rooms: [
+        {
+          ...room,
+          ownedSpawns: [
+            inactive,
+            {
+              ...inactive,
+              active: true,
+              id: "spawn-far",
+              name: "Spawn2",
+              pos: position(20, 20),
+            },
+          ],
+        },
+      ],
+    };
+    expect(planSurvivalFlow(withFarActive).map(({ targetId }) => targetId)).toEqual(["spawn-far"]);
+
+    const withOnlyInactiveExtension: WorldSnapshot = {
+      ...base,
+      rooms: [
+        {
+          ...room,
+          ownedExtensions: [{ ...inactive, id: "extension-inactive" }],
+          ownedSpawns: [],
+        },
+      ],
+    };
+    expect(planSurvivalFlow(withOnlyInactiveExtension)).toEqual([]);
   });
 
   it("funds suspended work again and cancels a vanished endpoint without duplicating its binding", () => {
@@ -55,7 +153,7 @@ describe("survival flow", () => {
           {
             budgetBinding: {
               category: "harvesting-filling",
-              issuer: "economy/W1N1/worker-a/harvest/old",
+              issuer: "economy/W1N1/harvest/old",
             },
             contractId: "old",
             execution: {
@@ -65,7 +163,7 @@ describe("survival flow", () => {
               resourceType: null,
               version: 1,
             },
-            issuer: "economy/W1N1/worker-a/harvest/old",
+            issuer: "economy/W1N1/harvest/old",
             owner: { id: "W1N1", kind: "colony" },
             state: "funded",
             targetId: "old",
@@ -73,6 +171,7 @@ describe("survival flow", () => {
         ],
       },
       10,
+      snapshot(),
     );
     expect(flow.requests).toHaveLength(1);
     expect(flow.transitions).toEqual([
@@ -120,8 +219,65 @@ describe("survival flow", () => {
     expect(planSurvivalFlow(multi)).toHaveLength(1);
   });
 
+  it("publishes endpoint demand that an eligible worker can take regardless of planner order", () => {
+    const base = snapshot();
+    const room = base.rooms[0];
+    const template = room?.ownedCreeps[0];
+    if (room === undefined || template === undefined) throw new Error("expected worker fixture");
+    const carrier = {
+      ...template,
+      body: {
+        ...template.body,
+        activeParts: 2,
+        size: 2,
+        work: { active: 0, boosted: 0, total: 0 },
+      },
+      id: "carrier-a",
+      name: "carrier-a",
+    };
+    const worker = { ...template, id: "worker-b", name: "worker-b" };
+    const onlySource = room.sources.find(({ id }) => id === "source-near");
+    if (onlySource === undefined) throw new Error("expected source fixture");
+    const multi: WorldSnapshot = {
+      ...base,
+      rooms: [{ ...room, ownedCreeps: [carrier, worker], sources: [onlySource] }],
+    };
+    const candidate = planSurvivalFlow(multi)[0];
+    if (candidate === undefined) throw new Error("expected endpoint demand");
+    const flow = authorizedSurvivalFlow(
+      [candidate],
+      [{ ...candidate.budgetRequest, status: "active" }],
+      { contracts: [], status: "ready" },
+      10,
+    );
+    const request = flow.requests[0];
+    if (request === undefined) throw new Error("expected work request");
+    const normalized = normalizeContractRequest(request);
+    const contract: WorkContractRecord = {
+      ...normalized,
+      history: [],
+      id: contractIdFor(normalized.issuer, normalized.issuerKey, normalized.issuerSequence),
+      lease: null,
+      requestSignature: requestSignature(normalized),
+      revision: 1,
+      state: "funded",
+    };
+    const allocation = new WorkforceAllocator().allocate({
+      actors: [workforceActorFromCreep(carrier), workforceActorFromCreep(worker)],
+      contracts: [contract],
+      tick: 10,
+      travel: { estimate: () => 60 },
+    });
+
+    expect(candidate.actorId).toBe("carrier-a");
+    expect(candidate.budgetRequest.issuer).toBe("economy/W1N1/harvest/source-near");
+    expect(allocation.assignments).toEqual([
+      expect.objectContaining({ actorId: "worker-b", assignmentCost: 60, contractId: contract.id }),
+    ]);
+  });
+
   it("keeps continuous work suspended while an endpoint is unavailable, then re-funds it", () => {
-    const transfer = planSurvivalFlow(snapshot(25))[0];
+    const transfer = planSurvivalFlow(snapshot(50))[0];
     if (transfer === undefined) throw new Error("expected transfer candidate");
     const planning = {
       status: "ready" as const,
@@ -154,14 +310,21 @@ describe("survival flow", () => {
     ).toEqual([expect.objectContaining({ contractId: "fill", to: "funded" })]);
   });
 
-  it("cancels a continuous lease as soon as its worker is absent", () => {
+  it("keeps endpoint demand reusable while a visible colony awaits a replacement worker", () => {
+    const observed = snapshot();
+    const room = observed.rooms[0];
+    if (room === undefined) throw new Error("expected visible colony fixture");
+    const withoutWorkers: WorldSnapshot = {
+      ...observed,
+      rooms: [{ ...room, ownedCreeps: [] }],
+    };
     const planning = {
       status: "ready" as const,
       contracts: [
         {
           budgetBinding: {
             category: "harvesting-filling" as const,
-            issuer: "economy/W1N1/dead/harvest/source",
+            issuer: "economy/W1N1/harvest/source-near",
           },
           contractId: "dead-harvest",
           execution: {
@@ -171,21 +334,92 @@ describe("survival flow", () => {
             resourceType: null,
             version: 1 as const,
           },
-          issuer: "economy/W1N1/dead/harvest/source",
+          issuer: "economy/W1N1/harvest/source-near",
           owner: { id: "W1N1", kind: "colony" as const },
           state: "funded" as const,
-          targetId: "source",
+          targetId: "source-near",
         },
       ],
     };
-    expect(
-      authorizedSurvivalFlow([], [], planning, 20, new Set(["other-worker"])).transitions,
-    ).toEqual([expect.objectContaining({ contractId: "dead-harvest", to: "cancelled" })]);
+    expect(authorizedSurvivalFlow([], [], planning, 20, withoutWorkers).transitions).toEqual([]);
   });
 });
 
-function snapshot(carriedEnergy = 0): WorldSnapshot {
-  const emptyStore = { capacity: 300, freeCapacity: 300, resources: [], usedCapacity: 0 };
+function activeFlowExecution(action: "harvest" | "transfer"): ContractExecutionView {
+  const transfer = action === "transfer";
+  return {
+    status: "ready",
+    leases: [
+      {
+        actorId: "worker-a",
+        actorName: "worker",
+        contractId: `contract-${action}`,
+        deadline: 100,
+        execution: {
+          action,
+          completion: "continuous",
+          counterpartId: null,
+          resourceType: transfer ? "energy" : null,
+          version: 1,
+        },
+        expiresAt: 101,
+        leaseExpiresAt: 101,
+        priority: { class: "survival", value: 1_000 },
+        quantity: 1,
+        range: 1,
+        revision: 1,
+        state: "active",
+        target: transfer ? position(11, 10) : position(11, 11),
+        targetId: transfer ? "spawn-near" : "source-near",
+      },
+    ],
+  };
+}
+
+function activeFlowPlanning(action: "harvest" | "transfer", economy = true): ContractPlanningView {
+  const transfer = action === "transfer";
+  const issuer = `${economy ? "economy" : "operation"}/W1N1/${action}/target`;
+  return {
+    status: "ready",
+    contracts: [
+      {
+        budgetBinding: {
+          category: economy ? "harvesting-filling" : "optional-growth",
+          issuer,
+        },
+        contractId: `contract-${action}`,
+        execution: {
+          action,
+          completion: "continuous",
+          counterpartId: null,
+          resourceType: transfer ? "energy" : null,
+          version: 1,
+        },
+        issuer,
+        owner: { id: "W1N1", kind: economy ? "colony" : "operation" },
+        state: "active",
+        targetId: transfer ? "spawn-near" : "source-near",
+      },
+    ],
+  };
+}
+
+function snapshot(
+  carriedEnergy = 0,
+  options: {
+    readonly sinkFree?: number;
+    readonly sourceEnergy?: number;
+    readonly spawnActive?: boolean;
+  } = {},
+): WorldSnapshot {
+  const sinkFree = options.sinkFree ?? 300;
+  const sinkEnergy = 300 - sinkFree;
+  const emptyStore = {
+    capacity: 300,
+    freeCapacity: sinkFree,
+    resources: sinkEnergy === 0 ? [] : [{ amount: sinkEnergy, resourceType: "energy" }],
+    usedCapacity: sinkEnergy,
+  };
   const workerStore = {
     capacity: 50,
     freeCapacity: 50 - carriedEnergy,
@@ -254,7 +488,7 @@ function snapshot(carriedEnergy = 0): WorldSnapshot {
             id: "spawn-near",
             name: "Spawn1",
             pos: position(11, 10),
-            active: true,
+            active: options.spawnActive ?? true,
             hits: 5000,
             hitsMax: 5000,
             spawning: null,
@@ -267,14 +501,14 @@ function snapshot(carriedEnergy = 0): WorldSnapshot {
           {
             id: "source-far",
             pos: position(20, 20),
-            energy: 3000,
+            energy: options.sourceEnergy ?? 3000,
             energyCapacity: 3000,
             ticksToRegeneration: null,
           },
           {
             id: "source-near",
             pos: position(11, 11),
-            energy: 3000,
+            energy: options.sourceEnergy ?? 3000,
             energyCapacity: 3000,
             ticksToRegeneration: null,
           },

@@ -12,7 +12,7 @@ import type { WorldSnapshot } from "../src/world/snapshot";
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
 
 const paths: LocalPathPlanningService = {
-  plan: () => ({ directions: [3], source: "search", status: "ready" }),
+  plan: () => ({ cost: 2, directions: [3], source: "search", status: "ready" }),
 };
 
 describe("lease agents", () => {
@@ -57,6 +57,36 @@ describe("lease agents", () => {
     });
     expect(inRange.actions).toEqual([
       expect.objectContaining({ kind: "harvest", contractId: "contract-a", targetId: "source-a" }),
+    ]);
+
+    const fill = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: {
+        leases: [
+          harvestLease({
+            execution: {
+              action: "transfer",
+              completion: "continuous",
+              counterpartId: null,
+              resourceType: "energy",
+              version: 1,
+            },
+            targetId: "spawn-a",
+          }),
+        ],
+        status: "ready",
+      },
+      paths,
+      snapshot: snapshot({
+        actor: position(11, 10),
+        energy: 50,
+        source: position(12, 10),
+        structure: { hits: 5_000, hitsMax: 5_000, pos: position(12, 10) },
+      }),
+      tick: 10,
+    });
+    expect(fill.actions).toEqual([
+      expect.objectContaining({ amount: null, kind: "transfer", targetId: "spawn-a" }),
     ]);
 
     const stale = planLeaseAgents({

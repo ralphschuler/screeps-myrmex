@@ -1,5 +1,6 @@
 import type { BudgetRequest } from "../colony";
 import type {
+  ContractExecutionView,
   ContractPlanningView,
   ContractTransitionRequest,
   WorkContractRequest,
@@ -22,14 +23,20 @@ export interface SurvivalFlowPlan {
 }
 
 const MAX_SURVIVAL_FLOW_CANDIDATES = 64;
+const SURVIVAL_FLOW_MAX_ASSIGNMENT_COST = 1_500;
 const SURVIVAL_FLOW_EXPIRY = 1_000_000_000;
 
 /**
  * Selects visible, local source and sink work.  It emits stable demand identities only: Colony
  * and Contract ledgers remain the respective budget and work authorities.
  */
-export function planSurvivalFlow(snapshot: WorldSnapshot): readonly SurvivalFlowCandidate[] {
+export function planSurvivalFlow(
+  snapshot: WorldSnapshot,
+  execution: ContractExecutionView = { leases: [], status: "unavailable" },
+  planning: ContractPlanningView = { contracts: [], status: "unavailable" },
+): readonly SurvivalFlowCandidate[] {
   const candidates: SurvivalFlowCandidate[] = [];
+  const activeActionByActor = activeSurvivalActionByActor(execution, planning);
   for (const room of snapshot.rooms.filter((value) => value.controller?.ownership === "owned")) {
     const reservedSources = new Set<string>();
     const reservedSinks = new Set<string>();
@@ -41,11 +48,20 @@ export function planSurvivalFlow(snapshot: WorldSnapshot): readonly SurvivalFlow
       )
         continue;
       const carriedEnergy = resourceAmount(actor, "energy");
-      const action = carriedEnergy > 0 ? "transfer" : "harvest";
-      const target =
-        action === "harvest"
-          ? source(room, actor.pos, reservedSources)
-          : sink(room, actor.pos, reservedSinks);
+      const canHarvest =
+        actor.store.freeCapacity === null ? carriedEnergy === 0 : actor.store.freeCapacity > 0;
+      const harvestTarget = canHarvest ? source(room, actor.pos, reservedSources) : null;
+      const transferTarget = carriedEnergy > 0 ? sink(room, actor.pos, reservedSinks) : null;
+      const activeAction = activeActionByActor.get(actor.id);
+      const action =
+        activeAction === "transfer" && transferTarget !== null
+          ? "transfer"
+          : activeAction === "harvest" && harvestTarget !== null
+            ? "harvest"
+            : harvestTarget !== null
+              ? "harvest"
+              : "transfer";
+      const target = action === "harvest" ? harvestTarget : transferTarget;
       if (target !== null) {
         (action === "harvest" ? reservedSources : reservedSinks).add(target.id);
         candidates.push(candidate(room.name, actor.id, action, target));
@@ -56,6 +72,48 @@ export function planSurvivalFlow(snapshot: WorldSnapshot): readonly SurvivalFlow
     candidates.sort((left, right) =>
       compareStrings(left.budgetRequest.issuer, right.budgetRequest.issuer),
     ),
+  );
+}
+
+function activeSurvivalActionByActor(
+  execution: ContractExecutionView,
+  planning: ContractPlanningView,
+): ReadonlyMap<string, "harvest" | "transfer"> {
+  if (execution.status !== "ready" || planning.status !== "ready") return new Map();
+  const economyContractIds = new Set(
+    planning.contracts.filter(isSurvivalFlowContract).map(({ contractId }) => contractId),
+  );
+  const actions = new Map<string, "harvest" | "transfer">();
+  for (const lease of execution.leases) {
+    if (!economyContractIds.has(lease.contractId)) continue;
+    if (lease.execution.action === "harvest" || lease.execution.action === "transfer") {
+      actions.set(lease.actorId, lease.execution.action);
+    }
+  }
+  return actions;
+}
+
+function isSurvivalFlowContract(contract: ContractPlanningView["contracts"][number]): boolean {
+  const [scope, colonyId, action, targetId, ...extra] = contract.issuer.split("/");
+  const executionMatches =
+    (action === "harvest" &&
+      contract.execution.action === "harvest" &&
+      contract.execution.resourceType === null) ||
+    (action === "transfer" &&
+      contract.execution.action === "transfer" &&
+      contract.execution.resourceType === "energy");
+  return (
+    scope === "economy" &&
+    extra.length === 0 &&
+    colonyId !== undefined &&
+    colonyId.length > 0 &&
+    targetId !== undefined &&
+    targetId.length > 0 &&
+    contract.owner.kind === "colony" &&
+    contract.owner.id === colonyId &&
+    contract.budgetBinding.category === "harvesting-filling" &&
+    contract.budgetBinding.issuer === contract.issuer &&
+    executionMatches
   );
 }
 
@@ -106,7 +164,7 @@ export function authorizedSurvivalFlow(
   }[],
   planning: ContractPlanningView,
   tick: number,
-  observedActorIds: ReadonlySet<string> = new Set(),
+  observation: WorldSnapshot | null = null,
 ): SurvivalFlowPlan {
   const authorized = candidates.filter((candidate) =>
     reservations.some(
@@ -118,16 +176,13 @@ export function authorizedSurvivalFlow(
     ),
   );
   const currentIssuers = new Set(authorized.map((candidate) => candidate.budgetRequest.issuer));
-  const replacementActions = new Set(
-    authorized.map(({ action, actorId, colonyId }) => `${colonyId}/${actorId}/${action}`),
-  );
   const requests = authorized
     .map(contractFor)
     .sort((left, right) => compareStrings(left.issuer, right.issuer));
   const transitions: ContractTransitionRequest[] = [];
   if (planning.status === "ready") {
     for (const contract of planning.contracts) {
-      if (!contract.issuer.startsWith("economy/") || contract.owner.kind !== "colony") continue;
+      if (!isSurvivalFlowContract(contract)) continue;
       if (
         currentIssuers.has(contract.issuer) &&
         (contract.state === "proposed" || contract.state === "suspended")
@@ -140,11 +195,12 @@ export function authorizedSurvivalFlow(
         });
       } else if (
         !currentIssuers.has(contract.issuer) &&
-        (replacementActions.has(contractActionKey(contract.issuer)) ||
-          (observedActorIds.size > 0 && !observedActorIds.has(contractActorId(contract.issuer))))
+        observation !== null &&
+        survivalEndpointRetired(contract, observation)
       ) {
-        // The actor disappeared, its target vanished, or its authority was released. Keeping a
-        // continuous contract in any of those cases creates a ghost lease until expiry.
+        // A confirmed visible endpoint disappearance retires the demand. A temporary lack of
+        // workers only suspends it: its endpoint identity must remain reusable by replacement
+        // workers without attempting to recreate a terminal contract.
         transitions.push({
           contractId: contract.contractId,
           reason: "survival-target-replaced",
@@ -163,20 +219,15 @@ export function authorizedSurvivalFlow(
   });
 }
 
-function contractActorId(issuer: string): string {
-  const parts = issuer.split("/");
-  return parts.length === 5 ? (parts[2] ?? "") : "";
-}
-
-function contractActionKey(issuer: string): string {
-  const parts = issuer.split("/");
-  const [, colonyId, actorId, action] = parts;
-  return parts.length === 5 &&
-    colonyId !== undefined &&
-    actorId !== undefined &&
-    action !== undefined
-    ? `${colonyId}/${actorId}/${action}`
-    : "";
+function survivalEndpointRetired(
+  contract: ContractPlanningView["contracts"][number],
+  snapshot: WorldSnapshot,
+): boolean {
+  const room = snapshot.rooms.find(({ name }) => name === contract.owner.id);
+  if (room === undefined) return false;
+  return contract.execution.action === "harvest"
+    ? !room.sources.some(({ id }) => id === contract.targetId)
+    : ![...room.ownedSpawns, ...room.ownedExtensions].some(({ id }) => id === contract.targetId);
 }
 
 function candidate(
@@ -185,7 +236,7 @@ function candidate(
   action: "harvest" | "transfer",
   target: { readonly id: string; readonly pos: PositionSnapshot },
 ): SurvivalFlowCandidate {
-  const issuer = `economy/${colonyId}/${actorId}/${action}/${target.id}`;
+  const issuer = `economy/${colonyId}/${action}/${target.id}`;
   return {
     action,
     actorId,
@@ -230,7 +281,9 @@ function contractFor(candidate: SurvivalFlowCandidate): WorkContractRequest {
     issuerSequence: 1,
     kind: harvest ? "harvest" : "fill",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 1 },
-    maxAssignmentCost: 50,
+    // TTL/deadline checks remain authoritative; this cap must not reject a viable local-room route
+    // merely because the fatigue-safe travel model intentionally overestimates arrival time.
+    maxAssignmentCost: SURVIVAL_FLOW_MAX_ASSIGNMENT_COST,
     owner: { id: candidate.colonyId, kind: "colony" },
     preconditionKeys: ["visible-target"],
     priority: { class: "survival", value: 1_000 },
@@ -284,7 +337,10 @@ function sink(
   reserved: ReadonlySet<string>,
 ): { readonly id: string; readonly pos: PositionSnapshot } | null {
   return (
-    [...room.ownedSpawns, ...room.ownedExtensions]
+    [
+      ...room.ownedSpawns.filter(({ active }) => active),
+      ...room.ownedExtensions.filter(({ active }) => active),
+    ]
       .filter(
         (value) =>
           value.store.freeCapacity !== null &&

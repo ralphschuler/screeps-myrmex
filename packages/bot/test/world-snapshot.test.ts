@@ -50,6 +50,7 @@ describe("WorldSnapshot", () => {
       { amount: 3, resourceType: "power" },
     ]);
     expect(forward.rooms[0]?.ownedSpawns[0]?.active).toBe(true);
+    expect(forward.rooms[0]?.ownedExtensions[0]?.active).toBe(true);
     expect(forward.stats.entities.total).toBe(14);
 
     const payload = {
@@ -325,6 +326,7 @@ function makeOwnedRoom(
       hits: 5_000,
       hitsMax: 5_000,
       id: "extension-a",
+      isActive: () => true,
       my: true,
       owner: { username: "Myrmex" },
       pos: new LivePosition(24, 25, "W1N1"),
