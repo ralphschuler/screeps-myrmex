@@ -37,7 +37,7 @@ export function privateServerCliCommand(operation) {
   }
   if (kind === "bootstrap-controlled-bot") {
     exactOperation(operation, ["kind"]);
-    return `bots.spawn('simplebot','W1N1',{username:'${CONTROLLED_USERNAME}',cpu:100,gcl:1}).then(()=>storage.db.users.findOne({username:'${CONTROLLED_USERNAME}'})).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['rooms.objects'].findOne({$and:[{user:user._id},{type:'spawn'}]}).then(spawn=>{if(!spawn)throw new Error('controlled integration spawn is missing');return JSON.stringify({room:spawn.room,spawnX:spawn.x,spawnY:spawn.y,userId:''+user._id})})})`;
+    return `storage.db['rooms.objects'].find({type:'controller'}).then(controllers=>{const controller=controllers.find(item=>!item.user);if(!controller)throw new Error('unowned integration controller is missing');return bots.spawn('simplebot',controller.room,{username:'${CONTROLLED_USERNAME}',cpu:100,gcl:1})}).then(()=>storage.db.users.findOne({username:'${CONTROLLED_USERNAME}'})).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['rooms.objects'].findOne({$and:[{user:user._id},{type:'spawn'}]}).then(spawn=>{if(!spawn)throw new Error('controlled integration spawn is missing');return JSON.stringify({room:spawn.room,spawnX:spawn.x,spawnY:spawn.y,userId:''+user._id})})})`;
   }
   if (kind === "sample-controlled") {
     exactOperation(operation, ["kind"]);
