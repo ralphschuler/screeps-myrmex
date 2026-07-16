@@ -3,6 +3,7 @@ import type {
   ConfiguredRelations,
   CriticalRepairPolicy,
   FeatureGateId,
+  GrowthPolicy,
   LeasePolicy,
   MovementPolicy,
   RecoveryPolicy,
@@ -43,6 +44,7 @@ export interface RuntimePolicyOverrides {
   readonly movement?: Partial<MovementPolicy>;
   readonly spawn?: Partial<SpawnPolicy>;
   readonly repair?: Partial<CriticalRepairPolicy>;
+  readonly growth?: Partial<GrowthPolicy>;
   readonly tower?: Partial<TowerPolicy>;
   readonly safeMode?: Partial<SafeModePolicy>;
 }
@@ -136,6 +138,12 @@ const REPAIR_FIELDS = {
   maximumActiveContractsPerRoom: { minimum: 1, maximum: 16 },
   maximumEnergyPerTick: { minimum: 1, maximum: 1_000 },
 } as const satisfies Readonly<Record<keyof CriticalRepairPolicy, NumberFieldSpec>>;
+
+const GROWTH_FIELDS = {
+  minimumSurplusEnergy: { minimum: 0, maximum: 12_900 },
+  maximumActiveContractsPerRoom: { minimum: 1, maximum: 16 },
+  maximumEnergyPerTick: { minimum: 1, maximum: 1_000 },
+} as const satisfies Readonly<Record<keyof GrowthPolicy, NumberFieldSpec>>;
 
 const TOWER_FIELDS = {
   emergencyReserveEnergy: { minimum: 0, maximum: 1_000 },
@@ -452,6 +460,7 @@ function parsePolicyOverrides(value: unknown): ValidationResult<RuntimePolicyOve
     "movement",
     "spawn",
     "repair",
+    "growth",
     "tower",
     "safeMode",
   ]);
@@ -466,6 +475,7 @@ function parsePolicyOverrides(value: unknown): ValidationResult<RuntimePolicyOve
     ["movement", MOVEMENT_FIELDS],
     ["spawn", SPAWN_FIELDS],
     ["repair", REPAIR_FIELDS],
+    ["growth", GROWTH_FIELDS],
     ["tower", TOWER_FIELDS],
   ];
   for (const [name, fields] of groups) {
@@ -637,6 +647,7 @@ export function mergePolicy(
     movement: { ...defaults.movement, ...overrides?.movement },
     spawn: { ...defaults.spawn, ...overrides?.spawn },
     repair: { ...defaults.repair, ...overrides?.repair },
+    growth: { ...defaults.growth, ...overrides?.growth },
     tower: { ...defaults.tower, ...overrides?.tower },
     safeMode: { ...defaults.safeMode, ...overrides?.safeMode },
   };

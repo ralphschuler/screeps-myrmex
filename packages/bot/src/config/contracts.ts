@@ -72,6 +72,13 @@ export interface CriticalRepairPolicy {
   readonly maximumEnergyPerTick: number;
 }
 
+/** Bounded discretionary work admitted only after the protected survival reserve. */
+export interface GrowthPolicy {
+  readonly minimumSurplusEnergy: number;
+  readonly maximumActiveContractsPerRoom: number;
+  readonly maximumEnergyPerTick: number;
+}
+
 export interface TowerPolicy {
   readonly emergencyReserveEnergy: number;
   readonly repairMinimumEnergy: number;
@@ -92,6 +99,7 @@ export interface SurvivalPolicy {
   readonly movement: MovementPolicy;
   readonly spawn: SpawnPolicy;
   readonly repair: CriticalRepairPolicy;
+  readonly growth: GrowthPolicy;
   readonly tower: TowerPolicy;
   readonly safeMode: SafeModePolicy;
 }

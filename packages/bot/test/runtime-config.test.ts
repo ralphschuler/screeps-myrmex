@@ -331,9 +331,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v10");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v11");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v10",
+      "runtime-config-source-v11",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -591,9 +591,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("makes completed safety, recovery, and maintenance source-available under v10", () => {
+  it("makes completed safety, recovery, maintenance, and growth source-available under v11", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v10");
+    expect(config.sourceRevision).toBe("runtime-config-source-v11");
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.spawn")).toBe(true);
@@ -614,10 +614,15 @@ describe("source feature gates", () => {
           id !== "phase1.economy" &&
           id !== "phase1.safety" &&
           id !== "phase1.recovery" &&
+          id !== "phase1.growth" &&
           id !== "phase1.critical-maintenance",
       ).every((id) => !isFeatureEnabled(config, id)),
     ).toBe(true);
-    expect(config.features.gates["phase1.growth"].reason).toBe("source-unavailable");
+    expect(config.features.gates["phase1.growth"]).toEqual({
+      blockedBy: null,
+      enabled: false,
+      reason: "operator-disabled",
+    });
 
     const contractsDisabled = buildRuntimeConfig({
       features: { disabled: ["phase1.contracts"] },
