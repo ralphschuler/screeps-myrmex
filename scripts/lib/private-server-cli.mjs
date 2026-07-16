@@ -182,14 +182,16 @@ function exchange({ command, connect, host, port, timeoutMs }) {
       const greetingPrompt = received.indexOf("< ");
       if (connected && !sent && greetingPrompt >= 0) {
         sent = true;
-        received = received.slice(greetingPrompt + 2);
+        received = received.slice(greetingPrompt + 2).replace(/^\r?\n/, "");
         socket.write(`${command}\r\n`, "utf8");
       }
-      const resultPrompt = received.indexOf("< ");
-      if (sent && resultPrompt >= 0) {
-        const result = received.slice(0, resultPrompt).trim();
-        if (/^Error:/i.test(result)) finish(new Error("Private-server CLI operation failed."));
-        else finish(null, result);
+      const resultPrefix = received.indexOf("< ");
+      const resultEnd = received.indexOf("\n", resultPrefix);
+      if (sent && resultPrefix >= 0 && resultEnd >= 0) {
+        const result = received.slice(resultPrefix + 2, resultEnd).trim();
+        if (/(?:^|\s)(?:[A-Za-z]*Error):/i.test(result)) {
+          finish(new Error("Private-server CLI operation failed."));
+        } else finish(null, result);
       }
     });
     socket.once("error", (error) => finish(error));
