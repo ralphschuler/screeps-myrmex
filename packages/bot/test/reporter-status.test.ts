@@ -84,22 +84,6 @@ describe("ReporterStatus", () => {
         reminderAtTick: 10_000,
         reasonCode: "recovery-progress-unchanged",
       },
-      {
-        category: "signal",
-        kind: "resolved",
-        fingerprint: "extra-field-secret",
-        count: 1,
-        reasonCode: "unexpected-exception",
-        rawPayload: "must-not-cross",
-      },
-      { category: "unknown", rawPayload: "unknown-room-W7N7" },
-      {
-        category: "signal",
-        kind: "reminder",
-        fingerprint: "negative-counter-secret",
-        count: -1,
-        reasonCode: "unexpected-exception",
-      },
     ];
     const policy = {
       ...buildRuntimeConfig().policy.reporter,
@@ -138,17 +122,187 @@ describe("ReporterStatus", () => {
       status.transitions[1]?.category === "signal" && status.transitions[1].fingerprint,
     ).toMatch(/^reporter-transition:[0-9a-f]{8}$/);
     const serialized = JSON.stringify(status);
-    for (const secret of [
-      "player-token",
-      "raw-room",
-      "must-not-cross",
-      "unknown-room",
-      "negative-counter",
-      "<script>",
-      "\u001b",
-    ]) {
+    for (const secret of ["player-token", "raw-room", "<script>", "\u001b"]) {
       expect(serialized).not.toContain(secret);
     }
+
+    const extraFields = new Proxy(
+      {
+        category: "signal",
+        kind: "resolved",
+        fingerprint: "extra-field-secret",
+        count: 1,
+        reasonCode: "unexpected-exception",
+        rawPayload: "must-not-cross",
+      },
+      {
+        ownKeys: () => {
+          throw new Error("must not enumerate hostile transition fields");
+        },
+      },
+    );
+    const projectedExtraFields = project([extraFields]);
+    expect(projectedExtraFields.transitions).toEqual([
+      expect.objectContaining({ category: "signal", kind: "resolved", count: 1 }),
+    ]);
+    expect(JSON.stringify(projectedExtraFields)).not.toContain("must-not-cross");
+  });
+
+  it("rejects oversized transition arrays before traversal and never invokes accessors", () => {
+    const outcome = runTick({ game: game(101), memory: {} as Memory });
+    const telemetry = outcome.telemetry;
+    if (telemetry === null) throw new Error("expected telemetry");
+    let visited = 0;
+    const oversized = new Array<unknown>(2_000);
+    Object.defineProperty(oversized, "0", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        visited += 1;
+        throw new Error("must not traverse oversized input");
+      },
+    });
+    const policy = {
+      ...buildRuntimeConfig().policy.reporter,
+      maximumImmediateEventsPerTick: 2,
+    };
+    const status = projectReporterStatus(
+      { ...telemetry, reporterTransitions: oversized } as unknown as TickTelemetry,
+      outcome.kernel,
+      policy,
+    );
+
+    expect(status).toMatchObject({ projectionStatus: "ready", transitions: [] });
+    expect(visited).toBe(0);
+
+    const accessor = {
+      kind: "first",
+      fingerprint: "raw-accessor-secret",
+      count: 1,
+      reasonCode: "unexpected-exception",
+    };
+    Object.defineProperty(accessor, "category", {
+      enumerable: true,
+      get: () => {
+        visited += 1;
+        return "signal";
+      },
+    });
+    const accessorStatus = projectReporterStatus(
+      { ...telemetry, reporterTransitions: [accessor] } as unknown as TickTelemetry,
+      outcome.kernel,
+      policy,
+    );
+    expect(accessorStatus).toMatchObject({ projectionStatus: "ready", transitions: [] });
+    expect(visited).toBe(0);
+    expect(JSON.stringify(accessorStatus)).not.toContain("raw-accessor-secret");
+  });
+
+  it("orders equal-priority transitions canonically and saturates reminder arithmetic", () => {
+    const outcome = runTick({ game: game(101), memory: {} as Memory });
+    const telemetry = outcome.telemetry;
+    if (telemetry === null) throw new Error("expected telemetry");
+    const tied = [
+      {
+        category: "signal" as const,
+        kind: "first" as const,
+        fingerprint: "same-fingerprint",
+        count: 2,
+        reasonCode: "z-reason",
+      },
+      {
+        category: "signal" as const,
+        kind: "first" as const,
+        fingerprint: "same-fingerprint",
+        count: 1,
+        reasonCode: "a-reason",
+      },
+    ];
+    const policy = {
+      ...buildRuntimeConfig().policy.reporter,
+      maximumImmediateEventsPerTick: 2,
+    };
+    const project = (transitions: readonly unknown[]) =>
+      projectReporterStatus(
+        { ...telemetry, reporterTransitions: transitions } as unknown as TickTelemetry,
+        outcome.kernel,
+        policy,
+      );
+
+    expect(project(tied).transitions).toEqual(project([...tied].reverse()).transitions);
+    expect(project(tied).transitions.map(({ reasonCode }) => reasonCode)).toEqual([
+      "a-reason",
+      "z-reason",
+    ]);
+
+    const mixedPriority = [
+      {
+        category: "signal" as const,
+        kind: "first" as const,
+        fingerprint: "ordinary-first",
+        count: 1,
+        reasonCode: "unexpected-exception",
+      },
+      {
+        category: "signal" as const,
+        kind: "reminder" as const,
+        fingerprint: "overflow-reminder",
+        count: 2,
+        reasonCode: "reporter-cardinality-overflow",
+      },
+    ];
+    expect(project(mixedPriority).transitions.map(({ reasonCode }) => reasonCode)).toEqual([
+      "reporter-cardinality-overflow",
+      "unexpected-exception",
+    ]);
+
+    const overflow = projectReporterStatus(
+      {
+        ...telemetry,
+        reporterTransitions: [
+          {
+            category: "recovery",
+            kind: "stuck",
+            owner: "colony",
+            blockerReasonCode: "no-spawn",
+            blockerRef: null,
+            lastProgressTick: 101,
+            reminderAtTick: Number.MAX_SAFE_INTEGER,
+            reasonCode: "recovery-progress-unchanged",
+          },
+        ],
+      } as unknown as TickTelemetry,
+      { ...outcome.kernel, tick: Number.MAX_SAFE_INTEGER },
+      policy,
+    );
+    expect(overflow.transitions[0]).toMatchObject({
+      category: "recovery",
+      reminderAtTick: Number.MAX_SAFE_INTEGER,
+    });
+  });
+
+  it("drops an expired or overlong diagnostic receipt at projection time", () => {
+    const outcome = runTick({ game: game(101), memory: {} as Memory });
+    const telemetry = outcome.telemetry;
+    if (telemetry === null) throw new Error("expected telemetry");
+    const policy = buildRuntimeConfig().policy.reporter;
+    const projectDiagnostic = (expiresAtTick: number) =>
+      projectReporterStatus(
+        {
+          ...telemetry,
+          observerDiagnostic: { level: "debug", categories: ["faults"], expiresAtTick },
+        },
+        outcome.kernel,
+        policy,
+      ).diagnostic;
+
+    expect(projectDiagnostic(101)).toBeNull();
+    expect(projectDiagnostic(102)).toEqual({
+      level: "debug",
+      categories: ["faults"],
+      expiresAtTick: 102,
+    });
+    expect(projectDiagnostic(101 + policy.maximumDiagnosticDurationTicks + 1)).toBeNull();
   });
 });
 

@@ -361,16 +361,31 @@ Malformed or future reporter state is rebuilt safely. First occurrence, bounded-
 single resolution, and stuck-recovery transitions leave the service only as capped tick-local
 records; the durable owner is not a replay queue.
 
-Reporter status schema v2 is the redaction boundary for those transition records. It accepts only
-the fixed signal and recovery shapes, re-opaques references, bounds scalar values, and rejects
-unknown or player-controlled fields. Reporter aggregation consumes the settled kernel health
-snapshot available at Reconcile; the final `KernelTickReport` separately supplies the current-tick
-fault projection. Zero-creep recovery is derived from fixed `bootstrapping` and `recovering` colony
-state counts as well as the tick-local Memory recovery condition. This allows normal colony recovery
-to remain observable when Memory itself is ready without making the observer a recovery authority.
-The `state.reconcile` and `telemetry.minimum` systems cannot durably update aggregation when their
-own tail boundary fails, so they remain final-report faults and are excluded from durable transition
-semantics rather than emitting misleading repeated `first` records.
+Reporter aggregation admits at most 2,000 health signals plus the already-capped telemetry details
+(2,064 candidates under source defaults). Oversized arrays are rejected before element traversal,
+and the sanitized candidates are deduplicated, sorted, and prefix-hashed once. The configured 64
+fingerprints are retained only while the shared 8,192-byte telemetry-owner ceiling permits. Byte
+fitting reuses the prepared batch without rereading source identities and makes at most 65 monotone
+capacity attempts, each over no more than 64 current and 64 prior metadata entries. It evicts
+history and then the oldest ordinary reporter entries deterministically. When cardinality or byte
+fitting omits active fingerprints, one retained opaque overflow fingerprint represents the omitted
+set and changes only when that set changes. Overflow `first` and `reminder` evidence is selected
+before ordinary transitions. A transition is published only after the candidate owner commits;
+ownerless and failed-commit fallback telemetry cannot claim a durable first/reminder/resolution
+event. A thrown telemetry service discards only its owner transaction, leaving gameplay
+reconciliation and command receipts intact.
+
+Reporter status schema v2 is the redaction boundary for those transition records. It reads only the
+fixed signal and recovery fields through descriptors without enumerating hostile records, re-opaques
+references, bounds scalar values, and ignores unknown or player-controlled fields. Reporter
+aggregation consumes the settled kernel health snapshot available at Reconcile; the final
+`KernelTickReport` separately supplies the current-tick fault projection. Zero-creep recovery is
+derived from fixed `bootstrapping` and `recovering` colony state counts as well as the tick-local
+Memory recovery condition. This allows normal colony recovery to remain observable when Memory
+itself is ready without making the observer a recovery authority. The `state.reconcile` and
+`telemetry.minimum` systems cannot durably update aggregation when their own tail boundary fails, so
+they remain final-report faults and are excluded from durable transition semantics rather than
+emitting misleading repeated `first` records.
 
 `ConsoleReporter` renders deterministic transition lines even when the heartbeat is not due:
 `first`, `reminder`, and recovery `stuck` use warning severity, while `resolved` is informational.

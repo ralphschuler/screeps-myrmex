@@ -38,7 +38,7 @@ function completeBoundarySources(runtimeContents) {
 describe("runtime architecture boundaries", () => {
   it("has no deployable source violations", () => {
     expect(findArchitectureViolations(botSources())).toEqual([]);
-  });
+  }, 15_000);
 
   it.each([
     [

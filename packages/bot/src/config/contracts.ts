@@ -107,6 +107,8 @@ export interface ReporterPolicy {
   readonly maximumLinesPerTick: number;
   readonly maximumBytesPerTick: number;
   readonly maximumImmediateEventsPerTick: number;
+  /** Maximum tick-local health signals inspected before reporter aggregation fails closed. */
+  readonly maximumSignalsPerTick: number;
   readonly maximumFingerprints: number;
   readonly initialReminderDelayTicks: number;
   readonly maximumReminderDelayTicks: number;

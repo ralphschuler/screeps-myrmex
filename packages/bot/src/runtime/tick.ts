@@ -737,26 +737,31 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
             if (input.manager === null) {
               return;
             }
+            let telemetryCandidate: TickTelemetry | null = null;
             if (isFeatureEnabled(context.config, "phase1.telemetry")) {
-              const telemetry = telemetryService.record(input.manager.ownerView("telemetry"), {
-                base: telemetryBase(input, context, survivalCandidates),
-                colony: context.colony,
-                contracts: context.contracts,
-                execution: context.execution,
-                growth: growthCandidates,
-                maintenance: maintenanceCandidates,
-                movement: context.movement,
-                snapshot: context.snapshot,
-                spawn: context.spawn,
-                reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
-              });
-              const telemetryTransaction = input.manager.transaction("telemetry");
-              telemetryTransaction.replace(telemetry.owner);
-              const telemetryStaged = telemetryTransaction.stage();
-              if (!telemetryStaged.staged) {
-                throw new Error(telemetryStaged.fault?.message ?? "telemetry staging failed");
+              try {
+                const telemetry = telemetryService.record(input.manager.ownerView("telemetry"), {
+                  base: telemetryBase(input, context, survivalCandidates),
+                  colony: context.colony,
+                  contracts: context.contracts,
+                  execution: context.execution,
+                  growth: growthCandidates,
+                  maintenance: maintenanceCandidates,
+                  movement: context.movement,
+                  snapshot: context.snapshot,
+                  spawn: context.spawn,
+                  reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
+                });
+                const telemetryTransaction = input.manager.transaction("telemetry");
+                telemetryTransaction.replace(telemetry.owner);
+                const telemetryStaged = telemetryTransaction.stage();
+                if (!telemetryStaged.staged) {
+                  throw new Error(telemetryStaged.fault?.message ?? "telemetry staging failed");
+                }
+                telemetryCandidate = telemetry.telemetry;
+              } catch {
+                input.manager.discard("telemetry");
               }
-              collectedTelemetry = telemetry.telemetry;
             }
             const transaction = input.manager.transaction("kernel");
             transaction.mutate((draft) => {
@@ -774,6 +779,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
               );
             }
             rootCommitted = true;
+            collectedTelemetry = telemetryCandidate;
           },
           () => {
             if (!rootCommitted) {
@@ -797,22 +803,29 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
       run: ({ context }) => {
         input.onPhase?.("telemetry");
-        const telemetry =
-          collectedTelemetry ??
-          telemetryService.record(undefined, {
-            base: telemetryBase(input, context, survivalCandidates),
-            colony: context.colony,
-            contracts: context.contracts,
-            execution: context.execution,
-            growth: growthCandidates,
-            maintenance: maintenanceCandidates,
-            movement: context.movement,
-            snapshot: context.snapshot,
-            spawn: context.spawn,
-            reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
-          }).telemetry;
+        let telemetry = collectedTelemetry;
+        if (telemetry === null) {
+          try {
+            telemetry = withoutDurableReporterState(
+              telemetryService.record(undefined, {
+                base: telemetryBase(input, context, survivalCandidates),
+                colony: context.colony,
+                contracts: context.contracts,
+                execution: context.execution,
+                growth: growthCandidates,
+                maintenance: maintenanceCandidates,
+                movement: context.movement,
+                snapshot: context.snapshot,
+                spawn: context.spawn,
+                reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
+              }).telemetry,
+            );
+          } catch {
+            telemetry = null;
+          }
+        }
         return staged(() => {
-          input.runtime.publishTelemetry(telemetry);
+          if (telemetry !== null) input.runtime.publishTelemetry(telemetry);
         });
       },
     },
@@ -857,6 +870,14 @@ function reporterSignals(health: readonly SystemHealthRecord[]) {
       identity: systemId,
       reasonCode: "unexpected-exception",
     }));
+}
+
+function withoutDurableReporterState(telemetry: TickTelemetry): TickTelemetry {
+  return Object.freeze({
+    ...telemetry,
+    recoveryProgress: null,
+    reporterTransitions: Object.freeze([]),
+  });
 }
 
 function colonyDirectorSystem(

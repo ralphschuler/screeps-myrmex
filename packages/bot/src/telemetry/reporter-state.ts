@@ -13,8 +13,22 @@ export interface ReporterSignal {
   readonly reasonCode: string;
 }
 
+export interface ReporterSignalBatch {
+  readonly candidates: readonly {
+    readonly fingerprint: string;
+    readonly reasonCode: string;
+  }[];
+  readonly fingerprints: ReadonlySet<string>;
+  /** FNV state after each canonical candidate prefix; index zero is the empty prefix. */
+  readonly overflowPrefixHashes: readonly number[];
+}
+
 export interface ReporterStatePolicy {
+  /** Maximum already-bounded aggregation inputs inspected by this reducer. */
+  readonly maximumInputSignals: number;
   readonly maximumFingerprints: number;
+  /** Effective durable capacity after the enclosing telemetry-owner byte budget is applied. */
+  readonly maximumRetainedFingerprints: number;
   readonly initialReminderDelayTicks: number;
   readonly maximumReminderDelayTicks: number;
 }
@@ -70,11 +84,12 @@ export function resolveDiagnosticWindow(
   const row = value as Record<string, unknown>;
   if (
     !Array.isArray(row.categories) ||
+    row.categories.length > 3 ||
     (row.level !== "debug" && row.level !== "trace") ||
     typeof row.expiresAtTick !== "number" ||
     !Number.isSafeInteger(row.expiresAtTick) ||
     row.expiresAtTick <= tick ||
-    row.expiresAtTick > tick + maximumDurationTicks
+    row.expiresAtTick > saturatingAdd(tick, maximumDurationTicks)
   )
     return null;
   const allowed = new Set<DiagnosticCategory>(["recovery", "blockers", "faults"]);
@@ -101,42 +116,46 @@ export function advanceRecoveryProgress(
   readonly event: StuckRecoveryEvent | null;
   readonly status: RecoveryProgressStatus | null;
 } {
-  const parsed = readRecovery(owner);
+  const parsed = readRecovery(owner, input.tick, policy.maximumReminderDelayTicks);
   if (!input.active) return { owner: null, event: null, status: null };
+  const tick = safeNonnegativeInteger(input.tick);
+  const delivered = safeNonnegativeInteger(input.delivered);
+  const harvested = safeNonnegativeInteger(input.harvested);
+  const spawnDemand = safeNonnegativeInteger(input.spawnDemand);
+  const spawnScheduled = safeNonnegativeInteger(input.spawnScheduled);
+  const unmet = safeNonnegativeInteger(input.unmet);
   const blockerRef =
     input.blockerRef === null ? null : opaqueId("recovery-blocker", input.blockerRef);
   const blockerReasonCode = safeCode(input.blockerReasonCode);
   const signature = [
     safeCode(input.status),
-    input.spawnDemand,
-    input.spawnScheduled,
-    input.harvested,
-    input.delivered,
-    input.unmet,
+    spawnDemand,
+    spawnScheduled,
+    harvested,
+    delivered,
+    unmet,
     blockerRef ?? "none",
     blockerReasonCode,
   ].join("|");
   const progressed =
     parsed === null ||
     parsed.signature !== signature ||
-    input.spawnScheduled > 0 ||
-    input.harvested > 0 ||
-    input.delivered > 0;
-  const lastProgressTick = progressed ? input.tick : parsed.lastProgressTick;
+    spawnScheduled > 0 ||
+    harvested > 0 ||
+    delivered > 0;
+  const lastProgressTick = progressed ? tick : parsed.lastProgressTick;
   const priorReminderAtTick = progressed ? null : parsed.reminderAtTick;
   const priorReminderCount = progressed ? 0 : parsed.reminderCount;
   const priorStuckReportedAtTick = progressed ? null : parsed.stuckReportedAtTick;
-  const stuck = !progressed && input.tick - lastProgressTick >= policy.stuckWindowTicks;
-  const due = priorReminderAtTick !== null && input.tick >= priorReminderAtTick;
+  const stuck =
+    !progressed &&
+    tick >= saturatingAdd(lastProgressTick, safeNonnegativeInteger(policy.stuckWindowTicks));
+  const due = priorReminderAtTick !== null && tick >= priorReminderAtTick;
   const shouldReport = stuck && (priorStuckReportedAtTick === null || due);
   const reminderAtTick = shouldReport
-    ? input.tick +
-      Math.min(
-        policy.maximumReminderDelayTicks,
-        policy.initialReminderDelayTicks * 2 ** Math.min(20, priorReminderCount),
-      )
+    ? saturatingAdd(tick, reminderDelay(policy, priorReminderCount))
     : priorReminderAtTick;
-  const reminderCount = shouldReport ? priorReminderCount + 1 : priorReminderCount;
+  const reminderCount = shouldReport ? saturatingIncrement(priorReminderCount) : priorReminderCount;
   const status: RecoveryProgressStatus = {
     blockerRef,
     blockerReasonCode,
@@ -150,7 +169,7 @@ export function advanceRecoveryProgress(
       lastProgressTick,
       reminderAtTick,
       reminderCount,
-      stuckReportedAtTick: shouldReport ? input.tick : priorStuckReportedAtTick,
+      stuckReportedAtTick: shouldReport ? tick : priorStuckReportedAtTick,
       blockerRef,
       blockerReasonCode,
     },
@@ -176,22 +195,76 @@ export function advanceReporterState(
   signals: readonly ReporterSignal[],
   policy: ReporterStatePolicy,
 ): { readonly owner: unknown; readonly events: readonly ReporterEvent[] } {
-  const previous = read(owner);
-  const current = [
-    ...new Map(
-      signals
-        .map((signal) => ({
-          fingerprint: opaqueId(signal.kind, signal.identity),
-          reasonCode: safeCode(signal.reasonCode),
-        }))
-        .sort(
-          (left, right) =>
-            left.fingerprint.localeCompare(right.fingerprint) ||
-            left.reasonCode.localeCompare(right.reasonCode),
-        )
-        .map((signal) => [signal.fingerprint, signal] as const),
-    ).values(),
-  ];
+  return advancePreparedReporterState(
+    owner,
+    tick,
+    prepareReporterSignals(signals, policy.maximumInputSignals),
+    policy,
+  );
+}
+
+/** Sanitizes, deduplicates, and sorts a bounded source batch exactly once per tick. */
+export function prepareReporterSignals(
+  signals: readonly ReporterSignal[],
+  maximumInputSignals: number,
+): ReporterSignalBatch | null {
+  const boundedSignals = readBoundedSignals(signals, safeNonnegativeInteger(maximumInputSignals));
+  if (boundedSignals === null) return null;
+  const deduplicated = new Map<string, { fingerprint: string; reasonCode: string }>();
+  for (const signal of boundedSignals) {
+    const candidate = {
+      fingerprint: opaqueId(signal.kind, signal.identity),
+      reasonCode: safeCode(signal.reasonCode),
+    };
+    const prior = deduplicated.get(candidate.fingerprint);
+    if (prior === undefined || candidate.reasonCode > prior.reasonCode) {
+      deduplicated.set(candidate.fingerprint, candidate);
+    }
+  }
+  const candidates = [...deduplicated.values()].sort(
+    (left, right) =>
+      compareStrings(left.fingerprint, right.fingerprint) ||
+      compareStrings(left.reasonCode, right.reasonCode),
+  );
+  const overflowPrefixHashes = [0x811c9dc5];
+  let prefixHash = 0x811c9dc5;
+  for (const candidate of candidates) {
+    prefixHash = updateOverflowHash(prefixHash, candidate.fingerprint);
+    prefixHash = updateOverflowHash(prefixHash, ":");
+    prefixHash = updateOverflowHash(prefixHash, candidate.reasonCode);
+    prefixHash = updateOverflowHash(prefixHash, "|");
+    overflowPrefixHashes.push(prefixHash);
+  }
+  return {
+    candidates,
+    fingerprints: new Set(candidates.map(({ fingerprint }) => fingerprint)),
+    overflowPrefixHashes,
+  };
+}
+
+/** Reuses one prepared source batch while the enclosing owner resolves its durable byte capacity. */
+export function advancePreparedReporterState(
+  owner: unknown,
+  tick: number,
+  signals: ReporterSignalBatch | null,
+  policy: Omit<ReporterStatePolicy, "maximumInputSignals">,
+): { readonly owner: unknown; readonly events: readonly ReporterEvent[] } {
+  const maximumFingerprints = safeNonnegativeInteger(policy.maximumFingerprints);
+  const maximumRetainedFingerprints = Math.min(
+    maximumFingerprints,
+    safeNonnegativeInteger(policy.maximumRetainedFingerprints),
+  );
+  const currentTick = safeNonnegativeInteger(tick);
+  const previous = read(
+    owner,
+    maximumFingerprints,
+    currentTick,
+    safeNonnegativeInteger(policy.maximumReminderDelayTicks),
+  );
+  if (signals === null) {
+    return { owner: reporterOwner(previous, maximumRetainedFingerprints), events: [] };
+  }
+  const current = boundCurrentSignals(signals, maximumRetainedFingerprints);
   const next: Entry[] = [];
   const events: ReporterEvent[] = [];
   for (const signal of current) {
@@ -200,8 +273,11 @@ export function advanceReporterState(
       next.push({
         fingerprint: signal.fingerprint,
         count: 1,
-        lastTick: tick,
-        nextReminderTick: tick + policy.initialReminderDelayTicks,
+        lastTick: currentTick,
+        nextReminderTick: saturatingAdd(
+          currentTick,
+          safeNonnegativeInteger(policy.initialReminderDelayTicks),
+        ),
         reasonCode: signal.reasonCode,
       });
       events.push({
@@ -210,18 +286,13 @@ export function advanceReporterState(
         count: 1,
         reasonCode: signal.reasonCode,
       });
-    } else if (tick >= prior.nextReminderTick) {
-      const count = prior.count + 1;
+    } else if (currentTick >= prior.nextReminderTick) {
+      const count = saturatingIncrement(prior.count);
       next.push({
         fingerprint: prior.fingerprint,
         count,
-        lastTick: tick,
-        nextReminderTick:
-          tick +
-          Math.min(
-            policy.maximumReminderDelayTicks,
-            policy.initialReminderDelayTicks * 2 ** Math.min(20, count - 1),
-          ),
+        lastTick: currentTick,
+        nextReminderTick: saturatingAdd(currentTick, reminderDelay(policy, count - 1)),
         reasonCode: signal.reasonCode,
       });
       events.push({
@@ -230,19 +301,25 @@ export function advanceReporterState(
         count,
         reasonCode: signal.reasonCode,
       });
-    } else next.push({ ...prior, lastTick: tick, reasonCode: signal.reasonCode });
+    } else next.push({ ...prior, lastTick: currentTick, reasonCode: signal.reasonCode });
   }
+  const retainedCurrentFingerprints = new Set(current.map(({ fingerprint }) => fingerprint));
   for (const prior of previous.values())
-    if (!current.some(({ fingerprint }) => fingerprint === prior.fingerprint))
+    if (
+      !signals.fingerprints.has(prior.fingerprint) &&
+      !retainedCurrentFingerprints.has(prior.fingerprint)
+    )
       events.push({
         fingerprint: prior.fingerprint,
         kind: "resolved",
         count: prior.count,
         reasonCode: prior.reasonCode,
       });
-  const entries = next
-    .sort((a, b) => a.lastTick - b.lastTick || a.fingerprint.localeCompare(b.fingerprint))
-    .slice(-policy.maximumFingerprints);
+  const ordered = next.sort(
+    (a, b) => a.lastTick - b.lastTick || a.fingerprint.localeCompare(b.fingerprint),
+  );
+  const entries =
+    maximumRetainedFingerprints === 0 ? [] : ordered.slice(-maximumRetainedFingerprints);
   const retained = new Set(entries.map(({ fingerprint }) => fingerprint));
   return {
     owner: { schemaVersion: 1, entries },
@@ -252,42 +329,117 @@ export function advanceReporterState(
   };
 }
 
-function read(value: unknown): Map<string, Entry> {
+function boundCurrentSignals(
+  batch: ReporterSignalBatch,
+  maximumFingerprints: number,
+): readonly { readonly fingerprint: string; readonly reasonCode: string }[] {
+  const current = batch.candidates;
+  if (maximumFingerprints === 0) return [];
+  if (current.length <= maximumFingerprints) return current;
+  const retainedCount = maximumFingerprints - 1;
+  const retained = retainedCount === 0 ? [] : current.slice(-retainedCount);
+  const omittedCount = current.length - retainedCount;
+  const overflow = {
+    fingerprint: overflowFingerprint(batch.overflowPrefixHashes[omittedCount] ?? 0x811c9dc5),
+    reasonCode: "reporter-cardinality-overflow",
+  };
+  return [...retained, overflow].sort((left, right) =>
+    compareStrings(left.fingerprint, right.fingerprint),
+  );
+}
+
+function overflowFingerprint(hash: number): string {
+  return `reporter-overflow:${hash.toString(16).padStart(8, "0")}`;
+}
+
+function updateOverflowHash(initial: number, value: string): number {
+  let hash = initial;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
+function reporterOwner(previous: ReadonlyMap<string, Entry>, maximumFingerprints: number): unknown {
+  const ordered = [...previous.values()].sort(
+    (left, right) =>
+      left.lastTick - right.lastTick || compareStrings(left.fingerprint, right.fingerprint),
+  );
+  const entries = maximumFingerprints === 0 ? [] : ordered.slice(-maximumFingerprints);
+  return { schemaVersion: 1, entries };
+}
+
+function readBoundedSignals(
+  value: readonly ReporterSignal[],
+  maximumLength: number,
+): readonly ReporterSignal[] | null {
+  try {
+    if (!Array.isArray(value)) return null;
+    const length = Object.getOwnPropertyDescriptor(value, "length");
+    if (
+      length === undefined ||
+      !("value" in length) ||
+      !Number.isSafeInteger(length.value) ||
+      length.value < 0 ||
+      length.value > maximumLength
+    )
+      return null;
+    const output: ReporterSignal[] = [];
+    for (let index = 0; index < length.value; index += 1) {
+      const entry = Object.getOwnPropertyDescriptor(value, String(index));
+      if (entry === undefined || !("value" in entry)) return null;
+      output.push(entry.value as ReporterSignal);
+    }
+    return output;
+  } catch {
+    return null;
+  }
+}
+
+function read(
+  value: unknown,
+  maximumFingerprints: number,
+  currentTick: number,
+  maximumReminderDelayTicks: number,
+): Map<string, Entry> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return new Map();
   const root = value as Record<string, unknown>;
   if (root.schemaVersion !== 1) return new Map();
   const entries = root.entries;
-  if (!Array.isArray(entries)) return new Map();
-  return new Map(
-    entries
-      .flatMap((entry) => {
-        if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
-        const row = entry as Record<string, unknown>;
-        return isOpaqueReference(row.fingerprint) &&
-          typeof row.count === "number" &&
-          Number.isSafeInteger(row.count) &&
-          row.count >= 1 &&
-          typeof row.lastTick === "number" &&
-          Number.isSafeInteger(row.lastTick) &&
-          row.lastTick >= 0 &&
-          typeof row.nextReminderTick === "number" &&
-          Number.isSafeInteger(row.nextReminderTick) &&
-          row.nextReminderTick >= 0 &&
-          typeof row.reasonCode === "string" &&
-          safeCode(row.reasonCode) === row.reasonCode
-          ? [
-              {
-                fingerprint: row.fingerprint,
-                count: row.count,
-                lastTick: row.lastTick,
-                nextReminderTick: row.nextReminderTick,
-                reasonCode: row.reasonCode,
-              },
-            ]
-          : [];
-      })
-      .map((entry) => [entry.fingerprint, entry]),
-  );
+  if (!Array.isArray(entries) || entries.length > maximumFingerprints) return new Map();
+  const parsed = new Map<string, Entry>();
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return new Map();
+    const row = entry as Record<string, unknown>;
+    if (
+      !isOpaqueReference(row.fingerprint) ||
+      typeof row.count !== "number" ||
+      !Number.isSafeInteger(row.count) ||
+      row.count < 1 ||
+      typeof row.lastTick !== "number" ||
+      !Number.isSafeInteger(row.lastTick) ||
+      row.lastTick < 0 ||
+      row.lastTick > currentTick ||
+      typeof row.nextReminderTick !== "number" ||
+      !Number.isSafeInteger(row.nextReminderTick) ||
+      row.nextReminderTick < 0 ||
+      row.nextReminderTick < row.lastTick ||
+      row.nextReminderTick > saturatingAdd(currentTick, maximumReminderDelayTicks) ||
+      typeof row.reasonCode !== "string" ||
+      safeCode(row.reasonCode) !== row.reasonCode ||
+      parsed.has(row.fingerprint)
+    )
+      return new Map();
+    parsed.set(row.fingerprint, {
+      fingerprint: row.fingerprint,
+      count: row.count,
+      lastTick: row.lastTick,
+      nextReminderTick: row.nextReminderTick,
+      reasonCode: row.reasonCode,
+    });
+  }
+  return parsed;
 }
 
 interface RecoveryOwner {
@@ -300,7 +452,11 @@ interface RecoveryOwner {
   readonly stuckReportedAtTick: number | null;
 }
 
-function readRecovery(value: unknown): RecoveryOwner | null {
+function readRecovery(
+  value: unknown,
+  currentTick: number,
+  maximumReminderDelayTicks: number,
+): RecoveryOwner | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
   return typeof row.signature === "string" &&
@@ -308,11 +464,16 @@ function readRecovery(value: unknown): RecoveryOwner | null {
     typeof row.lastProgressTick === "number" &&
     Number.isSafeInteger(row.lastProgressTick) &&
     row.lastProgressTick >= 0 &&
+    row.lastProgressTick <= safeNonnegativeInteger(currentTick) &&
     typeof row.reminderCount === "number" &&
     Number.isSafeInteger(row.reminderCount) &&
     row.reminderCount >= 0 &&
     isOptionalTick(row.reminderAtTick) &&
+    (row.reminderAtTick === null ||
+      row.reminderAtTick <=
+        saturatingAdd(currentTick, safeNonnegativeInteger(maximumReminderDelayTicks))) &&
     isOptionalTick(row.stuckReportedAtTick) &&
+    (row.stuckReportedAtTick === null || row.stuckReportedAtTick <= currentTick) &&
     (isOpaqueReference(row.blockerRef) || row.blockerRef === null) &&
     typeof row.blockerReasonCode === "string" &&
     safeCode(row.blockerReasonCode) === row.blockerReasonCode
@@ -334,4 +495,38 @@ function isOptionalTick(value: unknown): value is number | null {
 
 function isOpaqueReference(value: unknown): value is string {
   return typeof value === "string" && /^[a-z][a-z0-9-]{0,31}:[0-9a-f]{8}$/.test(value);
+}
+
+function compareStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function reminderDelay(
+  policy: Pick<ReporterStatePolicy, "initialReminderDelayTicks" | "maximumReminderDelayTicks">,
+  exponent: number,
+): number {
+  const maximum = safeNonnegativeInteger(policy.maximumReminderDelayTicks);
+  let delay = Math.min(maximum, safeNonnegativeInteger(policy.initialReminderDelayTicks));
+  const doublings = Math.min(20, safeNonnegativeInteger(exponent));
+  for (let index = 0; index < doublings && delay < maximum; index += 1) {
+    delay = Math.min(maximum, saturatingAdd(delay, delay));
+  }
+  return delay;
+}
+
+function safeNonnegativeInteger(value: number): number {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function saturatingAdd(left: number, right: number): number {
+  const safeLeft = safeNonnegativeInteger(left);
+  const safeRight = safeNonnegativeInteger(right);
+  return safeLeft > Number.MAX_SAFE_INTEGER - safeRight
+    ? Number.MAX_SAFE_INTEGER
+    : safeLeft + safeRight;
+}
+
+function saturatingIncrement(value: number): number {
+  const safeValue = safeNonnegativeInteger(value);
+  return safeValue >= Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : safeValue + 1;
 }
