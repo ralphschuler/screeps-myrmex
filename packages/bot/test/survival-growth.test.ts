@@ -240,6 +240,7 @@ function world(
   return {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 100 },
     observedAt: 100,
+    ownedConstructionSiteCount: options.sites ? 2 : 0,
     ownedRooms: [],
     rooms: [
       {

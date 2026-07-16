@@ -23,6 +23,8 @@ export interface RuntimeGame {
   };
   /** Authoritative name-keyed collection of every owned creep on this shard. */
   readonly creeps: Readonly<Record<string, Creep>>;
+  /** Shard-global construction-site authority; optional only for bounded test adapters. */
+  readonly constructionSites?: Readonly<Record<string, ConstructionSite>>;
   readonly rooms: Readonly<Record<string, Room>>;
   /** Narrow live-object lookup handed only to command executors. */
   readonly getObjectById?: (id: string) => unknown;

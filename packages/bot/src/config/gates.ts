@@ -63,6 +63,7 @@ export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze
       "phase1.critical-maintenance",
     ],
   },
+  { id: "phase2.layout", available: true, prerequisites: ["phase2.colony"] },
 ]);
 
 export function resolveFeatureGates(

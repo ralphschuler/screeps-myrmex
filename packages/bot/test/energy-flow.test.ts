@@ -165,6 +165,7 @@ function snapshot(
   const value: WorldSnapshot = {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 100 },
     observedAt: 100,
+    ownedConstructionSiteCount: 0,
     ownedRooms: [],
     rooms: [
       {

@@ -7,6 +7,7 @@ const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
+const FIND_MINERALS_VALUE = 116;
 
 class LivePosition {
   public constructor(
@@ -26,6 +27,7 @@ describe("WorldSnapshot", () => {
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
     vi.stubGlobal("FIND_STRUCTURES", FIND_STRUCTURES_VALUE);
     vi.stubGlobal("FIND_CONSTRUCTION_SITES", FIND_CONSTRUCTION_SITES_VALUE);
+    vi.stubGlobal("FIND_MINERALS", FIND_MINERALS_VALUE);
   });
 
   afterAll(() => {
@@ -56,12 +58,17 @@ describe("WorldSnapshot", () => {
     const payload = {
       observation: forward.observation,
       observedAt: forward.observedAt,
+      ownedConstructionSiteCount: forward.ownedConstructionSiteCount,
       ownedRooms: forward.ownedRooms,
       rooms: forward.rooms,
       schemaVersion: forward.schemaVersion,
       visibility: forward.visibility,
     };
     expect(forward.stats.estimatedPayloadBytes).toBe(utf8ByteLength(JSON.stringify(payload)));
+    expect(forward.ownedConstructionSiteCount).toBe(1);
+    expect(forward.rooms[0]?.structures?.map((structure) => structure.structureType)).toEqual(
+      expect.arrayContaining(["constructedWall", "rampart"]),
+    );
   });
 
   it("distinguishes confirmed visible absence from unknown rooms without stale data", () => {
@@ -278,6 +285,11 @@ function makeGameWithRooms(rooms: Readonly<Record<string, Room>>): RuntimeGame {
   return {
     cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
     creeps,
+    constructionSites: Object.fromEntries(
+      Object.values(rooms)
+        .flatMap((room) => room.find(FIND_CONSTRUCTION_SITES_VALUE))
+        .map((site) => [String(site.id), site]),
+    ),
     rooms,
     shard: { name: "shard3" },
     time: 500,
@@ -312,6 +324,22 @@ function makeOwnedRoom(
     },
   ];
   const structures = [
+    {
+      hits: 1_000,
+      hitsMax: 1_000_000,
+      id: "wall-a",
+      pos: new LivePosition(30, 30, "W1N1"),
+      structureType: "constructedWall",
+    },
+    {
+      hits: 1_000,
+      hitsMax: 1_000_000,
+      id: "rampart-a",
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(23, 25, "W1N1"),
+      structureType: "rampart",
+    },
     {
       hits: 5_000,
       hitsMax: 5_000,
@@ -432,6 +460,7 @@ function makeOwnedRoom(
     },
     energyAvailable: 550,
     energyCapacityAvailable: 800,
+    getTerrain: () => ({ get: () => 0 }),
     find: (findType: number): unknown[] => {
       const values: readonly unknown[] =
         findType === FIND_CREEPS_VALUE
@@ -442,7 +471,9 @@ function makeOwnedRoom(
               ? structures
               : findType === FIND_CONSTRUCTION_SITES_VALUE
                 ? constructionSites
-                : [];
+                : findType === FIND_MINERALS_VALUE
+                  ? [{ id: "mineral-a", mineralType: "H", pos: new LivePosition(7, 40, "W1N1") }]
+                  : [];
 
       return maybeReverse(values, reversed);
     },
@@ -470,6 +501,7 @@ function makeNeutralRoom(reversed: boolean): Room {
     controller: undefined,
     energyAvailable: 0,
     energyCapacityAvailable: 0,
+    getTerrain: () => ({ get: () => 0 }),
     find: (findType: number): unknown[] =>
       maybeReverse(findType === FIND_SOURCES_VALUE ? sources : [], reversed),
     name: "W2N2",

@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v18");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v19");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v18",
+      "runtime-config-source-v19",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("makes phase2.colony available only after Phase 1 under policy v18", () => {
+  it("makes phase2.layout available only after phase2.colony under policy v19", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v18");
+    expect(config.sourceRevision).toBe("runtime-config-source-v19");
     expect(config.policy.colony).toEqual({
       rclPolicyVersion: 1,
       populationPolicyVersion: 1,
@@ -697,6 +697,17 @@ describe("source feature gates", () => {
       blockedBy: null,
       enabled: true,
       reason: "enabled",
+    });
+    expect(buildRuntimeConfig().features.gates["phase2.layout"]).toEqual({
+      blockedBy: null,
+      enabled: true,
+      reason: "enabled",
+    });
+    const phase2Disabled = buildRuntimeConfig({ features: { disabled: ["phase2.colony"] } });
+    expect(phase2Disabled.features.gates["phase2.layout"]).toEqual({
+      blockedBy: "phase2.colony",
+      enabled: false,
+      reason: "prerequisite-blocked",
     });
     expect(validateRuntimeOverrides({ policy: { colony: { rclPolicyVersion: 2 } } })).toMatchObject(
       { valid: false, reason: "unknown-key" },

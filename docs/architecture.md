@@ -1204,6 +1204,29 @@ Emergency ramparts may be requested by defense, but they still pass through the 
 authority. Dismantling any owned structure requires a typed intent with owner policy, replacement
 precondition, and rollback consequence.
 
+PR A of issue #45 activates `LayoutPlanner` as a pure authority behind `phase2.layout`, dependent on
+`phase2.colony`. `WorldObserver` remains the sole live-room reader and normalizes the 2,500 terrain
+cells, exits, mineral, every visible structure (including walls and ramparts), owned/foreign sites,
+and the shard-global owned-site count. The planner consumes the exact `ColonyView.rclPolicy`
+projection, evaluates at most two rooms per tick, 256 anchors, eight transforms, and 2,500 flood
+cells per candidate, and publishes only complete `owned-room-layout-v1` plans.
+
+The distinct `layouts` persistent owner stores only algorithm revision, anchor/transform,
+fingerprint, and bounded blocker/commitment metadata; reconstructible placements remain heap data.
+`layout.compiled.v1` is a `CacheManager` namespace stamped by exact algorithm, terrain, policy, and
+normalized-facts revisions. Failed or exhausted planning preserves the prior commitment and emits no
+partial plan, command, construction-site intent, or dismantle suggestion. Site arbitration,
+execution, and result reconciliation remain PR B/C contracts.
+
+Mechanics grounding: official
+[`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite),
+[`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite),
+[`Room.Terrain`](https://docs.screeps.com/api/#Room.Terrain), the
+[Control guide](https://docs.screeps.com/control.html) (May 29, 2026), and the Screeps Wiki
+[Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/) guidance. Community
+stamp/bunker terminology informed only the problem framing; the MYRMEX layout is source-defined and
+clean-room.
+
 ### 12.6 DefenseDirector
 
 Defense maintains a per-room threat state:

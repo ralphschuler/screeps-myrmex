@@ -9,6 +9,7 @@ import {
   type ControllerSnapshot,
   type CreepSnapshot,
   type DroppedResourceSnapshot,
+  type MineralSnapshot,
   type OwnedExtensionSnapshot,
   type OwnedRoomSnapshot,
   type OwnedSpawnSnapshot,
@@ -21,6 +22,7 @@ import {
   type SnapshotEntityCounts,
   type SourceSnapshot,
   type StoredStructureSnapshot,
+  type StructureSnapshot,
   type StoreSnapshot,
   type TombstoneSnapshot,
   type WorldSnapshot,
@@ -71,6 +73,9 @@ export function observeWorld(game: RuntimeGame, options: ObserveWorldOptions = {
       tick: game.time,
     },
     observedAt: game.time,
+    ownedConstructionSiteCount: Object.values(game.constructionSites ?? {}).filter(
+      (site) => site.my,
+    ).length,
     ownedRooms,
     rooms,
     schemaVersion: WORLD_SNAPSHOT_SCHEMA_VERSION,
@@ -98,7 +103,11 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     typeof FIND_DROPPED_RESOURCES === "undefined" ? [] : room.find(FIND_DROPPED_RESOURCES);
   const ruins = typeof FIND_RUINS === "undefined" ? [] : room.find(FIND_RUINS);
   const tombstones = typeof FIND_TOMBSTONES === "undefined" ? [] : room.find(FIND_TOMBSTONES);
-  const traversal = snapshotTraversal(room, structures, constructionSites);
+  const staticRoom = snapshotStaticRoom(room, structures, constructionSites);
+  const minerals = typeof FIND_MINERALS === "undefined" ? [] : room.find(FIND_MINERALS);
+  if (staticRoom === undefined) {
+    throw new Error(`Room ${room.name} static terrain observation is unavailable`);
+  }
 
   return {
     constructionSites: constructionSites.map(snapshotConstructionSite).sort(compareById),
@@ -110,6 +119,8 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
       .filter((creep) => !creep.my)
       .map(snapshotCreep)
       .sort(compareById),
+    exits: staticRoom.exits,
+    mineral: minerals[0] === undefined ? null : snapshotMineral(minerals[0]),
     name: room.name,
     observedAt,
     ownedCreeps: ownedCreeps.map(snapshotCreep).sort(compareById),
@@ -132,8 +143,31 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     ruins: ruins.map(snapshotRuin).sort(compareById),
     sources: room.find(FIND_SOURCES).map(snapshotSource).sort(compareById),
     storedStructures: structures.filter(hasStore).map(snapshotStoredStructure).sort(compareById),
+    structures: structures.map(snapshotStructure).sort(compareById),
+    terrain: staticRoom.terrain,
     tombstones: tombstones.map(snapshotTombstone).sort(compareById),
-    ...(traversal === undefined ? {} : { traversal }),
+    traversal: staticRoom.traversal,
+  };
+}
+
+function snapshotMineral(mineral: Mineral): MineralSnapshot {
+  return {
+    id: String(mineral.id),
+    mineralType: mineral.mineralType,
+    pos: snapshotPosition(mineral.pos),
+  };
+}
+
+function snapshotStructure(structure: AnyStructure): StructureSnapshot {
+  const owned = structure as unknown as { readonly owner?: { readonly username: string } };
+  return {
+    hits: structure.hits,
+    hitsMax: structure.hitsMax,
+    id: String(structure.id),
+    ownerUsername: owned.owner?.username ?? null,
+    ownership: structureOwnership(structure),
+    pos: snapshotPosition(structure.pos),
+    structureType: structure.structureType,
   };
 }
 
@@ -405,11 +439,17 @@ function snapshotPosition(position: RoomPosition): PositionSnapshot {
  * This is the only Observe-phase read of Room terrain. The compact detached projection deliberately
  * excludes creeps and reservations; the movement arbiter overlays those current-tick facts later.
  */
-function snapshotTraversal(
+function snapshotStaticRoom(
   room: Room,
   structures: readonly AnyStructure[],
   constructionSites: readonly ConstructionSite[],
-): { readonly revision: string; readonly walkability: string } | undefined {
+):
+  | {
+      readonly exits: readonly PositionSnapshot[];
+      readonly terrain: { readonly cells: string; readonly revision: string };
+      readonly traversal: { readonly revision: string; readonly walkability: string };
+    }
+  | undefined {
   if (typeof room.getTerrain !== "function") return undefined;
   let terrainView: RoomTerrain;
   try {
@@ -429,14 +469,26 @@ function snapshotTraversal(
     }
   }
   const cells: string[] = [];
+  const terrainCells: string[] = [];
+  const exits: PositionSnapshot[] = [];
   for (let y = 0; y < 50; y += 1) {
     for (let x = 0; x < 50; x += 1) {
       const terrainCell = terrainView.get(x, y);
+      const normalized = (terrainCell & 1) !== 0 ? 1 : (terrainCell & 2) !== 0 ? 2 : 0;
+      terrainCells.push(String(normalized));
+      if (normalized !== 1 && (x === 0 || y === 0 || x === 49 || y === 49)) {
+        exits.push({ roomName: room.name, x, y });
+      }
       cells.push((terrainCell & 1) !== 0 || blocked.has(positionIndex(x, y)) ? "#" : ".");
     }
   }
   const walkability = cells.join("");
-  return { revision: traversalRevision(walkability), walkability };
+  const terrain = terrainCells.join("");
+  return {
+    exits,
+    terrain: { cells: terrain, revision: traversalRevision(terrain) },
+    traversal: { revision: traversalRevision(walkability), walkability },
+  };
 }
 
 function isStaticallyWalkable(structureType: string): boolean {

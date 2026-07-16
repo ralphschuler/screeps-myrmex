@@ -1,0 +1,317 @@
+import type { PositionSnapshot, StructureSnapshot } from "../world/snapshot";
+import { compileOwnedRoomLayoutV1 } from "./layout-v1";
+import {
+  LAYOUT_ALGORITHM_REVISION,
+  MAX_LAYOUT_CANDIDATES,
+  MAX_LAYOUT_FLOOD_CELLS,
+  MAX_LAYOUT_ROOMS_PER_TICK,
+  MAX_LAYOUT_TRANSFORMS,
+  type LayoutBlocker,
+  type LayoutCommitment,
+  type LayoutPlacement,
+  type LayoutPlanningInput,
+  type LayoutPlanningResult,
+  type LayoutTransform,
+} from "./contracts";
+
+export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningResult {
+  if (
+    input.terrain.cells.length !== 2_500 ||
+    input.policy.unlocks === null ||
+    input.policy.level === null
+  )
+    return degraded(
+      input,
+      input.policy.unlocks === null ? "policy-unavailable" : "invalid-input",
+      0,
+      0,
+      0,
+    );
+  const cells = compileOwnedRoomLayoutV1(input.policy.unlocks);
+  const anchors = candidateAnchors(input);
+  let transforms = 0;
+  let flood = 0;
+  let blocker: LayoutBlocker = anchors.length === 0 ? "no-anchor" : "terrain-conflict";
+  for (
+    let candidate = 0;
+    candidate < anchors.length && candidate < MAX_LAYOUT_CANDIDATES;
+    candidate += 1
+  ) {
+    const anchor = anchors[candidate];
+    if (anchor === undefined) continue;
+    for (let t = 0; t < MAX_LAYOUT_TRANSFORMS; t += 1) {
+      transforms += 1;
+      const placements = transformCells(input.roomName, anchor, t as LayoutTransform, cells);
+      const legal = validatePlacements(input, placements);
+      if (!legal.valid) {
+        blocker = legal.blocker;
+        continue;
+      }
+      const access = validateAccess(input, placements);
+      flood += access.inspected;
+      if (!access.valid) {
+        blocker = "access-blocked";
+        continue;
+      }
+      const adopted = adopt(placements, input.structures);
+      const fingerprint = hash(JSON.stringify(adopted));
+      const commitment: LayoutCommitment = {
+        algorithmRevision: LAYOUT_ALGORITHM_REVISION,
+        anchor,
+        blockers: [],
+        committedAt: input.tick,
+        fingerprint,
+        transform: t as LayoutTransform,
+      };
+      return freeze({
+        status: "complete",
+        commitment,
+        placements: adopted,
+        candidatesInspected: candidate + 1,
+        transformsInspected: transforms,
+        floodCellsInspected: flood,
+      });
+    }
+  }
+  return degraded(
+    input,
+    anchors.length >= MAX_LAYOUT_CANDIDATES ? "budget-exhausted" : blocker,
+    Math.min(anchors.length, MAX_LAYOUT_CANDIDATES),
+    transforms,
+    flood,
+  );
+}
+
+export function planOwnedRoomLayouts(
+  inputs: readonly LayoutPlanningInput[],
+): readonly LayoutPlanningResult[] {
+  return [...inputs]
+    .sort((a, b) => compare(a.roomName, b.roomName))
+    .slice(0, MAX_LAYOUT_ROOMS_PER_TICK)
+    .map(planOwnedRoomLayout);
+}
+function candidateAnchors(input: LayoutPlanningInput): PositionSnapshot[] {
+  const spawns = input.structures
+    .filter((s) => s.structureType === "spawn" && s.ownership === "owned")
+    .sort(byPosition)
+    .map((s) => s.pos);
+  const generated: PositionSnapshot[] = [];
+  for (let y = 9; y <= 40; y += 1)
+    for (let x = 9; x <= 40; x += 1)
+      if (input.terrain.cells[y * 50 + x] !== "1")
+        generated.push({ roomName: input.roomName, x, y });
+  generated.sort(
+    (a, b) =>
+      Math.max(Math.abs(a.x - 25), Math.abs(a.y - 25)) -
+        Math.max(Math.abs(b.x - 25), Math.abs(b.y - 25)) || byPosition({ pos: a }, { pos: b }),
+  );
+  const seen = new Set<string>();
+  return [...spawns, ...generated]
+    .filter((p) => {
+      const positionKey = key(p);
+      if (seen.has(positionKey)) return false;
+      seen.add(positionKey);
+      return true;
+    })
+    .slice(0, MAX_LAYOUT_CANDIDATES);
+}
+function transformCells(
+  roomName: string,
+  anchor: PositionSnapshot,
+  transform: LayoutTransform,
+  cells: ReturnType<typeof compileOwnedRoomLayoutV1>,
+): LayoutPlacement[] {
+  return cells
+    .map<LayoutPlacement>((cell) => {
+      const [dx, dy] = transformOffset(cell.dx, cell.dy, transform);
+      return {
+        adoption: "planned",
+        layer: cell.layer,
+        minimumRcl: cell.minimumRcl,
+        pos: { roomName, x: anchor.x + dx, y: anchor.y + dy },
+        structureType: cell.structureType,
+      };
+    })
+    .sort(placementOrder);
+}
+function transformOffset(x: number, y: number, t: LayoutTransform): readonly [number, number] {
+  const reflected = t >= 4 ? -x : x;
+  const r = t % 4;
+  return r === 0
+    ? [reflected, y]
+    : r === 1
+      ? [-y, reflected]
+      : r === 2
+        ? [-reflected, -y]
+        : [y, -reflected];
+}
+function validatePlacements(
+  input: LayoutPlanningInput,
+  placements: readonly LayoutPlacement[],
+): { valid: true } | { valid: false; blocker: LayoutBlocker } {
+  const occupied = new Map(input.structures.map((s) => [key(s.pos), s]));
+  const sites = new Map(input.constructionSites.map((s) => [key(s.pos), s]));
+  for (const p of placements) {
+    if (
+      p.pos.x < 1 ||
+      p.pos.x > 48 ||
+      p.pos.y < 1 ||
+      p.pos.y > 48 ||
+      input.terrain.cells[p.pos.y * 50 + p.pos.x] === "1"
+    )
+      return { valid: false, blocker: "terrain-conflict" };
+    const structure = occupied.get(key(p.pos));
+    const site = sites.get(key(p.pos));
+    if (
+      p.layer === "primary" &&
+      ((structure &&
+        structure.structureType !== p.structureType &&
+        structure.structureType !== "road" &&
+        structure.structureType !== "rampart") ||
+        (site && site.structureType !== p.structureType))
+    )
+      return { valid: false, blocker: "occupancy-conflict" };
+  }
+  return { valid: true };
+}
+function validateAccess(
+  input: LayoutPlanningInput,
+  placements: readonly LayoutPlacement[],
+): { valid: boolean; inspected: number } {
+  const blocked = new Set(
+    placements
+      .filter(
+        (p) => p.layer === "primary" && !["container", "road", "rampart"].includes(p.structureType),
+      )
+      .map((p) => key(p.pos)),
+  );
+  for (const s of input.structures)
+    if (!["container", "road", "rampart"].includes(s.structureType)) blocked.add(key(s.pos));
+  const start = placements.find((p) => p.structureType === "spawn")?.pos;
+  if (!start) return { valid: false, inspected: 0 };
+  const queue = neighbors(start).filter((p) => walkable(input, p, blocked));
+  const seen = new Set(queue.map(key));
+  let inspected = 0;
+  while (queue.length > 0 && inspected < MAX_LAYOUT_FLOOD_CELLS) {
+    const p = queue.shift();
+    if (!p) break;
+    inspected += 1;
+    for (const n of neighbors(p))
+      if (walkable(input, n, blocked) && !seen.has(key(n))) {
+        seen.add(key(n));
+        queue.push(n);
+      }
+  }
+  const services = [
+    input.controller,
+    ...input.sources,
+    ...(input.mineral ? [input.mineral.pos] : []),
+  ];
+  const serviceOk = services.every((p) => neighbors(p).some((n) => seen.has(key(n))));
+  const exitOk = input.exits.some((p) => neighbors(p).some((n) => seen.has(key(n))));
+  const logisticsOk = placements
+    .filter((p) => p.structureType === "storage" || p.structureType === "container")
+    .every((p) => neighbors(p.pos).some((n) => seen.has(key(n))));
+  return {
+    valid: inspected <= MAX_LAYOUT_FLOOD_CELLS && serviceOk && exitOk && logisticsOk,
+    inspected,
+  };
+}
+function adopt(
+  placements: readonly LayoutPlacement[],
+  structures: readonly StructureSnapshot[],
+): readonly LayoutPlacement[] {
+  const exact = new Map(structures.map((s) => [`${s.structureType}:${key(s.pos)}`, s]));
+  const external = new Map<string, StructureSnapshot[]>();
+  for (const s of [...structures].sort(byPosition)) {
+    const list = external.get(s.structureType) ?? [];
+    list.push(s);
+    external.set(s.structureType, list);
+  }
+  const used = new Set<string>();
+  return placements
+    .map((p) => {
+      const e = exact.get(`${p.structureType}:${key(p.pos)}`);
+      if (e) {
+        used.add(e.id);
+        return { ...p, adoption: "exact" as const };
+      }
+      const compatible = external.get(p.structureType)?.find((s) => !used.has(s.id));
+      if (compatible && p.layer === "primary") {
+        used.add(compatible.id);
+        return { ...p, adoption: "compatible-external" as const, pos: compatible.pos };
+      }
+      return p;
+    })
+    .sort(placementOrder);
+}
+function degraded(
+  input: LayoutPlanningInput,
+  blocker: LayoutBlocker,
+  candidatesInspected: number,
+  transformsInspected: number,
+  floodCellsInspected: number,
+): LayoutPlanningResult {
+  return freeze({
+    status: "degraded",
+    blocker,
+    commitment: input.priorCommitment,
+    placements: [] as const,
+    candidatesInspected,
+    transformsInspected,
+    floodCellsInspected,
+  });
+}
+function neighbors(p: PositionSnapshot): PositionSnapshot[] {
+  const out: PositionSnapshot[] = [];
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++)
+      if (dx || dy) out.push({ roomName: p.roomName, x: p.x + dx, y: p.y + dy });
+  return out;
+}
+function walkable(i: LayoutPlanningInput, p: PositionSnapshot, b: Set<string>): boolean {
+  return (
+    p.x >= 0 &&
+    p.x < 50 &&
+    p.y >= 0 &&
+    p.y < 50 &&
+    i.terrain.cells[p.y * 50 + p.x] !== "1" &&
+    !b.has(key(p))
+  );
+}
+function key(p: PositionSnapshot): string {
+  return coordinateKey(p.x, p.y);
+}
+function coordinateKey(x: number, y: number): string {
+  return `${String(x)},${String(y)}`;
+}
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+function byPosition(a: { pos: PositionSnapshot }, b: { pos: PositionSnapshot }): number {
+  return a.pos.y - b.pos.y || a.pos.x - b.pos.x;
+}
+function placementOrder(a: LayoutPlacement, b: LayoutPlacement): number {
+  return (
+    a.minimumRcl - b.minimumRcl ||
+    compare(a.layer, b.layer) ||
+    compare(a.structureType, b.structureType) ||
+    a.pos.y - b.pos.y ||
+    a.pos.x - b.pos.x
+  );
+}
+function hash(value: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `layout-v1:${(h >>> 0).toString(36)}`;
+}
+function freeze<T>(value: T): T {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) freeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}

@@ -12,6 +12,7 @@ import {
 import { createIntentChannel, executeAcceptedIntentBatch } from "../../bot/src/execution";
 import { openMyrmexMemory } from "../../bot/src/state/memory";
 import type { RuntimeGame } from "../../bot/src/runtime/context";
+import { PLAIN_ROOM_TERRAIN } from "../../bot/test/support/room-terrain-fixture";
 import { observeWorld } from "../../bot/src/world/observe";
 import type { WorldSnapshot } from "../../bot/src/world/snapshot";
 import {
@@ -178,7 +179,7 @@ describe("Phase 0 deterministic runtime scenarios", () => {
       };
     };
     expect(root.meta).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       revision: 3,
       firstTick: 100,
       lastTick: 102,
@@ -747,6 +748,7 @@ function makeObservationRoom(name: string, sourceIds: readonly string[], reverse
     controller: undefined,
     energyAvailable: 0,
     energyCapacityAvailable: 0,
+    getTerrain: () => PLAIN_ROOM_TERRAIN,
     find: (findType: number): unknown[] => {
       const values = findType === FIND_SOURCES_VALUE ? sources : [];
       return reversed ? [...values].reverse() : [...values];

@@ -3,6 +3,10 @@ import { MAX_MIGRATION_STEP_BUDGET, openMyrmexMemory } from "../src/state/memory
 import {
   LEGACY_MEMORY_MIGRATION_ID,
   LEGACY_MEMORY_MIGRATION_STEP_COUNT,
+  INTERMEDIATE_MEMORY_MIGRATION_ID,
+  INTERMEDIATE_MEMORY_SCHEMA_VERSION,
+  LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION,
+  LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS,
   MEMORY_MIGRATION_ID,
   MEMORY_TARGET_SCHEMA_VERSION,
   PERSISTENT_STATE_OWNERS,
@@ -132,6 +136,37 @@ describe("durable state migrations", () => {
     }
   });
 
+  it("initializes layouts while preserving every schema-3 owner", () => {
+    const owners = Object.fromEntries(
+      LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS.map((owner) => [owner, { marker: owner }]),
+    );
+    const memory = {
+      myrmex: {
+        meta: {
+          schemaVersion: LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION,
+          targetSchemaVersion: LAYOUT_PREVIOUS_MEMORY_SCHEMA_VERSION,
+          revision: 18,
+          firstTick: 710,
+          lastTick: 720,
+          shard: "shard2",
+          diagnostics: [],
+          migration: null,
+          recovery: null,
+        },
+        ...owners,
+      },
+    } as unknown as Memory;
+
+    expect(openMyrmexMemory(memory, 721, "shard2").status).toBe("recovery");
+    expect(openMyrmexMemory(memory, 722, "shard2").status).toBe("ready");
+    expect(memory.myrmex?.layouts).toEqual({});
+    for (const owner of LAYOUT_PREVIOUS_PERSISTENT_STATE_OWNERS) {
+      expect((memory.myrmex as unknown as Record<string, unknown>)[owner]).toEqual({
+        marker: owner,
+      });
+    }
+  });
+
   it.each(["nodes", "codeUnits"] as const)(
     "preserves every schema-2 owner and omits completion evidence at the final %s cap",
     (dimension) => {
@@ -210,7 +245,10 @@ describe("durable state migrations", () => {
     if (transitioned.status !== "recovery") {
       throw new Error("expected chained cursor recovery");
     }
-    expect(transitioned.cursor).toMatchObject({ id: MEMORY_MIGRATION_ID, nextStep: 0 });
+    expect(transitioned.cursor).toMatchObject({
+      id: INTERMEDIATE_MEMORY_MIGRATION_ID,
+      nextStep: 0,
+    });
     expect(transitioned.marker).toMatchObject({ reason: "schema-migration", sinceTick: 790 });
 
     const secondReset = JSON.parse(JSON.stringify(firstReset)) as Memory;
@@ -301,7 +339,10 @@ describe("durable state migrations", () => {
     if (transitioned.status !== "recovery") {
       throw new Error("expected chained migration recovery");
     }
-    expect(transitioned.cursor).toMatchObject({ id: MEMORY_MIGRATION_ID, nextStep: 0 });
+    expect(transitioned.cursor).toMatchObject({
+      id: INTERMEDIATE_MEMORY_MIGRATION_ID,
+      nextStep: 0,
+    });
     expect(openMyrmexMemory(memory, 302, "shard1").status).toBe("ready");
   });
 
@@ -339,14 +380,14 @@ describe("durable state migrations", () => {
   it.each([
     ["schema version", { meta: { schemaVersion: 99 } }, 99],
     ["conflicting legacy marker", { schema: 1, meta: { schemaVersion: 99 } }, 99],
-    ["target schema version", { meta: { schemaVersion: 3, targetSchemaVersion: 4 } }, 4],
+    ["target schema version", { meta: { schemaVersion: 4, targetSchemaVersion: 5 } }, 5],
     [
       "migration target version",
       {
         meta: {
-          schemaVersion: 3,
-          targetSchemaVersion: 3,
-          migration: { fromVersion: 3, targetVersion: 5 },
+          schemaVersion: 4,
+          targetSchemaVersion: 4,
+          migration: { fromVersion: 4, targetVersion: 5 },
         },
       },
       5,
@@ -502,7 +543,7 @@ function malformedLegacyBoundaryMemory(dimension: BoundaryDimension): Memory {
   }
   root.meta = {
     schemaVersion: 1,
-    targetSchemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+    targetSchemaVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
     revision: 31,
     firstTick: 1_000,
     lastTick: 1_100,
@@ -511,7 +552,7 @@ function malformedLegacyBoundaryMemory(dimension: BoundaryDimension): Memory {
     migration: {
       id: LEGACY_MEMORY_MIGRATION_ID,
       fromVersion: 1,
-      targetVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+      targetVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
       nextStep: 3,
       stepCount: LEGACY_MEMORY_MIGRATION_STEP_COUNT,
       startedAt: 1_090,
@@ -553,6 +594,7 @@ function expectedBoundaryFinal(
       migration: null,
       recovery: null,
     },
+    layouts: {},
     config: {},
     ...owners,
   };
@@ -623,7 +665,7 @@ function schema2Memory(): Memory {
     myrmex: {
       meta: {
         schemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
-        targetSchemaVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+        targetSchemaVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
         revision: 17,
         firstTick: 611,
         lastTick: 700,
@@ -651,7 +693,7 @@ function historicalCursorMemory(): Memory {
         migration: {
           id: LEGACY_MEMORY_MIGRATION_ID,
           fromVersion: 1,
-          targetVersion: PREVIOUS_MEMORY_SCHEMA_VERSION,
+          targetVersion: INTERMEDIATE_MEMORY_SCHEMA_VERSION,
           nextStep: 2,
           stepCount: LEGACY_MEMORY_MIGRATION_STEP_COUNT,
           startedAt: 790,

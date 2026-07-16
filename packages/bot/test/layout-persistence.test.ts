@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+import { CacheManager } from "../src/cache";
+import {
+  emptyLayoutsOwner,
+  layoutCacheDependencies,
+  parseLayoutsOwner,
+  persistLayoutCommitment,
+  reconcileOwnedLayouts,
+  registerLayoutCompiledCache,
+} from "../src/layout";
+
+describe("layout persistence and cache", () => {
+  const commitment = {
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 10,
+    fingerprint: "layout-v1:a",
+    transform: 0,
+  } as const;
+  it("persists bounded commitment metadata without placement arrays and drops lost rooms", () => {
+    const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(JSON.stringify(owner)).not.toContain("placements");
+    expect(reconcileOwnedLayouts(owner, []).records).toEqual([]);
+    expect(
+      parseLayoutsOwner({ ...owner, records: Array.from({ length: 65 }, () => owner.records[0]) }),
+    ).toBeNull();
+  });
+  it("is byte-equivalent with warm/cold layout.compiled.v1 cache and exact dependencies", () => {
+    const deps = layoutCacheDependencies({
+      algorithmRevision: "owned-room-layout-v1",
+      factsRevision: "f",
+      policyRevision: "p",
+      terrainRevision: "t",
+    });
+    const key = { roomName: "W1N1", fingerprint: "a" };
+    const build = () =>
+      [
+        {
+          adoption: "planned",
+          layer: "road",
+          minimumRcl: 2,
+          pos: { roomName: "W1N1", x: 1, y: 1 },
+          structureType: "road",
+        },
+      ] as const;
+    const cold = registerLayoutCompiledCache(new CacheManager()).getOrCompute(
+      key,
+      { tick: 1, dependencies: deps },
+      build,
+    );
+    const manager = new CacheManager();
+    const cache = registerLayoutCompiledCache(manager);
+    cache.getOrCompute(key, { tick: 1, dependencies: deps }, build);
+    const warm = cache.getOrCompute(key, { tick: 2, dependencies: deps }, () => []);
+    expect(JSON.stringify(warm)).toBe(JSON.stringify(cold));
+    expect(manager.registeredNamespaceIds()).toEqual(["layout.compiled.v1"]);
+  });
+});
