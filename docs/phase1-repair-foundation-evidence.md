@@ -1,6 +1,6 @@
 # Phase 1 repair foundation evidence
 
-Source version: `runtime-config-source-v8`.
+Source version: `runtime-config-source-v9`.
 
 Issue [#122](https://github.com/ralphschuler/screeps-myrmex/issues/122) makes repair execution
 threshold-aware and gives normalized repair command failures bounded deterministic retry behavior.
