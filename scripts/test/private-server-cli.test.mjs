@@ -12,6 +12,7 @@ import {
   preparePrivateServerFixtureTarget,
   runPrivateServerCli,
   samplePrivateServerBot,
+  samplePrivateServerFixture,
 } from "../lib/private-server-cli.mjs";
 
 const servers = [];
@@ -62,6 +63,7 @@ describe("private-server CLI adapter", () => {
       `'${JSON.stringify({ room: "W1N1", spawnX: 20, spawnY: 21, userId: "controlled-user" })}'`,
       `'${JSON.stringify({ hostileCreeps: 1, ownedCreeps: 2, ownedSpawns: 1, tick: 42 })}'`,
       `'${JSON.stringify({ hostileX: 23, hostileY: 24, room: "W1N1", targetX: 20, targetY: 21, userId: "controlled-user" })}'`,
+      `'${JSON.stringify({ botException: "injected" })}'`,
     ];
     const server = createServer((socket) => {
       socket.write("< \r\n");
@@ -85,6 +87,9 @@ describe("private-server CLI adapter", () => {
       hostileX: 23,
       targetX: 20,
       userId: "controlled-user",
+    });
+    await expect(samplePrivateServerFixture("hostile-reset-v1", { port })).resolves.toMatchObject({
+      botException: "injected",
     });
   });
 

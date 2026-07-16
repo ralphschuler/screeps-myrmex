@@ -18,6 +18,11 @@ The module accepts one strict, 4 KiB JSON definition with a fixed room, controll
 coordinates, ticks, and the canonical `smallMelee` invader body. It exposes no CLI command, HTTP
 route, credential, arbitrary path, arbitrary JavaScript, or database query.
 
+The same strict definition can name one bounded runner tick for a fixture-side bot exception. The
+fixture writes a fixed `injected` receipt before throwing; the scenario runner samples only that
+receipt and classifies the terminal result. It does not read exception text, console output, Memory,
+or raw runner state, and it does not alter the deployed bot bundle.
+
 The scenario runner writes that definition only while simulation is paused, into its generated
 ignored state directory. Each processor and runner latches the first valid definition for its server
 run and writes a separate fixed ready receipt. The runner waits for both receipts before resuming;
@@ -36,6 +41,8 @@ evidence contract and removes them in cleanup.
 - Hostile pressure is real game capability in the controlled room, not an unrelated bot.
 - Reset proof is bounded restoration (`T+2`), not a claim of same-tick or byte-identical engine
   timing.
+- Bot-exception proof establishes the evidence plumbing and runner fault boundary; it is not a claim
+  that MYRMEX production behavior itself throws.
 - This is an intentionally version-pinned extension contract. Any runtime dependency update must
   rerun the private-server hostile and heap-reset smoke tests before the integration gate can pass.
 - A future official public fixture API replaces this module. Raw CLI database writes and forged

@@ -6,6 +6,7 @@ import {
   privateServerBundleIdentity,
   runPrivateServerCli,
   samplePrivateServerBot,
+  samplePrivateServerFixture,
 } from "./lib/private-server-cli.mjs";
 import { preparePrivateServerFixtureState } from "./lib/private-server-fixture-state.mjs";
 import {
@@ -72,6 +73,10 @@ function scenarioDriver(options) {
       await lifecycle("start", options.stateDirectory, fixtureState.definition);
     },
     async observe(manifest) {
+      if (manifest.injection === "bot-exception") {
+        await waitForBotException(manifest.id);
+        throw namedError("BotExceptionError", "Fixture injected the bounded bot exception.");
+      }
       const sample = await waitForTerminalSample(manifest);
       return {
         failure: null,
@@ -122,6 +127,7 @@ async function waitForTerminalSample(manifest) {
 function fixtureDefinition(manifest, target) {
   return {
     heapResetAtTick: manifest.injection === "heap-reset" ? manifest.tickDeadline - 2 : null,
+    botExceptionAtTick: manifest.injection === "bot-exception" ? manifest.tickDeadline - 2 : null,
     hostile: {
       atTick: manifest.injection === "hostile-pressure" ? manifest.tickDeadline - 2 : 10_000,
       body: "smallMelee",
@@ -137,6 +143,15 @@ function fixtureDefinition(manifest, target) {
       userId: target.userId,
     },
   };
+}
+
+async function waitForBotException(scenarioId) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if ((await samplePrivateServerFixture(scenarioId)).botException === "injected") return;
+    await delay(250);
+  }
+  throw namedError("ScenarioTimeoutError", "Timed out waiting for the fixture bot exception.");
 }
 
 async function lifecycle(command, state, fixtureDefinition = null) {
