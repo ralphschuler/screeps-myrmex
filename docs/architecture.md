@@ -944,6 +944,13 @@ repair retry eligibility from its bounded transition history; the agent reconcil
 that projection for capped exponential retry after normalized executor failures. No repair queue,
 retry cache, or per-creep Memory is introduced. ADR 0011 records this boundary.
 
+The Phase 1 `CriticalMaintenancePlanner` has no durable owner. It reads one current room snapshot
+and can emit budgeted repair contracts only for a critically damaged spawn, sole container, or
+directly adjacent decaying/critical road. `ColonyDirector` and `ContractLedger` retain their sole
+budget and contract authorities. During an active local offensive threat it emits no creep repair;
+DefenseDirector retains the only tower repair command path and reserve enforcement. ADR 0012 records
+this boundary.
+
 Lease agents retain no task or role Memory. They correlate each proposal with contract ID and
 revision; the runtime's Reconcile phase feeds typed executor evidence through the existing contract
 request channel, while only `ContractLedger` validates and persists a transition. Current snapshot

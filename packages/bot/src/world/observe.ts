@@ -16,6 +16,7 @@ import {
   type PositionSnapshot,
   type RoomSnapshot,
   type RoomVisibilitySnapshot,
+  type RoadSnapshot,
   type RuinSnapshot,
   type SnapshotEntityCounts,
   type SourceSnapshot,
@@ -124,11 +125,25 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
       .filter((structure) => isMyStructureOfType(structure, "tower"))
       .map((structure) => snapshotTower(structure as StructureTower))
       .sort(compareById),
+    roads: structures
+      .filter((structure) => structure.structureType === "road")
+      .map(snapshotRoad)
+      .sort(compareById),
     ruins: ruins.map(snapshotRuin).sort(compareById),
     sources: room.find(FIND_SOURCES).map(snapshotSource).sort(compareById),
     storedStructures: structures.filter(hasStore).map(snapshotStoredStructure).sort(compareById),
     tombstones: tombstones.map(snapshotTombstone).sort(compareById),
     ...(traversal === undefined ? {} : { traversal }),
+  };
+}
+
+function snapshotRoad(road: StructureRoad): RoadSnapshot {
+  return {
+    hits: road.hits,
+    hitsMax: road.hitsMax,
+    id: String(road.id),
+    pos: snapshotPosition(road.pos),
+    ticksToDecay: nullableNumber(road.ticksToDecay),
   };
 }
 

@@ -56,6 +56,9 @@ merged.
 - Workforce-loss recovery and its source-gate evidence are tracked by
   [issue #124](https://github.com/ralphschuler/screeps-myrmex/issues/124) and
   [`phase1-recovery-evidence.md`](phase1-recovery-evidence.md).
+- Recovery-critical maintenance is tracked by
+  [issue #40](https://github.com/ralphschuler/screeps-myrmex/issues/40) and
+  [`phase1-maintenance-evidence.md`](phase1-maintenance-evidence.md).
 
 The config foundation initially left every Phase 1 gameplay gate source-unavailable. Issue #37 made
 `phase1.colony` available under `runtime-config-source-v2`; issue #23 makes `phase1.contracts`
@@ -65,7 +68,8 @@ available under `runtime-config-source-v3`; issue #24 makes `phase1.spawn` avail
 `runtime-config-source-v6`; issue #26 makes `phase1.economy` available under
 `runtime-config-source-v7`; issue #29 makes `phase1.safety` available under
 `runtime-config-source-v8`; issue #124 makes `phase1.recovery` available under
-`runtime-config-source-v9`. Every later gate remains source-unavailable. Each subsequent outcome
+`runtime-config-source-v9`; issue #40 makes `phase1.critical-maintenance` available under
+`runtime-config-source-v10`. Every later gate remains source-unavailable. Each subsequent outcome
 change may mark only its own gate available after its prerequisites and outcome test exist.
 Operational Memory may disable available work but can never activate an unfinished gate.
 

@@ -154,7 +154,7 @@ source-unavailable.
 | `phase1.growth`               | unavailable  | `phase1.recovery`                                      |
 | `phase1.safety`               | unavailable  | `phase1.colony`, `phase1.movement`                     |
 | `phase1.telemetry`            | unavailable  | `phase1.agents`, `phase1.spawn`                        |
-| `phase1.critical-maintenance` | unavailable  | `phase1.economy`, `phase1.recovery`                    |
+| `phase1.critical-maintenance` | available    | `phase1.economy`, `phase1.recovery`                    |
 
 Each decision is `enabled`, `source-unavailable`, `operator-disabled`, or `prerequisite-blocked`; a
 prerequisite-blocked decision names one deterministic blocker. An operational override can never
