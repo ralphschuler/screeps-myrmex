@@ -255,7 +255,9 @@ forbidden.
 
 Safety is a short, mandatory preemption pass. `DefenseDirector` evaluates the fresh snapshot and may
 emit urgent intents for tower actions, safe mode, emergency spawning, rampart policy, evacuation,
-and cancellation of unsafe work.
+and cancellation of unsafe work. In Phase 1 it owns only current-room tower and safe-mode selection:
+configured exclusions are filtered before target scoring, each tower has one exclusive action, and
+only the defense executor resolves live IDs and issues the structure/controller command.
 
 Safety does not become a second general planner. A `SafetyExecutor` may immediately arbitrate and
 issue only actions whose delay until Execute would materially weaken survival. Every such command

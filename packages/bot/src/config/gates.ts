@@ -33,7 +33,7 @@ export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze
   { id: "phase1.growth", available: false, prerequisites: ["phase1.recovery"] },
   {
     id: "phase1.safety",
-    available: false,
+    available: true,
     prerequisites: ["phase1.colony", "phase1.movement"],
   },
   {

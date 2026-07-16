@@ -29,6 +29,117 @@ describe("tick lifecycle", () => {
   afterAll(() => {
     vi.unstubAllGlobals();
   });
+  it("executes one fail-closed tower command from the mandatory safety phase", () => {
+    const attack = vi.fn(() => 0);
+    const activateSafeMode = vi.fn(() => 0);
+    const hostile = {
+      body: [{ hits: 100, type: "attack" }],
+      fatigue: 0,
+      hits: 100,
+      hitsMax: 100,
+      id: "hostile-1",
+      my: false,
+      name: "hostile-1",
+      owner: { username: "Enemy" },
+      pos: { roomName: "W1N1", x: 20, y: 20 },
+      spawning: false,
+      store: { getCapacity: () => 0, getFreeCapacity: () => 0, getUsedCapacity: () => 0 },
+      ticksToLive: 1_000,
+    } as unknown as Creep;
+    const tower = {
+      hits: 3_000,
+      hitsMax: 3_000,
+      id: "tower-1",
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: { roomName: "W1N1", x: 25, y: 25 },
+      structureType: "tower",
+      store: {
+        energy: 800,
+        getCapacity: () => 1_000,
+        getFreeCapacity: () => 200,
+        getUsedCapacity: () => 800,
+      },
+      attack,
+      heal: () => 0,
+      repair: () => 0,
+    } as unknown as StructureTower;
+    const spawn = {
+      hits: 50,
+      hitsMax: 5_000,
+      id: "spawn-1",
+      my: true,
+      name: "Spawn1",
+      owner: { username: "Myrmex" },
+      pos: { roomName: "W1N1", x: 24, y: 25 },
+      room: { name: "W1N1" },
+      isActive: () => true,
+      spawning: null,
+      spawnCreep: () => 0,
+      structureType: "spawn",
+      store: { getCapacity: () => 300, getFreeCapacity: () => 0, getUsedCapacity: () => 300 },
+    } as unknown as StructureSpawn;
+    const controller = {
+      id: "controller-1",
+      level: 3,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: { roomName: "W1N1", x: 25, y: 24 },
+      progress: 0,
+      progressTotal: 1,
+      safeMode: undefined,
+      safeModeAvailable: 1,
+      safeModeCooldown: undefined,
+      ticksToDowngrade: 10_000,
+      upgradeBlocked: undefined,
+      activateSafeMode,
+    } as unknown as StructureController;
+    const room = {
+      name: "W1N1",
+      controller,
+      energyAvailable: 300,
+      energyCapacityAvailable: 300,
+      find: (kind: number): unknown[] =>
+        kind === FIND_CREEPS_VALUE
+          ? [hostile]
+          : kind === FIND_STRUCTURES_VALUE
+            ? [spawn, tower]
+            : kind === FIND_SOURCES_VALUE || kind === FIND_CONSTRUCTION_SITES_VALUE
+              ? []
+              : [],
+    } as unknown as Room;
+    const game: RuntimeGame = {
+      cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+      creeps: {},
+      rooms: { W1N1: room },
+      shard: { name: "shard3" },
+      time: 100,
+      getObjectById: (id) =>
+        id === tower.id
+          ? tower
+          : id === hostile.id
+            ? hostile
+            : id === controller.id
+              ? controller
+              : id === spawn.id
+                ? spawn
+                : null,
+    };
+    const outcome = runTick({ game, memory: {} as Memory });
+    expect(outcome.kernel.systems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ systemId: "defense.plan", status: "completed" }),
+      ]),
+    );
+    expect(outcome.snapshot.rooms[0]?.hostileCreeps).toHaveLength(1);
+    expect(outcome.snapshot.rooms[0]?.ownedTowers).toHaveLength(1);
+    expect(outcome.config.features.gates["phase1.safety"].enabled).toBe(true);
+    expect(outcome.execution?.accepted).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "tower.attack" })]),
+    );
+    expect(attack).toHaveBeenCalledWith(hostile);
+    expect(activateSafeMode).toHaveBeenCalledTimes(1);
+  });
   it("initializes the contracts owner through the single reconciliation commit", () => {
     const memory = {} as Memory;
     const gameAt = (time: number) => ({
