@@ -105,7 +105,7 @@ async function start() {
       "127.0.0.1",
       "--cli_port",
       "21026",
-      "--runners_cnt",
+      "--runner_threads",
       "1",
       "--processors_cnt",
       "1",

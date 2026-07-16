@@ -11,6 +11,7 @@ export const PRIVATE_SERVER_CLI_LIMITS = Object.freeze({
 const OPERATIONS = new Set([
   "bootstrap-controlled-bot",
   "pause",
+  "prepare-fixture-target",
   "reset",
   "resume",
   "sample-controlled",
@@ -36,6 +37,10 @@ export function privateServerCliCommand(operation) {
   if (kind === "sample-controlled") {
     exactOperation(operation, ["kind"]);
     return `storage.db.users.findOne({username:'${CONTROLLED_USERNAME}'}).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['rooms.objects'].find({user:user._id}).then(objects=>{const spawn=objects.find(item=>item.type==='spawn');if(!spawn)throw new Error('controlled integration spawn is missing');return Promise.all([storage.env.get(storage.env.keys.GAMETIME),storage.db['rooms.objects'].find({room:spawn.room})]).then(([gameTime,roomObjects])=>JSON.stringify({hostileCreeps:roomObjects.filter(item=>item.type==='creep'&&''+item.user==='2').length,ownedCreeps:objects.filter(item=>item.type==='creep').length,ownedSpawns:objects.filter(item=>item.type==='spawn').length,tick:+gameTime}))})})`;
+  }
+  if (kind === "prepare-fixture-target") {
+    exactOperation(operation, ["kind"]);
+    return `storage.db.users.findOne({username:'${CONTROLLED_USERNAME}'}).then(user=>{if(!user)throw new Error('controlled integration user is missing');return storage.db['rooms.objects'].find({user:user._id,type:'creep'}).then(creeps=>{const creep=creeps[0];if(!creep)throw new Error('controlled integration creep is missing');return Promise.all([storage.db['rooms.objects'].find({room:creep.room}),storage.db['rooms.terrain'].findOne({room:creep.room})]).then(([objects,terrain])=>{const candidate=[];for(let y=1;y<=48;y+=1)for(let x=1;x<=48;x+=1)if(Math.max(Math.abs(x-creep.x),Math.abs(y-creep.y))>=3&&Math.max(Math.abs(x-creep.x),Math.abs(y-creep.y))<=6&&!objects.some(item=>item.x===x&&item.y===y)&&(parseInt(terrain.terrain.charAt(y*50+x),10)&1)===0)candidate.push({x,y});const hostile=candidate[0];if(!hostile)throw new Error('safe hostile fixture cell is missing');return JSON.stringify({room:creep.room,targetX:creep.x,targetY:creep.y,userId:''+user._id,hostileX:hostile.x,hostileY:hostile.y})})})})`;
   }
   if (!Number.isSafeInteger(operation.milliseconds)) {
     throw new TypeError("Tick duration must be a safe integer.");
@@ -67,6 +72,16 @@ export async function bootstrapPrivateServerBot(options = {}) {
 export async function samplePrivateServerBot(options = {}) {
   return parseSample(
     await runPrivateServerCommand(privateServerCliCommand({ kind: "sample-controlled" }), options),
+  );
+}
+
+/** Selects transient, engine-validated fixture coordinates without exposing room state. */
+export async function preparePrivateServerFixtureTarget(options = {}) {
+  return parseFixtureTarget(
+    await runPrivateServerCommand(
+      privateServerCliCommand({ kind: "prepare-fixture-target" }),
+      options,
+    ),
   );
 }
 
@@ -214,6 +229,30 @@ function parseSample(value) {
     ownedCreeps: row.ownedCreeps,
     ownedSpawns: row.ownedSpawns,
     tick: row.tick,
+    transcript: opaqueResult(value),
+  });
+}
+
+function parseFixtureTarget(value) {
+  const row = parseJson(value);
+  if (
+    row === null ||
+    !safeId(row.userId) ||
+    !roomName(row.room) ||
+    !cell(row.targetX) ||
+    !cell(row.targetY) ||
+    !cell(row.hostileX) ||
+    !cell(row.hostileY)
+  ) {
+    throw new Error("Private-server fixture target receipt is invalid.");
+  }
+  return Object.freeze({
+    hostileX: row.hostileX,
+    hostileY: row.hostileY,
+    room: row.room,
+    targetX: row.targetX,
+    targetY: row.targetY,
+    userId: row.userId,
     transcript: opaqueResult(value),
   });
 }

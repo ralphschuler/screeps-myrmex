@@ -9,6 +9,7 @@ import {
   privateServerDeploymentCommand,
   privateServerBundleIdentity,
   privateServerCliCommand,
+  preparePrivateServerFixtureTarget,
   runPrivateServerCli,
   samplePrivateServerBot,
 } from "../lib/private-server-cli.mjs";
@@ -60,6 +61,7 @@ describe("private-server CLI adapter", () => {
     const responses = [
       `'${JSON.stringify({ room: "W1N1", spawnX: 20, spawnY: 21, userId: "controlled-user" })}'`,
       `'${JSON.stringify({ hostileCreeps: 1, ownedCreeps: 2, ownedSpawns: 1, tick: 42 })}'`,
+      `'${JSON.stringify({ hostileX: 23, hostileY: 24, room: "W1N1", targetX: 20, targetY: 21, userId: "controlled-user" })}'`,
     ];
     const server = createServer((socket) => {
       socket.write("< \r\n");
@@ -78,6 +80,11 @@ describe("private-server CLI adapter", () => {
       ownedCreeps: 2,
       ownedSpawns: 1,
       tick: 42,
+    });
+    await expect(preparePrivateServerFixtureTarget({ port })).resolves.toMatchObject({
+      hostileX: 23,
+      targetX: 20,
+      userId: "controlled-user",
     });
   });
 
