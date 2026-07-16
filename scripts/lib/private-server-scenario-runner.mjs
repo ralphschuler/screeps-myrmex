@@ -143,10 +143,12 @@ function safeError(error) {
 function scenarioFailureCode(error) {
   if (!(error instanceof Error) || error.name !== "StartupFailure") return null;
   return [
+    "asset-directory-unavailable",
+    "configuration-file-unavailable",
     "health-timeout",
-    "launch-configuration",
     "launcher-exited",
     "port-unavailable",
+    "required-launch-option-missing",
     "steam-authentication",
   ].includes(error.message)
     ? error.message

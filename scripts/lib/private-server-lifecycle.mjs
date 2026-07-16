@@ -126,7 +126,9 @@ export function redactLifecycleError(error) {
 /** Maps ignored launcher text to a fixed public code without returning any launcher content. */
 export function classifyLauncherFailure(value) {
   if (typeof value !== "string" || value.length === 0) return "health-timeout";
-  if (/assetdir|\.screepsrc|option .* not defined/i.test(value)) return "launch-configuration";
+  if (/assetdir/i.test(value)) return "asset-directory-unavailable";
+  if (/\.screepsrc/i.test(value)) return "configuration-file-unavailable";
+  if (/option .* not defined/i.test(value)) return "required-launch-option-missing";
   if (/steam|authenticat/i.test(value)) return "steam-authentication";
   if (/EADDRINUSE|address already in use/i.test(value)) return "port-unavailable";
   return "launcher-exited";

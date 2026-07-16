@@ -64,7 +64,13 @@ describe("private-server lifecycle", () => {
 
   it("exposes only fixed launcher failure codes", () => {
     expect(classifyLauncherFailure("Error: `assetdir` option is not defined!")).toBe(
-      "launch-configuration",
+      "asset-directory-unavailable",
+    );
+    expect(classifyLauncherFailure("Warning: file .screepsrc not found")).toBe(
+      "configuration-file-unavailable",
+    );
+    expect(classifyLauncherFailure("`db` option is not defined!")).toBe(
+      "required-launch-option-missing",
     );
     expect(classifyLauncherFailure("Steam authentication rejected")).toBe("steam-authentication");
     expect(classifyLauncherFailure("listen EADDRINUSE")).toBe("port-unavailable");

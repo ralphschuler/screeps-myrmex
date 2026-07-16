@@ -188,10 +188,12 @@ function execute(command, args) {
 function safeLifecycleReason(record) {
   if (typeof record.reason !== "string") return "health-timeout";
   return [
+    "asset-directory-unavailable",
+    "configuration-file-unavailable",
     "health-timeout",
-    "launch-configuration",
     "launcher-exited",
     "port-unavailable",
+    "required-launch-option-missing",
     "steam-authentication",
   ].includes(record.reason)
     ? record.reason
