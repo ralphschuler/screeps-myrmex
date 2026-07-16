@@ -3,6 +3,12 @@
   "issue": 30,
   "status": "blocked",
   "productionBundleExclusion": "evidenced-local",
+  "productionBundle": {
+    "buildSha": "phase1-gate-evidence",
+    "bytes": 533715,
+    "inputCount": 82,
+    "sha256": "sha256:31ed66eb54b0186dbe4700f5d02ed5e0e9b006455d9c8fafe9e4791ca9b85ea6"
+  },
   "externalLive": {
     "deployment": "unevidenced",
     "engineTiming": "unevidenced",
