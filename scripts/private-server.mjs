@@ -1,15 +1,17 @@
 import { spawn } from "node:child_process";
-import { mkdir, open } from "node:fs/promises";
+import { mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { cwd } from "node:process";
+import { cwd, env } from "node:process";
 import {
   PRIVATE_SERVER_LIMITS,
   clearPid,
   lifecyclePaths,
   lifecycleRecord,
   parseLifecycleArguments,
+  privateServerProvisioningKey,
   readPid,
   redactLifecycleError,
+  scrubProvisionedConfig,
   waitForHealth,
   writePid,
 } from "./lib/private-server-lifecycle.mjs";
@@ -24,6 +26,7 @@ try {
   if (
     record.kind !== "installed" &&
     record.kind !== "initialized" &&
+    record.kind !== "provisioned" &&
     record.kind !== "healthy" &&
     record.kind !== "stopped"
   ) {
@@ -48,6 +51,8 @@ async function run(command) {
         "initialized",
         paths.root,
       );
+    case "provision":
+      return provision();
     case "start":
       return start();
     case "health":
@@ -55,6 +60,22 @@ async function run(command) {
     case "stop":
       return stop();
   }
+}
+
+async function provision() {
+  const key = privateServerProvisioningKey(env.SCREEPS_STEAM_API_KEY);
+  if (key === null) return lifecycleRecord("provisioning-required");
+  await mkdir(paths.root, { recursive: true });
+  const result = await executeWithInput(
+    "npm",
+    ["exec", "--prefix", runtimeDirectory, "--", "screeps", "init"],
+    key,
+    paths.root,
+  );
+  if (result.kind !== "initialized") return result;
+  const configPath = `${paths.root}/.screepsrc`;
+  await writeFile(configPath, scrubProvisionedConfig(await readFile(configPath, "utf8")), "utf8");
+  return lifecycleRecord("provisioned");
 }
 
 async function start() {
@@ -86,6 +107,9 @@ async function start() {
       "1",
       "--processors_cnt",
       "1",
+      ...(privateServerProvisioningKey(env.SCREEPS_STEAM_API_KEY) === null
+        ? []
+        : ["--steam_api_key", env.SCREEPS_STEAM_API_KEY]),
     ],
     { cwd: paths.root, detached: true, stdio: ["ignore", log.fd, log.fd] },
   );
@@ -97,6 +121,21 @@ async function start() {
   if (result.kind === "healthy") return lifecycleRecord("started", { pid: child.pid });
   await stop();
   return lifecycleRecord("startup-timeout", { timeoutMs: PRIVATE_SERVER_LIMITS.startupTimeoutMs });
+}
+
+async function executeWithInput(command, args, input, commandCwd) {
+  return new Promise((resolveRecord) => {
+    const child = spawn(command, args, { cwd: commandCwd, stdio: ["pipe", "ignore", "ignore"] });
+    child.once("error", (error) =>
+      resolveRecord(lifecycleRecord("startup-failed", { reason: redactLifecycleError(error) })),
+    );
+    child.once("exit", (code) =>
+      resolveRecord(
+        lifecycleRecord(code === 0 ? "initialized" : "startup-failed", { code: code ?? -1 }),
+      ),
+    );
+    child.stdin.end(`${input}\n`);
+  });
 }
 
 async function health() {

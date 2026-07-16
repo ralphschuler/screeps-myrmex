@@ -10,6 +10,7 @@ ignored `.myrmex-private-server/` directory.
 ```sh
 npm run private-server -- install
 npm run private-server -- init
+npm run private-server -- provision
 npm run private-server -- start
 npm run private-server -- health
 npm run private-server -- stop
@@ -19,6 +20,14 @@ Each command emits one sanitized JSON lifecycle record. Startup uses loopback-on
 runner, and one processor. Health polling and cleanup are bounded. A non-success record fails the
 command; later scenario work must treat that as infrastructure failure rather than gameplay
 evidence.
+
+`provision` is the clean-checkout path for a headless local server. It requires
+`SCREEPS_STEAM_API_KEY` only in the invoking environment, supplies it to the upstream initializer on
+stdin, then removes the generated `steam_api_key` line from the ignored state configuration. Startup
+accepts that same runtime-only environment variable when Steam-native authentication is unavailable;
+the value is never included in MYRMEX lifecycle records or evidence artifacts. Without either
+runtime provisioning method, `provision` returns `provisioning-required` and the scenario gate must
+record `startup-failed` rather than gameplay evidence.
 
 The official standalone server documents the console launcher, its separate CLI port, and the
 multiple-process runtime. It requires a supported Node release and may require local authentication
