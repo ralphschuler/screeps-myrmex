@@ -30,6 +30,17 @@ export interface RuntimeFeatureGates {
   readonly gates: Readonly<Record<FeatureGateId, FeatureGateDecision>>;
 }
 
+export const OBSERVER_DIAGNOSTIC_CATEGORIES = ["recovery", "blockers", "faults"] as const;
+export type ObserverDiagnosticCategory = (typeof OBSERVER_DIAGNOSTIC_CATEGORIES)[number];
+export type ObserverDiagnosticLevel = "debug" | "trace";
+
+/** A time-bounded observer view. It cannot modify operational policy. */
+export interface ObserverDiagnosticWindow {
+  readonly level: ObserverDiagnosticLevel;
+  readonly categories: readonly ObserverDiagnosticCategory[];
+  readonly expiresAtTick: number;
+}
+
 export interface RecoveryPolicy {
   /** Energy protected for restoring a legal local workforce. */
   readonly protectedSpawnEnergy: number;
@@ -147,6 +158,7 @@ export interface RuntimeConfig {
   readonly policy: SurvivalPolicy;
   readonly relations: ConfiguredRelations;
   readonly features: RuntimeFeatureGates;
+  readonly observer: { readonly diagnostic: ObserverDiagnosticWindow | null };
 }
 
 export const PLAYER_RELATIONS = [

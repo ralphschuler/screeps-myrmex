@@ -1,6 +1,6 @@
 # Phase 1 console policy evidence
 
-Source version: `runtime-config-source-v14`.
+Source version: `runtime-config-source-v15`.
 
 Issue [#130](https://github.com/ralphschuler/screeps-myrmex/issues/130) defines fixed console
 reporter caps and a pure redacted status projection for the renderer in issue #131.
@@ -18,6 +18,9 @@ reporter caps and a pure redacted status projection for the renderer in issue #1
   a successful spawn, harvest, delivery, changed evidence, or recovery completion clears it.
 - Reminder timing is bounded exponential backoff. It is observer evidence only: no retry, command,
   or gameplay admission path reads it.
+- An optional observer diagnostic request accepts only `debug` or `trace` and the fixed `recovery`,
+  `blockers`, and `faults` categories. Its duration is anchored in the versioned config receipt and
+  expires exactly at the recorded tick; it cannot change reporter caps or redaction.
 
 ## Synthetic console examples
 

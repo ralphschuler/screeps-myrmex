@@ -91,7 +91,7 @@ describe("Phase 1 runtime config scenario", () => {
     expect(reset.outcomes[4]?.configRevision).toBe(reset.outcomes[1]?.configRevision);
     expect(reset.outcomes[5]?.configBytes).toBe(reset.outcomes[0]?.configBytes);
     expect(
-      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v14"),
+      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v15"),
     ).toBe(true);
 
     for (const outcome of reset.outcomes.slice(1, 5)) {

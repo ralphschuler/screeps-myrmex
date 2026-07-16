@@ -6,6 +6,8 @@ import type {
   GrowthPolicy,
   LeasePolicy,
   MovementPolicy,
+  ObserverDiagnosticCategory,
+  ObserverDiagnosticLevel,
   RecoveryPolicy,
   RetryPolicy,
   SafeModePolicy,
@@ -14,7 +16,7 @@ import type {
   TelemetryPolicy,
   TowerPolicy,
 } from "./contracts";
-import { FEATURE_GATE_IDS } from "./contracts";
+import { FEATURE_GATE_IDS, OBSERVER_DIAGNOSTIC_CATEGORIES } from "./contracts";
 import { DEFAULT_SURVIVAL_POLICY } from "./defaults";
 import { isCanonicalIdentity } from "./identity";
 
@@ -61,10 +63,21 @@ export interface RuntimeFeatureOverrides {
   readonly disabled?: readonly FeatureGateId[];
 }
 
+export interface ObserverDiagnosticOverride {
+  readonly level: ObserverDiagnosticLevel;
+  readonly categories: readonly ObserverDiagnosticCategory[];
+  readonly durationTicks: number;
+}
+
+export interface RuntimeObserverOverrides {
+  readonly diagnostic?: ObserverDiagnosticOverride;
+}
+
 export interface CanonicalRuntimeOverrides {
   readonly policy?: RuntimePolicyOverrides;
   readonly relations?: RuntimeRelationOverrides;
   readonly features?: RuntimeFeatureOverrides;
+  readonly observer?: RuntimeObserverOverrides;
 }
 
 export type RuntimeOverrideValidation =
@@ -426,7 +439,7 @@ function addBytes(count: number, budget: ValidationBudget): boolean {
 }
 
 function parseRuntimeOverrides(value: unknown): ValidationResult<CanonicalRuntimeOverrides> {
-  const root = exactRecord(value, ["policy", "relations", "features"]);
+  const root = exactRecord(value, ["policy", "relations", "features", "observer"]);
   if (!root.valid) {
     return root;
   }
@@ -435,6 +448,7 @@ function parseRuntimeOverrides(value: unknown): ValidationResult<CanonicalRuntim
     policy?: RuntimePolicyOverrides;
     relations?: RuntimeRelationOverrides;
     features?: RuntimeFeatureOverrides;
+    observer?: RuntimeObserverOverrides;
   } = {};
   if (has(root.value, "policy")) {
     const policy = parsePolicyOverrides(root.value.policy);
@@ -457,7 +471,56 @@ function parseRuntimeOverrides(value: unknown): ValidationResult<CanonicalRuntim
     }
     result.features = features.value;
   }
+  if (has(root.value, "observer")) {
+    const observer = parseObserverOverrides(root.value.observer);
+    if (!observer.valid) {
+      return observer;
+    }
+    result.observer = observer.value;
+  }
   return valid(result);
+}
+
+function parseObserverOverrides(value: unknown): ValidationResult<RuntimeObserverOverrides> {
+  const root = exactRecord(value, ["diagnostic"]);
+  if (!root.valid) return root;
+  if (!has(root.value, "diagnostic")) return valid({});
+  const diagnostic = exactRecord(root.value.diagnostic, ["level", "categories", "durationTicks"]);
+  if (!diagnostic.valid) return diagnostic;
+  if (diagnostic.value.level !== "debug" && diagnostic.value.level !== "trace")
+    return invalid("type");
+  if (
+    typeof diagnostic.value.durationTicks !== "number" ||
+    !Number.isSafeInteger(diagnostic.value.durationTicks)
+  )
+    return invalid("type");
+  if (
+    diagnostic.value.durationTicks < 1 ||
+    diagnostic.value.durationTicks > DEFAULT_SURVIVAL_POLICY.reporter.maximumDiagnosticDurationTicks
+  )
+    return invalid("range");
+  if (!Array.isArray(diagnostic.value.categories)) return invalid("type");
+  const allowed = new Set<string>(OBSERVER_DIAGNOSTIC_CATEGORIES);
+  const categories: ObserverDiagnosticCategory[] = [];
+  const seen = new Set<ObserverDiagnosticCategory>();
+  for (const category of diagnostic.value.categories) {
+    if (
+      typeof category !== "string" ||
+      !allowed.has(category) ||
+      seen.has(category as ObserverDiagnosticCategory)
+    )
+      return invalid("type");
+    seen.add(category as ObserverDiagnosticCategory);
+    categories.push(category as ObserverDiagnosticCategory);
+  }
+  if (categories.length === 0) return invalid("range");
+  return valid({
+    diagnostic: {
+      level: diagnostic.value.level,
+      categories: categories.sort(compareStrings),
+      durationTicks: diagnostic.value.durationTicks,
+    },
+  });
 }
 
 function parsePolicyOverrides(value: unknown): ValidationResult<RuntimePolicyOverrides> {

@@ -2,7 +2,7 @@ import {
   RUNTIME_CONFIG_OWNER_SCHEMA_VERSION,
   type RuntimeConfigCandidate,
   type RuntimeConfigLastValid,
-  type RuntimeConfigOwnerV1,
+  type RuntimeConfigOwnerV2,
   type RuntimeConfigResolution,
   type RuntimeConfigResolutionMetadata,
 } from "./authority-contracts";
@@ -26,6 +26,7 @@ interface ParsedLastValid {
   readonly candidateRevision: number;
   readonly overrides: unknown;
   readonly resolvedRevision: string;
+  readonly diagnosticExpiresAtTick: number | null;
 }
 
 type OwnerRead =
@@ -37,17 +38,21 @@ interface CompatibleLastValid {
   readonly overrides: CanonicalRuntimeOverrides;
   readonly inputCanonical: string;
   readonly candidateRevision: number;
+  readonly diagnosticExpiresAtTick: number | null;
 }
 
 interface CandidateCache {
   readonly revision: number;
   readonly validation: RuntimeOverrideValidation;
   readonly config: RuntimeConfig | null;
+  readonly diagnosticExpiresAtTick: number | null;
+  readonly tick: number | null;
 }
 
 interface LastValidCache extends CompatibleLastValid {
   readonly sourceRevision: string;
   readonly resolvedRevision: string;
+  readonly tick: number;
 }
 
 /**
@@ -59,7 +64,6 @@ export class RuntimeConfigAuthority {
   private lastValidCache: LastValidCache | null = null;
 
   public resolve(ownerValue: unknown, tick: number): RuntimeConfigResolution {
-    void tick;
     const read = readOwner(ownerValue);
     if (read.kind !== "valid") {
       this.clearCaches();
@@ -87,20 +91,20 @@ export class RuntimeConfigAuthority {
           metadata("source-defaults", "owner-malformed"),
         );
       case "valid":
-        return this.resolveValidOwner(read.owner);
+        return this.resolveValidOwner(read.owner, tick);
     }
   }
 
-  private resolveValidOwner(owner: ParsedOwner): RuntimeConfigResolution {
+  private resolveValidOwner(owner: ParsedOwner, tick: number): RuntimeConfigResolution {
     if (owner.candidate === null) {
       this.candidateCache = null;
-      const lastValid = this.readLastValid(owner.lastValid);
+      const lastValid = this.readLastValid(owner.lastValid, tick);
       return lastValid === null
         ? result(SOURCE_DEFAULT_RUNTIME_CONFIG, metadata("source-defaults", "no-candidate"))
         : retained(lastValid, null, "no-candidate");
     }
 
-    const lastValid = this.readLastValid(owner.lastValid);
+    const lastValid = this.readLastValid(owner.lastValid, tick);
     if (lastValid !== null && owner.candidate.revision < lastValid.candidateRevision) {
       return retained(lastValid, owner.candidate.revision, "candidate-stale");
     }
@@ -120,7 +124,12 @@ export class RuntimeConfigAuthority {
         return retained(lastValid, owner.candidate.revision, "candidate-revision-reused");
       }
       return result(
-        lastValid.config,
+        this.configForCandidate(
+          owner.candidate.revision,
+          candidate.overrides,
+          lastValid.diagnosticExpiresAtTick,
+          tick,
+        ),
         metadata(
           "candidate-accepted",
           "candidate-valid",
@@ -130,12 +139,22 @@ export class RuntimeConfigAuthority {
       );
     }
 
-    const config = this.configForCandidate(owner.candidate.revision, candidate.overrides);
+    const diagnosticExpiresAtTick =
+      candidate.overrides.observer?.diagnostic === undefined
+        ? null
+        : tick + candidate.overrides.observer.diagnostic.durationTicks;
+    const config = this.configForCandidate(
+      owner.candidate.revision,
+      candidate.overrides,
+      diagnosticExpiresAtTick,
+      tick,
+    );
     const accepted: RuntimeConfigLastValid = {
       sourceRevision: RUNTIME_CONFIG_SOURCE_REVISION,
       candidateRevision: owner.candidate.revision,
       overrides: candidate.overrides,
       resolvedRevision: config.revision,
+      diagnosticExpiresAtTick,
     };
     return result(
       config,
@@ -156,26 +175,42 @@ export class RuntimeConfigAuthority {
     }
 
     const validation = validateRuntimeOverrides(candidate.overrides);
-    this.candidateCache = { revision: candidate.revision, validation, config: null };
+    this.candidateCache = {
+      revision: candidate.revision,
+      validation,
+      config: null,
+      diagnosticExpiresAtTick: null,
+      tick: null,
+    };
     return validation;
   }
 
   private configForCandidate(
     revision: number,
     overrides: CanonicalRuntimeOverrides,
+    diagnosticExpiresAtTick: number | null,
+    tick: number,
   ): RuntimeConfig {
     const cached = this.candidateCache;
-    if (cached !== null && cached.revision === revision && cached.config !== null) {
+    if (
+      cached?.revision === revision &&
+      cached.config !== null &&
+      cached.diagnosticExpiresAtTick === diagnosticExpiresAtTick &&
+      (diagnosticExpiresAtTick === null || cached.tick === tick)
+    ) {
       return cached.config;
     }
-    const config = buildRuntimeConfig(overrides);
-    if (cached !== null && cached.revision === revision) {
-      this.candidateCache = { ...cached, config };
+    const config = buildRuntimeConfig(overrides, diagnosticExpiresAtTick, tick);
+    if (cached?.revision === revision) {
+      this.candidateCache = { ...cached, config, diagnosticExpiresAtTick, tick };
     }
     return config;
   }
 
-  private readLastValid(lastValid: ParsedLastValid | null): CompatibleLastValid | null {
+  private readLastValid(
+    lastValid: ParsedLastValid | null,
+    tick: number,
+  ): CompatibleLastValid | null {
     if (lastValid === null || lastValid.sourceRevision !== RUNTIME_CONFIG_SOURCE_REVISION) {
       return null;
     }
@@ -184,7 +219,8 @@ export class RuntimeConfigAuthority {
       cached !== null &&
       cached.sourceRevision === lastValid.sourceRevision &&
       cached.candidateRevision === lastValid.candidateRevision &&
-      cached.resolvedRevision === lastValid.resolvedRevision
+      cached.resolvedRevision === lastValid.resolvedRevision &&
+      cached.tick === tick
     ) {
       return cached;
     }
@@ -193,7 +229,11 @@ export class RuntimeConfigAuthority {
     if (!validation.valid) {
       return null;
     }
-    const config = buildRuntimeConfig(validation.overrides);
+    const config = buildRuntimeConfig(
+      validation.overrides,
+      lastValid.diagnosticExpiresAtTick,
+      tick,
+    );
     if (config.revision !== lastValid.resolvedRevision) {
       return null;
     }
@@ -204,6 +244,8 @@ export class RuntimeConfigAuthority {
       config,
       overrides: validation.overrides,
       inputCanonical: validation.inputCanonical,
+      diagnosticExpiresAtTick: lastValid.diagnosticExpiresAtTick,
+      tick,
     };
     this.lastValidCache = compatible;
     return compatible;
@@ -243,14 +285,14 @@ function readOwner(value: unknown): OwnerRead {
   const lastValidField = dataField(root, "lastValid");
   if (
     !schemaVersion.present ||
-    schemaVersion.value !== RUNTIME_CONFIG_OWNER_SCHEMA_VERSION ||
+    (schemaVersion.value !== 1 && schemaVersion.value !== RUNTIME_CONFIG_OWNER_SCHEMA_VERSION) ||
     !candidateField.present ||
     !lastValidField.present
   ) {
     return { kind: "malformed" };
   }
   const candidate = parseCandidate(candidateField.value);
-  const lastValid = parseLastValid(lastValidField.value);
+  const lastValid = parseLastValid(lastValidField.value, schemaVersion.value);
   if (!candidate.valid || !lastValid.valid) {
     return { kind: "malformed" };
   }
@@ -278,16 +320,16 @@ function parseCandidate(
 
 function parseLastValid(
   value: unknown,
+  schemaVersion: number,
 ): { readonly valid: true; readonly value: ParsedLastValid | null } | { readonly valid: false } {
   if (value === null) {
     return { valid: true, value: null };
   }
-  const record = exactDataRecord(value, [
-    "sourceRevision",
-    "candidateRevision",
-    "overrides",
-    "resolvedRevision",
-  ]);
+  const legacyKeys = ["sourceRevision", "candidateRevision", "overrides", "resolvedRevision"];
+  const diagnosticKeys = [...legacyKeys, "diagnosticExpiresAtTick"];
+  const record =
+    exactDataRecord(value, schemaVersion === 1 ? legacyKeys : diagnosticKeys) ??
+    (schemaVersion === 1 ? exactDataRecord(value, diagnosticKeys) : null);
   if (record === null) {
     return { valid: false };
   }
@@ -295,6 +337,12 @@ function parseLastValid(
   const candidateRevision = dataValue(record, "candidateRevision");
   const overrides = dataValue(record, "overrides");
   const resolvedRevision = dataValue(record, "resolvedRevision");
+  const diagnosticExpiresAtTick = Object.prototype.hasOwnProperty.call(
+    record,
+    "diagnosticExpiresAtTick",
+  )
+    ? dataValue(record, "diagnosticExpiresAtTick")
+    : null;
   if (
     typeof sourceRevision !== "string" ||
     sourceRevision.length === 0 ||
@@ -302,20 +350,27 @@ function parseLastValid(
     !isNonNegativeSafeInteger(candidateRevision) ||
     typeof resolvedRevision !== "string" ||
     resolvedRevision.length === 0 ||
-    resolvedRevision.length > 128
+    resolvedRevision.length > 128 ||
+    (diagnosticExpiresAtTick !== null && !isNonNegativeSafeInteger(diagnosticExpiresAtTick))
   ) {
     return { valid: false };
   }
   return {
     valid: true,
-    value: { sourceRevision, candidateRevision, overrides, resolvedRevision },
+    value: {
+      sourceRevision,
+      candidateRevision,
+      overrides,
+      resolvedRevision,
+      diagnosticExpiresAtTick,
+    },
   };
 }
 
 function createOwner(
   candidate: RuntimeConfigCandidate | null,
   lastValid: RuntimeConfigLastValid | null,
-): RuntimeConfigOwnerV1 {
+): RuntimeConfigOwnerV2 {
   return deepFreeze({
     schemaVersion: RUNTIME_CONFIG_OWNER_SCHEMA_VERSION,
     candidate: candidate === null ? null : cloneDataPreservingOrder(candidate),
@@ -346,7 +401,7 @@ function metadata(
 function result(
   config: RuntimeConfig,
   resolutionMetadata: RuntimeConfigResolutionMetadata,
-  replacementOwner: RuntimeConfigOwnerV1 | null = null,
+  replacementOwner: RuntimeConfigOwnerV2 | null = null,
 ): RuntimeConfigResolution {
   return deepFreeze({ config, metadata: resolutionMetadata, replacementOwner });
 }

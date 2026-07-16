@@ -81,7 +81,7 @@ available under `runtime-config-source-v3`; issue #24 makes `phase1.spawn` avail
 `runtime-config-source-v10`; issue #28 makes `phase1.growth` available under
 `runtime-config-source-v11`; issue #39 makes `phase1.telemetry` available under
 `runtime-config-source-v12`; issue #130 advances observer-only console policy to
-`runtime-config-source-v14`. Every later gate remains source-unavailable. Each subsequent outcome
+`runtime-config-source-v15`. Every later gate remains source-unavailable. Each subsequent outcome
 change may mark only its own gate available after its prerequisites and outcome test exist.
 Operational Memory may disable available work but can never activate an unfinished gate.
 

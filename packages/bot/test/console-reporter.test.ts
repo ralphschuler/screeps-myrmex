@@ -29,6 +29,28 @@ describe("ConsoleReporter", () => {
       }),
     ).toEqual([]);
   });
+
+  it("renders only fixed safe diagnostic categories within the existing caps", () => {
+    const base = runTick({ game: game(100), memory: {} as Memory }).reporterStatus;
+    const status = {
+      ...base,
+      diagnostic: {
+        level: "debug" as const,
+        categories: ["recovery", "faults"] as const,
+        expiresAtTick: 101,
+      },
+    };
+    const policy = {
+      ...buildRuntimeConfig().policy.reporter,
+      heartbeatIntervalTicks: 10,
+      maximumLinesPerTick: 2,
+    };
+    const lines = new ConsoleReporter().report(status, policy, { log: vi.fn() });
+    expect(lines).toHaveLength(2);
+    expect(lines.join("\n")).toContain("diagnostic recovery");
+    expect(lines.join("\n")).not.toContain("diagnostic faults");
+    expect(lines.join("\n")).not.toContain("shard3");
+  });
 });
 
 function game(time: number) {

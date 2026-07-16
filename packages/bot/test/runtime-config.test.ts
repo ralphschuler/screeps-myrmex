@@ -19,6 +19,46 @@ import {
 } from "../src/config/validation";
 
 describe("RuntimeConfigAuthority", () => {
+  it("anchors a safe diagnostic window once and expires it exactly across cache and heap reset", () => {
+    const proposal = owner(9, {
+      observer: {
+        diagnostic: { level: "debug", categories: ["faults", "recovery"], durationTicks: 5 },
+      },
+    });
+    const authority = new RuntimeConfigAuthority();
+    const accepted = authority.resolve(proposal, 100);
+    expect(accepted.config.observer.diagnostic).toEqual({
+      level: "debug",
+      categories: ["faults", "recovery"],
+      expiresAtTick: 105,
+    });
+    const persisted = jsonClone(accepted.replacementOwner);
+    expect(authority.resolve(persisted, 104).config.observer.diagnostic).not.toBeNull();
+    expect(authority.resolve(persisted, 105).config.observer.diagnostic).toBeNull();
+    expect(
+      new RuntimeConfigAuthority().resolve(persisted, 105).config.observer.diagnostic,
+    ).toBeNull();
+    expect(accepted.config.policy).toEqual(authority.resolve(persisted, 104).config.policy);
+  });
+
+  it("rejects hostile or cap-bypassing observer diagnostic proposals", () => {
+    for (const diagnostic of [
+      { level: "info", categories: ["recovery"], durationTicks: 1 },
+      { level: "debug", categories: [], durationTicks: 1 },
+      { level: "trace", categories: ["faults", "faults"], durationTicks: 1 },
+      { level: "debug", categories: ["raw"], durationTicks: 1 },
+      { level: "debug", categories: ["recovery"], durationTicks: 0 },
+      { level: "debug", categories: ["recovery"], durationTicks: 51 },
+    ]) {
+      expect(validateRuntimeOverrides({ observer: { diagnostic } }).valid).toBe(false);
+    }
+    expect(
+      validateRuntimeOverrides({
+        observer: { diagnostic: { level: "trace", categories: ["blockers"], durationTicks: 50 } },
+      }),
+    ).toMatchObject({ valid: true });
+  });
+
   it("distinguishes unavailable state from the exact owner initializer", () => {
     const authority = new RuntimeConfigAuthority();
     const unavailable = authority.resolve(null, 10);
@@ -33,7 +73,7 @@ describe("RuntimeConfigAuthority", () => {
     expect(unavailable.replacementOwner).toBeNull();
     expect(initialized.metadata.reasonCode).toBe("owner-initialized");
     expect(initialized.replacementOwner).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       candidate: null,
       lastValid: null,
     });
@@ -291,7 +331,7 @@ describe("RuntimeConfigAuthority", () => {
 
     const malformed = new RuntimeConfigAuthority().resolve({ schemaVersion: 1 }, 2);
     const future = new RuntimeConfigAuthority().resolve(
-      { schemaVersion: 2, candidate: null, lastValid: null },
+      { schemaVersion: 3, candidate: null, lastValid: null },
       2,
     );
     const hidden = new RuntimeConfigAuthority().resolve(
@@ -331,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v14");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v15");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v14",
+      "runtime-config-source-v15",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -591,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("makes completed safety, recovery, maintenance, growth, and telemetry source-available under v14", () => {
+  it("makes completed safety, recovery, maintenance, growth, and telemetry source-available under v15", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v14");
+    expect(config.sourceRevision).toBe("runtime-config-source-v15");
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.spawn")).toBe(true);

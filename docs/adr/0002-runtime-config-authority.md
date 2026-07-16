@@ -17,12 +17,12 @@ recursively immutable planner view from source-controlled defaults and one stric
 operational candidate. Planners import only the public typed view through `TickContext`; they cannot
 read the raw owner or the validation and persistence modules.
 
-Durable Memory schema v3 adds the `config` owner. Its owner-local schema v1 contains:
+Durable Memory schema v3 adds the `config` owner. Its owner-local schema v2 contains:
 
 - operator-owned `candidate`, with a nonnegative safe-integer revision and one complete override
   document; and
 - bot-owned `lastValid`, with the source revision, candidate revision, canonical accepted override,
-  and resolved revision.
+  resolved revision, and an optional diagnostic expiry anchor.
 
 Exact `{}` is the only initialization shorthand. The bot may normalize that shorthand or update
 `lastValid`, but never rewrites `candidate`. Changed canonical content requires a greater candidate
@@ -36,6 +36,13 @@ equality evidence.
 configuration and its revision receipt remain active and unchanged; without compatible evidence,
 source defaults apply. Null is not rollback. Returning to defaults or a prior override requires a
 newer candidate revision with the complete desired override.
+
+The only time-varying override is an observer diagnostic request. It is deliberately outside the
+survival policy and accepts only fixed redacted categories, a debug or trace level, and a bounded
+duration. Acceptance records one expiry tick in `lastValid`; resolution rebuilds the safe observer
+view each tick and makes it inactive exactly at that tick. It cannot alter gameplay, reporter caps,
+redaction, or policy revisions. The reader accepts v1 receipts without an expiry anchor as a
+diagnostic-free compatibility case.
 
 The historical v1-to-v2 migration protocol remains valid. Its final bounded step transitions to a
 separate v2-to-v3 cursor, which installs the config owner and completes the migration. This
@@ -58,7 +65,8 @@ exclusion.
 
 ## Consequences
 
-- Config validation is bounded and runs only after a heap reset or candidate-revision change.
+- Candidate validation is bounded and runs only after a heap reset or candidate-revision change; the
+  derived observer window is evaluated each tick against its persisted expiry anchor.
 - Resolved config, policy, feature-gate, and relation decisions are deterministic across JSON and
   heap round trips.
 - Architecture enforcement rejects another config authority and raw candidate parsing outside
