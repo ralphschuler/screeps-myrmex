@@ -31,6 +31,16 @@ setup; MYRMEX does not store that setup, credentials, or server state in the rep
 
 This lifecycle establishes only install/start/health/stop controls. The sanitized evidence manifest
 and artifact contract is documented in [private-server-evidence.md](private-server-evidence.md).
-World seeding, fault injection, bundle deployment, and scenario assertions remain owned by issue
-[#144](https://github.com/ralphschuler/screeps-myrmex/issues/144). Runtime production code does not
-import these scripts.
+`npm run private-server:bundle` builds and emits the byte size plus SHA-256 identity for the exact
+deployable `dist/main.js`, without emitting its source. The bounded loopback CLI adapter is owned by
+issue #148: it maps a fixed operation vocabulary to the pinned server's administrator CLI and
+returns only opaque response metadata. It never accepts a caller-supplied expression, remote host,
+credential, or raw CLI transcript. Its only upload path serializes the locally built bundle as data
+into the pre-defined `myrmex-integration` test account, invalidates the pinned backend's script
+cache, and publishes its source hash. Account creation and deterministic world setup are fixture
+work, not upload behavior. `npm run private-server:deploy` builds before attempting that upload and
+fails closed until a provisioned local server has created the controlled fixture account.
+
+World seeding, deterministic hostile/reset fixtures, and scenario assertions remain ordered under
+issues #149 and #150 (parent [#144](https://github.com/ralphschuler/screeps-myrmex/issues/144)).
+Runtime production code does not import these scripts.

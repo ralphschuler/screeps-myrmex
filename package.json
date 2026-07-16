@@ -23,6 +23,8 @@
     "package:bot": "node scripts/package-bot.mjs",
     "package:check": "node scripts/package-bot.mjs 0.0.0-development",
     "private-server": "node scripts/private-server.mjs",
+    "private-server:bundle": "npm run build && node scripts/private-server-bundle.mjs",
+    "private-server:deploy": "npm run build && node scripts/private-server-deploy.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --project packages/bot/tsconfig.json --noEmit && tsc --project packages/scenario-kit/tsconfig.json --noEmit"
