@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   lifecyclePaths,
+  classifyLauncherFailure,
   lifecycleRecord,
   parseLifecycleArguments,
   privateServerProvisioningKey,
@@ -55,5 +56,15 @@ describe("private-server lifecycle", () => {
     expect(redactLifecycleError(new Error("token=abc\npassword=xyz"))).toBe(
       "token=[redacted] password=[redacted]",
     );
+  });
+
+  it("exposes only fixed launcher failure codes", () => {
+    expect(classifyLauncherFailure("Error: `assetdir` option is not defined!")).toBe(
+      "launch-configuration",
+    );
+    expect(classifyLauncherFailure("Steam authentication rejected")).toBe("steam-authentication");
+    expect(classifyLauncherFailure("listen EADDRINUSE")).toBe("port-unavailable");
+    expect(classifyLauncherFailure("unexpected private text")).toBe("launcher-exited");
+    expect(classifyLauncherFailure("")).toBe("health-timeout");
   });
 });
