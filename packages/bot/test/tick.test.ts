@@ -12,6 +12,11 @@ import { planSurvivalFlow } from "../src/economy";
 import { runTick } from "../src/runtime/tick";
 import type { RuntimeGame } from "../src/runtime/context";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
+import {
+  MAX_CREEP_NAME_CODE_UNITS,
+  generatedSpawnCreepName,
+  generatedSpawnCreepNameCandidates,
+} from "../src/spawn";
 import { TelemetryService } from "../src/telemetry/service";
 
 const FIND_CREEPS_VALUE = 101;
@@ -377,19 +382,20 @@ describe("tick lifecycle", () => {
       }),
       memory: damagedMemory,
     });
-    expect(damagedSpawnCreep).not.toHaveBeenCalled();
-    expect(damaged.spawn.execution).toEqual([]);
-    expect(damaged.spawn.broker?.decisions).toEqual([
-      expect.objectContaining({
-        demandId: "colony/W1N1/restore-workforce",
-        reason: "name-collision-exhausted",
-        status: "deferred",
-      }),
+    const damagedReplacement = damaged.spawn.broker?.selections[0];
+    expect(damagedReplacement?.name).not.toBe(scheduledName);
+    expect(damagedSpawnCreep).toHaveBeenCalledTimes(1);
+    expect(damagedSpawnCreep).toHaveBeenCalledWith(
+      ["work", "carry", "move"],
+      damagedReplacement?.name,
+    );
+    expect(damaged.spawn.execution).toEqual([
+      expect.objectContaining({ reason: "scheduled", status: "scheduled" }),
     ]);
     expect(damaged.colony.objectives).toEqual([
       expect.objectContaining({
         id: "colony/W1N1/restore-workforce",
-        status: "blocked",
+        status: "funded",
       }),
     ]);
 
@@ -403,7 +409,11 @@ describe("tick lifecycle", () => {
       memory: absentMemory,
     });
     expect(absentSpawnCreep).toHaveBeenCalledTimes(1);
-    expect(absentSpawnCreep).toHaveBeenCalledWith(["work", "carry", "move"], scheduledName);
+    expect(absentSpawnCreep).toHaveBeenCalledWith(
+      ["work", "carry", "move"],
+      retried.spawn.broker?.selections[0]?.name,
+    );
+    expect(retried.spawn.broker?.selections[0]?.name).not.toBe(scheduledName);
     expect(retried.spawn.execution).toEqual([
       expect.objectContaining({ reason: "scheduled", status: "scheduled" }),
     ]);
@@ -516,7 +526,195 @@ describe("tick lifecycle", () => {
     expect(delivered.telemetry?.energyFlow).toMatchObject({ delivered: 1 });
   });
 
-  it("preserves the one-short recovery denial without staging an exact spawn grant", () => {
+  it("schedules one distinct successor at the proactive boundary and deduplicates it after reset", () => {
+    const memory = {} as Memory;
+    const spawnCreep = vi.fn(() => 0);
+
+    const bootstrapped = runTick({
+      game: fundedContractGame(70, { includeCreep: false, spawnCreep }),
+      memory,
+    });
+    const incumbentName = bootstrapped.spawn.broker?.selections[0]?.name;
+    expect(incumbentName).toBeDefined();
+    expect(bootstrapped.spawn.execution).toEqual([
+      expect.objectContaining({ status: "scheduled", reason: "scheduled" }),
+    ]);
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+    if (incumbentName === undefined) {
+      throw new Error("zero-worker recovery did not publish its generated incumbent identity");
+    }
+
+    const beforeBoundary = runTick({
+      game: fundedContractGame(80, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        ticksToLive: 60,
+      }),
+      memory,
+    });
+    expect(beforeBoundary.spawn.execution).toEqual([]);
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+
+    const scheduled = runTick({
+      game: fundedContractGame(81, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        ticksToLive: 59,
+      }),
+      memory,
+    });
+    const successor = scheduled.spawn.broker?.selections[0];
+    expect(successor).toMatchObject({
+      demandId: "colony/W1N1/restore-workforce",
+      replacementCreepName: incumbentName,
+    });
+    if (successor === undefined) {
+      throw new Error("proactive handoff did not select a successor");
+    }
+    expect(successor.name).not.toBe(incumbentName);
+    expect(successor.name).toBe(
+      generatedSpawnCreepName({
+        id: successor.demandId,
+        issuer: successor.issuer,
+        colonyId: successor.colonyId,
+        revision: successor.revision,
+        category: "emergency-recovery",
+      }),
+    );
+    expect(successor.name.length).toBeLessThanOrEqual(MAX_CREEP_NAME_CODE_UNITS);
+    expect(scheduled.spawn.execution).toEqual([
+      expect.objectContaining({ status: "scheduled", reason: "scheduled" }),
+    ]);
+    expect(spawnCreep).toHaveBeenCalledTimes(2);
+
+    const resumedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
+    const reset = runTick({
+      game: fundedContractGame(82, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        spawning: { creepName: successor.name, remainingTime: 8 },
+        ticksToLive: 58,
+      }),
+      memory: resumedMemory,
+    });
+    expect(reset.spawn.broker?.decisions).toEqual([
+      expect.objectContaining({
+        demandId: "colony/W1N1/restore-workforce",
+        status: "deferred",
+        reason: "observed-spawning",
+      }),
+    ]);
+    expect(reset.spawn.execution).toEqual([]);
+    expect(spawnCreep).toHaveBeenCalledTimes(2);
+  });
+
+  it("reconstructs one bounded successor name after failed scheduling and retry backoff", () => {
+    const memory = {} as Memory;
+    const spawnCreep = vi.fn().mockReturnValueOnce(-4).mockReturnValue(0);
+    const incumbentName = "retry-incumbent";
+    runTick({
+      game: fundedContractGame(99, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        ticksToLive: 60,
+      }),
+      memory,
+    });
+
+    const failed = runTick({
+      game: fundedContractGame(100, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        ticksToLive: 59,
+      }),
+      memory,
+    });
+    const failedSelection = failed.spawn.broker?.selections[0];
+    expect(failedSelection).toBeDefined();
+    expect(failed.spawn.execution).toEqual([
+      expect.objectContaining({ status: "rejected", reason: "busy" }),
+    ]);
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+
+    const resumedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
+    const backingOff = runTick({
+      game: fundedContractGame(101, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        ticksToLive: 58,
+      }),
+      memory: resumedMemory,
+    });
+    expect(backingOff.spawn.broker?.decisions).toEqual([
+      expect.objectContaining({ status: "deferred", reason: "not-before", retryAt: 102 }),
+    ]);
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+
+    const retried = runTick({
+      game: fundedContractGame(102, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        ticksToLive: 57,
+      }),
+      memory: resumedMemory,
+    });
+    const retriedSelection = retried.spawn.broker?.selections[0];
+    expect(retriedSelection).toMatchObject({ replacementCreepName: incumbentName });
+    if (failedSelection === undefined || retriedSelection === undefined) {
+      throw new Error("retry handoff did not expose both bounded successor identities");
+    }
+    expect(retriedSelection.revision).toBeGreaterThan(failedSelection.revision);
+    expect(retriedSelection.name).not.toBe(failedSelection.name);
+    expect(retriedSelection.name).toBe(
+      generatedSpawnCreepName({
+        id: retriedSelection.demandId,
+        issuer: retriedSelection.issuer,
+        colonyId: retriedSelection.colonyId,
+        revision: retriedSelection.revision,
+        category: "emergency-recovery",
+      }),
+    );
+    expect(retriedSelection.name.length).toBeLessThanOrEqual(MAX_CREEP_NAME_CODE_UNITS);
+    expect(retried.spawn.execution).toEqual([
+      expect.objectContaining({ status: "scheduled", reason: "scheduled" }),
+    ]);
+    expect(retried.colony.reservations).toEqual([
+      expect.objectContaining({
+        reservationId: retriedSelection.budgetId,
+        revision: retriedSelection.revision,
+        consumed: { cpu: 100, energy: 200, spawn: true },
+        status: "released",
+      }),
+    ]);
+    expect(spawnCreep).toHaveBeenLastCalledWith(["work", "carry", "move"], retriedSelection.name);
+    expect(spawnCreep).toHaveBeenCalledTimes(2);
+
+    const observedMemory = JSON.parse(JSON.stringify(resumedMemory)) as Memory;
+    const observed = runTick({
+      game: fundedContractGame(103, {
+        creepName: incumbentName,
+        legalCreep: true,
+        spawnCreep,
+        spawning: { creepName: retriedSelection.name, remainingTime: 8 },
+        ticksToLive: 56,
+      }),
+      memory: observedMemory,
+    });
+    expect(observed.spawn.broker?.decisions).toEqual([
+      expect.objectContaining({ status: "deferred", reason: "observed-spawning" }),
+    ]);
+    expect(observed.spawn.execution).toEqual([]);
+    expect(spawnCreep).toHaveBeenCalledTimes(2);
+  });
+
+  it("binds a blocked recovery reservation to the exact funded spawn revision after reset", () => {
     const memory = {} as Memory;
     const spawnCreep = vi.fn(() => 0);
 
@@ -544,6 +742,7 @@ describe("tick lifecycle", () => {
     expect(outcome.colony.reservations).toEqual([
       expect.objectContaining({
         grant: { cpu: 0, energy: 0, spawn: null },
+        revision: 1,
         status: "pending",
       }),
     ]);
@@ -551,6 +750,102 @@ describe("tick lifecycle", () => {
       committed: true,
       owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
     });
+
+    const fundedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
+    const funded = runTick({
+      game: fundedContractGame(73, {
+        energy: 300,
+        energyCapacity: 300,
+        includeCreep: false,
+        spawnCreep,
+      }),
+      memory: fundedMemory,
+    });
+    const selection = funded.spawn.broker?.selections[0];
+    const reservation = funded.colony.reservations[0];
+    expect(selection).toMatchObject({ revision: 2 });
+    expect(reservation).toMatchObject({
+      reservationId: selection?.budgetId,
+      revision: selection?.revision,
+      consumed: { cpu: 100, energy: 200, spawn: true },
+      status: "released",
+    });
+    if (selection === undefined || reservation === undefined) {
+      throw new Error("blocked recovery did not bind its funded exact revision");
+    }
+    expect(selection.name).toBe(
+      generatedSpawnCreepName({
+        id: selection.demandId,
+        issuer: selection.issuer,
+        colonyId: selection.colonyId,
+        revision: reservation.revision,
+        category: "emergency-recovery",
+      }),
+    );
+    expect(spawnCreep).toHaveBeenCalledWith(["work", "carry", "move"], selection.name);
+
+    const observedMemory = JSON.parse(JSON.stringify(fundedMemory)) as Memory;
+    const observed = runTick({
+      game: fundedContractGame(74, {
+        energy: 300,
+        energyCapacity: 300,
+        includeCreep: false,
+        spawnCreep,
+        spawning: { creepName: selection.name, remainingTime: 8 },
+      }),
+      memory: observedMemory,
+    });
+    expect(observed.spawn.broker?.decisions).toEqual([
+      expect.objectContaining({ status: "deferred", reason: "observed-spawning" }),
+    ]);
+    expect(observed.spawn.execution).toEqual([]);
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+  });
+
+  it("adopts one observed pre-revision recovery name without duplicating on an idle spawn", () => {
+    const memory = {} as Memory;
+    const spawnCreep = vi.fn(() => 0);
+    const scheduled = runTick({
+      game: fundedContractGame(70, { includeCreep: false, spawnCreep }),
+      memory,
+    });
+    const selection = scheduled.spawn.broker?.selections[0];
+    if (selection === undefined) {
+      throw new Error("rollout fixture did not schedule its durable recovery attempt");
+    }
+    const candidates = generatedSpawnCreepNameCandidates({
+      id: selection.demandId,
+      issuer: selection.issuer,
+      colonyId: selection.colonyId,
+      revision: selection.revision,
+      category: "emergency-recovery",
+    });
+    const legacyName = candidates[1];
+    if (legacyName === undefined) {
+      throw new Error("recovery identity did not expose its bounded rollout predecessor");
+    }
+
+    const resumedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
+    const observed = runTick({
+      game: fundedContractGame(120, {
+        controllerLevel: 7,
+        energy: 300,
+        energyCapacity: 600,
+        includeCreep: false,
+        includeSecondSpawn: true,
+        spawnCreep,
+        spawning: { creepName: legacyName, remainingTime: 0 },
+      }),
+      memory: resumedMemory,
+    });
+
+    expect(observed.snapshot.rooms[0]?.ownedSpawns).toHaveLength(2);
+    expect(observed.spawn.broker?.decisions).toEqual([
+      expect.objectContaining({ status: "deferred", reason: "observed-spawning", retryAt: 121 }),
+    ]);
+    expect(observed.spawn.broker?.selections).toEqual([]);
+    expect(observed.spawn.execution).toEqual([]);
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
   });
 
   it("settles a scheduled spawn even when command execution overruns its CPU budget", () => {
@@ -1533,13 +1828,17 @@ describe("tick lifecycle", () => {
 });
 
 interface FundedContractGameOptions {
+  readonly controllerLevel?: number;
   readonly cpuGetUsed?: () => number;
   readonly creepName?: string;
   readonly energy?: number;
   readonly energyCapacity?: number;
   readonly includeCreep?: boolean;
+  readonly includeSecondSpawn?: boolean;
   readonly legalCreep?: boolean;
+  readonly spawning?: { readonly creepName: string; readonly remainingTime: number };
   readonly spawnCreep?: (...arguments_: unknown[]) => number;
+  readonly ticksToLive?: number;
 }
 
 function economyGame(): {
@@ -1696,7 +1995,7 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
       getFreeCapacity: () => 0,
       getUsedCapacity: () => 0,
     },
-    ticksToLive: 100,
+    ticksToLive: options.ticksToLive ?? 100,
   } as unknown as Creep;
   const spawn = {
     hits: 5_000,
@@ -1709,6 +2008,28 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
     room: { name: "W1N1" },
     isActive: () => true,
     spawnCreep,
+    spawning:
+      options.spawning === undefined
+        ? null
+        : {
+            name: options.spawning.creepName,
+            needTime: 9,
+            remainingTime: options.spawning.remainingTime,
+          },
+    store,
+    structureType: "spawn",
+  } as unknown as StructureSpawn;
+  const secondSpawn = {
+    hits: 5_000,
+    hitsMax: 5_000,
+    id: "spawn-budget-2",
+    my: true,
+    name: "Spawn2",
+    owner: { username: "Myrmex" },
+    pos: { roomName: "W1N1", x: 12, y: 11 },
+    room: { name: "W1N1" },
+    isActive: () => true,
+    spawnCreep,
     spawning: null,
     store,
     structureType: "spawn",
@@ -1716,7 +2037,7 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
   const room = {
     controller: {
       id: "controller-budget",
-      level: 1,
+      level: options.controllerLevel ?? 1,
       my: true,
       owner: { username: "Myrmex" },
       pos: { roomName: "W1N1", x: 12, y: 10 },
@@ -1735,7 +2056,7 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
         return includeCreep ? [creep] : [];
       }
       if (findType === FIND_STRUCTURES_VALUE) {
-        return [spawn];
+        return options.includeSecondSpawn ? [spawn, secondSpawn] : [spawn];
       }
       if (findType === FIND_SOURCES_VALUE || findType === FIND_CONSTRUCTION_SITES_VALUE) {
         return [];
@@ -1755,7 +2076,8 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
     rooms: { W1N1: room },
     shard: { name: "shard3" },
     time,
-    getObjectById: (id: string) => (id === spawn.id ? spawn : null),
+    getObjectById: (id: string) =>
+      id === spawn.id ? spawn : id === secondSpawn.id ? secondSpawn : null,
   };
 }
 

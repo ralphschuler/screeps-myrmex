@@ -49,12 +49,15 @@ non-`MOVE`-parts-per-`MOVE` ratio, and both policy and engine limits. It disting
 current-energy shortage from terminal capacity, energy-policy, part-count, and movement-policy
 impossibility. It never scales an impossible request silently.
 
-Generated recovery names encode only the stable logical `(demand ID, issuer, colony)` identity,
-rather than a behavioral role, attempt revision, or rotating budget ID. They never receive a
-collision suffix: changing the name would make exact reconstruction from the terminal demand record
-ambiguous. If that exact generated name is unavailable, the demand defers. An explicit caller-chosen
-name basis may use the configured bounded suffix attempts. The broker checks observed creep and
-in-progress names and reserves every chosen name within the batch.
+Generated recovery names encode `(demand ID, issuer, colony, demand revision)`: a fixed hash of the
+logical triple plus the durable revision in base 36. The revision distinguishes each successor
+generation and remains available in the terminal demand record after reset; rotating budget IDs and
+behavioral roles remain excluded. Revision qualification is restricted to emergency recovery;
+generic generated-name producers retain one logical name across budget-only revisions. Generated
+names never receive a collision suffix. An explicit caller-chosen name basis may use configured
+bounded suffix attempts. The broker checks observed and in-progress names, reserves every chosen
+name within the batch, and never treats a demand's declared predecessor as satisfaction of that
+successor demand.
 
 ### Exact colony authorization
 
@@ -62,7 +65,13 @@ The runtime derives the issue #24 emergency-recovery demand from the director's 
 restore-workforce objective. A selected body and spawn interval are then passed back into a
 tick-local `ColonyDirectorSession`. The director re-arbitrates energy, spawn time, and its admitted
 CPU as one exact `BudgetLedger` request. Only a selection backed by that exact active grant becomes
-a `SpawnCommandIntent`.
+a `SpawnCommandIntent`. If attaching the spawn claim advances a retained provisional request, the
+director projects the resulting revision and reservation ID into the broker demand, then derives and
+checks both values again during exact admission. The broker-selected name, executed command, exact
+grant, and terminal record therefore share one revision after pending-to-funded, busy-to-idle, and
+heap-reset transitions. The projection uses the same maximum of the current colony-record revision
+and the prior ledger revision plus one as exact request construction, including when unrelated
+policy changes advanced the colony while its energy-denied reservation remained pending.
 
 The session keeps its replacement owner private until command settlement. External callers cannot
 submit the reserved `colony/<room>/restore-workforce` issuer identity, and a selection that does not
@@ -129,20 +138,30 @@ A successful command is represented durably by the existing terminal ledger entr
 request remains present and cumulative consumption records `spawn: true`. No new owner schema, spawn
 queue, or expectation store is introduced. On any heap reconstruction, the runtime derives a bounded
 `SpawnExpectation`, including the exact `creepName`, from that entry. The name is reproducible
-because the recovery demand's stable issuer and colony identity are durable and the generated-name
-function does not include revision or budget ID.
+because the recovery demand's stable issuer, colony identity, and demand revision are durable; the
+generated-name function excludes only the rotating budget ID.
+
+During rollout from the previously deployed logical-only name format, expectation reconstruction
+prefers the current revision-qualified name when it is observed, accepts the one logical-only name
+only when that exact creep or spawn activity is visible, and otherwise reconstructs the current
+name. The observed fallback is never offered as a fresh broker candidate, so it cannot widen name
+allocation or become a permanent compatibility authority. Snapshot scanning retains only names in
+the bounded two-candidate set derived from terminal recovery entries.
 
 The exact-name expectation suppresses the same demand until the later of its expected spawn
 completion and reservation expiry and applies across a recovery objective revision change. Current
 observation supersedes it when that named creep is live or that exact name is visibly spawning; a
 non-null matching `spawning` object remains busy even at `remainingTime === 0`. Unrelated activity
 on the formerly selected spawn is not proof of the expected creep. At the bounded retry tick, an
-observed exact-name creep satisfies the demand only if it retains every active required capability.
-A damaged or unrelated same-name creep remains a bounded collision; if the expected name is absent,
-the broker may retry the same unsuffixed recovery name.
+observed exact-name creep satisfies the demand only if it retains every active required capability
+and is not the declared predecessor. For proactive handoff, runtime reconstructs the previously
+scheduled incumbent from its terminal revision when visible, with a canonical expiring-worker
+fallback for preexisting or failed-attempt state. The current revision therefore publishes one
+distinct successor. A damaged creep under the current target name remains a bounded collision.
 
 A released exact entry with `spawn: false` records failed scheduling and supplies the configured
-bounded retry delay. This reuses the colony owner's bounded latest-issuer history rather than
+bounded retry delay. After that delay, the next durable revision reconstructs one new bounded name
+without collision retries. This reuses the colony owner's bounded latest-issuer history rather than
 creating another persistent authority.
 
 Issue #24 makes `phase1.spawn` source-available with `phase1.colony` as its prerequisite and
@@ -159,6 +178,8 @@ complete Phase 1 recovery exit remain separate outcomes.
 - A scheduled command and its exact budget consumption reach persistence together through one
   colonies transaction and one root commit; a rejected command leaves no active exact grant.
 - A heap reset after `OK` does not duplicate the command while the durable expectation is live.
+- An expiring generated incumbent cannot satisfy its revision-qualified successor demand; one
+  successor is selected at the handoff boundary and remains deduplicated after reset.
 - An `OK` result is settled even when command execution overruns its CPU estimate; mandatory
   settlement cannot be skipped between the irreversible API result and persistence.
 - At 199 current energy, zero-creep recovery remains one blocked objective and issues no command or

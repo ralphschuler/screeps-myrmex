@@ -63,7 +63,10 @@ export interface SpawnExpectation {
   readonly retryAt: number;
 }
 
-export type SpawnDemandNameIdentity = Pick<SpawnDemand, "id" | "issuer" | "colonyId">;
+export type SpawnDemandNameIdentity = Pick<
+  SpawnDemand,
+  "id" | "issuer" | "colonyId" | "revision" | "category"
+>;
 
 export interface SpawnBrokerPolicy {
   readonly maximumBodyParts: number;
@@ -354,6 +357,7 @@ function arbitrateDemand(input: {
         input.observedNames.creeps.get(expectation.creepName),
         demand.requiredPartCounts,
         input.policy.maximumNonMovePartsPerMovePart,
+        demand.replacementCreepName,
       ),
     )
   ) {
@@ -405,6 +409,7 @@ function arbitrateDemand(input: {
         input.observedNames.creeps.get(nameBasis),
         demand.requiredPartCounts,
         input.policy.maximumNonMovePartsPerMovePart,
+        demand.replacementCreepName,
       )
     ) {
       return noSelection(decision(demand.id, demand.revision, "satisfied", "observed-creep"));
@@ -727,6 +732,7 @@ function observedCreepSatisfiesDemand(
   creeps: readonly CreepSnapshot[] | undefined,
   requiredPartCounts: SpawnBodyPartCounts,
   maximumNonMovePartsPerMovePart: number,
+  replacementCreepName: string | null,
 ): boolean {
   const nonMoveParts = OFFICIAL_BODY_PARTS.filter((part) => part !== "move").reduce(
     (total, part) => total + requiredPartCounts[part],
@@ -737,12 +743,14 @@ function observedCreepSatisfiesDemand(
     Math.ceil(nonMoveParts / maximumNonMovePartsPerMovePart),
   );
   return (
-    creeps?.some((creep) =>
-      OFFICIAL_BODY_PARTS.every(
-        (part) =>
-          activeBodyPartCount(creep, part) >=
-          (part === "move" ? requiredMoveParts : requiredPartCounts[part]),
-      ),
+    creeps?.some(
+      (creep) =>
+        creep.name !== replacementCreepName &&
+        OFFICIAL_BODY_PARTS.every(
+          (part) =>
+            activeBodyPartCount(creep, part) >=
+            (part === "move" ? requiredMoveParts : requiredPartCounts[part]),
+        ),
     ) ?? false
   );
 }
@@ -816,9 +824,30 @@ function maximumExpectedCreepSpawningRetryAt(
   return maximum;
 }
 
-/** Stable generated identity recoverable from a terminal durable demand record. */
+/**
+ * Deterministic identities recoverable from a terminal durable demand record. Recovery attempts
+ * are revision-qualified so a declared predecessor cannot occupy its successor's identity. Other
+ * producers retain their logical identity across budget-only revisions.
+ */
 export function generatedSpawnCreepName(identity: SpawnDemandNameIdentity): string {
-  return `mx-${fnv1a32(JSON.stringify([identity.id, identity.issuer, identity.colonyId]))}`;
+  return generatedSpawnCreepNameCandidates(identity)[0];
+}
+
+/**
+ * Current identity followed by the one bounded pre-revision recovery identity accepted while a
+ * deployed spawn command is still observable. Callers must never treat the fallback as a fresh
+ * name candidate.
+ */
+export function generatedSpawnCreepNameCandidates(
+  identity: SpawnDemandNameIdentity,
+): readonly [string, ...string[]] {
+  const logicalIdentity = fnv1a32(
+    JSON.stringify([identity.id, identity.issuer, identity.colonyId]),
+  );
+  const logicalName = `mx-${logicalIdentity}`;
+  return identity.category === "emergency-recovery"
+    ? Object.freeze([`${logicalName}-${identity.revision.toString(36)}`, logicalName])
+    : Object.freeze([logicalName]);
 }
 
 function fnv1a32(value: string): string {
