@@ -8,6 +8,20 @@ const results = JSON.parse(
 );
 const header = "| row-id";
 const numericColumnCount = 12;
+const measurementNames = [
+  "ticks",
+  "modeledCpu",
+  "persistentBytes",
+  "persistentGrowth",
+  "telemetryBytes",
+  "telemetryCardinality",
+  "spawnUtilizationPct",
+  "energyFlow",
+  "replacementLateness",
+  "controllerMargin",
+  "controllerRisk",
+  "recoveryTime",
+];
 const rows = parseRows(document);
 
 describe("Phase 1 aggregate gate matrix (#30)", () => {
@@ -52,10 +66,25 @@ describe("Phase 1 aggregate gate matrix (#30)", () => {
       rollbackIncident: "unevidenced",
     });
     for (const row of results.rows) {
+      const budget = rows.find((candidate) => candidate.id === row.id);
+      expect(budget).toBeDefined();
       expect(Object.values(row.measurements)).toHaveLength(numericColumnCount);
       for (const [field, value] of Object.entries(row.measurements)) {
         expect(value === null || (Number.isFinite(value) && value >= 0)).toBe(true);
-        if (value === null) expect(row.unevidenced).toContain(field);
+        if (value === null) {
+          expect(row.unevidenced).toContain(field);
+          continue;
+        }
+        expect(row.unevidenced).not.toContain(field);
+        const index = measurementNames.indexOf(field);
+        expect(index).toBeGreaterThanOrEqual(0);
+        const threshold = budget?.values[index];
+        expect(threshold).toBeDefined();
+        if (field === "controllerMargin") {
+          expect(value).toBeGreaterThanOrEqual(threshold);
+        } else {
+          expect(value).toBeLessThanOrEqual(threshold);
+        }
       }
     }
   });

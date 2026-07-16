@@ -12,17 +12,20 @@ hashes for every column.
 
 ## Declared budget table
 
-`persistent-growth` is the maximum per-row increase in durable bytes. `energy-flow` is the maximum
-absolute modeled energy-unit delta that the row may reconcile per tick. `spawn-utilization` is a
-percentage of the row's owned spawn ticks. `controller-margin` is the minimum permitted integer
-margin in ticks before the configured controller-risk boundary; `controller-risk` is encoded as `0`
-(not asserted) or `1` (risk allowed and must be handled). These definitions make the table
-machine-checkable without pretending that a missing measurement is zero.
+`persistent-growth` is the maximum single-tick increase in canonical durable UTF-8 bytes. Cold-boot
+rows include empty-root initialization; established-room rows use their first initialized snapshot
+as the durable baseline. `modeled-cpu` is the maximum modeled CPU used by any one row tick.
+`telemetry-cardinality` is the maximum number of top-level channels emitted in one telemetry sample.
+`energy-flow` is the maximum absolute modeled energy-unit delta that the row may reconcile per tick.
+`spawn-utilization` is a percentage of the row.s owned spawn ticks. `controller-margin` is the
+minimum permitted integer margin in ticks before the configured controller-risk boundary;
+`controller-risk` is encoded as `0` (not asserted) or `1` (risk allowed and must be handled). These
+definitions make the table machine-checkable without pretending that a missing measurement is zero.
 
 | row-id                    | status      | evidence                                                                                               | max-ticks | max-modeled-cpu | max-persistent-bytes | max-persistent-growth | max-telemetry-bytes | max-telemetry-cardinality | max-spawn-utilization-pct | max-energy-flow | max-replacement-lateness | min-controller-margin | controller-risk | max-recovery-time |
 | ------------------------- | ----------- | ------------------------------------------------------------------------------------------------------ | --------: | --------------: | -------------------: | --------------------: | ------------------: | ------------------------: | ------------------------: | --------------: | -----------------------: | --------------------: | --------------: | ----------------: |
 | rcl2-established          | evidenced   | [gate evidence](phase1-gate-evidence.md)                                                               |       150 |             500 |                32768 |                  4096 |                8192 |                        64 |                       100 |             400 |                       50 |                     1 |               1 |               150 |
-| rcl1-cold-boot-growth     | partial     | [growth evidence](phase1-growth-evidence.md), [economy evidence](phase1-economy-evidence.md)           |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
+| rcl1-cold-boot-growth     | evidenced   | [growth evidence](phase1-growth-evidence.md), [economy evidence](phase1-economy-evidence.md)           |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
 | spawn-blocker-recovery    | partial     | [spawn-blocker evidence](phase1-spawn-blocker-evidence.md), [spawn evidence](phase1-spawn-evidence.md) |       200 |            1000 |                32768 |                  4096 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |               200 |
 | path-target-recovery      | partial     | [path/target evidence](phase1-path-target-evidence.md)                                                 |         3 |               3 |                32768 |                  1024 |                8192 |                        64 |                       100 |              50 |                       50 |                     1 |               1 |                 3 |
 | hostile-pressure-recovery | partial     | [hostile-pressure evidence](phase1-hostile-pressure-evidence.md)                                       |       100 |            1000 |                32768 |                  4096 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |               100 |
@@ -49,9 +52,9 @@ open.
   preserved.
 - The production artifact must contain no `packages/scenario-kit` input. The bundle-boundary check
   is composed by the focused test below; this document does not claim a built artifact was produced.
-- Persistent bytes, telemetry bytes/cardinality, replacement lateness, and controller margin/risk
-  remain unevidenced. The runtime rows record only directly observed spawn utilization, energy flow,
-  recovery time, CPU, ticks, and row hashes.
+- The runtime rows now record persistent bytes/growth, telemetry bytes/channel cardinality,
+  controller margin/risk, spawn utilization, energy flow, recovery time, CPU, ticks, and row hashes.
+  RCL1 also records replacement lateness against its predeclared post-death deadline.
 
 ## Reproduction
 
@@ -69,8 +72,7 @@ runtime measurements or live Screeps evidence.
 
 - The local aggregate covers six deterministic rows: the RCL1 and RCL2 runtime rows plus four
   scenario-kit component rows.
-- Replacement lateness and controller margin/risk remain acceptance dimensions, not proven values.
-- Persistent-memory growth and telemetry byte/cardinality measurements are not yet joined to row
-  hashes.
+- The four component-only rows do not own runtime Memory, telemetry, replacement, or controller
+  observations; those columns remain explicit per-row gaps rather than inferred zeroes.
 - Live Screeps timing, engine inflows, hostile pressure, and deployment behavior remain outside this
   deterministic metadata contract.

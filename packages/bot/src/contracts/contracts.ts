@@ -4,7 +4,7 @@ import type { CreepSnapshot, PositionSnapshot } from "../world/snapshot";
 export const CONTRACT_LEDGER_SCHEMA_VERSION = 1 as const;
 
 export const MAX_ACTIVE_CONTRACTS = 256;
-export const MAX_CONTRACT_OUTCOMES = 128;
+export const MAX_CONTRACT_OUTCOMES = 8;
 export const MAX_CONTRACT_HISTORY = 16;
 export const MAX_CONTRACT_ISSUERS = 128;
 export const MAX_CONTRACT_REQUESTS_PER_TICK = 128;

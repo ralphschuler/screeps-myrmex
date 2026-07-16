@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import checkedResult from "../../../docs/phase1-gate-results.json";
+import { utf8ByteLength } from "../../bot/src/config/canonical";
 import { survivalWorld } from "../../bot/test/support/survival-flow-fixture";
 import { establishedRcl2World } from "../../bot/test/support/established-rcl2-fixture";
 import { runTick, type TickOutcome } from "../../bot/src/runtime/tick";
@@ -78,7 +79,7 @@ export async function collectAggregateEvidence() {
     }),
   ];
   const rcl2Row = runtimeRow("rcl2-established", rcl2, "evidenced");
-  const rcl1Row = runtimeRow("rcl1-cold-boot-growth", rcl1, "partial");
+  const rcl1Row = runtimeRow("rcl1-cold-boot-growth", rcl1, "evidenced");
   const evidenceRows = [rcl2Row, rcl1Row, ...components];
   const resetReorder = equivalenceRow(evidenceRows);
   return Object.freeze({
@@ -139,7 +140,7 @@ type MeasurementName = keyof ReturnType<typeof emptyMeasurements>;
 
 function componentRow(id: string, runs: Runs, measured: Partial<Record<MeasurementName, number>>) {
   const ticks = runs.warm.transcript.ticks.length;
-  const modeledCpu = runs.warm.transcript.ticks.reduce((total, tick) => total + tick.cpu.used, 0);
+  const modeledCpu = Math.max(0, ...runs.warm.transcript.ticks.map((tick) => tick.cpu.used));
   return Object.freeze({
     id,
     status: "partial",
@@ -163,7 +164,7 @@ function componentRow(id: string, runs: Runs, measured: Partial<Record<Measureme
 
 function runtimeRow(id: string, runs: RuntimeRuns, status: "evidenced" | "partial") {
   const ticks = runs.warm.transcript.ticks.length;
-  const modeledCpu = runs.warm.transcript.ticks.reduce((total, tick) => total + tick.cpu.used, 0);
+  const modeledCpu = Math.max(0, ...runs.warm.transcript.ticks.map((tick) => tick.cpu.used));
   const measurements = {
     ...emptyMeasurements(),
     ...runs.warm.measurements,
@@ -197,6 +198,15 @@ function runtimeRow(id: string, runs: RuntimeRuns, status: "evidenced" | "partia
 type RuntimeExecuteTick = typeof runTick;
 type RuntimeTickSample = RuntimeEvidenceRun["transcript"]["ticks"][number];
 
+interface RuntimeMeasurementAccumulator {
+  hasPersistentBaseline: boolean;
+  maxPersistentBytes: number;
+  maxPersistentGrowth: number;
+  maxTelemetryBytes: number;
+  maxTelemetryCardinality: number;
+  previousPersistentBytes: number;
+}
+
 async function collectRcl2RuntimeEvidence(): Promise<RuntimeRuns> {
   return {
     warm: await runRcl2Variant(false, false, runTick),
@@ -219,12 +229,14 @@ async function runRcl2Variant(
   let memory = {} as Memory;
   let memoryResetAt: number | null = null;
   let markHeapReset = false;
+  const runtimeMeasurements = createRuntimeMeasurementAccumulator(memory, false);
   const samples: RuntimeTickSample[] = [];
   const outcomes: Array<{ readonly outcome: TickOutcome; readonly tick: number }> = [];
 
   for (let tick = 100; tick < 100 + 150; tick += 1) {
     const outcome = executeTick({ game: world.game(tick), memory });
     outcomes.push({ outcome, tick });
+    observeRuntimeMeasurements(runtimeMeasurements, memory, outcome.telemetry);
     samples.push({
       cpu: { used: outcome.kernel.cpuUsed },
       gameTime: tick,
@@ -252,10 +264,15 @@ async function runRcl2Variant(
     (total, { outcome }) => total + (outcome.telemetry?.energyFlow.delivered ?? 0),
     0,
   );
+  const recoveryTime = last.tick - 100 + 1;
+  const controllerMargin = Math.max(0, world.controllerTicksToDowngrade() - recoveryTime);
   return {
     measurements: {
+      ...finalizeRuntimeMeasurements(runtimeMeasurements),
+      controllerMargin,
+      controllerRisk: controllerMargin >= 1 ? 0 : 1,
       energyFlow: deliveredEnergy,
-      recoveryTime: last.tick - 100 + 1,
+      recoveryTime,
       spawnUtilizationPct: 0,
     },
     outcome: {
@@ -292,6 +309,7 @@ async function runRcl1Variant(
   let memory = {} as Memory;
   let memoryResetAt: number | null = null;
   let markHeapReset = false;
+  const runtimeMeasurements = createRuntimeMeasurementAccumulator(memory, true);
   const samples: RuntimeTickSample[] = [];
   const outcomes: Array<{ readonly outcome: TickOutcome; readonly tick: number }> = [];
 
@@ -303,6 +321,7 @@ async function runRcl1Variant(
     });
     outcomes.push({ outcome, tick });
     world.assertEnergyConserved();
+    observeRuntimeMeasurements(runtimeMeasurements, memory, outcome.telemetry);
     samples.push({
       cpu: { used: outcome.kernel.cpuUsed },
       gameTime: tick,
@@ -339,6 +358,7 @@ async function runRcl1Variant(
   });
   outcomes.push({ outcome: afterDeath, tick: afterDeathTick });
   world.assertEnergyConserved();
+  observeRuntimeMeasurements(runtimeMeasurements, memory, afterDeath.telemetry);
   samples.push({
     cpu: { used: afterDeath.kernel.cpuUsed },
     gameTime: afterDeathTick,
@@ -346,6 +366,7 @@ async function runRcl1Variant(
     sourceOrder: world.reverseSources ? "reversed" : "normal",
   });
 
+  let replacementRecoveredAt: number | null = null;
   for (let tick = afterDeathTick + 1; tick <= afterDeathTick + 122; tick += 1) {
     const outcome = executeTick({
       game: world.game(tick),
@@ -354,13 +375,17 @@ async function runRcl1Variant(
     });
     outcomes.push({ outcome, tick });
     world.assertEnergyConserved();
+    observeRuntimeMeasurements(runtimeMeasurements, memory, outcome.telemetry);
     samples.push({
       cpu: { used: outcome.kernel.cpuUsed },
       gameTime: tick,
       heapReset: false,
       sourceOrder: world.reverseSources ? "reversed" : "normal",
     });
-    if (world.sourceBDelivered > deliveredBeforeDeath) break;
+    if (world.sourceBDelivered > deliveredBeforeDeath) {
+      replacementRecoveredAt = tick;
+      break;
+    }
   }
 
   expect(world.controllerLevel).toBe(2);
@@ -373,10 +398,16 @@ async function runRcl1Variant(
   );
   const recoveryTime = last.tick - 100;
   const tickCount = samples.length;
+  if (replacementRecoveredAt === null) throw new Error("RCL1 replacement missed its deadline");
+  const controllerMargin = Math.max(0, world.controllerTicksToDowngrade - tickCount);
   return {
     measurements: {
+      ...finalizeRuntimeMeasurements(runtimeMeasurements),
+      controllerMargin,
+      controllerRisk: controllerMargin >= 1 ? 0 : 1,
       energyFlow: deliveredEnergy,
       recoveryTime,
+      replacementLateness: Math.max(0, replacementRecoveredAt - afterDeathTick - 122),
       spawnUtilizationPct:
         Math.round(
           (world.spawnCalls.reduce((total, call) => total + call.body.length * 3, 0) / tickCount) *
@@ -397,6 +428,66 @@ async function runRcl1Variant(
   };
 }
 
+function createRuntimeMeasurementAccumulator(
+  memory: Memory,
+  includeInitialGrowth: boolean,
+): RuntimeMeasurementAccumulator {
+  const initialPersistentBytes = canonicalUtf8Bytes(memory);
+  return {
+    hasPersistentBaseline: includeInitialGrowth,
+    maxPersistentBytes: initialPersistentBytes,
+    maxPersistentGrowth: 0,
+    maxTelemetryBytes: 0,
+    maxTelemetryCardinality: 0,
+    previousPersistentBytes: initialPersistentBytes,
+  };
+}
+
+function observeRuntimeMeasurements(
+  accumulator: RuntimeMeasurementAccumulator,
+  memory: Memory,
+  telemetry: unknown,
+): void {
+  const persistentBytes = canonicalUtf8Bytes(memory);
+  if (accumulator.hasPersistentBaseline) {
+    accumulator.maxPersistentGrowth = Math.max(
+      accumulator.maxPersistentGrowth,
+      persistentBytes - accumulator.previousPersistentBytes,
+    );
+  }
+  accumulator.hasPersistentBaseline = true;
+  accumulator.previousPersistentBytes = persistentBytes;
+  accumulator.maxPersistentBytes = Math.max(accumulator.maxPersistentBytes, persistentBytes);
+  if (telemetry === undefined) return;
+  accumulator.maxTelemetryBytes = Math.max(
+    accumulator.maxTelemetryBytes,
+    canonicalUtf8Bytes(telemetry),
+  );
+  accumulator.maxTelemetryCardinality = Math.max(
+    accumulator.maxTelemetryCardinality,
+    telemetryChannelCardinality(telemetry),
+  );
+}
+
+function finalizeRuntimeMeasurements(accumulator: RuntimeMeasurementAccumulator) {
+  return {
+    persistentBytes: accumulator.maxPersistentBytes,
+    persistentGrowth: accumulator.maxPersistentGrowth,
+    telemetryBytes: accumulator.maxTelemetryBytes,
+    telemetryCardinality: accumulator.maxTelemetryCardinality,
+  };
+}
+
+function canonicalUtf8Bytes(value: unknown): number {
+  return utf8ByteLength(canonicalSerialize(value));
+}
+
+function telemetryChannelCardinality(value: unknown): number {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? Object.keys(value).length
+    : 0;
+}
+
 type AggregateEvidenceRow = ReturnType<typeof componentRow> | ReturnType<typeof runtimeRow>;
 
 function equivalenceRow(components: readonly AggregateEvidenceRow[]) {
@@ -406,7 +497,7 @@ function equivalenceRow(components: readonly AggregateEvidenceRow[]) {
   const measurements = {
     ...emptyMeasurements(),
     ticks: components.reduce((total, row) => total + row.measurements.ticks, 0),
-    modeledCpu: components.reduce((total, row) => total + row.measurements.modeledCpu, 0),
+    modeledCpu: Math.max(...components.map((row) => row.measurements.modeledCpu)),
     recoveryTime: Math.max(...components.map((row) => row.measurements.recoveryTime ?? 0)),
   };
   return Object.freeze({

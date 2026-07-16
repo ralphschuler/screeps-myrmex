@@ -103,7 +103,7 @@ The runtime adapter obtains a frozen detached contracts-owner view from `MemoryM
 The ledger stages a validated owner transaction through `MemoryManager`. Operational
 `contracts.reconcile` runs before mandatory-tail `state.reconcile`, which remains the only system
 that commits the root. A discarded contract stage or rejected atomic root commit clears its
-tick-local publication. The active set is capped at 256, terminal outcomes at 128, persistent issuer
+tick-local publication. The active set is capped at 256, terminal outcomes at 8, persistent issuer
 frontiers at 128, history at 16 events per active contract, and issuer requests and requested
 transitions at 128 each per tick. One stable budget binding may back one active contract. Each
 producer reserves the shared tick-channel capacity atomically when its staged result commits, so an

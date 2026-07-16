@@ -158,6 +158,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
 
   return {
     constructionSiteCalls: () => constructionSiteCalls,
+    controllerTicksToDowngrade: () => controller.ticksToDowngrade,
     extensionEnergy: () => [...extensionEnergy.values()].reduce((sum, value) => sum + value, 0),
     game: (nextTick: number): RuntimeGame => {
       if (nextTick <= tick) throw new Error("ticks must advance monotonically");
