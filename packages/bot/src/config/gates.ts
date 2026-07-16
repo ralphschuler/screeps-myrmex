@@ -46,6 +46,23 @@ export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze
     available: true,
     prerequisites: ["phase1.economy", "phase1.recovery"],
   },
+  {
+    id: "phase2.colony",
+    available: true,
+    prerequisites: [
+      "phase1.colony",
+      "phase1.contracts",
+      "phase1.spawn",
+      "phase1.movement",
+      "phase1.agents",
+      "phase1.economy",
+      "phase1.recovery",
+      "phase1.growth",
+      "phase1.safety",
+      "phase1.telemetry",
+      "phase1.critical-maintenance",
+    ],
+  },
 ]);
 
 export function resolveFeatureGates(

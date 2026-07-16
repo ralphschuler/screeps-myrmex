@@ -29,6 +29,7 @@ import {
 } from "./contracts";
 import { canonicalColoniesOwner, coloniesOwnerEquals, resolveColoniesOwner } from "./persistence";
 import { formatReservationId } from "./reservation-id";
+import { projectColonyRclPolicy } from "./rcl-policy";
 
 export interface ColonyDirectorInput {
   readonly tick: number;
@@ -172,7 +173,7 @@ export class ColonyDirector {
       if (room === null) {
         if (previous !== null) {
           records.push(previous);
-          views.push(viewForUnknown(previous));
+          views.push(viewForUnknown(previous, input.config, input.cpuMode));
         }
         continue;
       }
@@ -188,7 +189,7 @@ export class ColonyDirector {
         input.config.policyRevision,
       );
       records.push(record);
-      views.push(viewForVisible(record, facts));
+      views.push(viewForVisible(record, facts, input.config, input.cpuMode));
     }
 
     const knownNames = new Set(evidence.keys());
@@ -781,7 +782,7 @@ function applyTransition(
   });
 }
 
-function viewForUnknown(record: ColonyRecord): ColonyView {
+function viewForUnknown(record: ColonyRecord, config: RuntimeConfig, cpuMode: CpuMode): ColonyView {
   return deepFreeze({
     id: record.roomName,
     roomName: record.roomName,
@@ -792,10 +793,26 @@ function viewForUnknown(record: ColonyRecord): ColonyView {
     legalWorkforce: null,
     activeThreat: null,
     controllerRisk: null,
+    rclPolicy: projectColonyRclPolicy({
+      visibility: "unknown",
+      state: record.state,
+      controllerLevel: null,
+      energyAvailable: null,
+      energyCapacityAvailable: null,
+      activeThreat: null,
+      controllerRisk: null,
+      cpuMode,
+      protectedSpawnEnergy: config.policy.recovery.protectedSpawnEnergy,
+    }),
   });
 }
 
-function viewForVisible(record: ColonyRecord, facts: ColonyEvidence): ColonyView {
+function viewForVisible(
+  record: ColonyRecord,
+  facts: ColonyEvidence,
+  config: RuntimeConfig,
+  cpuMode: CpuMode,
+): ColonyView {
   return deepFreeze({
     id: record.roomName,
     roomName: record.roomName,
@@ -806,6 +823,17 @@ function viewForVisible(record: ColonyRecord, facts: ColonyEvidence): ColonyView
     legalWorkforce: facts.owned ? facts.legalWorkforce : false,
     activeThreat: facts.activeThreat,
     controllerRisk: facts.owned ? facts.controllerRisk : null,
+    rclPolicy: projectColonyRclPolicy({
+      visibility: "visible",
+      state: record.state,
+      controllerLevel: facts.owned ? (facts.room.controller?.level ?? null) : null,
+      energyAvailable: facts.room.energyAvailable,
+      energyCapacityAvailable: facts.room.energyCapacityAvailable,
+      activeThreat: facts.activeThreat,
+      controllerRisk: facts.owned ? facts.controllerRisk : null,
+      cpuMode,
+      protectedSpawnEnergy: config.policy.recovery.protectedSpawnEnergy,
+    }),
   });
 }
 

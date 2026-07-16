@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v16");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v17");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v16",
+      "runtime-config-source-v17",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,10 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("keeps completed Phase 1 gates source-available under reporter policy v16", () => {
+  it("makes phase2.colony available only after Phase 1 under policy v17", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v16");
+    expect(config.sourceRevision).toBe("runtime-config-source-v17");
+    expect(config.policy.colony).toEqual({ rclPolicyVersion: 1 });
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.spawn")).toBe(true);
@@ -681,6 +682,19 @@ describe("source feature gates", () => {
       enabled: false,
       reason: "prerequisite-blocked",
     });
+    expect(colonyDisabled.features.gates["phase2.colony"]).toMatchObject({
+      enabled: false,
+      reason: "prerequisite-blocked",
+      blockedBy: "phase1.colony",
+    });
+    expect(buildRuntimeConfig().features.gates["phase2.colony"]).toEqual({
+      blockedBy: null,
+      enabled: true,
+      reason: "enabled",
+    });
+    expect(validateRuntimeOverrides({ policy: { colony: { rclPolicyVersion: 2 } } })).toMatchObject(
+      { valid: false, reason: "unknown-key" },
+    );
   });
 
   it("cannot pass a disabled or incomplete prerequisite in an available test manifest", () => {

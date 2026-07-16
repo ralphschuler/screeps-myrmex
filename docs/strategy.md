@@ -39,6 +39,12 @@ exclusions.
 
 ## Economy
 
+Phase 2 begins with a read-only complete-colony policy projection. RCL2-RCL7 progression requires
+stable checks for threat, recovery, bootstrap, constrained CPU, controller risk, protected reserve,
+and complete spawn-pool capacity. Unknown vision authorizes nothing. RCL8 cannot claim maturity from
+level alone: #44 reports `rcl8-health-evidence-unavailable`, and #225 will reconcile direct domain
+health.
+
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;

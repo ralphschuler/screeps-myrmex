@@ -12,6 +12,7 @@ export const FEATURE_GATE_IDS = [
   "phase1.safety",
   "phase1.telemetry",
   "phase1.critical-maintenance",
+  "phase2.colony",
 ] as const;
 
 export type FeatureGateId = (typeof FEATURE_GATE_IDS)[number];
@@ -131,6 +132,7 @@ export interface SafeModePolicy {
 }
 
 export interface SurvivalPolicy {
+  readonly colony: ColonyPolicy;
   readonly recovery: RecoveryPolicy;
   readonly leases: LeasePolicy;
   readonly retries: RetryPolicy;
@@ -142,6 +144,11 @@ export interface SurvivalPolicy {
   readonly reporter: ReporterPolicy;
   readonly tower: TowerPolicy;
   readonly safeMode: SafeModePolicy;
+}
+
+/** Source-versioned complete-colony policy. Operational overrides cannot advance this version. */
+export interface ColonyPolicy {
+  readonly rclPolicyVersion: 1;
 }
 
 export interface ConfiguredRelations {
