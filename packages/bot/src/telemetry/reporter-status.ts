@@ -31,6 +31,13 @@ export interface ReporterStatus {
     readonly harvested: number;
     readonly delivered: number;
     readonly unmet: number;
+    readonly stuck: {
+      readonly blockerReasonCode: string;
+      readonly blockerRef: string | null;
+      readonly lastProgressTick: number;
+      readonly reminderAtTick: number | null;
+      readonly active: boolean;
+    } | null;
   };
   readonly gates: readonly {
     readonly id: FeatureGateId;
@@ -118,6 +125,16 @@ export function projectReporterStatus(
         harvested: telemetry?.energyFlow.harvested ?? 0,
         delivered: telemetry?.energyFlow.delivered ?? 0,
         unmet: telemetry?.energyFlow.unmet ?? 0,
+        stuck:
+          telemetry?.recoveryProgress === null || telemetry?.recoveryProgress === undefined
+            ? null
+            : Object.freeze({
+                blockerReasonCode: safeCode(telemetry.recoveryProgress.blockerReasonCode),
+                blockerRef: telemetry.recoveryProgress.blockerRef,
+                lastProgressTick: telemetry.recoveryProgress.lastProgressTick,
+                reminderAtTick: telemetry.recoveryProgress.reminderAtTick,
+                active: telemetry.recoveryProgress.stuck,
+              }),
       }),
       gates: Object.freeze(
         FEATURE_GATE_IDS.map((id) => ({
@@ -159,6 +176,7 @@ function fallback(kernel: KernelTickReport): ReporterStatus {
       harvested: 0,
       delivered: 0,
       unmet: 0,
+      stuck: null,
     }),
     gates: Object.freeze([]),
     blockers: Object.freeze([]),
