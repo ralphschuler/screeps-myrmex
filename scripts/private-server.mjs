@@ -19,6 +19,8 @@ import {
 const options = parseLifecycleArguments(process.argv.slice(2));
 const paths = lifecyclePaths(cwd(), options.stateDirectory);
 const runtimeDirectory = `${cwd()}/integration/private-server`;
+const fixtureDefinition =
+  options.fixtureDefinition === null ? null : `${cwd()}/${options.fixtureDefinition}`;
 
 try {
   const record = await run(options.command);
@@ -107,11 +109,20 @@ async function start() {
       "1",
       "--processors_cnt",
       "1",
+      ...(fixtureDefinition === null ? [] : ["--modfile", `${paths.root}/fixtures/mods.json`]),
       ...(privateServerProvisioningKey(env.SCREEPS_STEAM_API_KEY) === null
         ? []
         : ["--steam_api_key", env.SCREEPS_STEAM_API_KEY]),
     ],
-    { cwd: paths.root, detached: true, stdio: ["ignore", log.fd, log.fd] },
+    {
+      cwd: paths.root,
+      detached: true,
+      env:
+        fixtureDefinition === null
+          ? undefined
+          : { ...env, MYRMEX_PRIVATE_SERVER_FIXTURE: fixtureDefinition },
+      stdio: ["ignore", log.fd, log.fd],
+    },
   );
   await log.close();
   child.unref();

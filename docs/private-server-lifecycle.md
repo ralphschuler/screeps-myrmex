@@ -29,6 +29,10 @@ the value is never included in MYRMEX lifecycle records or evidence artifacts. W
 runtime provisioning method, `provision` returns `provisioning-required` and the scenario gate must
 record `startup-failed` rather than gameplay evidence.
 
+The scenario runner may add `--fixture-definition <relative ignored path>` to `start`. This selects
+only the committed `myrmex-fixture.cjs` module through a generated `mods.json`; the definition is
+bounded and remains under the selected ignored state directory.
+
 The official standalone server documents the console launcher, its separate CLI port, and the
 multiple-process runtime. It requires a supported Node release and may require local authentication
 setup; MYRMEX does not store that setup, credentials, or server state in the repository. See the
