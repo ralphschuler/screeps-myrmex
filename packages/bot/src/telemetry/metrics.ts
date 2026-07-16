@@ -64,10 +64,25 @@ export interface TickTelemetry {
     readonly maximumHistoryEntries: number;
     readonly maximumHistoryBytes: number;
   };
+  readonly reporterPolicy: {
+    readonly initialReminderDelayTicks: number;
+    readonly maximumFingerprints: number;
+    readonly maximumReminderDelayTicks: number;
+    readonly stuckRecoveryWindowTicks: number;
+  };
   readonly activity: TelemetryActivity;
   readonly status: TelemetryStatus;
+  readonly recoveryProgress: RecoveryProgressTelemetry | null;
   /** Bounded current-tick survival-flow evidence; it is observational and never an authority. */
   readonly energyFlow: EnergyFlowTelemetry;
+}
+
+export interface RecoveryProgressTelemetry {
+  readonly blockerReasonCode: string;
+  readonly blockerRef: string | null;
+  readonly lastProgressTick: number;
+  readonly reminderAtTick: number | null;
+  readonly stuck: boolean;
 }
 
 export interface TelemetryActivity {
@@ -111,7 +126,7 @@ export interface TickTelemetryInput {
 /** Creates a bounded, immutable per-tick summary; durable history is a later telemetry policy. */
 export function recordTickTelemetry(
   input: TickTelemetryInput,
-): Omit<TickTelemetry, "activity" | "status"> {
+): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress"> {
   return Object.freeze({
     tick: input.tick,
     shard: input.shard,
@@ -165,6 +180,12 @@ export function recordTickTelemetry(
       spawnTicksReserved: input.colony.totals.spawnTicksReserved,
     }),
     telemetryPolicy: Object.freeze({ ...input.config.policy.telemetry }),
+    reporterPolicy: Object.freeze({
+      initialReminderDelayTicks: input.config.policy.reporter.initialReminderDelayTicks,
+      maximumFingerprints: input.config.policy.reporter.maximumFingerprints,
+      maximumReminderDelayTicks: input.config.policy.reporter.maximumReminderDelayTicks,
+      stuckRecoveryWindowTicks: input.config.policy.reporter.stuckRecoveryWindowTicks,
+    }),
     energyFlow: Object.freeze({ ...input.energyFlow }),
   });
 }

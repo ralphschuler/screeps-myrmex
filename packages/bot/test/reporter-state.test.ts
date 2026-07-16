@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceReporterState } from "../src/telemetry/reporter-state";
+import { advanceRecoveryProgress, advanceReporterState } from "../src/telemetry/reporter-state";
 
 const policy = {
   maximumFingerprints: 2,
@@ -35,5 +35,50 @@ describe("reporter state", () => {
       policy,
     );
     expect((result.owner as { entries: unknown[] }).entries).toHaveLength(2);
+  });
+});
+
+describe("recovery progress", () => {
+  const recoveryPolicy = {
+    stuckWindowTicks: 3,
+    initialReminderDelayTicks: 2,
+    maximumReminderDelayTicks: 8,
+  };
+  const input = (tick: number, overrides = {}) => ({
+    tick,
+    active: true,
+    status: "recovering",
+    spawnDemand: 1,
+    spawnScheduled: 0,
+    harvested: 0,
+    delivered: 0,
+    unmet: 1,
+    blockerRef: "W1N1/spawn-a",
+    blockerReasonCode: "insufficient-energy",
+    ...overrides,
+  });
+
+  it("reports unchanged recovery once at the threshold and resets on progress or completion", () => {
+    const first = advanceRecoveryProgress(undefined, input(10), recoveryPolicy);
+    const waiting = advanceRecoveryProgress(first.owner, input(12), recoveryPolicy);
+    const stuck = advanceRecoveryProgress(waiting.owner, input(13), recoveryPolicy);
+    expect(stuck.event).toMatchObject({
+      owner: "colony",
+      reasonCode: "recovery-progress-unchanged",
+      lastProgressTick: 10,
+    });
+    expect(JSON.stringify(stuck)).not.toContain("W1N1/spawn-a");
+    const progressing = advanceRecoveryProgress(
+      stuck.owner,
+      input(14, { harvested: 1 }),
+      recoveryPolicy,
+    );
+    expect(progressing.status).toMatchObject({ stuck: false, lastProgressTick: 14 });
+    const complete = advanceRecoveryProgress(
+      progressing.owner,
+      input(15, { active: false }),
+      recoveryPolicy,
+    );
+    expect(complete).toEqual({ owner: null, event: null, status: null });
   });
 });

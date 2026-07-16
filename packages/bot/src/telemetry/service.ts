@@ -8,10 +8,10 @@ import type { SpawnRuntimeResult } from "../spawn";
 import type { JsonObject } from "../state/schema";
 import type { WorldSnapshot } from "../world/snapshot";
 import { opaqueId, safeCode } from "../security";
-import { advanceReporterState } from "./reporter-state";
+import { advanceRecoveryProgress, advanceReporterState } from "./reporter-state";
 import type { TickTelemetry } from "./metrics";
 
-type TickTelemetryBase = Omit<TickTelemetry, "activity" | "status">;
+type TickTelemetryBase = Omit<TickTelemetry, "activity" | "status" | "recoveryProgress">;
 
 export const TELEMETRY_OWNER_SCHEMA_VERSION = 2 as const;
 
@@ -64,19 +64,18 @@ export class TelemetryService {
       details: Object.freeze(details),
       droppedDetails,
     });
-    const telemetry = deepFreeze({
+    const telemetryWithoutRecovery = {
       ...input.base,
       activity: activity(input),
       status,
+    };
+    const persisted = writeOwner(owner, telemetryWithoutRecovery, details);
+    const telemetry = deepFreeze({
+      ...telemetryWithoutRecovery,
+      recoveryProgress: persisted.recoveryProgress,
     });
     return deepFreeze({
-      owner: writeOwner(
-        owner,
-        telemetry,
-        input.base.telemetryPolicy,
-        input.base.telemetryPolicy,
-        details,
-      ),
+      owner: persisted.owner,
       telemetry,
     });
   }
@@ -124,17 +123,17 @@ function readOwner(value: unknown): ParsedOwner {
 
 function writeOwner(
   owner: ParsedOwner,
-  telemetry: TickTelemetry,
-  policy: TickTelemetryBase["telemetryPolicy"],
-  reporterPolicy: TickTelemetryBase["telemetryPolicy"],
+  telemetry: Omit<TickTelemetry, "recoveryProgress">,
   details: readonly TelemetryDetail[],
-): JsonObject {
+): { readonly owner: JsonObject; readonly recoveryProgress: TickTelemetry["recoveryProgress"] } {
+  const policy = telemetry.telemetryPolicy;
   const appended = [...owner.history, { tick: telemetry.tick, hash: telemetry.status.hash }];
   const bounded = appended.slice(-policy.maximumHistoryEntries);
   const droppedHistory = owner.droppedHistory + appended.length - bounded.length;
   const history = bounded.map(({ tick, hash }) => ({ tick, hash }));
+  const reporterOwner = reporterSections(owner.reporter);
   const reporter = advanceReporterState(
-    owner.reporter,
+    reporterOwner.entries,
     telemetry.tick,
     details.map((detail) => ({
       kind: detail.domain,
@@ -142,9 +141,30 @@ function writeOwner(
       reasonCode: detail.reason,
     })),
     {
-      maximumFingerprints: Math.min(64, reporterPolicy.maximumDetailRecords),
-      initialReminderDelayTicks: 10,
-      maximumReminderDelayTicks: 160,
+      maximumFingerprints: Math.min(24, telemetry.reporterPolicy.maximumFingerprints),
+      initialReminderDelayTicks: telemetry.reporterPolicy.initialReminderDelayTicks,
+      maximumReminderDelayTicks: telemetry.reporterPolicy.maximumReminderDelayTicks,
+    },
+  );
+  const blocker = details[0] ?? null;
+  const recovery = advanceRecoveryProgress(
+    reporterOwner.recovery,
+    {
+      active: telemetry.memoryStatus === "recovery",
+      blockerRef: blocker?.entityId ?? null,
+      blockerReasonCode: blocker?.reason ?? "none",
+      delivered: telemetry.energyFlow.delivered,
+      harvested: telemetry.energyFlow.harvested,
+      spawnDemand: telemetry.activity.spawnDemand,
+      spawnScheduled: telemetry.activity.spawnScheduled,
+      status: telemetry.colony.status,
+      tick: telemetry.tick,
+      unmet: telemetry.energyFlow.unmet,
+    },
+    {
+      stuckWindowTicks: telemetry.reporterPolicy.stuckRecoveryWindowTicks,
+      initialReminderDelayTicks: telemetry.reporterPolicy.initialReminderDelayTicks,
+      maximumReminderDelayTicks: telemetry.reporterPolicy.maximumReminderDelayTicks,
     },
   );
   const result = {
@@ -156,7 +176,11 @@ function writeOwner(
     },
     history,
     droppedHistory,
-    reporter: reporter.owner as JsonObject,
+    reporter: {
+      schemaVersion: 2,
+      entries: reporter.owner as JsonObject,
+      recovery: recovery.owner as JsonObject | null,
+    },
   };
   while (
     utf8ByteLength(canonicalSerialize(result)) > policy.maximumHistoryBytes &&
@@ -165,7 +189,21 @@ function writeOwner(
     history.shift();
     result.droppedHistory += 1;
   }
-  return result;
+  return { owner: result, recoveryProgress: recovery.status };
+}
+
+function reporterSections(value: unknown): {
+  readonly entries: unknown;
+  readonly recovery: unknown;
+} {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { entries: undefined, recovery: undefined };
+  }
+  const row = value as Record<string, unknown>;
+  return {
+    entries: row.schemaVersion === 2 ? row.entries : row,
+    recovery: row.schemaVersion === 2 ? row.recovery : undefined,
+  };
 }
 
 function activity(input: TelemetryServiceInput): TickTelemetry["activity"] {

@@ -13,6 +13,148 @@ export interface ReporterStatePolicy {
   readonly maximumReminderDelayTicks: number;
 }
 
+export type DiagnosticCategory = "recovery" | "blockers" | "faults";
+export type DiagnosticLevel = "debug" | "trace";
+
+export interface DiagnosticWindow {
+  readonly level: DiagnosticLevel;
+  readonly categories: readonly DiagnosticCategory[];
+  readonly expiresAtTick: number;
+}
+
+export interface RecoveryProgressInput {
+  readonly active: boolean;
+  readonly blockerRef: string | null;
+  readonly blockerReasonCode: string;
+  readonly delivered: number;
+  readonly harvested: number;
+  readonly spawnDemand: number;
+  readonly spawnScheduled: number;
+  readonly status: string;
+  readonly tick: number;
+  readonly unmet: number;
+}
+
+export interface RecoveryProgressPolicy {
+  readonly initialReminderDelayTicks: number;
+  readonly maximumReminderDelayTicks: number;
+  readonly stuckWindowTicks: number;
+}
+
+export interface RecoveryProgressStatus {
+  readonly blockerReasonCode: string;
+  readonly blockerRef: string | null;
+  readonly lastProgressTick: number;
+  readonly reminderAtTick: number | null;
+  readonly stuck: boolean;
+}
+
+export interface StuckRecoveryEvent extends RecoveryProgressStatus {
+  readonly owner: "colony";
+  readonly reasonCode: "recovery-progress-unchanged";
+}
+
+/** Accepts only fixed observer categories; exact expiry is inactive at `expiresAtTick`. */
+export function resolveDiagnosticWindow(
+  value: unknown,
+  tick: number,
+  maximumDurationTicks: number,
+): DiagnosticWindow | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    !Array.isArray(row.categories) ||
+    (row.level !== "debug" && row.level !== "trace") ||
+    typeof row.expiresAtTick !== "number" ||
+    !Number.isSafeInteger(row.expiresAtTick) ||
+    row.expiresAtTick <= tick ||
+    row.expiresAtTick > tick + maximumDurationTicks
+  )
+    return null;
+  const allowed = new Set<DiagnosticCategory>(["recovery", "blockers", "faults"]);
+  const categories = row.categories.filter(
+    (category): category is DiagnosticCategory =>
+      typeof category === "string" && allowed.has(category as DiagnosticCategory),
+  );
+  if (
+    categories.length !== row.categories.length ||
+    categories.length === 0 ||
+    new Set(categories).size !== categories.length
+  )
+    return null;
+  return { level: row.level, categories: categories.sort(), expiresAtTick: row.expiresAtTick };
+}
+
+/** Tracks only safe, aggregate recovery evidence; it cannot issue retries or commands. */
+export function advanceRecoveryProgress(
+  owner: unknown,
+  input: RecoveryProgressInput,
+  policy: RecoveryProgressPolicy,
+): {
+  readonly owner: unknown;
+  readonly event: StuckRecoveryEvent | null;
+  readonly status: RecoveryProgressStatus | null;
+} {
+  const parsed = readRecovery(owner);
+  if (!input.active) return { owner: null, event: null, status: null };
+  const blockerRef =
+    input.blockerRef === null ? null : opaqueId("recovery-blocker", input.blockerRef);
+  const blockerReasonCode = safeCode(input.blockerReasonCode);
+  const signature = [
+    safeCode(input.status),
+    input.spawnDemand,
+    input.spawnScheduled,
+    input.harvested,
+    input.delivered,
+    input.unmet,
+    blockerRef ?? "none",
+    blockerReasonCode,
+  ].join("|");
+  const progressed =
+    parsed === null ||
+    parsed.signature !== signature ||
+    input.spawnScheduled > 0 ||
+    input.harvested > 0 ||
+    input.delivered > 0;
+  const lastProgressTick = progressed ? input.tick : parsed.lastProgressTick;
+  const priorReminderAtTick = progressed ? null : parsed.reminderAtTick;
+  const priorReminderCount = progressed ? 0 : parsed.reminderCount;
+  const priorStuckReportedAtTick = progressed ? null : parsed.stuckReportedAtTick;
+  const stuck = !progressed && input.tick - lastProgressTick >= policy.stuckWindowTicks;
+  const due = priorReminderAtTick !== null && input.tick >= priorReminderAtTick;
+  const shouldReport = stuck && (priorStuckReportedAtTick === null || due);
+  const reminderAtTick = shouldReport
+    ? input.tick +
+      Math.min(
+        policy.maximumReminderDelayTicks,
+        policy.initialReminderDelayTicks * 2 ** Math.min(20, priorReminderCount),
+      )
+    : priorReminderAtTick;
+  const reminderCount = shouldReport ? priorReminderCount + 1 : priorReminderCount;
+  const status: RecoveryProgressStatus = {
+    blockerRef,
+    blockerReasonCode,
+    lastProgressTick,
+    reminderAtTick,
+    stuck,
+  };
+  return {
+    owner: {
+      signature,
+      lastProgressTick,
+      reminderAtTick,
+      reminderCount,
+      stuckReportedAtTick: shouldReport ? input.tick : priorStuckReportedAtTick,
+      blockerRef,
+      blockerReasonCode,
+    },
+    event: shouldReport
+      ? { ...status, owner: "colony", reasonCode: "recovery-progress-unchanged" }
+      : null,
+    status,
+  };
+}
+
 interface Entry {
   readonly fingerprint: string;
   readonly count: number;
@@ -120,4 +262,40 @@ function read(value: unknown): Map<string, Entry> {
       })
       .map((entry) => [entry.fingerprint, entry]),
   );
+}
+
+interface RecoveryOwner {
+  readonly blockerReasonCode: string;
+  readonly blockerRef: string | null;
+  readonly lastProgressTick: number;
+  readonly reminderAtTick: number | null;
+  readonly reminderCount: number;
+  readonly signature: string;
+  readonly stuckReportedAtTick: number | null;
+}
+
+function readRecovery(value: unknown): RecoveryOwner | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  return typeof row.signature === "string" &&
+    typeof row.lastProgressTick === "number" &&
+    Number.isSafeInteger(row.lastProgressTick) &&
+    typeof row.reminderCount === "number" &&
+    Number.isSafeInteger(row.reminderCount) &&
+    (typeof row.reminderAtTick === "number" || row.reminderAtTick === null) &&
+    (typeof row.stuckReportedAtTick === "number" || row.stuckReportedAtTick === null) &&
+    (typeof row.blockerRef === "string" || row.blockerRef === null) &&
+    typeof row.blockerReasonCode === "string"
+    ? {
+        signature: row.signature.slice(0, 256),
+        lastProgressTick: Math.max(0, row.lastProgressTick),
+        reminderCount: Math.max(0, row.reminderCount),
+        reminderAtTick:
+          typeof row.reminderAtTick === "number" ? Math.max(0, row.reminderAtTick) : null,
+        stuckReportedAtTick:
+          typeof row.stuckReportedAtTick === "number" ? Math.max(0, row.stuckReportedAtTick) : null,
+        blockerRef: typeof row.blockerRef === "string" ? row.blockerRef.slice(0, 96) : null,
+        blockerReasonCode: safeCode(row.blockerReasonCode),
+      }
+    : null;
 }

@@ -821,7 +821,7 @@ function telemetryBase(
   input: CompositionInput,
   context: TickContext,
   candidates: readonly SurvivalFlowCandidate[],
-): Omit<TickTelemetry, "activity" | "status"> {
+): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress"> {
   return recordTickTelemetry({
     tick: context.tick,
     shard: context.shard,

@@ -99,6 +99,8 @@ export interface ReporterPolicy {
   readonly maximumFingerprints: number;
   readonly initialReminderDelayTicks: number;
   readonly maximumReminderDelayTicks: number;
+  /** Unchanged safe recovery evidence for this long is reported as stuck. */
+  readonly stuckRecoveryWindowTicks: number;
   readonly maximumDiagnosticDurationTicks: number;
 }
 

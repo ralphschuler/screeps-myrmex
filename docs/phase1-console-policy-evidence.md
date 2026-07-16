@@ -1,6 +1,6 @@
 # Phase 1 console policy evidence
 
-Source version: `runtime-config-source-v13`.
+Source version: `runtime-config-source-v14`.
 
 Issue [#130](https://github.com/ralphschuler/screeps-myrmex/issues/130) defines fixed console
 reporter caps and a pure redacted status projection for the renderer in issue #131.
@@ -13,6 +13,11 @@ reporter caps and a pure redacted status projection for the renderer in issue #1
 - Raw shard values and telemetry identifiers are opaque references; only fixed codes and scalars
   cross into the renderer input.
 - A null telemetry result becomes a bounded unavailable observer view and does not alter the tick.
+- Recovery progress is stored only in the telemetry owner. Unchanged recovery evidence emits a fixed
+  `recovery-progress-unchanged` report with an opaque blocker reference after the configured window;
+  a successful spawn, harvest, delivery, changed evidence, or recovery completion clears it.
+- Reminder timing is bounded exponential backoff. It is observer evidence only: no retry, command,
+  or gameplay admission path reads it.
 
 ## Synthetic console examples
 
