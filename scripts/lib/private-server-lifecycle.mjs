@@ -99,6 +99,12 @@ export async function clearPid(paths) {
   await rm(paths.pid, { force: true });
 }
 
+/** Starts each launcher attempt with an empty diagnostic log so its fixed failure code is current. */
+export async function prepareLauncherLog(paths) {
+  await mkdir(paths.root, { recursive: true });
+  await writeFile(paths.log, "", "utf8");
+}
+
 export async function waitForHealth(probe, limits = PRIVATE_SERVER_LIMITS) {
   for (let attempt = 1; attempt <= limits.healthAttempts; attempt += 1) {
     if (await probe()) return lifecycleRecord("healthy", { attempt });

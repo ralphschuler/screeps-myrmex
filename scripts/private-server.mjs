@@ -9,6 +9,7 @@ import {
   lifecyclePaths,
   lifecycleRecord,
   parseLifecycleArguments,
+  prepareLauncherLog,
   privateServerProvisioningKey,
   readPid,
   redactLifecycleError,
@@ -75,6 +76,7 @@ async function provision() {
 async function start() {
   if (await readPid(paths)) return lifecycleRecord("already-running");
   await mkdir(paths.root, { recursive: true });
+  await prepareLauncherLog(paths);
   const log = await open(paths.log, "a");
   const child = spawn(
     launcherExecutable,
