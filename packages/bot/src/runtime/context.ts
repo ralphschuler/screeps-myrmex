@@ -13,6 +13,7 @@ import type { LocalPathPlanningService } from "../movement";
 import type { StateView } from "../state/schema";
 import type { TickTelemetry } from "../telemetry/metrics";
 import type { WorldSnapshot } from "../world/snapshot";
+import type { LayoutRuntimeResult } from "../layout";
 
 export interface RuntimeGame {
   readonly cpu: {
@@ -59,6 +60,8 @@ export interface TickContext {
   readonly movementChannels: MovementRuntimeChannels;
   /** Canonical data-only local path capability; unavailable service returns typed no-path data. */
   readonly localPathPlanning: LocalPathPlanningService;
+  /** Tick-local layout planning, arbitration, execution, and durable reconciliation evidence. */
+  readonly layout: LayoutRuntimeResult;
   /** Tick-local movement/action arbitration and command evidence. */
   readonly movement: MovementRuntimeResult;
   /** Tick-local spawn arbitration and command evidence. */

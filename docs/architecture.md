@@ -1229,6 +1229,14 @@ world change; full and unexpected faults back off; RCL, target, and ownership fa
 relevant fresh fingerprint; invalid arguments stay failed closed until layout revision. PR B emits
 detached create-site intent data only. Live API execution and reconciliation remain PR C.
 
+PR C completes the chain with `layout.plan` after colony publication, mandatory-tail
+`layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`. Only
+`ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
+commitments and bounded receipts stage through the schema-4 layouts owner; degraded, unknown, lost,
+stale, denied, or CPU-skipped work preserves prior commitments and authorizes no command. Every
+observed owned layout site enters the existing funded survival-growth build flow, while controller
+risk, recovery, maintenance, and protected reserves retain precedence.
+
 Mechanics grounding: official
 [`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite),
 [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite),

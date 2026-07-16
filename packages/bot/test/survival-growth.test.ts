@@ -7,7 +7,7 @@ import type { WorldSnapshot } from "../src/world/snapshot";
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
 
 describe("survival growth", () => {
-  it("prioritizes downgrade-risk upgrading ahead of existing critical construction", () => {
+  it("prioritizes downgrade-risk upgrading ahead of every owned layout structure site", () => {
     const config = buildRuntimeConfig();
     const planned = planSurvivalGrowth(world({ downgrade: 10, sites: true }), config);
     expect(
@@ -19,7 +19,7 @@ describe("survival growth", () => {
     ).toEqual([
       ["upgrade-controller", "controller-risk", "controller-a"],
       ["build", "optional-growth", "site-spawn"],
-      ["build", "optional-growth", "site-road"],
+      ["build", "optional-growth", "site-storage"],
     ]);
   });
 
@@ -240,12 +240,30 @@ function world(
   return {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 100 },
     observedAt: 100,
-    ownedConstructionSiteCount: options.sites ? 2 : 0,
+    ownedConstructionSiteCount: options.sites ? 4 : 0,
     ownedRooms: [],
     rooms: [
       {
         constructionSites: options.sites
           ? [
+              {
+                id: "site-storage",
+                ownerUsername: "me",
+                ownership: "owned",
+                pos: position(13, 10),
+                progress: 0,
+                progressTotal: 100,
+                structureType: "storage",
+              },
+              {
+                id: "site-lab",
+                ownerUsername: "me",
+                ownership: "owned",
+                pos: position(14, 10),
+                progress: 0,
+                progressTotal: 100,
+                structureType: "lab",
+              },
               {
                 id: "site-road",
                 ownerUsername: "me",
@@ -300,7 +318,7 @@ function world(
     schemaVersion: 1,
     stats: {
       entities: {
-        constructionSites: options.sites ? 2 : 0,
+        constructionSites: options.sites ? 4 : 0,
         controllers: 1,
         hostileCreeps: options.hostile ? 1 : 0,
         ownedCreeps: 0,

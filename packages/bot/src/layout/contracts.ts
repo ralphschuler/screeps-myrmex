@@ -190,6 +190,26 @@ export interface ConstructionSiteArbitrationResult {
   readonly intents: readonly CreateConstructionSiteIntent[];
   readonly rejected: readonly ConstructionSiteArbitrationRecord[];
 }
+export interface ConstructionSiteExecutionResult {
+  readonly called: boolean;
+  readonly code: ConstructionSiteAttemptCode;
+  readonly fault:
+    "adapter-fault" | "room-not-owned" | "room-unavailable" | "stale-commitment" | null;
+  readonly intent: CreateConstructionSiteIntent;
+}
+export interface LayoutRuntimePlanRecord {
+  readonly blocker: LayoutBlocker | null;
+  readonly fingerprint: string | null;
+  readonly roomName: string;
+  readonly status: "complete" | "degraded";
+}
+export interface LayoutRuntimeResult {
+  readonly arbitration: ConstructionSiteArbitrationResult | null;
+  readonly execution: readonly ConstructionSiteExecutionResult[];
+  readonly planning: readonly LayoutRuntimePlanRecord[];
+  readonly receiptsWritten: number;
+  readonly status: "disabled" | "not-run" | "planned";
+}
 export interface LayoutsOwnerV1 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
