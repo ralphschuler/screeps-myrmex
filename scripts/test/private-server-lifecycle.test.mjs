@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   lifecyclePaths,
   classifyLauncherFailure,
   lifecycleRecord,
   parseLifecycleArguments,
+  prepareLauncherLog,
   privateServerProvisioningKey,
   redactLifecycleError,
   scrubProvisionedConfig,
@@ -66,5 +70,17 @@ describe("private-server lifecycle", () => {
     expect(classifyLauncherFailure("listen EADDRINUSE")).toBe("port-unavailable");
     expect(classifyLauncherFailure("unexpected private text")).toBe("launcher-exited");
     expect(classifyLauncherFailure("")).toBe("health-timeout");
+  });
+
+  it("clears stale launcher diagnostics before classifying a new start attempt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "myrmex-private-server-"));
+    const paths = lifecyclePaths(root, ".state");
+    await mkdir(paths.root, { recursive: true });
+    await writeFile(paths.log, "Error: `assetdir` option is not defined!", "utf8");
+
+    await prepareLauncherLog(paths);
+
+    expect(await readFile(paths.log, "utf8")).toBe("");
+    expect(classifyLauncherFailure("new process exited")).toBe("launcher-exited");
   });
 });
