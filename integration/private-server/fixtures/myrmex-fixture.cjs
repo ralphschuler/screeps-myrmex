@@ -33,7 +33,7 @@ function attachFixture(
   if (!config.engine || !definition) return;
   let hostileInserted = false;
   let resetPublished = false;
-  let resetObserved = false;
+  let resetObservationPending = false;
 
   config.engine.on("processRoom", (room, _roomInfo, objects, terrain, gameTime, bulk) => {
     if (room !== definition.target.room) return;
@@ -41,26 +41,41 @@ function attachFixture(
       const rejection = hostileRejection(definition, objects, terrain);
       if (rejection) {
         hostileInserted = true;
-        writeReceipt(storage, definition, { hostile: rejection, scheduledTick: gameTime });
+        writeReceipt(storage, definition, "hostile", { phase: rejection, scheduledTick: gameTime });
       } else {
         bulk.insert(invader(definition));
         hostileInserted = true;
-        writeReceipt(storage, definition, { hostile: "scheduled", scheduledTick: gameTime });
+        writeReceipt(storage, definition, "hostile", {
+          phase: "scheduled",
+          scheduledTick: gameTime,
+        });
       }
     }
     if (!resetPublished && definition.heapResetAtTick === gameTime) {
       resetPublished = true;
-      storage.pubsub.publish(storage.pubsub.keys.RUNTIME_RESTART, "myrmex-fixture");
-      writeReceipt(storage, definition, { heapReset: "scheduled", resetTick: gameTime });
+      return writeReceipt(storage, definition, "reset", {
+        phase: "scheduled",
+        resetTick: gameTime,
+      }).then(() => storage.pubsub.publish(storage.pubsub.keys.RUNTIME_RESTART, "myrmex-fixture"));
     }
   });
 
   config.engine.on("playerSandbox", (sandbox, userId) => {
-    if (!resetPublished || resetObserved || `${userId}` !== definition.target.userId) return;
-    if (sandbox.__myrmexFixtureGeneration === definition.scenarioId) return;
-    sandbox.__myrmexFixtureGeneration = definition.scenarioId;
-    resetObserved = true;
-    writeReceipt(storage, definition, { heapReset: "observed" });
+    if (resetObservationPending || `${userId}` !== definition.target.userId) return;
+    return storage.env.get(receiptKey(definition, "reset")).then((value) => {
+      const receipt = safeReceipt(value, definition);
+      if (
+        receipt.phase !== "scheduled" ||
+        sandbox.__myrmexFixtureGeneration === definition.scenarioId
+      )
+        return;
+      resetObservationPending = true;
+      sandbox.__myrmexFixtureGeneration = definition.scenarioId;
+      return storage.env.set(
+        receiptKey(definition, "reset"),
+        JSON.stringify({ ...receipt, phase: "observed" }),
+      );
+    });
   });
 }
 
@@ -146,16 +161,27 @@ function invader(definition) {
   };
 }
 
-function writeReceipt(storage, definition, update) {
-  const key = `${RECEIPT_PREFIX}${definition.scenarioId}`;
-  storage.env
-    .get(key)
-    .then((value) => ({
-      scenarioId: definition.scenarioId,
-      ...(value ? JSON.parse(value) : {}),
-      ...update,
-    }))
-    .then((receipt) => storage.env.set(key, JSON.stringify(receipt)));
+function writeReceipt(storage, definition, kind, update) {
+  return storage.env.set(
+    receiptKey(definition, kind),
+    JSON.stringify({ scenarioId: definition.scenarioId, ...update }),
+  );
+}
+
+function receiptKey(definition, kind) {
+  return `${RECEIPT_PREFIX}${definition.scenarioId}:${kind}`;
+}
+
+function safeReceipt(value, definition) {
+  if (typeof value !== "string") return {};
+  try {
+    const receipt = JSON.parse(value);
+    return receipt?.scenarioId === definition.scenarioId && typeof receipt.phase === "string"
+      ? receipt
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 function exact(value, keys) {
