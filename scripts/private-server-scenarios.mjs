@@ -47,19 +47,19 @@ function scenarioDriver(options) {
       await lifecycle("start", options.stateDirectory);
     },
     async pause() {
-      await runPrivateServerCli({ kind: "pause" });
+      await cliOperation("pause");
     },
     async reset() {
-      await runPrivateServerCli({ kind: "reset" });
+      await cliOperation("reset");
     },
     async bootstrap() {
-      await runPrivateServerCli({ kind: "bootstrap-controlled-bot" });
+      await cliOperation("bootstrap-controlled-bot");
     },
     async deploy() {
       await deployPrivateServerBundle(options.bundlePath);
     },
     async resume() {
-      await runPrivateServerCli({ kind: "resume" });
+      await cliOperation("resume");
     },
     async prepareFixture() {
       fixtureTarget = await waitForFixtureTarget();
@@ -100,6 +100,14 @@ function scenarioDriver(options) {
       await lifecycle("stop", options.stateDirectory);
     },
   };
+}
+
+async function cliOperation(kind) {
+  try {
+    await runPrivateServerCli({ kind });
+  } catch {
+    throw namedError("CliOperationFailure", `cli-${kind}-failed`);
+  }
 }
 
 async function waitForFixtureTarget() {
@@ -200,6 +208,12 @@ function safeLifecycleReason(record) {
     : "launcher-exited";
 }
 
+function namedError(name, message) {
+  const error = new Error(message);
+  error.name = name;
+  return error;
+}
+
 function selectScenario(argv, matrix) {
   if (argv.length === 0) return matrix;
   if (argv.length !== 2 || argv[0] !== "--scenario")
@@ -207,12 +221,6 @@ function selectScenario(argv, matrix) {
   const selected = matrix.find(({ id }) => id === argv[1]);
   if (!selected) throw new Error("Unknown private-server scenario.");
   return [selected];
-}
-
-function namedError(name, message) {
-  const error = new Error(message);
-  error.name = name;
-  return error;
 }
 
 function delay(milliseconds) {
