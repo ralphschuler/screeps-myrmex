@@ -16,6 +16,44 @@ import {
 const TICK = 100;
 
 describe("WorkforceAllocator", () => {
+  it("assigns harvest and transfer only to actors with the matching current cargo state", () => {
+    const empty = makeActor("actor:empty", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 0,
+      freeCapacity: 50,
+    });
+    const carrying = makeActor("actor:carrying", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 25,
+      freeCapacity: 25,
+    });
+    const harvest = makeContract("contract:harvest", {
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+    });
+    const transfer = makeContract("contract:transfer", {
+      execution: {
+        action: "transfer",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: "energy",
+        version: 1,
+      },
+      kind: "fill",
+      requiredCapability: capability({ carry: 1 }),
+    });
+
+    expect(allocate([empty, carrying], [harvest, transfer]).assignments).toEqual([
+      expect.objectContaining({ actorId: empty.id, contractId: harvest.id }),
+      expect.objectContaining({ actorId: carrying.id, contractId: transfer.id }),
+    ]);
+  });
+
   it("preempts lower-priority work deterministically without assigning an actor twice", () => {
     const urgent = makeContract("contract:urgent", {
       kind: "defend",

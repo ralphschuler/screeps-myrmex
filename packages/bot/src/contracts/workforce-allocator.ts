@@ -218,7 +218,8 @@ function buildBid(
   if (
     actor.spawning ||
     actor.ticksToLive === null ||
-    !capabilitySatisfies(actor.capability, contract.requiredCapability)
+    !capabilitySatisfies(actor.capability, contract.requiredCapability) ||
+    !actionEligible(actor, contract)
   ) {
     return null;
   }
@@ -254,6 +255,19 @@ function buildBid(
     travelTicks: knownTravel,
     ttlSlack,
   };
+}
+
+/** Action eligibility is current-tick data only; unknown legacy fixture fields fail neither open nor closed. */
+function actionEligible(actor: WorkforceActor, contract: WorkContractRecord): boolean {
+  if (contract.execution === undefined) return true;
+  if (contract.execution.action === "transfer")
+    return actor.energy === undefined || actor.energy > 0;
+  if (contract.execution.action === "harvest")
+    return (
+      (actor.energy === undefined || actor.energy === 0) &&
+      (actor.freeCapacity === undefined || actor.freeCapacity === null || actor.freeCapacity > 0)
+    );
+  return true;
 }
 
 function switchingPenalty(

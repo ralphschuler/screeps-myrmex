@@ -331,9 +331,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v6");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v7");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v6",
+      "runtime-config-source-v7",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -591,14 +591,15 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("makes only the completed colony, contract, spawn, movement, and agent slices source-available under v6", () => {
+  it("makes completed economy source-available under v7", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v6");
+    expect(config.sourceRevision).toBe("runtime-config-source-v7");
     expect(isFeatureEnabled(config, "phase1.colony")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.contracts")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.spawn")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.movement")).toBe(true);
     expect(isFeatureEnabled(config, "phase1.agents")).toBe(true);
+    expect(isFeatureEnabled(config, "phase1.economy")).toBe(true);
     expect(
       FEATURE_GATE_IDS.filter(
         (id) =>
@@ -606,7 +607,8 @@ describe("source feature gates", () => {
           id !== "phase1.contracts" &&
           id !== "phase1.spawn" &&
           id !== "phase1.movement" &&
-          id !== "phase1.agents",
+          id !== "phase1.agents" &&
+          id !== "phase1.economy",
       ).every((id) => !isFeatureEnabled(config, id)),
     ).toBe(true);
     expect(config.features.gates["phase1.growth"].reason).toBe("source-unavailable");

@@ -26,7 +26,7 @@ export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze
   },
   {
     id: "phase1.economy",
-    available: false,
+    available: true,
     prerequisites: ["phase1.agents", "phase1.spawn"],
   },
   { id: "phase1.recovery", available: false, prerequisites: ["phase1.economy"] },

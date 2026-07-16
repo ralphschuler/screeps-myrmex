@@ -1,5 +1,11 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
 import {
+  authorizedSurvivalFlow,
+  planSurvivalFlow,
+  renewSurvivalFlowBudgets,
+  type SurvivalFlowCandidate,
+} from "../economy";
+import {
   dispositionTransitions,
   planLeaseAgents,
   reconcileLeaseAgentActions,
@@ -34,10 +40,12 @@ import {
   ContractLedger,
   createContractRequestChannel,
   emptyContractExecutionView,
+  emptyContractPlanningView,
   inRangeOrUnknownTravel,
   workforceActorFromCreep,
   type ContractFundingView,
   type ContractExecutionView,
+  type ContractPlanningView,
   type ContractReconciliationResult,
   type ContractRequestChannel,
 } from "../contracts";
@@ -61,7 +69,11 @@ import {
   type SpawnSelection,
 } from "../spawn";
 import type { JsonObject, StateView } from "../state/schema";
-import { recordTickTelemetry, type TickTelemetry } from "../telemetry/metrics";
+import {
+  recordTickTelemetry,
+  type EnergyFlowTelemetry,
+  type TickTelemetry,
+} from "../telemetry/metrics";
 import { observeWorld } from "../world/observe";
 import { emptyWorldSnapshot, type WorldSnapshot } from "../world/snapshot";
 import type { RuntimeGame, TickContext } from "./context";
@@ -146,6 +158,7 @@ export function runTick(input: TickInput): TickOutcome {
   const manager = opened.status === "ready" ? opened.manager : null;
   const state = manager?.view() ?? null;
   const contractExecution = readContractExecution(manager);
+  const contractPlanning = readContractPlanning(manager);
   const configResolution = runtimeConfigAuthority.resolve(
     manager?.ownerView("config") ?? null,
     input.game.time,
@@ -166,6 +179,7 @@ export function runTick(input: TickInput): TickOutcome {
     configResolution.config,
     configResolution.metadata,
     contractExecution,
+    contractPlanning,
     localPathPlanning,
     movementRuntime.channels,
   );
@@ -260,6 +274,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     dispositions: Object.freeze([]),
     movement: Object.freeze([]),
   });
+  let survivalCandidates: readonly SurvivalFlowCandidate[] = Object.freeze([]);
   return Object.freeze([
     configBootSystem(input),
     {
@@ -393,7 +408,41 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     },
     phaseMarker("safety.foundation", "safety", true, false, 0.1, input.onPhase),
-    colonyDirectorSystem(input, spawnDraft),
+    colonyDirectorSystem(input, spawnDraft, (candidates) => {
+      survivalCandidates = candidates;
+    }),
+    {
+      descriptor: {
+        id: "economy.contracts",
+        phase: "plan",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase1.economy")) return staged(() => undefined);
+        const scope = input.contractChannel.openProducer("economy.contracts");
+        const flow = authorizedSurvivalFlow(
+          survivalCandidates,
+          context.colony.reservations,
+          context.contractPlanning,
+          context.tick,
+        );
+        for (const request of flow.requests) scope.producer.submit(request);
+        for (const transition of flow.transitions) scope.producer.transition(transition);
+        const stagedRequests = scope.stage();
+        return staged(
+          () => {
+            stagedRequests.commit();
+          },
+          () => {
+            stagedRequests.discard();
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "agents.plan",
@@ -604,6 +653,12 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           config: context.config,
           configResolution: context.configResolution,
           colony: context.colony,
+          energyFlow: survivalEnergyFlowTelemetry(
+            context.snapshot,
+            context.movement,
+            survivalCandidates,
+            context.colony,
+          ),
         });
         return staged(() => {
           input.runtime.publishTelemetry(telemetry);
@@ -616,6 +671,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
 function colonyDirectorSystem(
   input: CompositionInput,
   spawnDraft: SpawnTickDraft,
+  publishEconomyCandidates: (candidates: readonly SurvivalFlowCandidate[]) => void,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -630,7 +686,18 @@ function colonyDirectorSystem(
     run: ({ context, mode, budget }) => {
       input.onPhase?.("plan");
       resetSpawnDraft(spawnDraft);
+      const plannedEconomyCandidates = isFeatureEnabled(context.config, "phase1.economy")
+        ? planSurvivalFlow(context.snapshot)
+        : Object.freeze([]);
       const owner = input.manager?.ownerView("colonies") ?? null;
+      const economyCandidates = renewSurvivalFlowBudgets(
+        plannedEconomyCandidates,
+        resolveColoniesOwner(owner).owner?.ledger ?? [],
+        context.tick,
+        context.config.policy.leases.durationTicks,
+        context.config.policy.leases.renewalWindowTicks,
+      );
+      publishEconomyCandidates(economyCandidates);
       const provisional = colonyDirector.begin({
         tick: context.tick,
         snapshot: context.snapshot,
@@ -638,6 +705,7 @@ function colonyDirectorSystem(
         owner,
         cpuMode: mode,
         cpuBudget: budget,
+        requests: economyCandidates.map(({ budgetRequest }) => budgetRequest),
       });
       const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
       const brokerResult = spawnEnabled
@@ -679,6 +747,7 @@ function colonyDirectorSystem(
               owner,
               cpuMode: mode,
               cpuBudget: budget,
+              requests: economyCandidates.map(({ budgetRequest }) => budgetRequest),
               recoverySpawnSelections: selections.map((selection) => ({
                 objectiveId: selection.demandId,
                 colonyId: selection.colonyId,
@@ -1074,6 +1143,7 @@ function createTickRuntime(
   config: RuntimeConfig,
   configResolution: RuntimeConfigResolutionMetadata,
   contractExecution: ContractExecutionView,
+  contractPlanning: ContractPlanningView,
   localPathPlanning: LocalPathPlanningService,
   movementChannels: TickContext["movementChannels"],
 ): TickRuntimeControl {
@@ -1102,6 +1172,7 @@ function createTickRuntime(
       return contracts;
     },
     contractExecution,
+    contractPlanning,
     get execution(): ArbitrationBatch | null {
       return execution;
     },
@@ -1166,6 +1237,58 @@ function readContractExecution(manager: MemoryManager | null): ContractExecution
   if (manager === null) return emptyContractExecutionView();
   const opened = ContractLedger.open(manager.ownerView("contracts"));
   return opened.status === "ready" ? opened.ledger.executionView() : emptyContractExecutionView();
+}
+
+function readContractPlanning(manager: MemoryManager | null): ContractPlanningView {
+  if (manager === null) return emptyContractPlanningView();
+  const opened = ContractLedger.open(manager.ownerView("contracts"));
+  return opened.status === "ready" ? opened.ledger.planningView() : emptyContractPlanningView();
+}
+
+function survivalEnergyFlowTelemetry(
+  snapshot: WorldSnapshot,
+  movement: MovementRuntimeResult,
+  candidates: readonly SurvivalFlowCandidate[],
+  colony: ColonyPlanningResult,
+): EnergyFlowTelemetry {
+  const carried = snapshot.rooms
+    .flatMap((room) => room.ownedCreeps)
+    .reduce(
+      (total, creep) =>
+        total +
+        (creep.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0),
+      0,
+    );
+  const dropped = snapshot.rooms
+    .flatMap((room) => room.droppedResources ?? [])
+    .filter(({ resourceType }) => resourceType === "energy")
+    .reduce((total, resource) => total + resource.amount, 0);
+  const executed = movement.actionExecution.filter(
+    ({ reason, status }) => reason === "executed" && status === "executed",
+  );
+  const harvested = executed
+    .filter(({ intent }) => intent.kind === "harvest")
+    .reduce((total, { intent }) => total + (intent.amount ?? 0), 0);
+  const delivered = executed
+    .filter(({ intent }) => intent.kind === "transfer")
+    .reduce((total, { intent }) => total + (intent.amount ?? 0), 0);
+  const unmet = candidates.filter(
+    ({ budgetRequest }) =>
+      !colony.reservations.some(
+        (reservation) =>
+          reservation.status === "active" &&
+          reservation.category === "harvesting-filling" &&
+          reservation.issuer === budgetRequest.issuer,
+      ),
+  ).length;
+  return Object.freeze({
+    carried,
+    delivered,
+    dropped,
+    harvested,
+    requested: candidates.length,
+    unmet,
+  });
 }
 
 function serializeKernelState(kernel: RuntimeKernel<TickContext>, mode: CpuMode): JsonObject {

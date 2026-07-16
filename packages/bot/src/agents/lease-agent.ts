@@ -327,17 +327,17 @@ function validateLease(
   )
     return suspend("actor-store-full");
   if (lease.execution.action === "harvest" && (target.type !== "source" || target.amount === 0))
-    return completion(lease, "target-depleted");
+    return unavailableTarget(lease, suspend, "target-depleted");
   if (
     lease.execution.action === "transfer" &&
     (target.store === null || target.store.freeCapacity === 0)
   )
-    return completion(lease, "target-full");
+    return unavailableTarget(lease, suspend, "target-full");
   if (
     lease.execution.action === "withdraw" &&
     (target.store === null || resource === null || resourceAmount(target.store, resource) === 0)
   )
-    return completion(lease, "target-depleted");
+    return unavailableTarget(lease, suspend, "target-depleted");
   if (lease.execution.action === "build" && (target.type !== "construction" || target.amount === 0))
     return completion(lease, "work-complete");
   if (
@@ -350,6 +350,14 @@ function validateLease(
   if (lease.execution.action === "pickup" && (target.type !== "resource" || target.amount === 0))
     return completion(lease, "target-depleted");
   return null;
+}
+
+function unavailableTarget(
+  lease: LeasedWorkExecution,
+  suspend: (reason: AgentDispositionReason) => LeaseAgentDisposition,
+  reason: Extract<AgentDispositionReason, "target-depleted" | "target-full">,
+): LeaseAgentDisposition {
+  return lease.execution.completion === "continuous" ? suspend(reason) : completion(lease, reason);
 }
 
 function completion(

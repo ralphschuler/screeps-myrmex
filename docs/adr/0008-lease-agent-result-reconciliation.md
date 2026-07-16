@@ -29,7 +29,7 @@ the contracts owner.
 - A heap reset cannot lose role/task progress because none exists outside contract state.
 - Agents cannot create contracts, choose objectives, issue Screeps commands, or stage persistent
   state directly.
-- `phase1.agents` is source-available under `runtime-config-source-v6`; economy and recovery stay
-  unavailable until their separate outcome slices prove them.
+- `phase1.agents` is source-available under `runtime-config-source-v6`; economy is enabled by its
+  subsequent #26 outcome slice and recovery remains unavailable.
 - The snapshot includes detached dropped-resource, ruin, and tombstone facts needed to validate
   pickup and withdraw leases without live reads.
