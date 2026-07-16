@@ -8,7 +8,7 @@ import type {
 import type { PositionSnapshot, RoomSnapshot, WorldSnapshot } from "../world/snapshot";
 
 export interface SurvivalFlowCandidate {
-  readonly action: "harvest" | "transfer";
+  readonly action: "harvest" | "pickup" | "transfer";
   readonly actorId: string;
   readonly budgetRequest: BudgetRequest;
   readonly colonyId: string;
@@ -37,8 +37,10 @@ export function planSurvivalFlow(
 ): readonly SurvivalFlowCandidate[] {
   const candidates: SurvivalFlowCandidate[] = [];
   const activeActionByActor = activeSurvivalActionByActor(execution, planning);
-  const staticallyBound = staticSourceBindings(planning);
+  const staticBindings = staticSourceBindings(planning);
   for (const room of snapshot.rooms.filter((value) => value.controller?.ownership === "owned")) {
+    const roomBindings = staticBindings.get(room.name) ?? new Map();
+    const reservedDrops = new Set<string>();
     const reservedSources = new Set<string>();
     const reservedSinks = new Set<string>();
     for (const actor of room.ownedCreeps.slice().sort(compareById)) {
@@ -51,22 +53,37 @@ export function planSurvivalFlow(
       const carriedEnergy = resourceAmount(actor, "energy");
       const canHarvest =
         actor.store.freeCapacity === null ? carriedEnergy === 0 : actor.store.freeCapacity > 0;
+      const pickupTarget = canHarvest
+        ? staticMiningDrop(room, actor.pos, reservedDrops, roomBindings)
+        : null;
       const harvestTarget = canHarvest
-        ? source(room, actor.pos, reservedSources, staticallyBound.get(room.name) ?? new Set())
+        ? source(room, actor.pos, reservedSources, new Set(roomBindings.keys()))
         : null;
       const transferTarget = carriedEnergy > 0 ? sink(room, actor.pos, reservedSinks) : null;
       const activeAction = activeActionByActor.get(actor.id);
       const action =
         activeAction === "transfer" && transferTarget !== null
           ? "transfer"
-          : activeAction === "harvest" && harvestTarget !== null
-            ? "harvest"
-            : harvestTarget !== null
+          : activeAction === "pickup" && pickupTarget !== null
+            ? "pickup"
+            : activeAction === "harvest" && harvestTarget !== null
               ? "harvest"
-              : "transfer";
-      const target = action === "harvest" ? harvestTarget : transferTarget;
+              : pickupTarget !== null && transferTarget !== null
+                ? "transfer"
+                : pickupTarget !== null
+                  ? "pickup"
+                  : harvestTarget !== null
+                    ? "harvest"
+                    : "transfer";
+      const target =
+        action === "harvest" ? harvestTarget : action === "pickup" ? pickupTarget : transferTarget;
       if (target !== null) {
-        (action === "harvest" ? reservedSources : reservedSinks).add(target.id);
+        (action === "harvest"
+          ? reservedSources
+          : action === "pickup"
+            ? reservedDrops
+            : reservedSinks
+        ).add(target.id);
         candidates.push(candidate(room.name, actor.id, action, target));
       }
     }
@@ -81,15 +98,19 @@ export function planSurvivalFlow(
 function activeSurvivalActionByActor(
   execution: ContractExecutionView,
   planning: ContractPlanningView,
-): ReadonlyMap<string, "harvest" | "transfer"> {
+): ReadonlyMap<string, "harvest" | "pickup" | "transfer"> {
   if (execution.status !== "ready" || planning.status !== "ready") return new Map();
   const economyContractIds = new Set(
     planning.contracts.filter(isSurvivalFlowContract).map(({ contractId }) => contractId),
   );
-  const actions = new Map<string, "harvest" | "transfer">();
+  const actions = new Map<string, "harvest" | "pickup" | "transfer">();
   for (const lease of execution.leases) {
     if (!economyContractIds.has(lease.contractId)) continue;
-    if (lease.execution.action === "harvest" || lease.execution.action === "transfer") {
+    if (
+      lease.execution.action === "harvest" ||
+      lease.execution.action === "pickup" ||
+      lease.execution.action === "transfer"
+    ) {
       actions.set(lease.actorId, lease.execution.action);
     }
   }
@@ -104,7 +125,10 @@ function isSurvivalFlowContract(contract: ContractPlanningView["contracts"][numb
       contract.execution.resourceType === null) ||
     (action === "transfer" &&
       contract.execution.action === "transfer" &&
-      contract.execution.resourceType === "energy");
+      contract.execution.resourceType === "energy") ||
+    (action === "pickup" &&
+      contract.execution.action === "pickup" &&
+      contract.execution.resourceType === null);
   return (
     scope === "economy" &&
     extra.length === 0 &&
@@ -240,13 +264,15 @@ function survivalEndpointRetired(
   if (room === undefined) return false;
   return contract.execution.action === "harvest"
     ? !room.sources.some(({ id }) => id === contract.targetId)
-    : ![...room.ownedSpawns, ...room.ownedExtensions].some(({ id }) => id === contract.targetId);
+    : contract.execution.action === "pickup"
+      ? !(room.droppedResources ?? []).some(({ id }) => id === contract.targetId)
+      : ![...room.ownedSpawns, ...room.ownedExtensions].some(({ id }) => id === contract.targetId);
 }
 
 function candidate(
   colonyId: string,
   actorId: string,
-  action: "harvest" | "transfer",
+  action: "harvest" | "pickup" | "transfer",
   target: { readonly id: string; readonly pos: PositionSnapshot },
 ): SurvivalFlowCandidate {
   const issuer = `economy/${colonyId}/${action}/${target.id}`;
@@ -271,28 +297,29 @@ function candidate(
 
 function contractFor(candidate: SurvivalFlowCandidate): WorkContractRequest {
   const harvest = candidate.action === "harvest";
+  const pickup = candidate.action === "pickup";
   return {
     budgetBinding: { category: "harvesting-filling", issuer: candidate.budgetRequest.issuer },
     conditions: {
       cancellation: "target-replaced",
       failure: "command-failed",
-      success: "continuous",
+      success: pickup ? "target-depleted" : "continuous",
     },
     deadline: SURVIVAL_FLOW_EXPIRY - 1,
     earliestStart: 0,
     estimatedWorkTicks: 1,
     execution: {
       action: candidate.action,
-      completion: "continuous",
+      completion: pickup ? "target-depleted" : "continuous",
       counterpartId: null,
-      resourceType: harvest ? null : "energy",
+      resourceType: harvest || pickup ? null : "energy",
       version: 1,
     },
     expiresAt: SURVIVAL_FLOW_EXPIRY,
     issuer: candidate.budgetRequest.issuer,
     issuerKey: `${candidate.action}:${candidate.targetId}`,
     issuerSequence: 1,
-    kind: harvest ? "harvest" : "fill",
+    kind: harvest ? "harvest" : pickup ? "haul" : "fill",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 1 },
     // TTL/deadline checks remain authoritative; this cap must not reject a viable local-room route
     // merely because the fatigue-safe travel model intentionally overestimates arrival time.
@@ -317,6 +344,30 @@ function contractFor(candidate: SurvivalFlowCandidate): WorkContractRequest {
   };
 }
 
+function staticMiningDrop(
+  room: RoomSnapshot,
+  from: PositionSnapshot,
+  reserved: ReadonlySet<string>,
+  bindings: ReadonlyMap<string, PositionSnapshot>,
+): { readonly id: string; readonly pos: PositionSnapshot } | null {
+  const workPositions = [...bindings.values()];
+  return (
+    (room.droppedResources ?? [])
+      .filter(
+        (value) =>
+          value.amount > 0 &&
+          value.resourceType === "energy" &&
+          !reserved.has(value.id) &&
+          workPositions.some((position) => distance(position, value.pos) <= 1),
+      )
+      .slice(0, MAX_SURVIVAL_FLOW_CANDIDATES)
+      .sort(
+        (left, right) =>
+          distance(from, left.pos) - distance(from, right.pos) || compareStrings(left.id, right.id),
+      )[0] ?? null
+  );
+}
+
 function source(
   room: RoomSnapshot,
   from: PositionSnapshot,
@@ -337,8 +388,8 @@ function source(
 }
 function staticSourceBindings(
   planning: ContractPlanningView,
-): ReadonlyMap<string, ReadonlySet<string>> {
-  const result = new Map<string, Set<string>>();
+): ReadonlyMap<string, ReadonlyMap<string, PositionSnapshot>> {
+  const result = new Map<string, Map<string, PositionSnapshot>>();
   if (planning.status !== "ready") return result;
   for (const contract of planning.contracts) {
     const [scope, colonyId, sourceId, ...extra] = contract.issuer.split("/");
@@ -347,12 +398,18 @@ function staticSourceBindings(
       colonyId === undefined ||
       sourceId === undefined ||
       extra.length > 0 ||
-      !["funded", "assigned", "active"].includes(contract.state)
+      !["funded", "assigned", "active"].includes(contract.state) ||
+      contract.owner.kind !== "colony" ||
+      contract.owner.id !== colonyId ||
+      contract.targetId !== sourceId ||
+      contract.budgetBinding.category !== "harvesting-filling" ||
+      contract.budgetBinding.issuer !== contract.issuer ||
+      contract.execution.version !== 2
     )
       continue;
-    const ids = result.get(colonyId) ?? new Set<string>();
-    ids.add(sourceId);
-    result.set(colonyId, ids);
+    const bindings = result.get(colonyId) ?? new Map<string, PositionSnapshot>();
+    bindings.set(sourceId, contract.execution.workPosition);
+    result.set(colonyId, bindings);
   }
   return result;
 }

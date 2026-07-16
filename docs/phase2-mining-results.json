@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "issue": 46,
+  "status": "complete",
+  "commitment": {
+    "fundedPrimaryCommitments": 2,
+    "noDuplicateDemandAfterReset": true,
+    "sourceIds": ["source-a", "source-b"],
+    "warmResetReorderedEquivalent": true
+  },
+  "deterministicScenario": {
+    "boundedAdjacentCandidates": 16,
+    "boundedProjectionEvaluations": 2,
+    "body": {
+      "usefulWorkParts": 5,
+      "harvestPerTick": 10,
+      "recoveryReservePreserved": true,
+      "throughputBounded": true
+    },
+    "linkCommands": 0,
+    "nonGoals": ["#47 hauling", "#48 link commands", "#49 repair"],
+    "outcomes": [
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "container-site",
+        "offload": "site-pending",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": true,
+        "id": "container-missing",
+        "offload": "site-needed",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "container-ready",
+        "offload": "container-ready",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": true,
+        "id": "container-full",
+        "offload": "container-full",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "container-decaying",
+        "offload": "container-decaying",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": true,
+        "id": "container-destruction",
+        "offload": "container-destroyed",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": true,
+        "id": "temporary-blocked-tile",
+        "offload": "site-needed",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": true,
+        "id": "miner-death",
+        "offload": "site-needed",
+        "replacementDemand": 1,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": true,
+        "id": "miner-expiry-spawn-busy",
+        "offload": "site-needed",
+        "replacementDemand": 1,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": true,
+        "id": "replacement-low-energy",
+        "offload": "site-needed",
+        "replacementDemand": 1,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "replacement-recovered",
+        "offload": "container-ready",
+        "replacementDemand": 1,
+        "replacementScheduled": 1,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "rcl-downgrade",
+        "offload": "rcl-locked",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "rcl-recovery",
+        "offload": "container-ready",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "link-candidate",
+        "offload": "link-candidate",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "source-depleted",
+        "offload": "container-ready",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      },
+      {
+        "activeCommitments": 2,
+        "dropFallback": false,
+        "id": "source-regenerated",
+        "offload": "container-ready",
+        "replacementDemand": 0,
+        "replacementScheduled": 0,
+        "stableWorkPosition": true
+      }
+    ],
+    "singleAccessPosition": { "roomName": "W1N1", "x": 9, "y": 10 },
+    "sourceCount": 2,
+    "telemetry": {
+      "containerDecayObserved": true,
+      "containerFillObserved": true,
+      "cpuPerEnergyObserved": true,
+      "harvestedEnergyObserved": true,
+      "minerIdleObserved": true,
+      "replacementGapObserved": true,
+      "sourceUptimeObserved": true
+    },
+    "warmResetReorderedEquivalent": true
+  }
+}

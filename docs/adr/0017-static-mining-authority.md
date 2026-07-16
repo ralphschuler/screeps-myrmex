@@ -1,6 +1,6 @@
 # ADR 0017: Static mining authority foundation
 
-Status: accepted (PR B extraction projection)
+Status: accepted (PR C composed activation evidence)
 
 ## Context
 
@@ -31,10 +31,14 @@ source-unavailable; composed runtime evidence, activation, and policy telemetry 
 - The algorithm revision is `owned-room-layout-v2-source-services`. Old layout commitments are stale
   and rebuildable, not malformed. Persistent memory retains only commitment identity and bounded
   blocker metadata, never placement arrays.
-- Future PR B will add `StaticMiningPlanner` as the sole source-mining demand authority. It will
-  read committed semantic services and current observations, then publish typed mining
-  demand/contracts through existing budget, contract, population, spawn, lease, movement, and action
-  boundaries. This PR neither creates that planner nor activates `phase2.mining`.
+- `StaticMiningPlanner` is the sole source-mining demand authority. It reads committed semantic
+  services and current observations, then publishes typed mining demand/contracts through existing
+  budget, contract, population, spawn, lease, movement, and action boundaries. Composed PR C
+  evidence activates `phase2.mining` only after layout and telemetry prerequisites are available.
+- The composed evidence contract is checked in as
+  [`phase2-mining-results.json`](../phase2-mining-results.json). It proves stable source identities,
+  bounded source evaluation, reset/reorder equivalence, deterministic fault recovery, and
+  observer-only mining telemetry without granting telemetry gameplay authority.
 
 ## Consequences
 
@@ -43,6 +47,8 @@ source-unavailable; composed runtime evidence, activation, and policy telemetry 
 - Heap resets and fact reordering reconstruct identical source-service placements and fingerprints.
 - Container decay, damage, store, and visible loss facts are available for later repair and hauling
   decisions without granting layout code command authority.
+- Container decay remains #49 repair input, drop collection remains #47 hauling work, and
+  `link-candidate` remains a read-only transition until #48 owns link commands.
 
 ## Sources consulted
 

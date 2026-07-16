@@ -99,8 +99,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
 - Extend the existing colony authority from the survival lifecycle to complete RCL policy; do not
   create a second per-room kernel or state machine.
 - Static mining, logistics contracts, links, storage, terminal, and layouts.
-- Issue #46 PR B defines static extraction contracts and stationary workforce projection while
-  keeping `phase2.mining` source-unavailable until PR C adds composed evidence and activation.
+- Issue #46 defines static extraction contracts, stationary workforce projection, and composed
+  reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
+  `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
+  link commands remain #48, and container repair remains #49.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

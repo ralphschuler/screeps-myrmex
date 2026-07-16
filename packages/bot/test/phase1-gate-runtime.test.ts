@@ -4,6 +4,7 @@ import { establishedRcl2World } from "./support/established-rcl2-fixture";
 
 const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
+const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 const START_TICK = 100;
@@ -14,6 +15,7 @@ describe("Phase 1 gate established RCL2 row", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
+    vi.stubGlobal("FIND_DROPPED_RESOURCES", FIND_DROPPED_RESOURCES_VALUE);
     vi.stubGlobal("FIND_STRUCTURES", FIND_STRUCTURES_VALUE);
     vi.stubGlobal("FIND_CONSTRUCTION_SITES", FIND_CONSTRUCTION_SITES_VALUE);
   });
@@ -67,6 +69,13 @@ describe("Phase 1 gate established RCL2 row", () => {
     expect(world.roomEnergy()).toBeGreaterThanOrEqual(300);
     expect(world.siteProgress()).toBeGreaterThanOrEqual(progressBeforeDeath);
     expect(world.constructionSiteCalls()).toBe(0);
+    expect(
+      outcomes.some((outcome) =>
+        outcome.movement.actionExecution.some(
+          ({ intent, status }) => status === "executed" && intent.kind === "pickup",
+        ),
+      ),
+    ).toBe(true);
     expect(
       outcomes.some((outcome) =>
         outcome.movement.actionExecution.some(

@@ -2,8 +2,11 @@ import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "
 import { executeDefenseIntents, planDefense } from "../defense";
 import {
   authorizedSurvivalFlow,
+  emptyStaticMiningPlan,
+  planStaticMining,
   planSurvivalFlow,
   renewSurvivalFlowBudgets,
+  type StaticMiningPlan,
   type SurvivalFlowCandidate,
 } from "../economy";
 import {
@@ -89,6 +92,7 @@ import {
 import type { JsonObject, StateView } from "../state/schema";
 import { recordTickTelemetry, type TickTelemetry } from "../telemetry/metrics";
 import { measureSurvivalEnergyFlow } from "../telemetry/energy-flow";
+import type { StaticMiningSourceObservation } from "../telemetry/static-mining";
 import { TelemetryService } from "../telemetry/service";
 import { ConsoleReporter, type ConsoleSink } from "../telemetry/console-reporter";
 import { projectReporterStatus, type ReporterStatus } from "../telemetry/reporter-status";
@@ -101,6 +105,7 @@ import {
   arbitrateConstructionSites,
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
+  freshSourceServicePlacements,
   layoutCacheDependencies,
   parseLayoutsOwner,
   persistLayoutCommitment,
@@ -110,6 +115,7 @@ import {
   type ConstructionSiteArbitrationResult,
   type ConstructionSiteExecutionResult,
   type LayoutCommitment,
+  type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
   type LayoutsOwnerV1,
@@ -357,6 +363,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let survivalCandidates: readonly SurvivalFlowCandidate[] = Object.freeze([]);
   let maintenanceCandidates: readonly CriticalMaintenanceCandidate[] = Object.freeze([]);
   let growthCandidates: readonly GrowthCandidate[] = Object.freeze([]);
+  let staticMiningPlan: StaticMiningPlan = emptyStaticMiningPlan();
+  let staticMiningCpuUsed = 0;
   let collectedTelemetry: TickTelemetry | null = null;
   return Object.freeze([
     configBootSystem(input),
@@ -501,12 +509,73 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     },
     defenseSafetySystem(input),
-    colonyDirectorSystem(input, spawnDraft, (economy, maintenance, growth) => {
-      survivalCandidates = economy;
-      maintenanceCandidates = maintenance;
-      growthCandidates = growth;
-    }),
+    colonyDirectorSystem(
+      input,
+      spawnDraft,
+      (economy, maintenance, growth, mining, miningCpuUsed) => {
+        survivalCandidates = economy;
+        maintenanceCandidates = maintenance;
+        growthCandidates = growth;
+        staticMiningPlan = mining;
+        staticMiningCpuUsed = miningCpuUsed;
+      },
+    ),
     layoutPlanningSystem(input, layoutDraft),
+    {
+      descriptor: {
+        id: "mining.contracts",
+        phase: "plan",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase2.mining")) {
+          return staged(() => undefined);
+        }
+        const funded = new Set(
+          context.colony.reservations
+            .filter(
+              ({ category, status }) => category === "harvesting-filling" && status === "active",
+            )
+            .map(({ colonyId, issuer }) => `${colonyId}\u0000${issuer}`),
+        );
+        const scope = input.contractChannel.openProducer("mining.contracts");
+        for (const request of staticMiningPlan.requests) {
+          if (funded.has(`${request.owner.id}\u0000${request.budgetBinding.issuer}`)) {
+            scope.producer.submit(request);
+          }
+        }
+        for (const contract of context.contractPlanning.contracts) {
+          if (
+            contract.issuer.startsWith("mining/") &&
+            (contract.state === "proposed" || contract.state === "suspended") &&
+            funded.has(`${contract.owner.id}\u0000${contract.budgetBinding.issuer}`)
+          ) {
+            scope.producer.transition({
+              contractId: contract.contractId,
+              reason: "static-mining-funded",
+              tick: context.tick,
+              to: "funded",
+            });
+          }
+        }
+        for (const transition of staticMiningPlan.transitions) {
+          scope.producer.transition(transition);
+        }
+        const stagedRequests = scope.stage();
+        return staged(
+          () => {
+            stagedRequests.commit();
+          },
+          () => {
+            stagedRequests.discard();
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "economy.contracts",
@@ -869,6 +938,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                   movement: context.movement,
                   snapshot: context.snapshot,
                   spawn: context.spawn,
+                  staticMining: {
+                    cpuUsed: staticMiningCpuUsed,
+                    observations: staticMiningObservations(context, staticMiningPlan),
+                  },
                   reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
                 });
                 const telemetryTransaction = input.manager.transaction("telemetry");
@@ -936,6 +1009,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 movement: context.movement,
                 snapshot: context.snapshot,
                 spawn: context.spawn,
+                staticMining: {
+                  cpuUsed: staticMiningCpuUsed,
+                  observations: staticMiningObservations(context, staticMiningPlan),
+                },
                 reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
               }).telemetry,
             );
@@ -954,7 +1031,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
 function telemetryBase(
   input: CompositionInput,
   context: TickContext,
-): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress" | "reporterTransitions"> {
+): Omit<
+  TickTelemetry,
+  "activity" | "status" | "recoveryProgress" | "reporterTransitions" | "staticMining"
+> {
   return recordTickTelemetry({
     tick: context.tick,
     shard: context.shard,
@@ -1053,8 +1133,14 @@ function layoutPlanningSystem(
           priorCommitment?.fingerprint === result.commitment.fingerprint
             ? priorCommitment
             : result.commitment;
-        if (priorCommitment?.fingerprint !== commitment.fingerprint) {
-          owner = persistLayoutCommitment(owner, room.name, commitment);
+        const sourceServices = result.placements.filter(
+          (placement) => placement.service?.kind === "source-container",
+        );
+        const sourceServicesChanged =
+          JSON.stringify(freshSourceServicePlacements(owner, room.name)) !==
+          JSON.stringify(sourceServices);
+        if (priorCommitment?.fingerprint !== commitment.fingerprint || sourceServicesChanged) {
+          owner = persistLayoutCommitment(owner, room.name, commitment, result.placements);
           changed = true;
         }
         const observationFingerprint = layoutObservationFingerprint(room);
@@ -1217,6 +1303,8 @@ function colonyDirectorSystem(
     economy: readonly SurvivalFlowCandidate[],
     maintenance: readonly CriticalMaintenanceCandidate[],
     growth: readonly GrowthCandidate[],
+    mining: StaticMiningPlan,
+    miningCpuUsed: number,
   ) => void,
 ): TickSystem<TickContext> {
   return {
@@ -1262,7 +1350,34 @@ function colonyDirectorSystem(
         context.config.policy.leases.durationTicks,
         context.config.policy.leases.renewalWindowTicks,
       );
-      publishCandidates(economyCandidates, maintenanceCandidates, growthCandidates);
+      let miningCpuUsed = 0;
+      let miningPlan = emptyStaticMiningPlan();
+      if (isFeatureEnabled(context.config, "phase2.mining")) {
+        const startedAt = input.game.cpu.getUsed();
+        miningPlan = planStaticMining({
+          layouts: staticMiningLayouts(input.manager),
+          planning: context.contractPlanning,
+          snapshot: context.snapshot,
+          tick: context.tick,
+        });
+        const elapsed = input.game.cpu.getUsed() - startedAt;
+        miningCpuUsed = Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
+      }
+      publishCandidates(
+        economyCandidates,
+        maintenanceCandidates,
+        growthCandidates,
+        miningPlan,
+        miningCpuUsed,
+      );
+      const budgetRequests = [
+        ...economyCandidates.map(({ budgetRequest }) => budgetRequest),
+        ...maintenanceCandidates.map(({ budgetRequest }) => budgetRequest),
+        ...growthCandidates.map(({ budgetRequest }) => budgetRequest),
+        ...miningPlan.projections.flatMap(({ budgetRequest }) =>
+          budgetRequest === null ? [] : [budgetRequest],
+        ),
+      ];
       const provisional = colonyDirector.begin({
         tick: context.tick,
         snapshot: context.snapshot,
@@ -1270,9 +1385,7 @@ function colonyDirectorSystem(
         owner,
         cpuMode: mode,
         cpuBudget: budget,
-        requests: [...economyCandidates, ...maintenanceCandidates, ...growthCandidates].map(
-          ({ budgetRequest }) => budgetRequest,
-        ),
+        requests: budgetRequests,
         population: bindPopulationReservations(input.contractPopulation, owner),
       });
       const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
@@ -1326,9 +1439,7 @@ function colonyDirectorSystem(
               owner,
               cpuMode: mode,
               cpuBudget: budget,
-              requests: [...economyCandidates, ...maintenanceCandidates, ...growthCandidates].map(
-                ({ budgetRequest }) => budgetRequest,
-              ),
+              requests: budgetRequests,
               recoverySpawnSelections: selections
                 .filter(({ category }) => category === "emergency-recovery")
                 .map((selection) => ({
@@ -1373,6 +1484,77 @@ function colonyDirectorSystem(
       );
     },
   };
+}
+
+function staticMiningLayouts(manager: MemoryManager | null) {
+  if (manager === null) return new Map<string, readonly LayoutPlacement[]>();
+  const owner = parseLayoutsOwner(manager.ownerView("layouts"));
+  if (owner === null) return new Map<string, readonly LayoutPlacement[]>();
+  return new Map(
+    owner.records.map(({ roomName }) => [roomName, freshSourceServicePlacements(owner, roomName)]),
+  );
+}
+
+function staticMiningObservations(
+  context: TickContext,
+  plan: StaticMiningPlan,
+): readonly StaticMiningSourceObservation[] {
+  const executed = new Set(
+    context.movement.actionExecution
+      .filter(({ intent, status }) => status === "executed" && intent.kind === "harvest")
+      .map(({ intent }) => intent.targetId),
+  );
+  const leased = new Set(
+    context.contractExecution.leases
+      .filter(({ execution }) => execution.action === "harvest")
+      .map(({ targetId }) => targetId),
+  );
+  const pending = new Set(
+    context.contractPlanning.contracts
+      .filter(
+        ({ execution, issuer }) => execution.action === "harvest" && issuer.startsWith("mining/"),
+      )
+      .map(({ targetId }) => targetId),
+  );
+  return Object.freeze(
+    plan.projections.flatMap((projection): readonly StaticMiningSourceObservation[] => {
+      const room = context.snapshot.rooms.find(({ name }) => name === projection.colonyId);
+      const source = room?.sources.find(({ id }) => id === projection.sourceId);
+      if (room === undefined || source === undefined) return [];
+      const position = projection.workPosition;
+      const container =
+        position === null
+          ? null
+          : (room.storedStructures.find(
+              ({ pos, structureType }) =>
+                structureType === "container" && pos.x === position.x && pos.y === position.y,
+            ) ?? null);
+      const minerState = executed.has(source.id)
+        ? "active"
+        : leased.has(source.id)
+          ? "idle"
+          : pending.has(source.id)
+            ? "replacement-pending"
+            : "missing";
+      return [
+        Object.freeze({
+          sourceId: source.id,
+          energy: source.energy,
+          energyCapacity: source.energyCapacity,
+          ticksToRegeneration: source.ticksToRegeneration,
+          minerState,
+          container:
+            container === null
+              ? null
+              : Object.freeze({
+                  capacity: container.store.capacity ?? container.store.usedCapacity,
+                  used: container.store.usedCapacity,
+                  ticksToDecay: container.ticksToDecay ?? null,
+                }),
+        }),
+      ];
+    }),
+  );
 }
 
 function defenseSafetySystem(input: CompositionInput): TickSystem<TickContext> {

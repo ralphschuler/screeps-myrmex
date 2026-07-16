@@ -57,6 +57,12 @@ spawn time, and kernel-admitted CPU are conserved before priority is considered.
 spawning, defense, and replacement may consume protected spawn energy; every later category must
 leave the remaining tranche intact.
 
+Static mining assigns one deterministic primary extraction commitment per visible owned source.
+Useful `WORK` is capped by source regeneration throughput, replacement remains ahead of optional
+growth, and missing or unavailable offload infrastructure degrades to dropped energy rather than
+stalling extraction. Container state is evidence only for #47 hauling and #49 repair, while a nearby
+link is only a candidate until #48 authorizes link commands.
+
 Spawn decisions use one deterministic broker across every eligible local spawn. Emergency recovery
 precedes replacement, which precedes upgrading and construction; stable deadline, body-cost, and
 identity tie-breakers remove observation-order accidents. Multiple spawns share the room's one

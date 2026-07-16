@@ -16,26 +16,26 @@
       "status": "evidenced",
       "scope": "focused-runtime-export",
       "measurements": {
-        "ticks": 140,
+        "ticks": 33,
         "modeledCpu": 0,
-        "persistentBytes": 16154,
-        "persistentGrowth": 2923,
-        "telemetryBytes": 4721,
-        "telemetryCardinality": 25,
-        "spawnUtilizationPct": 6.428571428571428,
+        "persistentBytes": 24692,
+        "persistentGrowth": 3093,
+        "telemetryBytes": 5211,
+        "telemetryCardinality": 26,
+        "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 200,
         "replacementLateness": 0,
-        "controllerMargin": 19860,
+        "controllerMargin": 19967,
         "controllerRisk": 0,
-        "recoveryTime": 140
+        "recoveryTime": 33
       },
       "hashes": {
-        "warmOutcome": "c5a84865",
-        "resetOutcome": "c5a84865",
-        "reorderedOutcome": "c5a84865",
-        "warmTranscript": "67157109",
-        "resetTranscript": "b9ec8770",
-        "reorderedTranscript": "652bee20"
+        "warmOutcome": "a383b8ac",
+        "resetOutcome": "a383b8ac",
+        "reorderedOutcome": "a383b8ac",
+        "warmTranscript": "2e3a309b",
+        "resetTranscript": "300c075e",
+        "reorderedTranscript": "a87a6a27"
       },
       "unevidenced": []
     },
@@ -45,11 +45,11 @@
       "scope": "focused-runtime-export",
       "measurements": {
         "ticks": 1401,
-        "modeledCpu": 0.08700000000000006,
-        "persistentBytes": 28543,
-        "persistentGrowth": 3994,
-        "telemetryBytes": 4535,
-        "telemetryCardinality": 25,
+        "modeledCpu": 0.09300000000000007,
+        "persistentBytes": 28798,
+        "persistentGrowth": 4349,
+        "telemetryBytes": 5045,
+        "telemetryCardinality": 26,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
         "replacementLateness": 0,
@@ -61,9 +61,9 @@
         "warmOutcome": "09e32b5c",
         "resetOutcome": "09e32b5c",
         "reorderedOutcome": "09e32b5c",
-        "warmTranscript": "54dcdaf0",
-        "resetTranscript": "cd466d4f",
-        "reorderedTranscript": "c4d7e4e9"
+        "warmTranscript": "137a4037",
+        "resetTranscript": "39e04310",
+        "reorderedTranscript": "a838adfa"
       },
       "unevidenced": []
     },
@@ -74,10 +74,10 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 2,
-        "persistentBytes": 4548,
+        "persistentBytes": 4903,
         "persistentGrowth": 818,
-        "telemetryBytes": 4305,
-        "telemetryCardinality": 25,
+        "telemetryBytes": 5002,
+        "telemetryCardinality": 26,
         "spawnUtilizationPct": 25,
         "energyFlow": 200,
         "replacementLateness": 0,
@@ -89,9 +89,9 @@
         "warmOutcome": "87c8166f",
         "resetOutcome": "87c8166f",
         "reorderedOutcome": "87c8166f",
-        "warmTranscript": "df6b7d72",
-        "resetTranscript": "2ba04b27",
-        "reorderedTranscript": "8fa306d2"
+        "warmTranscript": "78fe8e50",
+        "resetTranscript": "c180a340",
+        "reorderedTranscript": "963980b5"
       },
       "unevidenced": []
     },
@@ -102,10 +102,10 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 7524,
+        "persistentBytes": 7879,
         "persistentGrowth": 238,
-        "telemetryBytes": 4152,
-        "telemetryCardinality": 25,
+        "telemetryBytes": 4849,
+        "telemetryCardinality": 26,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
         "replacementLateness": 0,
@@ -117,9 +117,9 @@
         "warmOutcome": "df53697a",
         "resetOutcome": "df53697a",
         "reorderedOutcome": "df53697a",
-        "warmTranscript": "fe9b136c",
-        "resetTranscript": "a9556667",
-        "reorderedTranscript": "f404547e"
+        "warmTranscript": "2f405376",
+        "resetTranscript": "a1384a80",
+        "reorderedTranscript": "18588589"
       },
       "unevidenced": []
     },
@@ -130,10 +130,10 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 7717,
+        "persistentBytes": 8072,
         "persistentGrowth": 260,
-        "telemetryBytes": 3956,
-        "telemetryCardinality": 25,
+        "telemetryBytes": 4670,
+        "telemetryCardinality": 26,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
         "replacementLateness": 0,
@@ -145,9 +145,9 @@
         "warmOutcome": "f329c328",
         "resetOutcome": "f329c328",
         "reorderedOutcome": "f329c328",
-        "warmTranscript": "75ad5a53",
-        "resetTranscript": "343f2536",
-        "reorderedTranscript": "c655e556"
+        "warmTranscript": "a4109ce9",
+        "resetTranscript": "82448e19",
+        "reorderedTranscript": "dfc745a1"
       },
       "unevidenced": []
     },
@@ -158,10 +158,10 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 5,
-        "persistentBytes": 7918,
+        "persistentBytes": 8273,
         "persistentGrowth": 201,
-        "telemetryBytes": 4057,
-        "telemetryCardinality": 25,
+        "telemetryBytes": 4771,
+        "telemetryCardinality": 26,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
         "replacementLateness": 0,
@@ -173,9 +173,9 @@
         "warmOutcome": "4b8c61be",
         "resetOutcome": "4b8c61be",
         "reorderedOutcome": "4b8c61be",
-        "warmTranscript": "4b1e8bd2",
-        "resetTranscript": "64d91237",
-        "reorderedTranscript": "b8f1e8ad"
+        "warmTranscript": "e5ed3e30",
+        "resetTranscript": "a523cf90",
+        "reorderedTranscript": "dc5af0e6"
       },
       "unevidenced": []
     },
@@ -184,13 +184,13 @@
       "status": "evidenced",
       "scope": "composed-runtime-equivalence",
       "measurements": {
-        "ticks": 1555,
+        "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 28543,
-        "persistentGrowth": 3994,
-        "telemetryBytes": 4721,
-        "telemetryCardinality": 25,
-        "spawnUtilizationPct": 25,
+        "persistentBytes": 28798,
+        "persistentGrowth": 4349,
+        "telemetryBytes": 5211,
+        "telemetryCardinality": 26,
+        "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
         "controllerMargin": 8599,
@@ -198,12 +198,12 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "c88cadcb",
-        "resetOutcome": "c88cadcb",
-        "reorderedOutcome": "c88cadcb",
-        "warmTranscript": "fc560462",
-        "resetTranscript": "da2eb218",
-        "reorderedTranscript": "c11ea917"
+        "warmOutcome": "92710e0a",
+        "resetOutcome": "92710e0a",
+        "reorderedOutcome": "92710e0a",
+        "warmTranscript": "86bd2f4f",
+        "resetTranscript": "356eba29",
+        "reorderedTranscript": "6d963f3d"
       },
       "unevidenced": []
     },
@@ -212,13 +212,13 @@
       "status": "evidenced",
       "scope": "local-composed-runtime",
       "measurements": {
-        "ticks": 1555,
+        "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 28543,
-        "persistentGrowth": 3994,
-        "telemetryBytes": 4721,
-        "telemetryCardinality": 25,
-        "spawnUtilizationPct": 25,
+        "persistentBytes": 28798,
+        "persistentGrowth": 4349,
+        "telemetryBytes": 5211,
+        "telemetryCardinality": 26,
+        "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
         "controllerMargin": 8599,
@@ -226,20 +226,20 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "eb69bffd",
-        "resetOutcome": "eb69bffd",
-        "reorderedOutcome": "eb69bffd",
-        "warmTranscript": "fc560462",
-        "resetTranscript": "da2eb218",
-        "reorderedTranscript": "c11ea917"
+        "warmOutcome": "b5987958",
+        "resetOutcome": "b5987958",
+        "reorderedOutcome": "b5987958",
+        "warmTranscript": "86bd2f4f",
+        "resetTranscript": "356eba29",
+        "reorderedTranscript": "6d963f3d"
       },
       "unevidenced": []
     }
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 616671,
-    "inputCount": 96,
-    "sha256": "sha256:64be7ffecf759e76c19ec3d3357df87cd23b718ed6b3b8a0eb1a46d9eefd8bc5"
+    "bytes": 638258,
+    "inputCount": 97,
+    "sha256": "sha256:2e1051b78d717309cb9745459a29c44f8fe2fe6924b6fd33dc0f379349b9f3b4"
   }
 }

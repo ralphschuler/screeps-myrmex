@@ -35,6 +35,10 @@ export interface StaticMiningPlan {
   readonly transitions: readonly ContractTransitionRequest[];
 }
 
+export function emptyStaticMiningPlan(): StaticMiningPlan {
+  return freeze({ projections: [], requests: [], transitions: [] });
+}
+
 const EXPIRY = 1_000_000_000;
 
 /** Sole projection of owned-source extraction. It emits data and owns no command or cache. */
@@ -75,7 +79,7 @@ export function planStaticMining(input: {
         identity,
         room.name,
         source.id,
-        source.pos,
+        { roomName: source.pos.roomName, x: source.pos.x, y: source.pos.y },
         placement.pos,
         capability,
       );
