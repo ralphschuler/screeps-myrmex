@@ -36,6 +36,36 @@ export const PRIVATE_SERVER_SCENARIOS = Object.freeze([
   },
 ]);
 
+/** Establishes quiescence, removes fixture publication, then clears exact receipts in that order. */
+export async function clearPrivateServerScenarioFixture({
+  active,
+  clearReceipts,
+  pause,
+  removePublication,
+}) {
+  let failure = null;
+  if (active) {
+    try {
+      await pause();
+    } catch (error) {
+      failure = error;
+    }
+  }
+  try {
+    await removePublication();
+  } catch (error) {
+    failure ??= error;
+  }
+  if (active) {
+    try {
+      await clearReceipts();
+    } catch (error) {
+      failure ??= error;
+    }
+  }
+  if (failure) throw failure;
+}
+
 /**
  * Runs one bounded scenario through a deliberately small driver interface. The driver owns all
  * process, CLI, and fixture I/O; this module owns the terminal evidence and failure contract.
@@ -53,12 +83,14 @@ export async function runPrivateServerScenario({ driver, manifest }) {
     await driver.start(normalizedManifest);
     await driver.pause(normalizedManifest);
     await driver.reset(normalizedManifest);
+    await driver.pause(normalizedManifest);
     await driver.bootstrap(normalizedManifest);
     await driver.deploy(normalizedManifest);
     await driver.resume(normalizedManifest);
     const fixtureTarget = await driver.prepareFixture(normalizedManifest);
     await driver.pause(normalizedManifest);
     await driver.configureFixture(normalizedManifest, fixtureTarget);
+    await driver.awaitFixtureReady(normalizedManifest);
     await driver.resume(normalizedManifest);
     const observed = await driver.observe(normalizedManifest);
     outcomes = boundedRecords(observed.outcomes, "outcomes");
@@ -73,14 +105,27 @@ export async function runPrivateServerScenario({ driver, manifest }) {
     failureCode = scenarioFailureCode(error);
     logs = [safeError(error)];
   } finally {
+    const cleanupErrors = [];
+    let cleanupFailureCode = null;
     try {
       await driver.clearFixture(normalizedManifest);
-      await driver.stop(normalizedManifest);
-      cleanup = "complete";
     } catch (error) {
+      cleanupErrors.push(error);
+      cleanupFailureCode ??= scenarioFailureCode(error);
+    }
+    try {
+      await driver.stop(normalizedManifest);
+    } catch (error) {
+      cleanupErrors.push(error);
+      cleanupFailureCode ??= scenarioFailureCode(error);
+    }
+    if (cleanupErrors.length === 0) {
+      cleanup = "complete";
+    } else {
       cleanup = "incomplete";
       failure = { kind: "cleanup-failed" };
-      logs = [...logs, safeError(error)];
+      failureCode = cleanupFailureCode;
+      logs = [...logs, ...cleanupErrors.map(safeError)];
     }
   }
 
@@ -154,9 +199,13 @@ function scenarioFailureCode(error) {
   if (error.name === "CliOperationFailure") {
     return [
       "cli-bootstrap-controlled-bot-failed",
+      "cli-clear-fixture-failed",
       "cli-pause-failed",
+      "cli-pause-fixture-failed",
       "cli-reset-failed",
       "cli-resume-failed",
+      "cli-sample-fixture-failed",
+      "cli-sample-fixture-quiescence-failed",
       "cli-sample-controlled-not-ready",
     ].includes(error.message)
       ? error.message
@@ -167,9 +216,15 @@ function scenarioFailureCode(error) {
     "asset-directory-unavailable",
     "configuration-file-unavailable",
     "health-timeout",
+    "fixture-definition-rejected",
+    "fixture-module-state-invalid",
+    "fixture-ready-timeout",
+    "fixture-quiescence-rejected",
+    "fixture-quiescence-timeout",
     "launcher-exited",
     "port-unavailable",
     "required-launch-option-missing",
+    "shutdown-timeout",
     "steam-authentication",
   ].includes(error.message)
     ? error.message

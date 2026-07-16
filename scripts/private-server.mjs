@@ -18,13 +18,14 @@ import {
   waitForShutdown,
   writePid,
 } from "./lib/private-server-lifecycle.mjs";
+import { validatePrivateServerFixtureModuleState } from "./lib/private-server-fixture-state.mjs";
 
 const options = parseLifecycleArguments(process.argv.slice(2));
 const paths = lifecyclePaths(cwd(), options.stateDirectory);
 const runtimeDirectory = `${cwd()}/integration/private-server`;
 const launcherExecutable = `${runtimeDirectory}/node_modules/.bin/screeps`;
 const fixtureDefinition =
-  options.fixtureDefinition === null ? null : `${cwd()}/${options.fixtureDefinition}`;
+  options.fixtureScenarioId === null ? null : `${paths.root}/fixtures/definition.json`;
 
 try {
   const record = await run(options.command);
@@ -76,6 +77,16 @@ async function provision() {
 
 async function start() {
   if (await readPid(paths)) return lifecycleRecord("already-running");
+  if (fixtureDefinition !== null) {
+    try {
+      await validatePrivateServerFixtureModuleState({
+        checkout: cwd(),
+        stateDirectory: options.stateDirectory,
+      });
+    } catch {
+      return lifecycleRecord("startup-failed", { reason: "fixture-module-state-invalid" });
+    }
+  }
   await mkdir(paths.root, { recursive: true });
   await prepareLauncherLog(paths);
   const log = await open(paths.log, "a");
@@ -112,7 +123,11 @@ async function start() {
       env:
         fixtureDefinition === null
           ? undefined
-          : { ...env, MYRMEX_PRIVATE_SERVER_FIXTURE: fixtureDefinition },
+          : {
+              ...env,
+              MYRMEX_PRIVATE_SERVER_FIXTURE: fixtureDefinition,
+              MYRMEX_PRIVATE_SERVER_FIXTURE_ID: options.fixtureScenarioId,
+            },
       stdio: ["ignore", log.fd, log.fd],
     },
   );

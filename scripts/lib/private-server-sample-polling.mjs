@@ -1,4 +1,4 @@
-/** Polls a controlled-bot sample without turning transient post-restart receipts into startup errors. */
+/** Polls a controlled-bot sample without turning transient not-ready receipts into startup errors. */
 export async function waitForPrivateServerSample({
   delay,
   isTransientError,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearPrivateServerScenarioFixture,
   privateServerScenarioMatrix,
   runPrivateServerScenario,
 } from "../lib/private-server-scenario-runner.mjs";
@@ -14,6 +15,37 @@ const manifest = {
 };
 
 describe("private-server scenario runner", () => {
+  it("removes fixture publication before clearing receipts and attempts every cleanup step", async () => {
+    const calls = [];
+    await clearPrivateServerScenarioFixture({
+      active: true,
+      clearReceipts: async () => calls.push("clearReceipts"),
+      pause: async () => calls.push("pause"),
+      removePublication: async () => calls.push("removePublication"),
+    });
+    expect(calls).toEqual(["pause", "removePublication", "clearReceipts"]);
+
+    const failureCalls = [];
+    await expect(
+      clearPrivateServerScenarioFixture({
+        active: true,
+        clearReceipts: async () => {
+          failureCalls.push("clearReceipts");
+          throw new Error("receipt failure");
+        },
+        pause: async () => {
+          failureCalls.push("pause");
+          throw new Error("pause failure");
+        },
+        removePublication: async () => {
+          failureCalls.push("removePublication");
+          throw new Error("publication failure");
+        },
+      }),
+    ).rejects.toThrow("pause failure");
+    expect(failureCalls).toEqual(["pause", "removePublication", "clearReceipts"]);
+  });
+
   it("produces canonical successful evidence only after the exact driver sequence", async () => {
     const calls = [];
     const result = await runPrivateServerScenario({ driver: driver(calls), manifest });
@@ -23,12 +55,14 @@ describe("private-server scenario runner", () => {
       "start",
       "pause",
       "reset",
+      "pause",
       "bootstrap",
       "deploy",
       "resume",
       "prepareFixture",
       "pause",
       "configureFixture",
+      "awaitFixtureReady",
       "resume",
       "observe",
       "clearFixture",
@@ -96,6 +130,59 @@ describe("private-server scenario runner", () => {
       manifest,
     });
     expect(cleanup.evidence.failure).toEqual({ kind: "cleanup-failed" });
+    const cleanupCalls = [];
+    const fixtureCleanup = await runPrivateServerScenario({
+      driver: driver(cleanupCalls, {
+        clearFixtureError: namedError("CliOperationFailure", "cli-clear-fixture-failed"),
+      }),
+      manifest,
+    });
+    expect(fixtureCleanup).toMatchObject({
+      evidence: { failure: { kind: "cleanup-failed" } },
+      failureCode: "cli-clear-fixture-failed",
+      ok: false,
+    });
+    expect(cleanupCalls.at(-1)).toBe("stop");
+  });
+
+  it("surfaces the cleanup code when both primary execution and cleanup fail", async () => {
+    const result = await runPrivateServerScenario({
+      driver: driver([], {
+        observeError: namedError("CliOperationFailure", "cli-sample-controlled-not-ready"),
+        stopError: namedError("StartupFailure", "shutdown-timeout"),
+      }),
+      manifest,
+    });
+    expect(result).toMatchObject({
+      evidence: {
+        cleanup: "incomplete",
+        failure: { kind: "cleanup-failed" },
+      },
+      failureCode: "shutdown-timeout",
+      ok: false,
+    });
+    expect(result.evidence.logs).toHaveLength(2);
+  });
+
+  it.each([
+    ["CliOperationFailure", "cli-pause-fixture-failed", "cli-operation-failed"],
+    ["CliOperationFailure", "cli-sample-fixture-failed", "cli-operation-failed"],
+    ["CliOperationFailure", "cli-sample-fixture-quiescence-failed", "cli-operation-failed"],
+    ["StartupFailure", "fixture-definition-rejected", "startup-failed"],
+    ["StartupFailure", "fixture-module-state-invalid", "startup-failed"],
+    ["StartupFailure", "fixture-ready-timeout", "startup-failed"],
+    ["StartupFailure", "fixture-quiescence-rejected", "startup-failed"],
+    ["StartupFailure", "fixture-quiescence-timeout", "startup-failed"],
+  ])("preserves the bounded %s code %s", async (name, code, kind) => {
+    const result = await runPrivateServerScenario({
+      driver: driver([], { observeError: namedError(name, code) }),
+      manifest,
+    });
+    expect(result).toMatchObject({
+      evidence: { failure: { kind } },
+      failureCode: code,
+      ok: false,
+    });
   });
 
   it("keeps the Phase 1 matrix fixed and bounded", () => {
@@ -113,6 +200,7 @@ function driver(calls, options = {}) {
     bootstrap: step("bootstrap"),
     deploy: step("deploy"),
     configureFixture: step("configureFixture"),
+    awaitFixtureReady: step("awaitFixtureReady"),
     resume: step("resume"),
     prepareFixture: step("prepareFixture"),
     observe: async () => {
@@ -126,7 +214,10 @@ function driver(calls, options = {}) {
         state: [{ tick: 1 }],
       };
     },
-    clearFixture: step("clearFixture"),
+    clearFixture: async () => {
+      calls.push("clearFixture");
+      if (options.clearFixtureError) throw options.clearFixtureError;
+    },
     stop: async () => {
       calls.push("stop");
       if (options.stopError) throw options.stopError;

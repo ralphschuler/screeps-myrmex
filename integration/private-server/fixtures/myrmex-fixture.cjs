@@ -26,18 +26,84 @@ module.exports.latchDefinition = latchDefinition;
  * Adds the fixture only to standalone-server extension hooks. It deliberately adds no CLI method,
  * HTTP route, or production-bundle capability.
  */
-function attachFixture(config, definition = null, storage = loadStorage()) {
+function attachFixture(
+  config,
+  definition = null,
+  storage = loadStorage(),
+  fixtureEnvironment = env,
+  fileSystem = fs,
+) {
   if (!config.engine) return;
   let activeDefinition = definition;
+  let definitionState = definition ? "ready" : "waiting";
+  const expectedScenarioId =
+    definition?.scenarioId ?? fixtureEnvironment.MYRMEX_PRIVATE_SERVER_FIXTURE_ID;
+  let processType = null;
+  let statusWritten = false;
+  let watching = false;
+  let mainLoopHadWork = false;
+  let acknowledgedPauseSequence = null;
+  let acknowledgingPauseSequence = null;
   let hostileInserted = false;
   let resetPublished = false;
   let resetObservationPending = false;
   let botExceptionInjected = false;
+  const filename = fixtureEnvironment.MYRMEX_PRIVATE_SERVER_FIXTURE;
+
+  config.engine.on("init", (type) => {
+    if (type !== "processor" && type !== "runner") return;
+    processType = type;
+    if (definitionState === "ready") return writeDefinitionStatus();
+    const pending = settleDefinition();
+    if (definitionState === "waiting" && typeof filename === "string" && filename.length > 0) {
+      watching = true;
+      fileSystem.watchFile(filename, { interval: 50, persistent: false }, settleDefinition);
+    }
+    return pending;
+  });
+
+  config.engine.on("mainLoopStage", (stage) => {
+    if (stage === "start") {
+      mainLoopHadWork = false;
+      return;
+    }
+    if (stage !== "finish") {
+      mainLoopHadWork = true;
+      return;
+    }
+    if (mainLoopHadWork || !safeId(expectedScenarioId)) return;
+    return Promise.all([
+      storage.env.get(storage.env.keys.MAIN_LOOP_PAUSED),
+      storage.env.get(`${RECEIPT_PREFIX}${expectedScenarioId}:pause-request`),
+    ]).then(([paused, value]) => {
+      const request = safePauseRequest(value, expectedScenarioId);
+      if (
+        +paused !== 1 ||
+        request === null ||
+        request.sequence === acknowledgedPauseSequence ||
+        request.sequence === acknowledgingPauseSequence
+      ) {
+        return;
+      }
+      acknowledgingPauseSequence = request.sequence;
+      return writeReceiptById(storage, expectedScenarioId, "quiescent-main", {
+        phase: "quiescent",
+        sequence: request.sequence,
+      }).then(
+        () => {
+          acknowledgedPauseSequence = request.sequence;
+          acknowledgingPauseSequence = null;
+        },
+        (error) => {
+          acknowledgingPauseSequence = null;
+          throw error;
+        },
+      );
+    });
+  });
 
   config.engine.on("processRoom", (room, _roomInfo, objects, terrain, gameTime, bulk) => {
-    activeDefinition = latchDefinition(activeDefinition, env.MYRMEX_PRIVATE_SERVER_FIXTURE);
     if (!activeDefinition) return;
-    writeReceipt(storage, activeDefinition, "ready-processor", { phase: "ready" });
     const definition = activeDefinition;
     if (room !== definition.target.room) return;
     if (!hostileInserted && gameTime === definition.hostile.atTick) {
@@ -64,9 +130,7 @@ function attachFixture(config, definition = null, storage = loadStorage()) {
   });
 
   config.engine.on("playerSandbox", (sandbox, userId) => {
-    activeDefinition = latchDefinition(activeDefinition, env.MYRMEX_PRIVATE_SERVER_FIXTURE);
     if (!activeDefinition) return;
-    writeReceipt(storage, activeDefinition, "ready-runner", { phase: "ready" });
     const definition = activeDefinition;
     if (resetObservationPending || `${userId}` !== definition.target.userId) return;
     return Promise.all([
@@ -97,11 +161,42 @@ function attachFixture(config, definition = null, storage = loadStorage()) {
       );
     });
   });
+
+  function settleDefinition() {
+    if (definitionState !== "waiting") return;
+    try {
+      const candidate = readDefinition(filename, fileSystem);
+      if (!safeId(expectedScenarioId) || candidate.scenarioId !== expectedScenarioId) {
+        throw new TypeError("MYRMEX fixture identity does not match the expected scenario.");
+      }
+      activeDefinition = candidate;
+      definitionState = "ready";
+    } catch (error) {
+      if (error && error.code === "ENOENT") return;
+      definitionState = "rejected";
+    }
+    stopWatching();
+    return writeDefinitionStatus();
+  }
+
+  function writeDefinitionStatus() {
+    if (statusWritten || !safeId(expectedScenarioId) || processType === null) return;
+    statusWritten = true;
+    return writeReceiptById(storage, expectedScenarioId, `ready-${processType}`, {
+      phase: definitionState,
+    });
+  }
+
+  function stopWatching() {
+    if (!watching) return;
+    watching = false;
+    fileSystem.unwatchFile(filename, settleDefinition);
+  }
 }
 
-function readDefinition(filename) {
+function readDefinition(filename, fileSystem = fs) {
   if (typeof filename !== "string" || filename.length === 0) return null;
-  const contents = fs.readFileSync(filename, "utf8");
+  const contents = fileSystem.readFileSync(filename, "utf8");
   if (Buffer.byteLength(contents, "utf8") > MAXIMUM_DEFINITION_BYTES) {
     throw new RangeError("MYRMEX fixture definition exceeds the byte limit.");
   }
@@ -109,10 +204,10 @@ function readDefinition(filename) {
 }
 
 /** Reads a definition only until a valid definition is latched for the current server process. */
-function latchDefinition(current, filename) {
+function latchDefinition(current, filename, fileSystem = fs) {
   if (current) return current;
   try {
-    return readDefinition(filename);
+    return readDefinition(filename, fileSystem);
   } catch {
     return null;
   }
@@ -205,9 +300,13 @@ function invader(definition) {
 }
 
 function writeReceipt(storage, definition, kind, update) {
+  return writeReceiptById(storage, definition.scenarioId, kind, update);
+}
+
+function writeReceiptById(storage, scenarioId, kind, update) {
   return storage.env.set(
-    receiptKey(definition, kind),
-    JSON.stringify({ scenarioId: definition.scenarioId, ...update }),
+    `${RECEIPT_PREFIX}${scenarioId}:${kind}`,
+    JSON.stringify({ scenarioId, ...update }),
   );
 }
 
@@ -224,6 +323,16 @@ function safeReceipt(value, definition) {
       : {};
   } catch {
     return {};
+  }
+}
+
+function safePauseRequest(value, scenarioId) {
+  if (typeof value !== "string") return null;
+  try {
+    const request = exact(JSON.parse(value), ["scenarioId", "sequence"]);
+    return request.scenarioId === scenarioId && pauseSequence(request.sequence) ? request : null;
+  } catch {
+    return null;
   }
 }
 
@@ -253,6 +362,10 @@ function cell(x, y) {
 
 function tick(value) {
   return Number.isSafeInteger(value) && value >= 1 && value <= 10_000;
+}
+
+function pauseSequence(value) {
+  return Number.isSafeInteger(value) && value >= 1 && value <= 16;
 }
 
 function loadStorage() {

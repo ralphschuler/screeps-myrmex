@@ -10,12 +10,15 @@ export const PRIVATE_SERVER_CLI_LIMITS = Object.freeze({
 
 const OPERATIONS = new Set([
   "bootstrap-controlled-bot",
+  "clear-fixture",
   "pause",
+  "pause-fixture",
   "prepare-fixture-target",
   "reset",
   "resume",
   "sample-controlled",
   "sample-fixture",
+  "sample-fixture-quiescence",
   "set-tick-duration",
 ]);
 const CONTROLLED_USERNAME = "myrmex-integration";
@@ -30,6 +33,24 @@ export function privateServerCliCommand(operation) {
   if (kind === "pause" || kind === "resume") {
     exactOperation(operation, ["kind"]);
     return `system.${kind === "pause" ? "pauseSimulation" : "resumeSimulation"}()`;
+  }
+  if (kind === "pause-fixture") {
+    exactOperation(operation, ["kind", "scenarioId", "sequence"]);
+    if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
+    if (!pauseSequence(operation.sequence)) {
+      throw new RangeError("Fixture pause sequence is outside the bounded range.");
+    }
+    const acknowledgementKey = JSON.stringify(
+      `myrmexFixture:${operation.scenarioId}:quiescent-main`,
+    );
+    const requestKey = JSON.stringify(`myrmexFixture:${operation.scenarioId}:pause-request`);
+    const request = JSON.stringify(
+      JSON.stringify({
+        scenarioId: operation.scenarioId,
+        sequence: operation.sequence,
+      }),
+    );
+    return `Promise.all([storage.env.del(${acknowledgementKey}),storage.env.del(${requestKey})]).then(()=>system.pauseSimulation()).then(()=>storage.env.set(${requestKey},${request})).then(()=>JSON.stringify({paused:true}))`;
   }
   if (kind === "reset") {
     exactOperation(operation, ["kind"]);
@@ -50,8 +71,38 @@ export function privateServerCliCommand(operation) {
   if (kind === "sample-fixture") {
     exactOperation(operation, ["kind", "scenarioId"]);
     if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
-    const key = JSON.stringify(`myrmexFixture:${operation.scenarioId}:bot-exception`);
-    return `storage.env.get(${key}).then(value=>{let receipt={};try{receipt=JSON.parse(value||'{}')}catch{};return JSON.stringify({botException:receipt.phase==='injected'?'injected':'absent'})})`;
+    const scenarioId = JSON.stringify(operation.scenarioId);
+    const keys = fixtureReceiptKeys(operation.scenarioId, [
+      "ready-processor",
+      "ready-runner",
+      "bot-exception",
+    ]);
+    return `Promise.all(${JSON.stringify(keys)}.map(key=>storage.env.get(key))).then(values=>{const status=value=>{if(!value)return'absent';try{const receipt=JSON.parse(value);return receipt.scenarioId===${scenarioId}&&(receipt.phase==='ready'||receipt.phase==='rejected')?receipt.phase:'rejected'}catch{return'rejected'}};let bot={};try{bot=JSON.parse(values[2]||'{}')}catch{};return JSON.stringify({botException:bot.scenarioId===${scenarioId}&&bot.phase==='injected'?'injected':'absent',processor:status(values[0]),runner:status(values[1])})})`;
+  }
+  if (kind === "sample-fixture-quiescence") {
+    exactOperation(operation, ["kind", "scenarioId", "sequence"]);
+    if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
+    if (!pauseSequence(operation.sequence)) {
+      throw new RangeError("Fixture pause sequence is outside the bounded range.");
+    }
+    const scenarioId = JSON.stringify(operation.scenarioId);
+    const sequence = operation.sequence;
+    const key = JSON.stringify(`myrmexFixture:${operation.scenarioId}:quiescent-main`);
+    return `storage.env.get(${key}).then(value=>{if(!value)return JSON.stringify({quiescent:'absent'});try{const receipt=JSON.parse(value);const exact=Object.keys(receipt).sort().join(',')==='phase,scenarioId,sequence';return JSON.stringify({quiescent:exact&&receipt.scenarioId===${scenarioId}&&receipt.sequence===${sequence}&&receipt.phase==='quiescent'?'ready':'rejected'})}catch{return JSON.stringify({quiescent:'rejected'})}})`;
+  }
+  if (kind === "clear-fixture") {
+    exactOperation(operation, ["kind", "scenarioId"]);
+    if (!safeId(operation.scenarioId)) throw new TypeError("Fixture scenario id is invalid.");
+    const keys = fixtureReceiptKeys(operation.scenarioId, [
+      "ready-processor",
+      "ready-runner",
+      "hostile",
+      "reset",
+      "bot-exception",
+      "pause-request",
+      "quiescent-main",
+    ]);
+    return `Promise.all(${JSON.stringify(keys)}.map(key=>storage.env.del(key))).then(()=>Promise.all(${JSON.stringify(keys)}.map(key=>storage.env.get(key)))).then(values=>JSON.stringify({cleared:values.every(value=>value==null)}))`;
   }
   if (!Number.isSafeInteger(operation.milliseconds)) {
     throw new TypeError("Tick duration must be a safe integer.");
@@ -86,7 +137,7 @@ export async function samplePrivateServerBot(options = {}) {
   );
 }
 
-/** Identifies the one receipt failure that can occur while a restarted engine becomes sample-ready. */
+/** Identifies the one receipt failure that can occur while the controlled sample becomes ready. */
 export function isTransientPrivateServerSampleError(error) {
   return error instanceof Error && error.message === "Private-server sample receipt is invalid.";
 }
@@ -106,6 +157,36 @@ export async function samplePrivateServerFixture(scenarioId, options = {}) {
   return parseFixtureSample(
     await runPrivateServerCommand(
       privateServerCliCommand({ kind: "sample-fixture", scenarioId }),
+      options,
+    ),
+  );
+}
+
+/** Requests a fresh main-loop pause boundary for one declared fixture scenario. */
+export async function pausePrivateServerFixture(scenarioId, sequence, options = {}) {
+  return parseFixturePause(
+    await runPrivateServerCommand(
+      privateServerCliCommand({ kind: "pause-fixture", scenarioId, sequence }),
+      options,
+    ),
+  );
+}
+
+/** Samples only whether the main loop acknowledged the requested paused boundary. */
+export async function samplePrivateServerFixtureQuiescence(scenarioId, sequence, options = {}) {
+  return parseFixtureQuiescence(
+    await runPrivateServerCommand(
+      privateServerCliCommand({ kind: "sample-fixture-quiescence", scenarioId, sequence }),
+      options,
+    ),
+  );
+}
+
+/** Deletes and verifies only the fixed namespaced receipts for one declared scenario. */
+export async function clearPrivateServerFixture(scenarioId, options = {}) {
+  return parseFixtureClearance(
+    await runPrivateServerCommand(
+      privateServerCliCommand({ kind: "clear-fixture", scenarioId }),
       options,
     ),
   );
@@ -292,10 +373,49 @@ function parseFixtureTarget(value) {
 
 function parseFixtureSample(value) {
   const row = parseJson(value);
-  if (row === null || !["absent", "injected"].includes(row.botException)) {
+  if (
+    row === null ||
+    !exactKeys(row, ["botException", "processor", "runner"]) ||
+    !["absent", "injected"].includes(row.botException) ||
+    !["absent", "ready", "rejected"].includes(row.processor) ||
+    !["absent", "ready", "rejected"].includes(row.runner)
+  ) {
     throw new Error("Private-server fixture sample receipt is invalid.");
   }
-  return Object.freeze({ botException: row.botException, transcript: opaqueResult(value) });
+  return Object.freeze({
+    botException: row.botException,
+    processor: row.processor,
+    runner: row.runner,
+    transcript: opaqueResult(value),
+  });
+}
+
+function parseFixtureClearance(value) {
+  const row = parseJson(value);
+  if (row === null || !exactKeys(row, ["cleared"]) || row.cleared !== true) {
+    throw new Error("Private-server fixture cleanup was not acknowledged.");
+  }
+  return Object.freeze({ cleared: true, transcript: opaqueResult(value) });
+}
+
+function parseFixturePause(value) {
+  const row = parseJson(value);
+  if (row === null || !exactKeys(row, ["paused"]) || row.paused !== true) {
+    throw new Error("Private-server fixture pause was not acknowledged.");
+  }
+  return Object.freeze({ paused: true, transcript: opaqueResult(value) });
+}
+
+function parseFixtureQuiescence(value) {
+  const row = parseJson(value);
+  if (
+    row === null ||
+    !exactKeys(row, ["quiescent"]) ||
+    !["absent", "ready", "rejected"].includes(row.quiescent)
+  ) {
+    throw new Error("Private-server fixture quiescence receipt is invalid.");
+  }
+  return Object.freeze({ quiescent: row.quiescent, transcript: opaqueResult(value) });
 }
 
 function parseJson(value) {
@@ -315,6 +435,15 @@ function exactOperation(value, keys) {
   }
 }
 
+function exactKeys(value, keys) {
+  const actual = Object.keys(value).sort();
+  return actual.length === keys.length && actual.every((key, index) => key === keys[index]);
+}
+
+function fixtureReceiptKeys(scenarioId, kinds) {
+  return kinds.map((kind) => `myrmexFixture:${scenarioId}:${kind}`);
+}
+
 function safeId(value) {
   return typeof value === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(value);
 }
@@ -329,6 +458,10 @@ function cell(value) {
 
 function count(value) {
   return Number.isSafeInteger(value) && value >= 0 && value <= 100_000;
+}
+
+function pauseSequence(value) {
+  return Number.isSafeInteger(value) && value >= 1 && value <= 16;
 }
 
 function hash(value) {

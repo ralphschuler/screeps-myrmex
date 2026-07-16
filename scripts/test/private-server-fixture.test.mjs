@@ -127,6 +127,58 @@ describe("private-server fixture mod", () => {
     });
   });
 
+  it("acknowledges quiescence only after an idle paused main-loop boundary", async () => {
+    const events = new Map();
+    const pauseRequestKey = "myrmexFixture:hostile-reset-v1:pause-request";
+    const quiescenceKey = "myrmexFixture:hostile-reset-v1:quiescent-main";
+    const values = new Map([
+      ["mainLoopPaused", "0"],
+      [pauseRequestKey, JSON.stringify({ scenarioId: "hostile-reset-v1", sequence: 1 })],
+    ]);
+    const writes = [];
+    const storage = {
+      env: {
+        get: async (key) => values.get(key),
+        keys: { MAIN_LOOP_PAUSED: "mainLoopPaused" },
+        set: async (key, value) => {
+          writes.push([key, value]);
+          values.set(key, value);
+        },
+      },
+      pubsub: { keys: { RUNTIME_RESTART: "runtimeRestart" }, publish: async () => undefined },
+    };
+    fixture(
+      { engine: { on: (name, handler) => events.set(name, handler) } },
+      fixture.validateDefinition(definition),
+      storage,
+    );
+    const mainLoopStage = events.get("mainLoopStage");
+
+    await mainLoopStage("start");
+    await mainLoopStage("finish");
+    expect(writes).toEqual([]);
+
+    values.set("mainLoopPaused", "1");
+    await mainLoopStage("start");
+    await mainLoopStage("getUsers");
+    await mainLoopStage("finish");
+    expect(writes).toEqual([]);
+
+    await mainLoopStage("start");
+    await mainLoopStage("finish");
+    expect(writes).toHaveLength(1);
+    expect(writes[0][0]).toBe(quiescenceKey);
+    expect(JSON.parse(writes[0][1])).toEqual({
+      phase: "quiescent",
+      scenarioId: "hostile-reset-v1",
+      sequence: 1,
+    });
+
+    await mainLoopStage("start");
+    await mainLoopStage("finish");
+    expect(writes).toHaveLength(1);
+  });
+
   it("rejects unsupported input before it can register a fixture", () => {
     expect(() => fixture.validateDefinition({ ...definition, extra: true })).toThrow("unknown");
     expect(() =>
