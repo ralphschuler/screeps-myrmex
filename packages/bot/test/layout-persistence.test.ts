@@ -4,6 +4,7 @@ import {
   emptyLayoutsOwner,
   layoutCacheDependencies,
   parseLayoutsOwner,
+  persistConstructionSiteReceipt,
   persistLayoutCommitment,
   reconcileOwnedLayouts,
   registerLayoutCompiledCache,
@@ -26,6 +27,27 @@ describe("layout persistence and cache", () => {
     expect(
       parseLayoutsOwner({ ...owner, records: Array.from({ length: 65 }, () => owner.records[0]) }),
     ).toBeNull();
+  });
+  it("persists 32 canonical receipts and drops them on layout revision", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    for (let index = 0; index < 40; index += 1)
+      owner = persistConstructionSiteReceipt(owner, "W1N1", {
+        attempt: 1,
+        code: "ERR_FULL",
+        layoutFingerprint: commitment.fingerprint,
+        nextEligibleTick: index + 5,
+        observationFingerprint: "obs",
+        observedAt: index,
+        policyFingerprint: "policy",
+        proposalId: `proposal-${String(index)}`,
+        roomName: "W1N1",
+      });
+    expect(owner.records[0]?.siteReceipts).toHaveLength(32);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(
+      persistLayoutCommitment(owner, "W1N1", { ...commitment, fingerprint: "layout-v1:b" })
+        .records[0]?.siteReceipts,
+    ).toBeUndefined();
   });
   it("is byte-equivalent with warm/cold layout.compiled.v1 cache and exact dependencies", () => {
     const deps = layoutCacheDependencies({

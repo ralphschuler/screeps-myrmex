@@ -3,10 +3,12 @@ import {
   LAYOUT_OWNER_SCHEMA_VERSION,
   MAX_LAYOUT_BLOCKERS,
   MAX_LAYOUT_RECORDS,
+  type ConstructionSiteAttemptReceipt,
   type LayoutCommitment,
   type LayoutRecord,
   type LayoutsOwnerV1,
 } from "./contracts";
+import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
 
 export function emptyLayoutsOwner(): LayoutsOwnerV1 {
   return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
@@ -53,6 +55,23 @@ export function reconcileOwnedLayouts(
     ? owner
     : freeze({ ...owner, revision: owner.revision + 1, records });
 }
+export function persistConstructionSiteReceipt(
+  owner: LayoutsOwnerV1,
+  roomName: string,
+  receipt: ConstructionSiteAttemptReceipt,
+): LayoutsOwnerV1 {
+  const records = owner.records.map((item) =>
+    item.roomName === roomName
+      ? {
+          ...item,
+          siteReceipts: normalizeConstructionSiteReceipts([...(item.siteReceipts ?? []), receipt]),
+        }
+      : item,
+  );
+  return records.some((item, index) => item !== owner.records[index])
+    ? freeze({ ...owner, revision: owner.revision + 1, records })
+    : owner;
+}
 function validRecord(v: unknown): v is LayoutRecord {
   return (
     record(v) &&
@@ -71,7 +90,40 @@ function validRecord(v: unknown): v is LayoutRecord {
     v.transform <= 7 &&
     Array.isArray(v.blockers) &&
     v.blockers.length <= MAX_LAYOUT_BLOCKERS &&
-    v.blockers.every((b) => typeof b === "string" && b.length <= 32)
+    v.blockers.every((b) => typeof b === "string" && b.length <= 32) &&
+    (v.siteReceipts === undefined || validReceipts(v.siteReceipts, v.roomName))
+  );
+}
+function validReceipts(
+  value: unknown,
+  roomName: unknown,
+): value is readonly ConstructionSiteAttemptReceipt[] {
+  if (!Array.isArray(value) || value.length > 32) return false;
+  return value.every(
+    (item) =>
+      record(item) &&
+      item.roomName === roomName &&
+      typeof item.proposalId === "string" &&
+      item.proposalId.length <= 256 &&
+      [
+        "OK",
+        "ERR_FULL",
+        "ERR_RCL_NOT_ENOUGH",
+        "ERR_INVALID_TARGET",
+        "ERR_INVALID_ARGS",
+        "ERR_NOT_OWNER",
+        "UNEXPECTED",
+      ].includes(String(item.code)) &&
+      integer(item.attempt) &&
+      item.attempt <= 16 &&
+      integer(item.nextEligibleTick) &&
+      integer(item.observedAt) &&
+      typeof item.layoutFingerprint === "string" &&
+      item.layoutFingerprint.length <= 128 &&
+      typeof item.observationFingerprint === "string" &&
+      item.observationFingerprint.length <= 128 &&
+      typeof item.policyFingerprint === "string" &&
+      item.policyFingerprint.length <= 128,
   );
 }
 function record(v: unknown): v is Record<string, unknown> {

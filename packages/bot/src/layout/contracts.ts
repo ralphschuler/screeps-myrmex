@@ -15,6 +15,15 @@ export const MAX_LAYOUT_TRANSFORMS = 8 as const;
 export const MAX_LAYOUT_FLOOD_CELLS = 2_500 as const;
 export const MAX_LAYOUT_RECORDS = 64 as const;
 export const MAX_LAYOUT_BLOCKERS = 8 as const;
+export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
+export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
+  officialHardCap: 100,
+  reservedGlobalHeadroom: 5,
+  acceptedGloballyPerTick: 2,
+  acceptedPerRoomPerTick: 1,
+  inspectedProposalsPerRoom: 64,
+  activeSitesPerRoom: 10,
+} as const);
 
 export type LayoutTransform = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type LayoutLayer = "primary" | "road" | "rampart";
@@ -45,6 +54,141 @@ export interface LayoutCommitment {
 }
 export interface LayoutRecord extends LayoutCommitment {
   readonly roomName: string;
+  readonly siteReceipts?: readonly ConstructionSiteAttemptReceipt[];
+}
+
+export type LayoutDiffRejectionReason =
+  | "room-unknown"
+  | "room-lost"
+  | "policy-disabled"
+  | "commitment-conflict"
+  | "different-structure"
+  | "foreign-site"
+  | "different-site"
+  | "rcl-locked"
+  | "over-allowance";
+export type LayoutDiffSuppressionReason = "existing-structure" | "existing-owned-site";
+export interface LayoutSiteProposal {
+  readonly colonyId: string;
+  readonly layoutFingerprint: string;
+  readonly observationFingerprint: string;
+  readonly placementOrder: number;
+  readonly policyFingerprint: string;
+  readonly policyPriority: number;
+  readonly pos: PositionSnapshot;
+  readonly stableId: string;
+  readonly structureType: string;
+}
+export interface LayoutDiffDecision {
+  readonly placement: LayoutPlacement;
+  readonly reason: LayoutDiffRejectionReason | LayoutDiffSuppressionReason;
+  readonly stableId: string;
+  readonly status: "rejected" | "suppressed";
+}
+export interface LayoutDiffInput {
+  readonly colonyId: string;
+  readonly commitment: LayoutCommitment;
+  readonly commitmentConflicted: boolean;
+  readonly constructionSites: readonly ConstructionSiteSnapshot[];
+  readonly observationFingerprint: string;
+  readonly placements: readonly LayoutPlacement[];
+  readonly policy: ColonyView["rclPolicy"];
+  readonly policyEnabled: boolean;
+  readonly policyFingerprint: string;
+  readonly roomName: string;
+  readonly roomStatus: "owned" | "unknown" | "lost";
+  readonly structures: readonly StructureSnapshot[];
+}
+export interface LayoutDiffResult {
+  readonly proposals: readonly LayoutSiteProposal[];
+  readonly rejected: readonly LayoutDiffDecision[];
+  readonly suppressed: readonly LayoutDiffDecision[];
+}
+export type ConstructionSiteAttemptCode =
+  | "OK"
+  | "ERR_FULL"
+  | "ERR_RCL_NOT_ENOUGH"
+  | "ERR_INVALID_TARGET"
+  | "ERR_INVALID_ARGS"
+  | "ERR_NOT_OWNER"
+  | "UNEXPECTED";
+export interface ConstructionSiteAttemptReceipt {
+  readonly attempt: number;
+  readonly code: ConstructionSiteAttemptCode;
+  readonly layoutFingerprint: string;
+  readonly nextEligibleTick: number;
+  readonly observationFingerprint: string;
+  readonly observedAt: number;
+  readonly policyFingerprint: string;
+  readonly proposalId: string;
+  readonly roomName: string;
+}
+export interface ConstructionSiteAttemptResult {
+  readonly code: ConstructionSiteAttemptCode;
+  readonly proposal: LayoutSiteProposal;
+  readonly tick: number;
+}
+export interface CreateConstructionSiteIntent {
+  readonly colonyId: string;
+  readonly kind: "create-construction-site";
+  readonly layoutFingerprint: string;
+  readonly observationFingerprint: string;
+  readonly policyFingerprint: string;
+  readonly proposalId: string;
+  readonly roomName: string;
+  readonly structureType: string;
+  readonly x: number;
+  readonly y: number;
+}
+export interface ConstructionSiteLimits {
+  readonly officialHardCap: number;
+  readonly reservedGlobalHeadroom: number;
+  readonly acceptedGloballyPerTick: number;
+  readonly acceptedPerRoomPerTick: number;
+  readonly inspectedProposalsPerRoom: number;
+  readonly activeSitesPerRoom: number;
+}
+export interface RoomConstructionSiteCount {
+  readonly count: number;
+  readonly roomName: string;
+}
+export interface ConstructionProgressionAuthorization {
+  readonly authorized: boolean;
+  readonly colonyId: string;
+  readonly roomName: string;
+}
+export type ConstructionSiteDeferredReason =
+  | "global-headroom"
+  | "global-tick-limit"
+  | "room-tick-limit"
+  | "room-active-limit"
+  | "inspection-limit"
+  | "receipt-ok-expectation"
+  | "receipt-full-backoff"
+  | "receipt-rcl-policy"
+  | "receipt-invalid-target"
+  | "receipt-not-owner"
+  | "receipt-unexpected-backoff";
+export type ConstructionSiteRejectedReason = "progression-not-authorized" | "receipt-invalid-args";
+export interface ConstructionSiteArbitrationRecord {
+  readonly proposal: LayoutSiteProposal;
+  readonly reason?: ConstructionSiteDeferredReason | ConstructionSiteRejectedReason;
+  readonly status: "accepted" | "deferred" | "rejected";
+}
+export interface ConstructionSiteArbitrationInput {
+  readonly globalOwnedSiteCount: number;
+  readonly limits: ConstructionSiteLimits;
+  readonly perRoomSiteCounts: readonly RoomConstructionSiteCount[];
+  readonly priorReceipts: readonly ConstructionSiteAttemptReceipt[];
+  readonly progressionAuthorizations: readonly ConstructionProgressionAuthorization[];
+  readonly proposals: readonly LayoutSiteProposal[];
+  readonly tick: number;
+}
+export interface ConstructionSiteArbitrationResult {
+  readonly accepted: readonly ConstructionSiteArbitrationRecord[];
+  readonly deferred: readonly ConstructionSiteArbitrationRecord[];
+  readonly intents: readonly CreateConstructionSiteIntent[];
+  readonly rejected: readonly ConstructionSiteArbitrationRecord[];
 }
 export interface LayoutsOwnerV1 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;

@@ -1215,8 +1215,19 @@ The distinct `layouts` persistent owner stores only algorithm revision, anchor/t
 fingerprint, and bounded blocker/commitment metadata; reconstructible placements remain heap data.
 `layout.compiled.v1` is a `CacheManager` namespace stamped by exact algorithm, terrain, policy, and
 normalized-facts revisions. Failed or exhausted planning preserves the prior commitment and emits no
-partial plan, command, construction-site intent, or dismantle suggestion. Site arbitration,
-execution, and result reconciliation remain PR B/C contracts.
+partial plan, command, construction-site intent, or dismantle suggestion.
+
+PR B adds a pure layout diff and makes `ConstructionSiteArbiter` the sole site-slot authority.
+Exact/adopted structures and matching owned sites suppress duplicates; stale observation, lost
+ownership, foreign occupancy, policy/RCL denial, over-allowance, and commitment conflicts fail
+closed. Canonical policy, colony, placement, structure, coordinate, and stable-ID ordering applies.
+The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
+per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
+
+Up to 32 attempt receipts per room live with the schema-4 `layouts` owner. `OK` waits for observed
+world change; full and unexpected faults back off; RCL, target, and ownership failures wait for the
+relevant fresh fingerprint; invalid arguments stay failed closed until layout revision. PR B emits
+detached create-site intent data only. Live API execution and reconciliation remain PR C.
 
 Mechanics grounding: official
 [`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite),
