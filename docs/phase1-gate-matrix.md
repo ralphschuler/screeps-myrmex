@@ -32,7 +32,7 @@ machine-checkable without pretending that a missing measurement is zero.
 
 The machine-readable local result is checked in as
 [`phase1-gate-results.json`](phase1-gate-results.json). It records actual warm, reset, and reordered
-outputs for one runtime row and four exported deterministic component rows. A `null` measurement is
+outputs for two runtime rows and four exported deterministic component rows. A `null` measurement is
 paired with its field name in `unevidenced`; missing measurements are never represented as zero. The
 aggregate row remains `unevidenced` because the RCL2 fixture does not yet export independent
 variants, several component seams do not own Memory or telemetry, and external live evidence remains
@@ -49,9 +49,9 @@ open.
   preserved.
 - The production artifact must contain no `packages/scenario-kit` input. The bundle-boundary check
   is composed by the focused test below; this document does not claim a built artifact was produced.
-- Persistent bytes, telemetry bytes/cardinality, replacement lateness, controller margin/risk, and
-  RCL2 runtime evidence remain unevidenced. The RCL1 row records only directly observed spawn
-  utilization, energy flow, recovery time, CPU, ticks, and row hashes.
+- Persistent bytes, telemetry bytes/cardinality, replacement lateness, and controller margin/risk
+  remain unevidenced. The runtime rows record only directly observed spawn utilization, energy flow,
+  recovery time, CPU, ticks, and row hashes.
 
 ## Reproduction
 
@@ -67,11 +67,10 @@ runtime measurements or live Screeps evidence.
 
 ## Explicit remaining risks
 
-- The local aggregate covers five deterministic rows: the RCL1 runtime row and four scenario-kit
-  component rows. The RCL2 runtime row remains focused-runtime-unexported.
+- The local aggregate covers six deterministic rows: the RCL1 and RCL2 runtime rows plus four
+  scenario-kit component rows.
 - Replacement lateness and controller margin/risk remain acceptance dimensions, not proven values.
 - Persistent-memory growth and telemetry byte/cardinality measurements are not yet joined to row
   hashes.
-- The RCL2 runtime fixture still needs independently exported warm/reset/reordered results.
 - Live Screeps timing, engine inflows, hostile pressure, and deployment behavior remain outside this
   deterministic metadata contract.

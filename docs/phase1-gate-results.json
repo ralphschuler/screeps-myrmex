@@ -14,42 +14,37 @@
     {
       "id": "rcl2-established",
       "status": "evidenced",
-      "scope": "focused-runtime-not-exported",
+      "scope": "focused-runtime-export",
       "measurements": {
-        "ticks": null,
-        "modeledCpu": null,
+        "ticks": 79,
+        "modeledCpu": 0,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
         "telemetryCardinality": null,
-        "spawnUtilizationPct": null,
-        "energyFlow": null,
+        "spawnUtilizationPct": 0,
+        "energyFlow": 100,
         "replacementLateness": null,
         "controllerMargin": null,
         "controllerRisk": null,
-        "recoveryTime": null
+        "recoveryTime": 79
       },
       "hashes": {
-        "warmOutcome": null,
-        "resetOutcome": null,
-        "reorderedOutcome": null,
-        "warmTranscript": null,
-        "resetTranscript": null,
-        "reorderedTranscript": null
+        "warmOutcome": "2ee97c8b",
+        "resetOutcome": "2ee97c8b",
+        "reorderedOutcome": "2ee97c8b",
+        "warmTranscript": "9da4769c",
+        "resetTranscript": "64c190cb",
+        "reorderedTranscript": "5d4576e4"
       },
       "unevidenced": [
-        "ticks",
-        "modeledCpu",
         "persistentBytes",
         "persistentGrowth",
         "telemetryBytes",
         "telemetryCardinality",
-        "spawnUtilizationPct",
-        "energyFlow",
         "replacementLateness",
         "controllerMargin",
-        "controllerRisk",
-        "recoveryTime"
+        "controllerRisk"
       ]
     },
     {
@@ -238,7 +233,7 @@
       "status": "partial",
       "scope": "deterministic-component-equivalence",
       "measurements": {
-        "ticks": 1415,
+        "ticks": 1494,
         "modeledCpu": 136.9010000000021,
         "persistentBytes": null,
         "persistentGrowth": null,
@@ -252,12 +247,12 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "ecc8fe11",
-        "resetOutcome": "ecc8fe11",
-        "reorderedOutcome": "ecc8fe11",
-        "warmTranscript": "0caa7b65",
-        "resetTranscript": "5bb5dedc",
-        "reorderedTranscript": "f8ae4f34"
+        "warmOutcome": "ae5bb254",
+        "resetOutcome": "ae5bb254",
+        "reorderedOutcome": "ae5bb254",
+        "warmTranscript": "9fcf42a6",
+        "resetTranscript": "0020bc26",
+        "reorderedTranscript": "3f5ac53e"
       },
       "unevidenced": [
         "persistentBytes",
@@ -276,7 +271,7 @@
       "status": "unevidenced",
       "scope": "local-component-subset",
       "measurements": {
-        "ticks": 1415,
+        "ticks": 1494,
         "modeledCpu": 136.9010000000021,
         "persistentBytes": null,
         "persistentGrowth": null,
@@ -290,9 +285,9 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "577c3ba5",
-        "resetOutcome": "577c3ba5",
-        "reorderedOutcome": "577c3ba5",
+        "warmOutcome": "f61bfbfa",
+        "resetOutcome": "f61bfbfa",
+        "reorderedOutcome": "f61bfbfa",
         "warmTranscript": null,
         "resetTranscript": null,
         "reorderedTranscript": null
@@ -310,7 +305,6 @@
         "warmTranscript",
         "resetTranscript",
         "reorderedTranscript",
-        "rcl2RuntimeExport",
         "externalLive"
       ]
     }

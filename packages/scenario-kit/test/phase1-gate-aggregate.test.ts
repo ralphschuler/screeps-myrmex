@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import checkedResult from "../../../docs/phase1-gate-results.json";
 import { survivalWorld } from "../../bot/test/support/survival-flow-fixture";
+import { establishedRcl2World } from "../../bot/test/support/established-rcl2-fixture";
 import { runTick, type TickOutcome } from "../../bot/src/runtime/tick";
 import { collectConstrainedCpuEvidence } from "./phase1-constrained-cpu.test";
 import { collectHostilePressureEvidence } from "./phase1-hostile-pressure-recovery.test";
@@ -53,6 +54,7 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
 });
 
 export async function collectAggregateEvidence() {
+  const rcl2 = await collectRcl2RuntimeEvidence();
   const rcl1 = await collectRcl1RuntimeEvidence();
   const components = [
     componentRow("spawn-blocker-recovery", collectSpawnBlockerEvidence(), {
@@ -75,8 +77,9 @@ export async function collectAggregateEvidence() {
       spawnUtilizationPct: 0,
     }),
   ];
+  const rcl2Row = runtimeRow("rcl2-established", rcl2, "evidenced");
   const rcl1Row = runtimeRow("rcl1-cold-boot-growth", rcl1, "partial");
-  const evidenceRows = [rcl1Row, ...components];
+  const evidenceRows = [rcl2Row, rcl1Row, ...components];
   const resetReorder = equivalenceRow(evidenceRows);
   return Object.freeze({
     schemaVersion: 1,
@@ -91,7 +94,7 @@ export async function collectAggregateEvidence() {
       rollbackIncident: "unevidenced",
     }),
     rows: Object.freeze([
-      unavailableRuntimeRow("rcl2-established", "evidenced"),
+      rcl2Row,
       rcl1Row,
       ...components,
       resetReorder,
@@ -158,17 +161,6 @@ function componentRow(id: string, runs: Runs, measured: Partial<Record<Measureme
   });
 }
 
-function unavailableRuntimeRow(id: string, status: "evidenced" | "partial") {
-  return Object.freeze({
-    id,
-    status,
-    scope: "focused-runtime-not-exported",
-    measurements: Object.freeze(emptyMeasurements()),
-    hashes: Object.freeze(emptyHashes()),
-    unevidenced: Object.freeze(Object.keys(emptyMeasurements())),
-  });
-}
-
 function runtimeRow(id: string, runs: RuntimeRuns, status: "evidenced" | "partial") {
   const ticks = runs.warm.transcript.ticks.length;
   const modeledCpu = runs.warm.transcript.ticks.reduce((total, tick) => total + tick.cpu.used, 0);
@@ -204,6 +196,79 @@ function runtimeRow(id: string, runs: RuntimeRuns, status: "evidenced" | "partia
 
 type RuntimeExecuteTick = typeof runTick;
 type RuntimeTickSample = RuntimeEvidenceRun["transcript"]["ticks"][number];
+
+async function collectRcl2RuntimeEvidence(): Promise<RuntimeRuns> {
+  return {
+    warm: await runRcl2Variant(false, false, runTick),
+    reset: await runRcl2Variant(true, false),
+    reordered: await runRcl2Variant(true, true),
+  };
+}
+
+async function runRcl2Variant(
+  resetMemory: boolean,
+  reverseCollections: boolean,
+  initialExecuteTick?: RuntimeExecuteTick,
+): Promise<RuntimeEvidenceRun> {
+  const world = establishedRcl2World({ reverseCollections });
+  let executeTick = initialExecuteTick;
+  if (executeTick === undefined) {
+    vi.resetModules();
+    executeTick = (await import("../../bot/src/runtime/tick")).runTick;
+  }
+  let memory = {} as Memory;
+  let memoryResetAt: number | null = null;
+  let markHeapReset = false;
+  const samples: RuntimeTickSample[] = [];
+  const outcomes: Array<{ readonly outcome: TickOutcome; readonly tick: number }> = [];
+
+  for (let tick = 100; tick < 100 + 150; tick += 1) {
+    const outcome = executeTick({ game: world.game(tick), memory });
+    outcomes.push({ outcome, tick });
+    samples.push({
+      cpu: { used: outcome.kernel.cpuUsed },
+      gameTime: tick,
+      heapReset: markHeapReset,
+      sourceOrder: reverseCollections ? "reversed" : "normal",
+    });
+    markHeapReset = false;
+
+    if (resetMemory && memoryResetAt === null && world.extensionEnergy() > 0) {
+      memory = JSON.parse(JSON.stringify(memory)) as Memory;
+      vi.resetModules();
+      executeTick = (await import("../../bot/src/runtime/tick")).runTick;
+      memoryResetAt = tick;
+      markHeapReset = true;
+    }
+    if (world.roomEnergy() === 400 && world.siteProgress() > 0) break;
+  }
+
+  const last = outcomes[outcomes.length - 1];
+  if (last === undefined) throw new Error("RCL2 runtime evidence produced no ticks");
+  expect(world.spawnEnergy()).toBe(300);
+  expect(world.roomEnergy()).toBe(400);
+  expect(world.siteProgress()).toBeGreaterThan(0);
+  const deliveredEnergy = outcomes.reduce(
+    (total, { outcome }) => total + (outcome.telemetry?.energyFlow.delivered ?? 0),
+    0,
+  );
+  return {
+    measurements: {
+      energyFlow: deliveredEnergy,
+      recoveryTime: last.tick - 100 + 1,
+      spawnUtilizationPct: 0,
+    },
+    outcome: {
+      constructionSiteCalls: world.constructionSiteCalls(),
+      extensionEnergy: world.extensionEnergy(),
+      roomEnergy: world.roomEnergy(),
+      siteCount: world.siteCount(),
+      siteProgress: world.siteProgress(),
+      spawnEnergy: world.spawnEnergy(),
+    },
+    transcript: { ticks: samples },
+  };
+}
 
 async function collectRcl1RuntimeEvidence(): Promise<RuntimeRuns> {
   return {
@@ -389,7 +454,6 @@ function aggregateRow(
       "warmTranscript",
       "resetTranscript",
       "reorderedTranscript",
-      "rcl2RuntimeExport",
       "externalLive",
     ]),
   });
@@ -409,17 +473,6 @@ function emptyMeasurements() {
     controllerMargin: null as number | null,
     controllerRisk: null as number | null,
     recoveryTime: null as number | null,
-  };
-}
-
-function emptyHashes() {
-  return {
-    warmOutcome: null,
-    resetOutcome: null,
-    reorderedOutcome: null,
-    warmTranscript: null,
-    resetTranscript: null,
-    reorderedTranscript: null,
   };
 }
 
