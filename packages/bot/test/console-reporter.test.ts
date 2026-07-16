@@ -94,6 +94,51 @@ describe("ConsoleReporter", () => {
     ).toEqual([]);
   });
 
+  it("separates the representative recovery blocker from bounded action details", () => {
+    const base = runTick({ game: game(101), memory: {} as Memory }).reporterStatus;
+    const status = {
+      ...base,
+      recovery: { ...base.recovery, required: true },
+      blockers: [
+        {
+          domain: "colony",
+          entityRef: "budget:deadbeef",
+          status: "denied",
+          reasonCode: "posture-preempted",
+        },
+        {
+          domain: "action",
+          entityRef: "transfer:feedface",
+          status: "rejected",
+          reasonCode: "target-out-of-range",
+        },
+      ],
+      transitions: [
+        {
+          category: "recovery" as const,
+          kind: "stuck" as const,
+          owner: "colony" as const,
+          blockerReasonCode: "posture-preempted",
+          blockerRef: "budget:deadbeef",
+          lastProgressTick: 76,
+          reminderAtTick: 101,
+          reasonCode: "recovery-progress-unchanged",
+        },
+      ],
+    } as typeof base;
+    const lines = new ConsoleReporter().report(
+      status,
+      { ...buildRuntimeConfig().policy.reporter, heartbeatIntervalTicks: 10 },
+      { log: vi.fn() },
+    );
+
+    expect(lines.join("\n")).toContain("blockerReason=posture-preempted");
+    expect(lines.join("\n")).toContain(
+      "blockerDetails=representative:posture-preempted other=action:target-out-of-range",
+    );
+    expect(lines.join("\n")).not.toContain("transfer:feedface");
+  });
+
   it("ignores unknown transition fields without enumerating them and contains renderer faults", () => {
     const base = runTick({ game: game(101), memory: {} as Memory }).reporterStatus;
     const hostile = {

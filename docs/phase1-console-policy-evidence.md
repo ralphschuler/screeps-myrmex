@@ -30,7 +30,9 @@ stress proof and a source-controlled reporter-input work ceiling.
   the per-tick cap.
 - Recovery progress is stored only in the telemetry owner. Unchanged recovery evidence emits a fixed
   `recovery-progress-unchanged` report with an opaque blocker reference after the configured window;
-  a successful spawn, harvest, delivery, changed evidence, or recovery completion clears it.
+  the report also includes up to three sanitized `domain:reason` details from the bounded blocker
+  projection, excluding opaque entity references. A successful spawn, harvest, delivery, changed
+  evidence, or recovery completion clears it.
 - Recovery tracking uses the fixed `bootstrapping` and `recovering` colony state counts, not only
   Memory migration status. This keeps normal zero-creep recovery observable while Memory is ready;
   migration recovery remains visible as a tick-local runtime condition.
@@ -131,7 +133,7 @@ npm exec vitest run -- packages/bot/test/reporter-pipeline-stress.test.ts packag
 [MYRMEX][INFO][shard:deadbeef][t=100] mode=normal cpu=0/20000 bucket=9000 observer=ready colony=developing objectives=2 recovery=false spawnDemand=0 harvested=10 delivered=10 unmet=0 blockers=0 faults=0
 [MYRMEX][WARN][shard:deadbeef][t=101] mode=recovery cpu=0/20000 bucket=700 observer=ready colony=bootstrapping objectives=1 recovery=true spawnDemand=1 harvested=0 delivered=0 unmet=50 blockers=1 faults=0
 [MYRMEX][WARN][shard:deadbeef][t=102] reporter signal kind=first fingerprint=reporter-transition:cafebabe count=1 reason=spawn-unavailable
-[MYRMEX][WARN][shard:deadbeef][t=127] reporter recovery kind=stuck owner=colony blocker=reporter-blocker:feedface blockerReason=spawn-unavailable lastProgress=102 reminderAt=137 reason=recovery-progress-unchanged
+[MYRMEX][WARN][shard:deadbeef][t=127] reporter recovery kind=stuck owner=colony blocker=reporter-blocker:feedface blockerReason=spawn-unavailable blockerDetails=representative:spawn-unavailable other=action:target-out-of-range lastProgress=102 reminderAt=137 reason=recovery-progress-unchanged
 [MYRMEX][INFO][shard:deadbeef][t=128] reporter signal kind=resolved fingerprint=reporter-transition:cafebabe count=1 reason=spawn-unavailable
 ```
 
