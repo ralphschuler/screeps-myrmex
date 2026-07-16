@@ -18,15 +18,15 @@
       "measurements": {
         "ticks": 79,
         "modeledCpu": 0,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
+        "persistentBytes": 17281,
+        "persistentGrowth": 2923,
+        "telemetryBytes": 4249,
+        "telemetryCardinality": 25,
         "spawnUtilizationPct": 0,
         "energyFlow": 100,
         "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "controllerMargin": 19921,
+        "controllerRisk": 0,
         "recoveryTime": 79
       },
       "hashes": {
@@ -37,32 +37,24 @@
         "resetTranscript": "64c190cb",
         "reorderedTranscript": "5d4576e4"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk"
-      ]
+      "unevidenced": ["replacementLateness"]
     },
     {
       "id": "rcl1-cold-boot-growth",
-      "status": "partial",
+      "status": "evidenced",
       "scope": "focused-runtime-export",
       "measurements": {
         "ticks": 1401,
-        "modeledCpu": 96.90100000000211,
-        "persistentBytes": null,
-        "persistentGrowth": null,
-        "telemetryBytes": null,
-        "telemetryCardinality": null,
+        "modeledCpu": 0.07500000000000005,
+        "persistentBytes": 28229,
+        "persistentGrowth": 3682,
+        "telemetryBytes": 4386,
+        "telemetryCardinality": 25,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
-        "replacementLateness": null,
-        "controllerMargin": null,
-        "controllerRisk": null,
+        "replacementLateness": 0,
+        "controllerMargin": 8599,
+        "controllerRisk": 0,
         "recoveryTime": 1332
       },
       "hashes": {
@@ -73,15 +65,7 @@
         "resetTranscript": "0c07bcda",
         "reorderedTranscript": "d0cbe6b0"
       },
-      "unevidenced": [
-        "persistentBytes",
-        "persistentGrowth",
-        "telemetryBytes",
-        "telemetryCardinality",
-        "replacementLateness",
-        "controllerMargin",
-        "controllerRisk"
-      ]
+      "unevidenced": []
     },
     {
       "id": "spawn-blocker-recovery",
@@ -89,7 +73,7 @@
       "scope": "deterministic-component",
       "measurements": {
         "ticks": 4,
-        "modeledCpu": 8,
+        "modeledCpu": 2,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
@@ -125,7 +109,7 @@
       "scope": "deterministic-component",
       "measurements": {
         "ticks": 3,
-        "modeledCpu": 6,
+        "modeledCpu": 2,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
@@ -161,7 +145,7 @@
       "scope": "deterministic-component",
       "measurements": {
         "ticks": 3,
-        "modeledCpu": 6,
+        "modeledCpu": 2,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
@@ -198,7 +182,7 @@
       "scope": "deterministic-component",
       "measurements": {
         "ticks": 4,
-        "modeledCpu": 20,
+        "modeledCpu": 5,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
@@ -234,7 +218,7 @@
       "scope": "deterministic-component-equivalence",
       "measurements": {
         "ticks": 1494,
-        "modeledCpu": 136.9010000000021,
+        "modeledCpu": 5,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,
@@ -272,7 +256,7 @@
       "scope": "local-component-subset",
       "measurements": {
         "ticks": 1494,
-        "modeledCpu": 136.9010000000021,
+        "modeledCpu": 5,
         "persistentBytes": null,
         "persistentGrowth": null,
         "telemetryBytes": null,

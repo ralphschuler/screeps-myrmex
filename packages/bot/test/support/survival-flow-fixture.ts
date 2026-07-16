@@ -30,6 +30,7 @@ export interface SurvivalWorld {
   readonly sourceBDelivered: number;
   readonly sourceBHarvested: number;
   readonly controllerLevel: number;
+  readonly controllerTicksToDowngrade: number;
   readonly controllerUpgradeCalls: number;
   readonly sinkVanishedAt: number | null;
   readonly sinkResolverMisses: number;
@@ -352,6 +353,9 @@ export function survivalWorld(): SurvivalWorld {
     },
     get controllerLevel() {
       return state.controllerLevel;
+    },
+    get controllerTicksToDowngrade() {
+      return controller.ticksToDowngrade;
     },
     get controllerUpgradeCalls() {
       return state.controllerUpgradeCalls;
