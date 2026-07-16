@@ -26,6 +26,7 @@ describe("ReporterStatus", () => {
       "phase1.critical-maintenance",
       "phase2.colony",
       "phase2.layout",
+      "phase2.mining",
     ]);
   });
 

@@ -174,6 +174,98 @@ describe("survival flow", () => {
     ]);
   });
 
+  it("picks up only canonical energy drops beside a committed static work tile", () => {
+    const drops = [
+      { amount: 25, id: "drop-b", pos: position(9, 11), resourceType: "energy" as const },
+      { amount: 25, id: "drop-a", pos: position(9, 10), resourceType: "energy" as const },
+      { amount: 100, id: "drop-far", pos: position(20, 20), resourceType: "energy" as const },
+      { amount: 100, id: "drop-mineral", pos: position(9, 10), resourceType: "H" as const },
+    ];
+    const planning = staticPlanning(["source-near", "source-far"]);
+    const selected = (orderedDrops: typeof drops) =>
+      planSurvivalFlow(snapshot(0, { droppedResources: orderedDrops }), undefined, planning)[0];
+
+    expect(selected(drops)?.budgetRequest.issuer).toBe("economy/W1N1/pickup/drop-a");
+    expect(selected([...drops].reverse())?.budgetRequest.issuer).toBe("economy/W1N1/pickup/drop-a");
+    expect(
+      planSurvivalFlow(snapshot(25, { droppedResources: drops }), undefined, planning)[0]
+        ?.budgetRequest.issuer,
+    ).toBe("economy/W1N1/transfer/spawn-near");
+    expect(
+      planSurvivalFlow(snapshot(), undefined, planning).some(({ action }) => action === "pickup"),
+    ).toBe(false);
+
+    const candidate = selected(drops);
+    if (candidate === undefined) throw new Error("expected static drop pickup candidate");
+    const authorized = authorizedSurvivalFlow(
+      [candidate],
+      [
+        {
+          category: "harvesting-filling",
+          colonyId: candidate.colonyId,
+          issuer: candidate.budgetRequest.issuer,
+          status: "active",
+        },
+      ],
+      { contracts: [], status: "ready" },
+      10,
+    );
+    expect(authorized.requests[0]).toMatchObject({
+      execution: { action: "pickup", completion: "target-depleted", resourceType: null },
+      issuerKey: "pickup:drop-a",
+      kind: "haul",
+      requiredCapability: { carry: 1, work: 0 },
+      targetId: "drop-a",
+    });
+    const request = authorized.requests[0];
+    if (request === undefined) throw new Error("expected authorized pickup request");
+    expect(() => normalizeContractRequest(request)).not.toThrow();
+  });
+
+  it("keeps static drop pickup identity stable across reset without generalizing into hauling", () => {
+    const energyDrop = {
+      amount: 50,
+      id: "drop-stable",
+      pos: position(9, 10),
+      resourceType: "energy" as const,
+    };
+    const planning = staticPlanning(["source-near", "source-far"]);
+    const observed = snapshot(0, {
+      droppedResources: [{ ...energyDrop, id: "drop-distant", pos: position(20, 20) }, energyDrop],
+      storedStructures: [
+        {
+          hits: 250_000,
+          hitsMax: 250_000,
+          id: "container-full",
+          ownerUsername: "me",
+          ownership: "owned",
+          pos: position(9, 10),
+          store: {
+            capacity: 2_000,
+            freeCapacity: 1_000,
+            resources: [{ amount: 1_000, resourceType: "energy" }],
+            usedCapacity: 1_000,
+          },
+          structureType: "container",
+        },
+      ],
+    });
+    const first = planSurvivalFlow(observed, { leases: [], status: "ready" }, planning)[0];
+    const afterReset = planSurvivalFlow(observed, { leases: [], status: "ready" }, planning)[0];
+
+    expect(first?.budgetRequest.issuer).toBe("economy/W1N1/pickup/drop-stable");
+    expect(afterReset?.budgetRequest.issuer).toBe(first?.budgetRequest.issuer);
+    expect(first?.targetId).toBe(afterReset?.targetId);
+    expect(first?.action).not.toBe("withdraw");
+
+    const storedStructures = observed.rooms[0]?.storedStructures ?? [];
+    const noDrop = snapshot(0, {
+      droppedResources: [],
+      storedStructures,
+    });
+    expect(planSurvivalFlow(noDrop, undefined, planning)).toEqual([]);
+  });
+
   it("funds suspended work again and cancels a vanished endpoint without duplicating its binding", () => {
     const candidates = planSurvivalFlow(snapshot());
     const harvest = candidates.find(({ action }) => action === "harvest");
@@ -401,7 +493,7 @@ describe("survival flow", () => {
   });
 });
 
-function activeFlowExecution(action: "harvest" | "transfer"): ContractExecutionView {
+function activeFlowExecution(action: "harvest" | "pickup" | "transfer"): ContractExecutionView {
   const transfer = action === "transfer";
   return {
     status: "ready",
@@ -425,14 +517,21 @@ function activeFlowExecution(action: "harvest" | "transfer"): ContractExecutionV
         range: 1,
         revision: 1,
         state: "active",
-        target: transfer ? position(11, 10) : position(11, 11),
-        targetId: transfer ? "spawn-near" : "source-near",
+        target: transfer
+          ? position(11, 10)
+          : action === "pickup"
+            ? position(9, 10)
+            : position(11, 11),
+        targetId: transfer ? "spawn-near" : action === "pickup" ? "drop-near" : "source-near",
       },
     ],
   };
 }
 
-function activeFlowPlanning(action: "harvest" | "transfer", economy = true): ContractPlanningView {
+function activeFlowPlanning(
+  action: "harvest" | "pickup" | "transfer",
+  economy = true,
+): ContractPlanningView {
   const transfer = action === "transfer";
   const issuer = `${economy ? "economy" : "operation"}/W1N1/${action}/target`;
   return {
@@ -454,18 +553,45 @@ function activeFlowPlanning(action: "harvest" | "transfer", economy = true): Con
         issuer,
         owner: { id: "W1N1", kind: economy ? "colony" : "operation" },
         state: "active",
-        targetId: transfer ? "spawn-near" : "source-near",
+        targetId: transfer ? "spawn-near" : action === "pickup" ? "drop-near" : "source-near",
       },
     ],
+  };
+}
+
+function staticPlanning(sourceIds: readonly string[]): ContractPlanningView {
+  return {
+    status: "ready",
+    contracts: sourceIds.map((sourceId) => ({
+      budgetBinding: {
+        category: "harvesting-filling",
+        issuer: `mining/W1N1/${sourceId}`,
+      },
+      contractId: `static-${sourceId}`,
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 2,
+        workPosition: position(9, 10),
+      },
+      issuer: `mining/W1N1/${sourceId}`,
+      owner: { id: "W1N1", kind: "colony" },
+      state: "active",
+      targetId: sourceId,
+    })),
   };
 }
 
 function snapshot(
   carriedEnergy = 0,
   options: {
+    readonly droppedResources?: WorldSnapshot["rooms"][number]["droppedResources"];
     readonly sinkFree?: number;
     readonly sourceEnergy?: number;
     readonly spawnActive?: boolean;
+    readonly storedStructures?: WorldSnapshot["rooms"][number]["storedStructures"];
   } = {},
 ): WorldSnapshot {
   const sinkFree = options.sinkFree ?? 300;
@@ -511,7 +637,7 @@ function snapshot(
           upgradeBlocked: null,
         },
         constructionSites: [],
-        droppedResources: [],
+        droppedResources: options.droppedResources ?? [],
         hostileCreeps: [],
         ownedCreeps: [
           {
@@ -570,7 +696,7 @@ function snapshot(
             ticksToRegeneration: null,
           },
         ],
-        storedStructures: [],
+        storedStructures: options.storedStructures ?? [],
         tombstones: [],
       },
     ],
@@ -579,7 +705,7 @@ function snapshot(
       entities: {
         constructionSites: 0,
         controllers: 1,
-        droppedResources: 0,
+        droppedResources: options.droppedResources?.length ?? 0,
         hostileCreeps: 0,
         ownedCreeps: 1,
         ownedExtensions: 0,

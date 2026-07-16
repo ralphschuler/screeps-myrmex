@@ -78,7 +78,14 @@ const EXECUTION_KEYS = [
   "resourceType",
   "version",
 ] as const;
-const EXECUTION_V2_KEYS = [...EXECUTION_KEYS, "workPosition"] as const;
+const EXECUTION_V2_KEYS = [
+  "action",
+  "completion",
+  "counterpartId",
+  "resourceType",
+  "version",
+  "workPosition",
+] as const;
 
 const RECORD_KEYS = [
   ...REQUEST_KEYS,

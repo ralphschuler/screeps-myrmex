@@ -12,6 +12,7 @@ import { canonicalSerialize } from "../src";
 
 const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
+const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 
@@ -19,6 +20,7 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
+    vi.stubGlobal("FIND_DROPPED_RESOURCES", FIND_DROPPED_RESOURCES_VALUE);
     vi.stubGlobal("FIND_STRUCTURES", FIND_STRUCTURES_VALUE);
     vi.stubGlobal("FIND_CONSTRUCTION_SITES", FIND_CONSTRUCTION_SITES_VALUE);
   });

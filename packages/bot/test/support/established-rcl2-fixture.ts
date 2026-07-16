@@ -2,6 +2,7 @@ import type { RuntimeGame } from "../../src/runtime/context";
 
 const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
+const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 const START_TICK = 100;
@@ -27,6 +28,10 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
   let siteProgress = 5;
   const constructionSiteCalls = 0;
   const sourceEnergy = { value: 3_000 };
+  let droppedEnergy = 0;
+  let droppedResourceId = "drop-source-a-0";
+  let droppedResourceSequence = 0;
+  let droppedPosition = { roomName: "W1N1", x: 10, y: 9 };
   const spawnCalls: EstablishedRcl2SpawnCall[] = [];
   let worker: Creep | null = null;
   let workerEnergy = 50;
@@ -108,6 +113,29 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     pos: position(11, 10),
     ticksToRegeneration: 300,
   } as unknown as Source;
+  const droppedResource = {
+    get amount() {
+      return droppedEnergy;
+    },
+    get id() {
+      return droppedResourceId;
+    },
+    get pos() {
+      return droppedPosition;
+    },
+    resourceType: "energy",
+  } as unknown as Resource;
+  const produceStaticDrop = () => {
+    if (sourceEnergy.value <= 0 || droppedEnergy >= 50) return;
+    const amount = Math.min(10, 50 - droppedEnergy, sourceEnergy.value);
+    if (droppedEnergy === 0) {
+      droppedResourceSequence += 1;
+      droppedResourceId = `drop-source-a-${String(droppedResourceSequence)}`;
+    }
+    sourceEnergy.value -= amount;
+    droppedEnergy += amount;
+    droppedPosition = position(staticMinerPosition.x, staticMinerPosition.y);
+  };
 
   const markReplacementWork = (result: number) => {
     if (result === 0 && replacementWorkerId !== null && worker?.id === replacementWorkerId) {
@@ -172,13 +200,66 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
         else extensionEnergy.set(targetId, targetEnergy + amountToTransfer);
         return markReplacementWork(0);
       },
-      pickup: () => -7,
+      pickup: (target: Resource) => {
+        if (target.id !== droppedResource.id || droppedEnergy <= 0 || workerEnergy >= capacity)
+          return -7;
+        const amount = Math.min(droppedEnergy, capacity - workerEnergy);
+        droppedEnergy -= amount;
+        workerEnergy += amount;
+        return markReplacementWork(0);
+      },
       withdraw: () => -7,
       upgradeController: () => -7,
       move: () => -7,
     } as unknown as Creep;
   };
   worker = createWorker("worker-a", "worker-a", ["work", "carry", "carry", "move"], 50);
+
+  const staticMinerPosition = { x: 10, y: 9 };
+  const staticMiner = {
+    body: ["work", "work", "work", "work", "work", "move"].map((type) => ({ hits: 100, type })),
+    fatigue: 0,
+    hits: 600,
+    hitsMax: 600,
+    id: "static-miner-a",
+    my: true,
+    name: "static-miner-a",
+    owner: { username: "Myrmex" },
+    get pos() {
+      return position(staticMinerPosition.x, staticMinerPosition.y);
+    },
+    spawning: false,
+    store: storeFor(() => 0, 0),
+    ticksToLive: 1_000,
+    build: () => -7,
+    repair: () => -7,
+    harvest: (target: Source) => {
+      if (target.id !== source.id || sourceEnergy.value <= 0) return -6;
+      produceStaticDrop();
+      return 0;
+    },
+    transfer: () => -7,
+    pickup: () => -7,
+    withdraw: () => -7,
+    upgradeController: () => -7,
+    move: (direction: DirectionConstant) => {
+      const deltas: Record<number, readonly [number, number]> = {
+        1: [0, -1],
+        2: [1, -1],
+        3: [1, 0],
+        4: [1, 1],
+        5: [0, 1],
+        6: [-1, 1],
+        7: [-1, 0],
+        8: [-1, -1],
+      };
+      const delta = deltas[direction];
+      if (delta === undefined) return -10;
+      staticMinerPosition.x += delta[0];
+      staticMinerPosition.y += delta[1];
+      return 0;
+    },
+  } as unknown as Creep;
 
   const controller = {
     id: "controller-a",
@@ -201,18 +282,22 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     energyCapacityAvailable: 400,
     find: (findType: number): unknown[] =>
       findType === FIND_CREEPS_VALUE
-        ? worker === null
-          ? []
-          : [worker]
-        : findType === FIND_STRUCTURES_VALUE
-          ? options.reverseCollections
-            ? [spawn, ...extensions].reverse()
-            : [spawn, ...extensions]
-          : findType === FIND_CONSTRUCTION_SITES_VALUE
-            ? [site]
-            : findType === FIND_SOURCES_VALUE
-              ? [source]
-              : [],
+        ? options.reverseCollections
+          ? [staticMiner, ...(worker === null ? [] : [worker])]
+          : [...(worker === null ? [] : [worker]), staticMiner]
+        : findType === FIND_DROPPED_RESOURCES_VALUE
+          ? droppedEnergy > 0
+            ? [droppedResource]
+            : []
+          : findType === FIND_STRUCTURES_VALUE
+            ? options.reverseCollections
+              ? [spawn, ...extensions].reverse()
+              : [spawn, ...extensions]
+            : findType === FIND_CONSTRUCTION_SITES_VALUE
+              ? [site]
+              : findType === FIND_SOURCES_VALUE
+                ? [source]
+                : [],
     getTerrain: () => ({ get: () => 0 }),
     name: "W1N1",
   } as unknown as Room;
@@ -224,26 +309,34 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     game: (nextTick: number): RuntimeGame => {
       if (nextTick <= tick) throw new Error("ticks must advance monotonically");
       tick = nextTick;
+      produceStaticDrop();
       if (pendingSpawn !== null && nextTick >= pendingSpawn.completeAt) {
         replacementWorkerId = `replacement-${pendingSpawn.name}`;
         worker = createWorker(replacementWorkerId, pendingSpawn.name, pendingSpawn.body, 0);
         replacementVisibleAt = nextTick;
         pendingSpawn = null;
       }
-      const creeps = worker === null ? {} : { [worker.name]: worker };
+      const creeps = {
+        ...(worker === null ? {} : { [worker.name]: worker }),
+        [staticMiner.name]: staticMiner,
+      };
       return {
         cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
         creeps,
         getObjectById: (id: string) =>
           id === worker?.id
             ? worker
-            : id === "spawn-a"
-              ? spawn
-              : id === "road-site"
-                ? site
-                : id === source.id
-                  ? source
-                  : (extensions.find((extension) => extension.id === id) ?? null),
+            : id === staticMiner.id
+              ? staticMiner
+              : id === droppedResource.id && droppedEnergy > 0
+                ? droppedResource
+                : id === "spawn-a"
+                  ? spawn
+                  : id === "road-site"
+                    ? site
+                    : id === source.id
+                      ? source
+                      : (extensions.find((extension) => extension.id === id) ?? null),
         rooms: { W1N1: room },
         shard: { name: "shard3" },
         time: nextTick,

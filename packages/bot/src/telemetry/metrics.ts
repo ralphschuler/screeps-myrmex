@@ -15,6 +15,7 @@ import {
 } from "../config";
 import type { WorldSnapshot } from "../world/snapshot";
 import type { TelemetryStatus } from "./service";
+import type { StaticMiningTelemetry } from "./static-mining";
 
 export interface FeatureGateTelemetry {
   readonly id: FeatureGateId;
@@ -80,6 +81,8 @@ export interface TickTelemetry {
   readonly reporterTransitions: readonly ReporterTransitionTelemetry[];
   /** Bounded current-tick survival-flow evidence; it is observational and never an authority. */
   readonly energyFlow: EnergyFlowTelemetry;
+  /** Bounded observer-only evidence for static extraction; gameplay never consumes it. */
+  readonly staticMining: StaticMiningTelemetry;
 }
 
 export type ReporterTransitionTelemetry =
@@ -158,7 +161,10 @@ export interface TickTelemetryInput {
 /** Creates a bounded, immutable per-tick summary; durable history is a later telemetry policy. */
 export function recordTickTelemetry(
   input: TickTelemetryInput,
-): Omit<TickTelemetry, "activity" | "status" | "recoveryProgress" | "reporterTransitions"> {
+): Omit<
+  TickTelemetry,
+  "activity" | "status" | "recoveryProgress" | "reporterTransitions" | "staticMining"
+> {
   return Object.freeze({
     tick: input.tick,
     shard: input.shard,

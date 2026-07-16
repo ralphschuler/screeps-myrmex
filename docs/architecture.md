@@ -1255,6 +1255,15 @@ blocker without invalidating safe assignments for other sources. Old algorithm c
 discarded as stale rebuild work rather than corrupting the `layouts` owner, and placements remain
 heap-only.
 
+Issue #46 PR C composes those source-service commitments with `StaticMiningPlanner`, the existing
+budget/contract/workforce/spawn chain, and observer-only mining telemetry. One stable extraction
+identity is evaluated per visible owned source, with at most eight adjacent service candidates per
+source. Heap reset and source reordering preserve work positions and contract identities. Container
+site, absence, fullness, decay, destruction, temporary blockage, miner loss, spawn delay, RCL
+downgrade, link candidacy, and regeneration are checked in
+[`phase2-mining-evidence.md`](phase2-mining-evidence.md). The planner emits no hauling, link,
+repair, or direct Screeps commands; #47, #48, and #49 retain those authorities.
+
 Mechanics grounding: official
 [`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite),
 [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite),

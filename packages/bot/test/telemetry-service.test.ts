@@ -71,7 +71,7 @@ describe("TelemetryService", () => {
       ...input,
       base: { ...input.base, tick: 101 },
     });
-    expect(next.owner).toMatchObject({ schemaVersion: 2, history: [{ tick: 101 }] });
+    expect(next.owner).toMatchObject({ schemaVersion: 3, history: [{ tick: 101 }] });
     expect(next.owner.droppedHistory).toBe(1);
   });
 
@@ -427,6 +427,64 @@ describe("TelemetryService", () => {
       expect.objectContaining({ category: "signal", kind: "first", count: 1 }),
     ]);
     expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
+  });
+
+  it("keeps reset-safe static mining samples inside the sole bounded telemetry owner", () => {
+    const fixture = serviceFixture(100);
+    const service = new TelemetryService();
+    const observations = Array.from({ length: 66 }, (_, index) => ({
+      sourceId: `source-${String(index).padStart(2, "0")}`,
+      energy: 3_000,
+      energyCapacity: 3_000,
+      ticksToRegeneration: 100,
+      minerState: "active" as const,
+      container: { capacity: 2_000, used: 500, ticksToDecay: 4_000 },
+    }));
+    const first = service.record(
+      {
+        schemaVersion: 2,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: null,
+        },
+      },
+      { ...fixture.input, staticMining: { cpuUsed: 2, observations } },
+    );
+    expect(first.owner).toMatchObject({ schemaVersion: 3, staticMining: { schemaVersion: 1 } });
+    expect(first.telemetry.staticMining).toMatchObject({
+      observedSources: 64,
+      droppedSources: 2,
+      sourceUptimeTicks: 64,
+      cpuUsed: 2,
+      cpuPerHarvestedEnergy: null,
+    });
+    expect(ownerBytes(first.owner)).toBeLessThanOrEqual(8_192);
+
+    const next = service.record(first.owner, {
+      ...fixture.input,
+      base: { ...fixture.input.base, tick: 101 },
+      staticMining: {
+        cpuUsed: 1,
+        observations: observations.map((source) => ({ ...source, energy: 2_990 })),
+      },
+    });
+    expect(next.telemetry.staticMining).toMatchObject({
+      harvestedEnergy: 640,
+      cpuPerHarvestedEnergy: 1 / 640,
+    });
+
+    const reset = service.record(
+      {},
+      {
+        ...fixture.input,
+        base: { ...fixture.input.base, tick: 101 },
+        staticMining: { cpuUsed: 1, observations: observations.slice(0, 1) },
+      },
+    );
+    expect(reset.telemetry.staticMining.harvestedEnergy).toBe(0);
   });
 
   it("isolates reporter aggregation and recovery state exceptions with empty safe output", () => {

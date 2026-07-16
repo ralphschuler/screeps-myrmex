@@ -64,6 +64,11 @@ export const SOURCE_FEATURE_GATES: readonly FeatureGateDefinition[] = deepFreeze
     ],
   },
   { id: "phase2.layout", available: true, prerequisites: ["phase2.colony"] },
+  {
+    id: "phase2.mining",
+    available: true,
+    prerequisites: ["phase2.layout", "phase1.telemetry"],
+  },
 ]);
 
 export function resolveFeatureGates(
