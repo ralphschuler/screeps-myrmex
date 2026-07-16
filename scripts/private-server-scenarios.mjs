@@ -56,7 +56,11 @@ function scenarioDriver(options) {
       await cliOperation("bootstrap-controlled-bot");
     },
     async deploy() {
-      await deployPrivateServerBundle(options.bundlePath);
+      try {
+        await deployPrivateServerBundle(options.bundlePath);
+      } catch {
+        throw namedError("BundleDeploymentFailure", "bundle-deployment-failed");
+      }
     },
     async resume() {
       await cliOperation("resume");

@@ -69,6 +69,17 @@ describe("private-server scenario runner", () => {
       failureCode: "cli-bootstrap-controlled-bot-failed",
       ok: false,
     });
+    const deployment = await runPrivateServerScenario({
+      driver: driver([], {
+        observeError: namedError("BundleDeploymentFailure", "bundle-deployment-failed"),
+      }),
+      manifest,
+    });
+    expect(deployment).toMatchObject({
+      evidence: { failure: { kind: "bundle-deployment-failed" } },
+      failureCode: "bundle-deployment-failed",
+      ok: false,
+    });
     const cleanup = await runPrivateServerScenario({
       driver: driver([], { stopError: new Error("cannot stop") }),
       manifest,
