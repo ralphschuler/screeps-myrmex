@@ -26,18 +26,67 @@ job output is the scenario id, exact bundle build id, artifact hash, and failure
 source-controlled CLI operation fails, output also includes only its fixed operation code; the CLI
 transcript remains private.
 
-The command builds first, creates one fresh controlled account, deploys the exact bundle, waits for
-one controlled worker, writes the ignored fixture definition, restarts so both server processes
-latch it, and emits only scenario id, artifact hash, and failure kind. A non-zero exit is required
-for assertion, timeout, bot-exception, startup, or cleanup failure.
+The command builds first and prepares only the generated `mods.json` mapping. It starts one server
+run with the committed fixture module inert and waits for an acknowledged idle paused main-loop
+boundary before reset. Because `resetAllData()` restores `mainLoopPaused=0`, the runner immediately
+establishes a fresh acknowledged pause boundary before it creates the controlled account and deploys
+the exact bundle. It resumes long enough to obtain one controlled worker, requests another bounded
+idle pause boundary, atomically publishes the ignored definition, waits for both engine processes to
+acknowledge it, and resumes without a server restart. It emits only scenario id, artifact hash, and
+failure kind. A non-zero exit is required for assertion, timeout, bot-exception, startup, or cleanup
+failure.
+
+## Fixture publication and cleanup
+
+The lifecycle accepts a safe scenario id, not a definition path. It derives
+`.myrmex-private-server/fixtures/definition.json`, passes the expected id separately to the engine,
+and loads only the committed module named by the generated `mods.json`. Before startup, the fixture
+directory is recreated without a definition, so a definition left by an earlier interrupted run
+cannot be latched. Every existing component from the real checkout through the generated fixture
+paths is inspected without following it; any symbolic link component is rejected before recursive
+preparation, publication, or cleanup. Lifecycle start independently revalidates the exact one-module
+mapping immediately before spawn and returns `fixture-module-state-invalid` for an altered or
+redirected mapping.
+
+`system.pauseSimulation()` sets the paused flag but does not prove that an already-started main-loop
+pass has drained. Before reset, publication, or cleanup, the runner writes a fresh sequenced pause
+request and waits at most 30 seconds for the fixed mod in the main process to acknowledge an idle
+paused `mainLoopStage` boundary. The mod acknowledges only a start-to-finish pass with no
+intervening work while the pinned paused flag is set. A rejection or missing acknowledgement fails
+closed; reset requires another barrier because it clears that paused flag.
+
+After controlled-bot bootstrap and target selection, the runner waits for that publication barrier,
+then deletes and verifies exactly seven fixed receipts for the selected scenario: `pause-request`,
+`quiescent-main`, `ready-processor`, `ready-runner`, `hostile`, `reset`, and `bot-exception`. These
+are the only request, acknowledgement, readiness, and action keys admitted by the protocol. The
+runner then publishes `definition.json.pending` as `definition.json` with an atomic rename. No raw
+room, user, coordinate, definition, or receipt value is admitted to command output or evidence.
+
+The processor and runner independently validate the first complete definition they observe. Each
+requires the separately supplied scenario id and records its own fixed `ready` or `rejected` env
+receipt. A missing file remains pending; malformed, oversized, mismatched, or otherwise invalid
+input is permanently rejected for that process run and cannot be repaired by replacing the file. The
+runner polls only the fixed aggregate readiness statuses for at most 30 seconds. It resumes only
+after both processes report `ready`; either rejection fails as `fixture-definition-rejected`, and a
+persistent absence fails as `fixture-ready-timeout`.
+
+Every terminal path attempts cleanup. While the server is available, the runner requests and waits
+for a fresh idle paused main-loop boundary. It then removes the generated fixture publication—the
+definition, pending file, and `mods.json`—before deleting and verifying the same seven fixed
+receipts. This ordering prevents a later engine observation from republishing an action receipt
+after receipt clearance. The runner then attempts the bounded process-group stop even when an
+earlier cleanup step failed. Any missing acknowledgement, symlink rejection, file-removal failure,
+receipt clearance failure, or shutdown timeout makes cleanup incomplete and prevents successful
+evidence.
 
 ## Matrix and evidence
 
 The fixed v1 matrix is `cold-boot`, `zero-creep-recovery`, `hostile-pressure`, `supported-reset`,
-and `bot-exception`. Manifests are bounded by the evidence contract and each scenario has a
-30-second wall deadline plus its tick deadline. Results are canonical #143 evidence artifacts; raw
-code, coordinates, world state, console output, Memory, launcher logs, credentials, and database
-data are not printed or committed.
+and `bot-exception`. Manifests are bounded by the evidence contract; fixture target selection,
+processor/runner readiness, and bot-exception observation use bounded wall-clock waits in addition
+to each scenario's tick deadline. Results are canonical #143 evidence artifacts; raw code,
+coordinates, world state, console output, Memory, launcher logs, credentials, definitions, receipts,
+and database data are not printed or committed.
 
 Evidence records the SHA-256 identity of the exact bundle indirectly through the manifest build id.
 Record observed artifact hashes in the issue or pull request after a credentialed run; do not add

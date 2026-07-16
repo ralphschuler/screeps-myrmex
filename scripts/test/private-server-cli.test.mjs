@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   PRIVATE_SERVER_CLI_LIMITS,
   bootstrapPrivateServerBot,
+  clearPrivateServerFixture,
   deployPrivateServerBundle,
+  pausePrivateServerFixture,
   privateServerDeploymentCommand,
   privateServerBundleIdentity,
   privateServerCliCommand,
@@ -14,6 +16,7 @@ import {
   runPrivateServerCli,
   samplePrivateServerBot,
   samplePrivateServerFixture,
+  samplePrivateServerFixtureQuiescence,
 } from "../lib/private-server-cli.mjs";
 
 const servers = [];
@@ -52,6 +55,36 @@ describe("private-server CLI adapter", () => {
     expect(() => privateServerDeploymentCommand("")).toThrow("non-empty");
   });
 
+  it("requests a fresh bounded fixture pause before publishing its sequence", () => {
+    const command = privateServerCliCommand({
+      kind: "pause-fixture",
+      scenarioId: "hostile-reset-v1",
+      sequence: 16,
+    });
+    expect(command).toBe(
+      'Promise.all([storage.env.del("myrmexFixture:hostile-reset-v1:quiescent-main"),storage.env.del("myrmexFixture:hostile-reset-v1:pause-request")]).then(()=>system.pauseSimulation()).then(()=>storage.env.set("myrmexFixture:hostile-reset-v1:pause-request","{\\"scenarioId\\":\\"hostile-reset-v1\\",\\"sequence\\":16}")).then(()=>JSON.stringify({paused:true}))',
+    );
+    expect(() =>
+      privateServerCliCommand({
+        kind: "pause-fixture",
+        scenarioId: "hostile-reset-v1",
+        sequence: 1,
+      }),
+    ).not.toThrow();
+    for (const sequence of [0, 17, 1.5]) {
+      expect(() =>
+        privateServerCliCommand({
+          kind: "pause-fixture",
+          scenarioId: "hostile-reset-v1",
+          sequence,
+        }),
+      ).toThrow("bounded");
+    }
+    expect(() =>
+      privateServerCliCommand({ kind: "pause-fixture", scenarioId: "../escape", sequence: 1 }),
+    ).toThrow("invalid");
+  });
+
   it("uses loopback, bounds the transcript, and returns only opaque result metadata", async () => {
     const server = createServer((socket) => {
       socket.write("Screeps CLI greeting\r\n< \r\n");
@@ -73,7 +106,10 @@ describe("private-server CLI adapter", () => {
       `'${JSON.stringify({ room: "W1N1", spawnX: 20, spawnY: 21, userId: "controlled-user" })}'`,
       `'${JSON.stringify({ hostileCreeps: 1, ownedCreeps: 2, ownedSpawns: 1, tick: 42 })}'`,
       `'${JSON.stringify({ hostileX: 23, hostileY: 24, room: "W1N1", targetX: 20, targetY: 21, userId: "controlled-user" })}'`,
-      `'${JSON.stringify({ botException: "injected" })}'`,
+      `'${JSON.stringify({ botException: "injected", processor: "ready", runner: "ready" })}'`,
+      `'${JSON.stringify({ paused: true })}'`,
+      `'${JSON.stringify({ quiescent: "ready" })}'`,
+      `'${JSON.stringify({ cleared: true })}'`,
     ];
     const server = createServer((socket) => {
       socket.write("< \r\n");
@@ -100,11 +136,34 @@ describe("private-server CLI adapter", () => {
     });
     await expect(samplePrivateServerFixture("hostile-reset-v1", { port })).resolves.toMatchObject({
       botException: "injected",
+      processor: "ready",
+      runner: "ready",
+    });
+    await expect(pausePrivateServerFixture("hostile-reset-v1", 2, { port })).resolves.toMatchObject(
+      { paused: true },
+    );
+    await expect(
+      samplePrivateServerFixtureQuiescence("hostile-reset-v1", 2, { port }),
+    ).resolves.toMatchObject({ quiescent: "ready" });
+    await expect(clearPrivateServerFixture("hostile-reset-v1", { port })).resolves.toMatchObject({
+      cleared: true,
     });
   });
 
   it("rejects extra operation fields and terminal CLI errors", async () => {
     expect(() => privateServerCliCommand({ kind: "pause", extra: true })).toThrow("unknown");
+    expect(() =>
+      privateServerCliCommand({ kind: "sample-fixture", scenarioId: "../escape" }),
+    ).toThrow("invalid");
+    const clearCommand = privateServerCliCommand({
+      kind: "clear-fixture",
+      scenarioId: "hostile-reset-v1",
+    });
+    expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:ready-processor");
+    expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:ready-runner");
+    expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:bot-exception");
+    expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:pause-request");
+    expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:quiescent-main");
     const server = createServer((socket) => {
       socket.write("< \r\n");
       socket.once("data", () => socket.end("< Error: rejected\r\n"));

@@ -23,7 +23,7 @@ export function lifecycleRecord(kind, details = {}) {
 export function parseLifecycleArguments(argv) {
   const values = {
     command: "health",
-    fixtureDefinition: null,
+    fixtureScenarioId: null,
     stateDirectory: ".myrmex-private-server",
   };
   const [command = "health", ...rest] = argv;
@@ -42,12 +42,12 @@ export function parseLifecycleArguments(argv) {
       index += 1;
       continue;
     }
-    if (option === "--fixture-definition") {
-      const definition = rest[index + 1];
-      if (typeof definition !== "string" || !/^[A-Za-z0-9._/-]{1,200}$/.test(definition)) {
-        throw new Error("--fixture-definition must be a relative safe path.");
+    if (option === "--fixture-scenario") {
+      const scenarioId = rest[index + 1];
+      if (typeof scenarioId !== "string" || !/^[A-Za-z0-9._-]{1,64}$/.test(scenarioId)) {
+        throw new Error("--fixture-scenario must be a safe scenario id.");
       }
-      values.fixtureDefinition = definition;
+      values.fixtureScenarioId = scenarioId;
       index += 1;
       continue;
     }

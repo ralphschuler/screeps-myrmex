@@ -35,9 +35,33 @@ the value is never included in MYRMEX lifecycle records or evidence artifacts. W
 runtime provisioning method, `provision` returns `provisioning-required` and the scenario gate must
 record `startup-failed` rather than gameplay evidence.
 
-The scenario runner may add `--fixture-definition <relative ignored path>` to `start`. This selects
-only the committed `myrmex-fixture.cjs` module through a generated `mods.json`; the definition is
-bounded and remains under the selected ignored state directory.
+The scenario runner may add `--fixture-scenario <safe-scenario-id>` to `start`. The lifecycle
+derives the only permitted definition path, `<state-directory>/fixtures/definition.json`, instead of
+accepting a caller-supplied path. The safe scenario id is also passed separately to the engine
+processes so a definition with another identity is rejected. A generated `mods.json` names only the
+committed `myrmex-fixture.cjs` module, and both files remain under the selected ignored state
+directory. Immediately before launcher spawn, lifecycle start validates that `mods.json` has exactly
+that one canonical module entry. Before preparation, validation, publication, or recursive removal,
+every existing component from the real checkout through those fixed generated paths is inspected
+without following it. Any symbolic link component or altered module mapping fails with the fixed
+`fixture-module-state-invalid` startup reason, so direct lifecycle invocation cannot traverse or
+load code outside the selected checkout.
+
+The module configuration exists before the first server start, but the definition does not. The
+processor and runner therefore start inert, wait on that one derived path, and can acknowledge a
+later post-bootstrap definition while simulation remains paused. The runner publishes the complete
+bounded JSON with an atomic rename and does not restart the server between controlled-bot bootstrap
+and scenario execution. This avoids treating the pinned storage engine's persistence timing as a
+bootstrap guarantee.
+
+`system.pauseSimulation()` changes the simulation flag but is not itself a quiescence barrier: work
+from an already-started main-loop pass may still be in flight. For every reset, fixture publication,
+and fixture cleanup transition, the runner submits a bounded, sequenced pause request and waits for
+the fixed fixture mod in the main process to acknowledge a paused, idle `mainLoopStage` boundary.
+The acknowledgement is valid only when the pinned paused flag is set and the observed main-loop pass
+went directly from start to finish without work. `system.resetAllData()` restores
+`mainLoopPaused=0`, so the runner establishes a fresh acknowledged pause boundary immediately after
+reset and before controlled-bot bootstrap or deployment.
 
 The official standalone server documents the console launcher, its separate CLI port, and the
 multiple-process runtime. It requires a supported Node release and may require local authentication
@@ -60,9 +84,16 @@ cache, and publishes its source hash. Account creation and deterministic world s
 work, not upload behavior. Controlled-bot bootstrap selects an unowned controller from the pinned
 world instead of assuming a particular room is available. `npm run private-server:deploy` builds
 before attempting that upload and fails closed until a provisioned local server has created the
-controlled fixture account. After a fixture-process restart, controlled-bot sampling retries only
-the bounded not-ready receipt until its scenario deadline; persistent unready sampling is reported
-as a fixed CLI failure code rather than a startup failure.
+controlled fixture account. Controlled-bot sampling retries only the bounded not-ready receipt until
+its scenario deadline. Fixture publication is a separate paused handshake: both engine processes
+must acknowledge the expected definition before resume, and a rejection or bounded readiness timeout
+is reported through a fixed failure code.
+
+Terminal cleanup uses the same bounded main-loop barrier. Once the idle paused boundary is
+acknowledged, it first removes the generated fixture publication (`definition.json`, its pending
+file, and `mods.json`), then deletes and verifies exactly seven namespaced request, acknowledgement,
+readiness, and action receipts. The process-group stop is still attempted when either cleanup phase
+fails.
 
 World seeding, deterministic hostile/reset fixtures, and scenario assertions remain ordered under
 issues #149 and #150 (parent [#144](https://github.com/ralphschuler/screeps-myrmex/issues/144)).

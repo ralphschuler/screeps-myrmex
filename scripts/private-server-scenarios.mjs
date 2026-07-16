@@ -1,17 +1,25 @@
 import { spawn } from "node:child_process";
 import { cwd } from "node:process";
 import {
+  clearPrivateServerFixture,
   deployPrivateServerBundle,
   isTransientPrivateServerSampleError,
+  pausePrivateServerFixture,
   preparePrivateServerFixtureTarget,
   privateServerBundleIdentity,
   runPrivateServerCli,
   samplePrivateServerBot,
   samplePrivateServerFixture,
+  samplePrivateServerFixtureQuiescence,
 } from "./lib/private-server-cli.mjs";
 import { waitForPrivateServerSample } from "./lib/private-server-sample-polling.mjs";
-import { preparePrivateServerFixtureState } from "./lib/private-server-fixture-state.mjs";
 import {
+  clearPrivateServerFixtureState,
+  preparePrivateServerFixtureModuleState,
+  writePrivateServerFixtureDefinition,
+} from "./lib/private-server-fixture-state.mjs";
+import {
+  clearPrivateServerScenarioFixture,
   privateServerScenarioMatrix,
   runPrivateServerScenario,
 } from "./lib/private-server-scenario-runner.mjs";
@@ -43,13 +51,20 @@ for (const manifest of selected) {
 
 function scenarioDriver(options) {
   let fixtureTarget = null;
-  let fixtureState = null;
+  let pauseSequence = 0;
+  let started = false;
   return {
-    async start() {
-      await lifecycle("start", options.stateDirectory);
+    async start(manifest) {
+      await preparePrivateServerFixtureModuleState({
+        checkout: options.checkout,
+        stateDirectory: options.stateDirectory,
+      });
+      await lifecycle("start", options.stateDirectory, manifest.id);
+      started = true;
     },
-    async pause() {
-      await cliOperation("pause");
+    async pause(manifest) {
+      pauseSequence += 1;
+      await pauseFixtureBoundary(manifest.id, pauseSequence);
     },
     async reset() {
       await cliOperation("reset");
@@ -78,13 +93,15 @@ function scenarioDriver(options) {
       return fixtureTarget;
     },
     async configureFixture(manifest, target) {
-      await lifecycle("stop", options.stateDirectory);
-      fixtureState = await preparePrivateServerFixtureState({
+      await clearFixtureReceipts(manifest.id);
+      await writePrivateServerFixtureDefinition({
         checkout: options.checkout,
         definition: fixtureDefinition(manifest, target),
         stateDirectory: options.stateDirectory,
       });
-      await lifecycle("start", options.stateDirectory, fixtureState.definition);
+    },
+    async awaitFixtureReady(manifest) {
+      await waitForFixtureReady(manifest.id);
     },
     async observe(manifest) {
       if (manifest.injection === "bot-exception") {
@@ -104,14 +121,50 @@ function scenarioDriver(options) {
         state: [{ hostileCreeps: sample.hostileCreeps, ownedCreeps: sample.ownedCreeps }],
       };
     },
-    async clearFixture() {
-      fixtureTarget = null;
-      fixtureState = null;
+    async clearFixture(manifest) {
+      try {
+        await clearPrivateServerScenarioFixture({
+          active: started,
+          async clearReceipts() {
+            await clearFixtureReceipts(manifest.id);
+          },
+          async pause() {
+            pauseSequence += 1;
+            await pauseFixtureBoundary(manifest.id, pauseSequence);
+          },
+          async removePublication() {
+            await clearPrivateServerFixtureState({
+              checkout: options.checkout,
+              stateDirectory: options.stateDirectory,
+            });
+          },
+        });
+      } finally {
+        fixtureTarget = null;
+      }
     },
     async stop() {
       await lifecycle("stop", options.stateDirectory);
+      started = false;
     },
   };
+}
+
+async function clearFixtureReceipts(scenarioId) {
+  try {
+    await clearPrivateServerFixture(scenarioId);
+  } catch {
+    throw namedError("CliOperationFailure", "cli-clear-fixture-failed");
+  }
+}
+
+async function pauseFixtureBoundary(scenarioId, sequence) {
+  try {
+    await pausePrivateServerFixture(scenarioId, sequence);
+  } catch {
+    throw namedError("CliOperationFailure", "cli-pause-fixture-failed");
+  }
+  await waitForFixtureQuiescence(scenarioId, sequence);
 }
 
 async function cliOperation(kind) {
@@ -172,15 +225,57 @@ function fixtureDefinition(manifest, target) {
 async function waitForBotException(scenarioId) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    if ((await samplePrivateServerFixture(scenarioId)).botException === "injected") return;
+    let sample;
+    try {
+      sample = await samplePrivateServerFixture(scenarioId);
+    } catch {
+      throw namedError("CliOperationFailure", "cli-sample-fixture-failed");
+    }
+    if (sample.botException === "injected") return;
     await delay(250);
   }
   throw namedError("ScenarioTimeoutError", "Timed out waiting for the fixture bot exception.");
 }
 
-async function lifecycle(command, state, fixtureDefinition = null) {
+async function waitForFixtureReady(scenarioId) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    let sample;
+    try {
+      sample = await samplePrivateServerFixture(scenarioId);
+    } catch {
+      throw namedError("CliOperationFailure", "cli-sample-fixture-failed");
+    }
+    if (sample.processor === "rejected" || sample.runner === "rejected") {
+      throw namedError("StartupFailure", "fixture-definition-rejected");
+    }
+    if (sample.processor === "ready" && sample.runner === "ready") return;
+    await delay(250);
+  }
+  throw namedError("StartupFailure", "fixture-ready-timeout");
+}
+
+async function waitForFixtureQuiescence(scenarioId, sequence) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    let sample;
+    try {
+      sample = await samplePrivateServerFixtureQuiescence(scenarioId, sequence);
+    } catch {
+      throw namedError("CliOperationFailure", "cli-sample-fixture-quiescence-failed");
+    }
+    if (sample.quiescent === "rejected") {
+      throw namedError("StartupFailure", "fixture-quiescence-rejected");
+    }
+    if (sample.quiescent === "ready") return;
+    await delay(250);
+  }
+  throw namedError("StartupFailure", "fixture-quiescence-timeout");
+}
+
+async function lifecycle(command, state, fixtureScenarioId = null) {
   const args = ["scripts/private-server.mjs", command, "--state-directory", state];
-  if (fixtureDefinition !== null) args.push("--fixture-definition", fixtureDefinition);
+  if (fixtureScenarioId !== null) args.push("--fixture-scenario", fixtureScenarioId);
   const record = await execute(process.execPath, args);
   if (!new Set(["started", "already-running", "stopped"]).has(record.kind)) {
     throw namedError("StartupFailure", safeLifecycleReason(record));
@@ -213,9 +308,15 @@ function safeLifecycleReason(record) {
     "asset-directory-unavailable",
     "configuration-file-unavailable",
     "health-timeout",
+    "fixture-definition-rejected",
+    "fixture-module-state-invalid",
+    "fixture-ready-timeout",
+    "fixture-quiescence-rejected",
+    "fixture-quiescence-timeout",
     "launcher-exited",
     "port-unavailable",
     "required-launch-option-missing",
+    "shutdown-timeout",
     "steam-authentication",
   ].includes(record.reason)
     ? record.reason

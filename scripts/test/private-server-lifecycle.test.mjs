@@ -1,5 +1,6 @@
+import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,19 +21,25 @@ describe("private-server lifecycle", () => {
     expect(lifecycleRecord("healthy")).toEqual({ kind: "healthy", runtime: "screeps@4.3.0" });
     expect(parseLifecycleArguments(["start", "--state-directory", ".private/state"])).toEqual({
       command: "start",
-      fixtureDefinition: null,
+      fixtureScenarioId: null,
       stateDirectory: ".private/state",
     });
     expect(parseLifecycleArguments(["provision"])).toEqual({
       command: "provision",
-      fixtureDefinition: null,
+      fixtureScenarioId: null,
       stateDirectory: ".myrmex-private-server",
     });
     expect(
-      parseLifecycleArguments(["start", "--fixture-definition", ".state/fixtures/definition.json"]),
+      parseLifecycleArguments(["start", "--fixture-scenario", "zero-creep-recovery"]),
     ).toMatchObject({
-      fixtureDefinition: ".state/fixtures/definition.json",
+      fixtureScenarioId: "zero-creep-recovery",
     });
+    expect(() =>
+      parseLifecycleArguments(["start", "--fixture-definition", ".state/definition.json"]),
+    ).toThrow("Unsupported private-server option");
+    expect(() => parseLifecycleArguments(["start", "--fixture-scenario", "../escape"])).toThrow(
+      "safe scenario id",
+    );
     expect(() => parseLifecycleArguments(["start", "--password", "secret"])).toThrow(
       "Unsupported private-server option",
     );
@@ -119,4 +126,45 @@ describe("private-server lifecycle", () => {
     expect(await readFile(paths.log, "utf8")).toBe("");
     expect(classifyLauncherFailure("new process exited")).toBe("launcher-exited");
   });
+
+  it("rejects a symlinked fixture module state before starting the launcher", async () => {
+    const checkout = await mkdtemp(join(tmpdir(), "myrmex-private-server-"));
+    const outside = await mkdtemp(join(tmpdir(), "myrmex-private-server-outside-"));
+    await mkdir(join(outside, "fixtures"), { recursive: true });
+    await writeFile(
+      join(outside, "fixtures/mods.json"),
+      JSON.stringify({ mods: [join(outside, "arbitrary.cjs")] }),
+      "utf8",
+    );
+    await symlink(outside, join(checkout, ".private-state"), "dir");
+
+    const result = await executeLifecycle(checkout, [
+      "start",
+      "--state-directory",
+      ".private-state",
+      "--fixture-scenario",
+      "hostile-reset-v1",
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.output)).toMatchObject({
+      kind: "startup-failed",
+      reason: "fixture-module-state-invalid",
+    });
+  });
 });
+
+function executeLifecycle(commandCwd, args) {
+  const entry = join(process.cwd(), "scripts/private-server.mjs");
+  return new Promise((resolve, reject) => {
+    let output = "";
+    const child = spawn(process.execPath, [entry, ...args], {
+      cwd: commandCwd,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => (output += chunk));
+    child.once("error", reject);
+    child.once("exit", (code) => resolve({ code, output: output.trim() }));
+  });
+}
