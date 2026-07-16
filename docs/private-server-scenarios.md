@@ -19,6 +19,11 @@ Run one named scenario while investigating a bounded failure:
 npm run private-server:scenarios -- --scenario hostile-pressure
 ```
 
+The GitHub Actions workflow **Private-server Phase 1 scenarios** is manual and restricted to `main`.
+It injects the repository `SCREEPS_STEAM_API_KEY` only into provisioning and scenario steps, then
+stops the ignored state even on failure. It uploads no private-server state or artifacts; its safe
+job output is the scenario id, exact bundle build id, artifact hash, and failure kind.
+
 The command builds first, creates one fresh controlled account, deploys the exact bundle, waits for
 one controlled worker, writes the ignored fixture definition, restarts so both server processes
 latch it, and emits only scenario id, artifact hash, and failure kind. A non-zero exit is required
