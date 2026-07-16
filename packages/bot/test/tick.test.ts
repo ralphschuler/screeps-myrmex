@@ -664,7 +664,7 @@ describe("tick lifecycle", () => {
     expect(memory.myrmex?.meta.revision).toBe(1);
     expect(memory.myrmex).toMatchObject({
       config: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         candidate: null,
         lastValid: null,
       },

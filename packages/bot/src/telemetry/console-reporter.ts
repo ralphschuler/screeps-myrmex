@@ -31,19 +31,57 @@ export class ConsoleReporter {
       `colony=${status.colony.status} objectives=${text(status.colony.objectives)} recovery=${text(status.recovery.required)} ` +
       `spawnDemand=${text(status.recovery.spawnDemand)} harvested=${text(status.recovery.harvested)} delivered=${text(status.recovery.delivered)} unmet=${text(status.recovery.unmet)} ` +
       `blockers=${text(status.blockers.length)} faults=${text(status.faults.length)}`;
-    const bounded = bound(line, policy.maximumBytesPerTick);
-    if (bounded === null || policy.maximumLinesPerTick < 1) return [];
+    const candidates = [line, ...diagnosticLines(status)];
+    const bounded = boundAll(candidates, policy.maximumLinesPerTick, policy.maximumBytesPerTick);
+    if (bounded.length === 0) return [];
     try {
-      sink.log(bounded);
-      return [bounded];
+      for (const entry of bounded) sink.log(entry);
+      return bounded;
     } catch {
       return [];
     }
   }
 }
 
-function bound(line: string, maximumBytes: number): string | null {
-  return utf8ByteLength(line) <= maximumBytes ? line : null;
+function diagnosticLines(status: ReporterStatus): readonly string[] {
+  const diagnostic = status.diagnostic;
+  if (diagnostic === null) return [];
+  const prefix = `[MYRMEX][${diagnostic.level.toUpperCase()}][${status.runtime.shardRef}][t=${text(status.tick)}] diagnostic`;
+  const lines: string[] = [];
+  for (const category of diagnostic.categories) {
+    switch (category) {
+      case "recovery": {
+        const stuck = status.recovery.stuck;
+        lines.push(
+          `${prefix} recovery required=${text(status.recovery.required)} stuck=${text(stuck?.active ?? false)} lastProgress=${text(stuck?.lastProgressTick ?? 0)} reminderAt=${text(stuck?.reminderAtTick ?? 0)}`,
+        );
+        break;
+      }
+      case "blockers":
+        lines.push(`${prefix} blockers count=${text(status.blockers.length)}`);
+        break;
+      case "faults":
+        lines.push(`${prefix} faults count=${text(status.faults.length)}`);
+        break;
+    }
+  }
+  return lines;
+}
+
+function boundAll(
+  lines: readonly string[],
+  maximumLines: number,
+  maximumBytes: number,
+): readonly string[] {
+  const bounded: string[] = [];
+  let bytes = 0;
+  for (const line of lines) {
+    const lineBytes = utf8ByteLength(line);
+    if (bounded.length >= maximumLines || bytes + lineBytes > maximumBytes) break;
+    bounded.push(line);
+    bytes += lineBytes;
+  }
+  return bounded;
 }
 
 function text(value: number | boolean): string {

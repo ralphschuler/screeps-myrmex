@@ -9,6 +9,12 @@ export interface ReporterStatusPolicy {
   readonly maximumImmediateEventsPerTick: number;
 }
 
+export interface ReporterDiagnostic {
+  readonly level: "debug" | "trace";
+  readonly categories: readonly ("recovery" | "blockers" | "faults")[];
+  readonly expiresAtTick: number;
+}
+
 export interface ReporterStatus {
   readonly schemaVersion: typeof REPORTER_STATUS_SCHEMA_VERSION;
   readonly tick: number;
@@ -24,6 +30,7 @@ export interface ReporterStatus {
     readonly degraded: boolean;
   };
   readonly observer: { readonly status: "ready" | "unavailable"; readonly hash: string | null };
+  readonly diagnostic: ReporterDiagnostic | null;
   readonly colony: { readonly status: string; readonly objectives: number };
   readonly recovery: {
     readonly required: boolean;
@@ -115,6 +122,7 @@ export function projectReporterStatus(
         status: telemetry === null ? "unavailable" : "ready",
         hash: telemetry?.status.hash ?? null,
       }),
+      diagnostic: telemetry?.observerDiagnostic ?? null,
       colony: Object.freeze({
         status: safeCode(telemetry?.colony.status ?? "unavailable"),
         objectives: telemetry?.colony.objectives ?? 0,
@@ -169,6 +177,7 @@ function fallback(kernel: KernelTickReport): ReporterStatus {
       degraded: true,
     }),
     observer: Object.freeze({ status: "unavailable", hash: null }),
+    diagnostic: null,
     colony: Object.freeze({ status: "unavailable", objectives: 0 }),
     recovery: Object.freeze({
       required: false,

@@ -1,7 +1,7 @@
 import type { RuntimeConfig } from "./contracts";
 import type { CanonicalRuntimeOverrides } from "./validation";
 
-export const RUNTIME_CONFIG_OWNER_SCHEMA_VERSION = 1 as const;
+export const RUNTIME_CONFIG_OWNER_SCHEMA_VERSION = 2 as const;
 
 export interface RuntimeConfigCandidate {
   readonly revision: number;
@@ -13,12 +13,21 @@ export interface RuntimeConfigLastValid {
   readonly candidateRevision: number;
   readonly overrides: CanonicalRuntimeOverrides;
   readonly resolvedRevision: string;
+  /** The one-time anchor for an optional observer diagnostic duration. */
+  readonly diagnosticExpiresAtTick: number | null;
 }
 
-export interface RuntimeConfigOwnerV1 {
+export interface RuntimeConfigOwnerV2 {
   readonly schemaVersion: typeof RUNTIME_CONFIG_OWNER_SCHEMA_VERSION;
   readonly candidate: RuntimeConfigCandidate | null;
   readonly lastValid: RuntimeConfigLastValid | null;
+}
+
+/** Legacy durable receipt shape accepted by the v2 authority reader. */
+export interface RuntimeConfigOwnerV1 {
+  readonly schemaVersion: 1;
+  readonly candidate: RuntimeConfigCandidate | null;
+  readonly lastValid: Omit<RuntimeConfigLastValid, "diagnosticExpiresAtTick"> | null;
 }
 
 export type RuntimeConfigResolutionStatus =
@@ -46,5 +55,5 @@ export interface RuntimeConfigResolution {
   readonly config: RuntimeConfig;
   readonly metadata: RuntimeConfigResolutionMetadata;
   /** A detached owner value for the caller to stage through MemoryManager. */
-  readonly replacementOwner: RuntimeConfigOwnerV1 | null;
+  readonly replacementOwner: RuntimeConfigOwnerV2 | null;
 }

@@ -70,6 +70,7 @@ export interface TickTelemetry {
     readonly maximumReminderDelayTicks: number;
     readonly stuckRecoveryWindowTicks: number;
   };
+  readonly observerDiagnostic: RuntimeConfig["observer"]["diagnostic"];
   readonly activity: TelemetryActivity;
   readonly status: TelemetryStatus;
   readonly recoveryProgress: RecoveryProgressTelemetry | null;
@@ -186,6 +187,7 @@ export function recordTickTelemetry(
       maximumReminderDelayTicks: input.config.policy.reporter.maximumReminderDelayTicks,
       stuckRecoveryWindowTicks: input.config.policy.reporter.stuckRecoveryWindowTicks,
     }),
+    observerDiagnostic: input.config.observer.diagnostic,
     energyFlow: Object.freeze({ ...input.energyFlow }),
   });
 }
