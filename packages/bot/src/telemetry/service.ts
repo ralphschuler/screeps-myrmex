@@ -8,11 +8,12 @@ import type { SpawnRuntimeResult } from "../spawn";
 import type { JsonObject } from "../state/schema";
 import type { WorldSnapshot } from "../world/snapshot";
 import { opaqueId, safeCode } from "../security";
+import { advanceReporterState } from "./reporter-state";
 import type { TickTelemetry } from "./metrics";
 
 type TickTelemetryBase = Omit<TickTelemetry, "activity" | "status">;
 
-export const TELEMETRY_OWNER_SCHEMA_VERSION = 1 as const;
+export const TELEMETRY_OWNER_SCHEMA_VERSION = 2 as const;
 
 export interface TelemetryDetail {
   readonly domain: "budget" | "contract" | "intent" | "movement" | "spawn";
@@ -69,7 +70,13 @@ export class TelemetryService {
       status,
     });
     return deepFreeze({
-      owner: writeOwner(owner, telemetry, input.base.telemetryPolicy),
+      owner: writeOwner(
+        owner,
+        telemetry,
+        input.base.telemetryPolicy,
+        input.base.telemetryPolicy,
+        details,
+      ),
       telemetry,
     });
   }
@@ -78,16 +85,21 @@ export class TelemetryService {
 interface ParsedOwner {
   readonly history: readonly { readonly tick: number; readonly hash: string }[];
   readonly droppedHistory: number;
+  readonly reporter: unknown;
 }
 
 function readOwner(value: unknown): ParsedOwner {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return { history: [], droppedHistory: 0 };
+    return { history: [], droppedHistory: 0, reporter: undefined };
   }
   const root = value as Record<string, unknown>;
-  if (Object.keys(root).length === 0) return { history: [], droppedHistory: 0 };
-  if (root.schemaVersion !== TELEMETRY_OWNER_SCHEMA_VERSION || !Array.isArray(root.history)) {
-    return { history: [], droppedHistory: 0 };
+  if (Object.keys(root).length === 0)
+    return { history: [], droppedHistory: 0, reporter: undefined };
+  if (
+    (root.schemaVersion !== 1 && root.schemaVersion !== TELEMETRY_OWNER_SCHEMA_VERSION) ||
+    !Array.isArray(root.history)
+  ) {
+    return { history: [], droppedHistory: 0, reporter: undefined };
   }
   const history: { tick: number; hash: string }[] = root.history.flatMap((entry) => {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
@@ -106,6 +118,7 @@ function readOwner(value: unknown): ParsedOwner {
       typeof root.droppedHistory === "number" && Number.isSafeInteger(root.droppedHistory)
         ? Math.max(0, root.droppedHistory)
         : 0,
+    reporter: root.schemaVersion === TELEMETRY_OWNER_SCHEMA_VERSION ? root.reporter : undefined,
   };
 }
 
@@ -113,11 +126,27 @@ function writeOwner(
   owner: ParsedOwner,
   telemetry: TickTelemetry,
   policy: TickTelemetryBase["telemetryPolicy"],
+  reporterPolicy: TickTelemetryBase["telemetryPolicy"],
+  details: readonly TelemetryDetail[],
 ): JsonObject {
   const appended = [...owner.history, { tick: telemetry.tick, hash: telemetry.status.hash }];
   const bounded = appended.slice(-policy.maximumHistoryEntries);
   const droppedHistory = owner.droppedHistory + appended.length - bounded.length;
   const history = bounded.map(({ tick, hash }) => ({ tick, hash }));
+  const reporter = advanceReporterState(
+    owner.reporter,
+    telemetry.tick,
+    details.map((detail) => ({
+      kind: detail.domain,
+      identity: detail.entityId,
+      reasonCode: detail.reason,
+    })),
+    {
+      maximumFingerprints: Math.min(64, reporterPolicy.maximumDetailRecords),
+      initialReminderDelayTicks: 10,
+      maximumReminderDelayTicks: 160,
+    },
+  );
   const result = {
     schemaVersion: TELEMETRY_OWNER_SCHEMA_VERSION,
     last: {
@@ -127,6 +156,7 @@ function writeOwner(
     },
     history,
     droppedHistory,
+    reporter: reporter.owner as JsonObject,
   };
   while (
     utf8ByteLength(canonicalSerialize(result)) > policy.maximumHistoryBytes &&
