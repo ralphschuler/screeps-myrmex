@@ -141,7 +141,10 @@ function decideReceipt(
     r.policyFingerprint !== p.policyFingerprint
   )
     return null;
-  if (r.code === "OK") return { status: "deferred", reason: "receipt-ok-expectation" };
+  if (r.code === "OK")
+    return tick < r.nextEligibleTick
+      ? { status: "deferred", reason: "receipt-ok-expectation" }
+      : null;
   if (tick < r.nextEligibleTick)
     return {
       status: "deferred",
@@ -158,6 +161,7 @@ function applicableReceiptMap(
   return map;
 }
 function retryDelay(code: ConstructionSiteAttemptReceipt["code"], attempt: number): number {
+  if (code === "OK") return Math.min(32, 2 ** Math.min(attempt - 1, 5));
   if (code === "ERR_FULL") return Math.min(100, 5 * 2 ** Math.min(attempt - 1, 5));
   if (code === "UNEXPECTED") return Math.min(64, 2 ** Math.min(attempt, 6));
   return 1;

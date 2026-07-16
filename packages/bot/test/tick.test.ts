@@ -195,6 +195,12 @@ describe("tick lifecycle", () => {
       revision: 1,
     });
     expect(memory.myrmex?.meta.schemaVersion).toBe(4);
+    expect(initialized.kernel.systems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "completed", systemId: "layout.execute" }),
+        expect.objectContaining({ status: "completed", systemId: "layout.reconcile" }),
+      ]),
+    );
     expect(memory.myrmex?.contracts).toEqual({
       active: [],
       issuerFrontiers: [],
@@ -1670,7 +1676,7 @@ describe("tick lifecycle", () => {
     expect(outcome.kernel.cpuUsed).toBe(2.75);
     expect(outcome.kernel.overheadCpu).toBe(2);
     expect(phaseCpu + outcome.kernel.overheadCpu).toBe(outcome.kernel.cpuUsed);
-    expect(outcome.telemetry).toMatchObject({ cacheEntries: 0, cacheNamespaces: 2 });
+    expect(outcome.telemetry).toMatchObject({ cacheEntries: 2, cacheNamespaces: 3 });
   });
 
   it("returns the kernel report when the mandatory telemetry system itself faults", () => {

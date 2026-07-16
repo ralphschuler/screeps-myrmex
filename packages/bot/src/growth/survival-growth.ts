@@ -28,8 +28,8 @@ const MAX_GROWTH_CANDIDATES = 64;
 
 /**
  * Produces only post-survival growth work. Controller risk is explicitly ranked above optional
- * construction; existing critical sites are ranked above discretionary sites without placing new
- * sites or claiming Phase 2 layout ownership.
+ * construction; every existing owned site is ranked deterministically without placing new sites or
+ * claiming Phase 2 layout ownership.
  */
 export function planSurvivalGrowth(
   snapshot: WorldSnapshot,
@@ -57,9 +57,7 @@ export function planSurvivalGrowth(
     )
       continue;
     const sites = room.constructionSites
-      .filter(
-        ({ ownership, structureType }) => ownership === "owned" && isCriticalSite(structureType),
-      )
+      .filter(({ ownership }) => ownership === "owned")
       .slice()
       .sort(
         (left, right) =>
@@ -308,11 +306,26 @@ function contractFor(candidate: GrowthCandidate): WorkContractRequest {
     targetId: candidate.targetId,
   };
 }
-function isCriticalSite(type: string): boolean {
-  return ["spawn", "extension", "container", "road", "tower"].includes(type);
-}
 function siteRank(type: string): number {
-  return ["spawn", "extension", "container", "tower", "road"].indexOf(type);
+  const rank = [
+    "spawn",
+    "extension",
+    "container",
+    "tower",
+    "storage",
+    "terminal",
+    "link",
+    "lab",
+    "factory",
+    "observer",
+    "powerSpawn",
+    "nuker",
+    "extractor",
+    "rampart",
+    "constructedWall",
+    "road",
+  ].indexOf(type);
+  return rank < 0 ? 1_000 : rank;
 }
 function compareCandidate(left: GrowthCandidate, right: GrowthCandidate): number {
   const category = (value: GrowthCandidate) =>

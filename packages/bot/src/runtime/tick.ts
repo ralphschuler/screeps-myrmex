@@ -96,6 +96,25 @@ import { observeWorld } from "../world/observe";
 import { emptyWorldSnapshot, type WorldSnapshot } from "../world/snapshot";
 import type { RuntimeGame, TickContext } from "./context";
 import {
+  CONSTRUCTION_SITE_LIMITS,
+  ConstructionSiteExecutor,
+  arbitrateConstructionSites,
+  diffOwnedRoomLayout,
+  emptyLayoutsOwner,
+  layoutCacheDependencies,
+  parseLayoutsOwner,
+  persistLayoutCommitment,
+  planOwnedRoomLayout,
+  reconcileConstructionSiteExecution,
+  registerLayoutCompiledCache,
+  type ConstructionSiteArbitrationResult,
+  type ConstructionSiteExecutionResult,
+  type LayoutCommitment,
+  type LayoutRuntimePlanRecord,
+  type LayoutRuntimeResult,
+  type LayoutsOwnerV1,
+} from "../layout";
+import {
   CPU_MODES,
   RuntimeKernel,
   type CpuMode,
@@ -114,6 +133,8 @@ const colonyDirector = new ColonyDirector();
 const spawnBroker = new SpawnBroker();
 const spawnExecutor = new SpawnExecutor();
 const telemetryService = new TelemetryService();
+const constructionSiteExecutor = new ConstructionSiteExecutor();
+const layoutCaches = new WeakMap<CacheManager, ReturnType<typeof registerLayoutCompiledCache>>();
 
 export interface TickInput {
   readonly game: RuntimeGame;
@@ -140,6 +161,7 @@ export interface TickOutcome {
   readonly movement: MovementRuntimeResult;
   /** Runtime-owned data-only local path capability. */
   readonly localPathPlanning: LocalPathPlanningService;
+  readonly layout: LayoutRuntimeResult;
   readonly spawn: SpawnRuntimeResult;
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
@@ -159,6 +181,7 @@ interface TickRuntimeControl {
   publishExecution(batch: ArbitrationBatch): void;
   publishMovement(result: MovementRuntimeResult): void;
   clearMovement(): void;
+  publishLayout(result: LayoutRuntimeResult): void;
   publishSpawn(result: SpawnRuntimeResult): void;
   clearSpawn(): void;
   publishStateCommit(result: MemoryCommitResult): void;
@@ -266,6 +289,7 @@ export function runTick(input: TickInput): TickOutcome {
     execution: runtime.context.execution,
     movement: runtime.context.movement,
     localPathPlanning: runtime.context.localPathPlanning,
+    layout: runtime.context.layout,
     spawn: runtime.context.spawn,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
@@ -297,6 +321,14 @@ interface SpawnTickDraft {
   settlementStaged: boolean;
   status: SpawnRuntimeResult["status"];
 }
+interface LayoutTickDraft {
+  arbitration: ConstructionSiteArbitrationResult | null;
+  changed: boolean;
+  execution: readonly ConstructionSiteExecutionResult[];
+  owner: LayoutsOwnerV1 | null;
+  planning: readonly LayoutRuntimePlanRecord[];
+  status: LayoutRuntimeResult["status"];
+}
 
 /** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
 function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<TickContext>[] {
@@ -307,6 +339,14 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     execution: null,
     settled: null,
     settlementStaged: false,
+    status: "not-run",
+  };
+  const layoutDraft: LayoutTickDraft = {
+    arbitration: null,
+    changed: false,
+    execution: Object.freeze([]),
+    owner: null,
+    planning: Object.freeze([]),
     status: "not-run",
   };
   let leaseAgentPlan: LeaseAgentPlan = Object.freeze({
@@ -466,6 +506,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       maintenanceCandidates = maintenance;
       growthCandidates = growth;
     }),
+    layoutPlanningSystem(input, layoutDraft),
     {
       descriptor: {
         id: "economy.contracts",
@@ -703,6 +744,31 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     },
     {
       descriptor: {
+        id: "layout.execute",
+        phase: "execute",
+        criticality: "mandatory",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: false,
+        mandatoryTail: true,
+      },
+      run: () => {
+        const owner = layoutDraft.owner;
+        const execution = constructionSiteExecutor.execute(layoutDraft.arbitration?.intents ?? [], {
+          isCurrentCommitment: (roomName, fingerprint) =>
+            owner?.records.some(
+              (record) => record.roomName === roomName && record.fingerprint === fingerprint,
+            ) === true,
+          resolveRoom: (roomName) => input.game.rooms[roomName] ?? null,
+        });
+        layoutDraft.execution = execution;
+        return staged(() => {
+          input.runtime.publishLayout(layoutRuntimeResult(layoutDraft, 0));
+        });
+      },
+    },
+    {
+      descriptor: {
         id: "movement.arbitrate-execute",
         phase: "execute",
         criticality: "mandatory",
@@ -729,6 +795,48 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     },
     spawnSettleSystem(input, spawnDraft),
+    {
+      descriptor: {
+        id: "layout.reconcile",
+        phase: "reconcile",
+        criticality: "mandatory",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: true,
+        mandatoryTail: true,
+      },
+      run: ({ context }) => {
+        const reconciled =
+          layoutDraft.owner === null
+            ? null
+            : reconcileConstructionSiteExecution(
+                layoutDraft.owner,
+                layoutDraft.execution,
+                context.tick,
+              );
+        return staged(
+          () => {
+            if (input.manager !== null && reconciled !== null) {
+              const changed =
+                layoutDraft.changed || reconciled.owner.revision !== layoutDraft.owner?.revision;
+              layoutDraft.owner = reconciled.owner;
+              layoutDraft.changed = changed;
+              if (changed) {
+                const transaction = input.manager.transaction("layouts");
+                transaction.replace(reconciled.owner);
+                const stagedResult = transaction.stage();
+                if (!stagedResult.staged)
+                  throw new Error(stagedResult.fault?.message ?? "layout state staging failed");
+              }
+            }
+            input.runtime.publishLayout(
+              layoutRuntimeResult(layoutDraft, reconciled?.receipts.length ?? 0),
+            );
+          },
+          () => input.manager?.discard("layouts"),
+        );
+      },
+    },
     {
       descriptor: {
         id: "state.reconcile",
@@ -858,6 +966,223 @@ function telemetryBase(
     configResolution: context.configResolution,
     colony: context.colony,
     energyFlow: measureSurvivalEnergyFlow(context.snapshot, context.movement),
+  });
+}
+
+function layoutPlanningSystem(
+  input: CompositionInput,
+  draft: LayoutTickDraft,
+): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "layout.plan",
+      phase: "plan",
+      criticality: "economic",
+      cadence: 1,
+      estimate: 2,
+      admitInRecovery: false,
+      mandatoryTail: false,
+    },
+    run: ({ context }) => {
+      if (!isFeatureEnabled(context.config, "phase2.layout")) {
+        return staged(() => {
+          draft.status = "disabled";
+          input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
+        });
+      }
+      if (input.manager === null) return staged(() => undefined);
+      const initialOwner = resolveLayoutsOwner(input.manager.ownerView("layouts"));
+      let owner = initialOwner;
+      let changed = false;
+      const planning: LayoutRuntimePlanRecord[] = [];
+      const proposals = [] as ReturnType<typeof diffOwnedRoomLayout>["proposals"][number][];
+      const authorizations: {
+        authorized: boolean;
+        colonyId: string;
+        roomName: string;
+      }[] = [];
+      const colonies = [...context.colony.colonies]
+        .filter(({ state, visibility }) => state !== "lost" && visibility === "visible")
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .slice(0, 2);
+      const cache = getLayoutCompiledCache(input.cacheManager);
+      for (const colony of colonies) {
+        const room = context.snapshot.rooms.find(({ name }) => name === colony.roomName);
+        if (room?.controller?.ownership !== "owned") continue;
+        authorizations.push({
+          authorized: colony.rclPolicy.progression.authorized,
+          colonyId: colony.id,
+          roomName: room.name,
+        });
+        if (room.terrain === undefined || room.exits === undefined) {
+          planning.push({
+            blocker: "invalid-input",
+            fingerprint:
+              owner.records.find((record) => record.roomName === room.name)?.fingerprint ?? null,
+            roomName: room.name,
+            status: "degraded",
+          });
+          continue;
+        }
+        const priorRecord = owner.records.find((record) => record.roomName === room.name);
+        const priorCommitment =
+          priorRecord === undefined ? null : commitmentFromRecord(priorRecord);
+        const result = planOwnedRoomLayout({
+          constructionSites: room.constructionSites,
+          controller: room.controller.pos,
+          exits: room.exits,
+          mineral: room.mineral ?? null,
+          policy: colony.rclPolicy,
+          priorCommitment,
+          roomName: room.name,
+          sources: room.sources.map(({ pos }) => pos),
+          structures: room.structures ?? [],
+          terrain: room.terrain,
+          tick: context.tick,
+        });
+        if (result.status === "degraded") {
+          planning.push({
+            blocker: result.blocker,
+            fingerprint: result.commitment?.fingerprint ?? null,
+            roomName: room.name,
+            status: "degraded",
+          });
+          continue;
+        }
+        const commitment =
+          priorCommitment?.fingerprint === result.commitment.fingerprint
+            ? priorCommitment
+            : result.commitment;
+        if (priorCommitment?.fingerprint !== commitment.fingerprint) {
+          owner = persistLayoutCommitment(owner, room.name, commitment);
+          changed = true;
+        }
+        const observationFingerprint = layoutObservationFingerprint(room);
+        const policyFingerprint = stableHash(JSON.stringify(colony.rclPolicy), "layout-policy-v1");
+        const placements = cache.getOrCompute(
+          { fingerprint: commitment.fingerprint, roomName: room.name },
+          {
+            dependencies: layoutCacheDependencies({
+              algorithmRevision: commitment.algorithmRevision,
+              factsRevision: observationFingerprint,
+              policyRevision: policyFingerprint,
+              terrainRevision: room.terrain.revision,
+            }),
+            tick: context.tick,
+          },
+          () => result.placements,
+        );
+        proposals.push(
+          ...diffOwnedRoomLayout({
+            colonyId: colony.id,
+            commitment,
+            commitmentConflicted: false,
+            constructionSites: room.constructionSites,
+            observationFingerprint,
+            placements,
+            policy: colony.rclPolicy,
+            policyEnabled: true,
+            policyFingerprint,
+            roomName: room.name,
+            roomStatus: "owned",
+            structures: room.structures ?? [],
+          }).proposals,
+        );
+        planning.push({
+          blocker: null,
+          fingerprint: commitment.fingerprint,
+          roomName: room.name,
+          status: "complete",
+        });
+      }
+      const arbitration = arbitrateConstructionSites({
+        globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
+        limits: CONSTRUCTION_SITE_LIMITS,
+        perRoomSiteCounts: context.snapshot.rooms.map((room) => ({
+          count: room.constructionSites.filter(({ ownership }) => ownership === "owned").length,
+          roomName: room.name,
+        })),
+        priorReceipts: owner.records.flatMap(({ siteReceipts }) => siteReceipts ?? []),
+        progressionAuthorizations: authorizations,
+        proposals,
+        tick: context.tick,
+      });
+      return staged(() => {
+        draft.arbitration = arbitration;
+        draft.changed = changed;
+        draft.execution = Object.freeze([]);
+        draft.owner = owner;
+        draft.planning = Object.freeze(planning);
+        draft.status = "planned";
+        input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
+      });
+    },
+  };
+}
+
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV1 {
+  const parsed = parseLayoutsOwner(value);
+  if (parsed !== null) return parsed;
+  if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
+    return emptyLayoutsOwner();
+  throw new Error("layouts-owner-invalid");
+}
+function commitmentFromRecord(record: LayoutsOwnerV1["records"][number]): LayoutCommitment {
+  return {
+    algorithmRevision: record.algorithmRevision,
+    anchor: record.anchor,
+    blockers: record.blockers,
+    committedAt: record.committedAt,
+    fingerprint: record.fingerprint,
+    transform: record.transform,
+  };
+}
+function getLayoutCompiledCache(manager: CacheManager) {
+  const existing = layoutCaches.get(manager);
+  if (existing !== undefined) return existing;
+  const registered = registerLayoutCompiledCache(manager);
+  layoutCaches.set(manager, registered);
+  return registered;
+}
+function layoutObservationFingerprint(room: WorldSnapshot["rooms"][number]): string {
+  const facts = {
+    controller:
+      room.controller === null
+        ? null
+        : { level: room.controller.level, ownership: room.controller.ownership },
+    sites: [...room.constructionSites]
+      .map(({ id, ownership, pos, structureType }) => ({ id, ownership, pos, structureType }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    structures: [...(room.structures ?? [])]
+      .map(({ id, ownership, pos, structureType }) => ({ id, ownership, pos, structureType }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  };
+  return stableHash(JSON.stringify(facts), "layout-observation-v1");
+}
+function stableHash(value: string, prefix: string): string {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return `${prefix}:${(hash >>> 0).toString(36)}`;
+}
+function layoutRuntimeResult(draft: LayoutTickDraft, receiptsWritten: number): LayoutRuntimeResult {
+  return Object.freeze({
+    arbitration: draft.arbitration,
+    execution: draft.execution,
+    planning: draft.planning,
+    receiptsWritten,
+    status: draft.status,
+  });
+}
+function emptyLayoutRuntimeResult(): LayoutRuntimeResult {
+  return Object.freeze({
+    arbitration: null,
+    execution: Object.freeze([]),
+    planning: Object.freeze([]),
+    receiptsWritten: 0,
+    status: "not-run",
   });
 }
 
@@ -1591,6 +1916,7 @@ function createTickRuntime(
   let contracts: ContractReconciliationResult | null = null;
   let execution: ArbitrationBatch | null = null;
   let movement: MovementRuntimeResult = emptyMovementRuntimeResult();
+  let layout: LayoutRuntimeResult = emptyLayoutRuntimeResult();
   let spawn: SpawnRuntimeResult = spawnRuntimeResult("not-run");
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
@@ -1619,6 +1945,9 @@ function createTickRuntime(
     localPathPlanning,
     get movement(): MovementRuntimeResult {
       return movement;
+    },
+    get layout(): LayoutRuntimeResult {
+      return layout;
     },
     get spawn(): SpawnRuntimeResult {
       return spawn;
@@ -1656,6 +1985,9 @@ function createTickRuntime(
     },
     clearMovement(): void {
       movement = emptyMovementRuntimeResult();
+    },
+    publishLayout(value: LayoutRuntimeResult): void {
+      layout = value;
     },
     publishSpawn(value: SpawnRuntimeResult): void {
       spawn = value;

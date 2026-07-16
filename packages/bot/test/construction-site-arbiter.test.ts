@@ -105,7 +105,10 @@ describe("ConstructionSiteArbiter", () => {
     ["UNEXPECTED", "receipt-unexpected-backoff"],
   ] as const)("defers %s deterministically", (code, reason) => {
     const p = proposal("W1N1", "a", 0),
-      receipt = deriveConstructionSiteAttemptReceipt({ code, proposal: p, tick: 99 }, []);
+      receipt = deriveConstructionSiteAttemptReceipt(
+        { code, proposal: p, tick: code === "OK" ? 100 : 99 },
+        [],
+      );
     expect(run([p], { priorReceipts: [receipt] }).deferred[0]?.reason).toBe(reason);
   });
   it("invalidates receipts only on their required fresh facts", () => {

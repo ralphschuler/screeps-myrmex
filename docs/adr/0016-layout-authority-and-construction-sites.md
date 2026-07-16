@@ -36,8 +36,13 @@ limit also require explicit adoption and later arbitration boundaries.
 - The schema-4 layouts owner stores up to 32 attempt receipts per room. Fingerprinted receipts make
   successful expectations and command failures reset-safe without creating retry storms; a new
   layout commitment invalidates them.
-- Arbitration emits detached create-site intents only. API execution and result reconciliation are
-  explicitly deferred to PR C.
+- Arbitration emits detached create-site intents only. PR C completes API execution through one
+  narrow executor and mandatory receipt reconciliation before the existing atomic root commit.
+- Runtime order is observe, colony publication, bounded plan/diff/arbitration, sole live-room
+  execution, receipt reconciliation, then root commit. Optional planning may be skipped, but an
+  accepted result cannot bypass the mandatory reconciliation tail.
+- Existing survival growth consumes all observed owned layout sites and emits one deterministic
+  funded build request per site without becoming a placement authority.
 
 ## Consequences
 
