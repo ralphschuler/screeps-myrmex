@@ -26,6 +26,9 @@ afterEach(async () => {
 describe("private-server CLI adapter", () => {
   it("maps only source-controlled, bounded operations", () => {
     expect(privateServerCliCommand({ kind: "pause" })).toBe("system.pauseSimulation()");
+    expect(privateServerCliCommand({ kind: "reset" })).toBe(
+      "system.resetAllData().then(()=> 'OK')",
+    );
     expect(privateServerCliCommand({ kind: "set-tick-duration", milliseconds: 1 })).toBe(
       "system.setTickDuration(1)",
     );
