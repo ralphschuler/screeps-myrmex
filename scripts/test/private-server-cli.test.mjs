@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   PRIVATE_SERVER_CLI_LIMITS,
   bootstrapPrivateServerBot,
+  deployPrivateServerBundle,
   privateServerDeploymentCommand,
   privateServerBundleIdentity,
   privateServerCliCommand,
@@ -50,7 +51,7 @@ describe("private-server CLI adapter", () => {
   it("uses loopback, bounds the transcript, and returns only opaque result metadata", async () => {
     const server = createServer((socket) => {
       socket.write("Screeps CLI greeting\r\n< \r\n");
-      socket.once("data", () => socket.end("OK\r\n< \r\n"));
+      socket.once("data", () => socket.end("< OK\r\n"));
     });
     servers.push(server);
     const port = await listen(server);
@@ -72,7 +73,7 @@ describe("private-server CLI adapter", () => {
     ];
     const server = createServer((socket) => {
       socket.write("< \r\n");
-      socket.on("data", () => socket.write(`${responses.shift()}\r\n< \r\n`));
+      socket.on("data", () => socket.write(`< ${responses.shift()}\r\n`));
     });
     servers.push(server);
     const port = await listen(server);
@@ -102,7 +103,7 @@ describe("private-server CLI adapter", () => {
     expect(() => privateServerCliCommand({ kind: "pause", extra: true })).toThrow("unknown");
     const server = createServer((socket) => {
       socket.write("< \r\n");
-      socket.once("data", () => socket.end("Error: rejected\r\n< \r\n"));
+      socket.once("data", () => socket.end("< Error: rejected\r\n"));
     });
     servers.push(server);
     const port = await listen(server);
@@ -125,6 +126,21 @@ describe("private-server CLI adapter", () => {
     await expect(privateServerBundleIdentity(bundlePath)).resolves.toEqual({
       bytes: 34,
       sha256: expect.stringMatching(/^sha256:/),
+    });
+  });
+
+  it("accepts the backend's prefixed deployment acknowledgement", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "myrmex-private-server-"));
+    const bundlePath = join(directory, "main.js");
+    await writeFile(bundlePath, "module.exports.loop=()=>undefined;", "utf8");
+    const server = createServer((socket) => {
+      socket.write("< \r\n");
+      socket.once("data", () => socket.end("< '{\"deployed\":true}'\r\n"));
+    });
+    servers.push(server);
+    const port = await listen(server);
+    await expect(deployPrivateServerBundle(bundlePath, { port })).resolves.toMatchObject({
+      hash: expect.stringMatching(/^sha256:/),
     });
   });
 });
