@@ -20,6 +20,7 @@ import {
 const options = parseLifecycleArguments(process.argv.slice(2));
 const paths = lifecyclePaths(cwd(), options.stateDirectory);
 const runtimeDirectory = `${cwd()}/integration/private-server`;
+const launcherExecutable = `${runtimeDirectory}/node_modules/.bin/screeps`;
 const fixtureDefinition =
   options.fixtureDefinition === null ? null : `${cwd()}/${options.fixtureDefinition}`;
 
@@ -48,12 +49,7 @@ async function run(command) {
       return execute("npm", ["ci", "--prefix", runtimeDirectory], "installed");
     case "init":
       await mkdir(paths.root, { recursive: true });
-      return execute(
-        "npm",
-        ["exec", "--prefix", runtimeDirectory, "--", "screeps", "init"],
-        "initialized",
-        paths.root,
-      );
+      return execute(launcherExecutable, ["init"], "initialized", paths.root);
     case "provision":
       return provision();
     case "start":
@@ -69,12 +65,7 @@ async function provision() {
   const key = privateServerProvisioningKey(env.SCREEPS_STEAM_API_KEY);
   if (key === null) return lifecycleRecord("provisioning-required");
   await mkdir(paths.root, { recursive: true });
-  const result = await executeWithInput(
-    "npm",
-    ["exec", "--prefix", runtimeDirectory, "--", "screeps", "init"],
-    key,
-    paths.root,
-  );
+  const result = await executeWithInput(launcherExecutable, ["init"], key, paths.root);
   if (result.kind !== "initialized") return result;
   const configPath = `${paths.root}/.screepsrc`;
   await writeFile(configPath, scrubProvisionedConfig(await readFile(configPath, "utf8")), "utf8");
@@ -86,13 +77,8 @@ async function start() {
   await mkdir(paths.root, { recursive: true });
   const log = await open(paths.log, "a");
   const child = spawn(
-    "npm",
+    launcherExecutable,
     [
-      "exec",
-      "--prefix",
-      runtimeDirectory,
-      "--",
-      "screeps",
       "start",
       "--db",
       `${paths.root}/db.json`,
