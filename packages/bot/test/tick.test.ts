@@ -484,6 +484,44 @@ describe("tick lifecycle", () => {
     );
   });
 
+  it("settles post-admission insufficient-energy rejection before retrying", () => {
+    const memory = {} as Memory;
+    const rejectedSpawnCreep = vi.fn(() => -6);
+    const rejected = runTick({
+      game: fundedContractGame(70, {
+        includeCreep: false,
+        spawnCreep: rejectedSpawnCreep,
+      }),
+      memory,
+    });
+
+    expect(rejectedSpawnCreep).toHaveBeenCalledTimes(1);
+    expect(rejected.spawn.execution).toEqual([
+      expect.objectContaining({
+        reason: "insufficient-energy",
+        returnCode: -6,
+        status: "rejected",
+      }),
+    ]);
+    expect(rejected.colony.reservations).toContainEqual(
+      expect.objectContaining({ status: "released" }),
+    );
+
+    const recoveredSpawnCreep = vi.fn(() => 0);
+    const recovered = runTick({
+      game: fundedContractGame(80, {
+        includeCreep: false,
+        spawnCreep: recoveredSpawnCreep,
+      }),
+      memory,
+    });
+
+    expect(recoveredSpawnCreep).toHaveBeenCalledTimes(1);
+    expect(recovered.spawn.execution).toEqual([
+      expect.objectContaining({ reason: "scheduled", status: "scheduled", returnCode: 0 }),
+    ]);
+  });
+
   it("replays zero-creep recovery through harvest and positive spawn delivery", () => {
     const memory = {} as Memory;
     const world = economyGame();
