@@ -13,9 +13,11 @@ const definition = {
 };
 
 describe("private-server fixture mod", () => {
-  it("inserts one real invader through the processor bulk and schedules one runtime reset", () => {
-    const events = new Map();
-    const config = { engine: { on: (name, handler) => events.set(name, handler) } };
+  it("carries reset scheduling from processor to runner through a shared receipt", async () => {
+    const processorEvents = new Map();
+    const runnerEvents = new Map();
+    const processor = { engine: { on: (name, handler) => processorEvents.set(name, handler) } };
+    const runner = { engine: { on: (name, handler) => runnerEvents.set(name, handler) } };
     const receipts = new Map();
     const storage = {
       env: {
@@ -28,31 +30,36 @@ describe("private-server fixture mod", () => {
       },
     };
     const published = [];
-    fixture(config, fixture.validateDefinition(definition), storage);
+    fixture(processor, fixture.validateDefinition(definition), storage);
+    fixture(runner, fixture.validateDefinition(definition), storage);
     const inserted = [];
     const objects = [
       { type: "controller", user: "controlled-user" },
       { type: "creep", user: "controlled-user", x: 20, y: 20 },
     ];
-    events.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 7, {
+    processorEvents.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 7, {
       insert: (value) => inserted.push(value),
     });
-    events.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 7, {
+    processorEvents.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 7, {
       insert: (value) => inserted.push(value),
     });
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).toMatchObject({ type: "creep", user: "2", x: 25, y: 25, room: "W1N1" });
     expect(inserted[0].body).toHaveLength(10);
-    events.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 9, {
+    await processorEvents.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 9, {
       insert: () => undefined,
     });
-    events.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 9, {
+    await processorEvents.get("processRoom")("W1N1", {}, objects, "0".repeat(2500), 9, {
       insert: () => undefined,
     });
     expect(published).toEqual([["runtimeRestart", "myrmex-fixture"]]);
     const sandbox = {};
-    events.get("playerSandbox")(sandbox, "controlled-user");
+    await runnerEvents.get("playerSandbox")(sandbox, "controlled-user");
     expect(sandbox.__myrmexFixtureGeneration).toBe("hostile-reset-v1");
+    expect(JSON.parse(receipts.get("myrmexFixture:hostile-reset-v1:reset"))).toMatchObject({
+      phase: "observed",
+      resetTick: 9,
+    });
   });
 
   it("fails closed for an occupied or invalid hostile cell", () => {

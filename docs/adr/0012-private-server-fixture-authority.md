@@ -21,9 +21,10 @@ route, credential, arbitrary path, arbitrary JavaScript, or database query.
 At the pinned `screeps@4.3.0` / `@screeps/driver@5.3.0` boundary, the module uses `processRoom` and
 the engine bulk writer to schedule a user `"2"` invader. The normal engine invader processor
 supplies its movement and attacks on the following tick. A bounded heap reset publishes the pinned
-`RUNTIME_RESTART` key once; the runner's existing driver subscriber clears user VMs. The fixture
-records only a fixed namespaced receipt in server env storage; the runner hashes it through the
-private-server evidence contract and removes it in cleanup.
+`RUNTIME_RESTART` key once; the runner's existing driver subscriber clears user VMs. Processor
+scheduling and runner observation communicate only through separate fixed namespaced server-env
+receipts, never module-local state. The runner hashes those receipts through the private-server
+evidence contract and removes them in cleanup.
 
 ## Consequences
 
