@@ -39,3 +39,7 @@ the [official Screeps server repository](https://github.com/screeps/screeps), th
 [game-loop documentation](https://docs.screeps.com/game-loop.html), and the
 [Screeps Wiki private-server reference](https://wiki.screepspl.us/Private_Servers/). World
 manipulation and exact-bundle scenarios remain owned by issue #144.
+
+The executable matrix and its clean-checkout commands are documented in
+[private-server-scenarios.md](private-server-scenarios.md). Live artifact hashes belong in issue or
+pull-request evidence, never in the repository.

@@ -131,7 +131,9 @@ function validateDefinition(value) {
 function hostileRejection(definition, objects, terrain) {
   if (
     !Array.isArray(objects) ||
-    !objects.some((item) => item.type === "controller" && item.user === definition.target.userId)
+    !objects.some(
+      (item) => item.type === "controller" && `${item.user}` === definition.target.userId,
+    )
   ) {
     return "target-not-owned";
   }
@@ -150,7 +152,7 @@ function hostileRejection(definition, objects, terrain) {
         item.x === definition.target.targetX &&
         item.y === definition.target.targetY &&
         item.type === "creep" &&
-        item.user === definition.target.userId,
+        `${item.user}` === definition.target.userId,
     )
   ) {
     return null;

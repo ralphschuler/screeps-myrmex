@@ -5,10 +5,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   PRIVATE_SERVER_CLI_LIMITS,
+  bootstrapPrivateServerBot,
   privateServerDeploymentCommand,
   privateServerBundleIdentity,
   privateServerCliCommand,
+  preparePrivateServerFixtureTarget,
   runPrivateServerCli,
+  samplePrivateServerBot,
 } from "../lib/private-server-cli.mjs";
 
 const servers = [];
@@ -52,6 +55,48 @@ describe("private-server CLI adapter", () => {
     await expect(
       runPrivateServerCli({ kind: "resume" }, { host: "localhost", port }),
     ).rejects.toThrow("loopback");
+  });
+
+  it("returns only validated transient bootstrap and aggregate sample receipts", async () => {
+    const responses = [
+      `'${JSON.stringify({ room: "W1N1", spawnX: 20, spawnY: 21, userId: "controlled-user" })}'`,
+      `'${JSON.stringify({ hostileCreeps: 1, ownedCreeps: 2, ownedSpawns: 1, tick: 42 })}'`,
+      `'${JSON.stringify({ hostileX: 23, hostileY: 24, room: "W1N1", targetX: 20, targetY: 21, userId: "controlled-user" })}'`,
+    ];
+    const server = createServer((socket) => {
+      socket.write("< \r\n");
+      socket.on("data", () => socket.write(`${responses.shift()}\r\n< \r\n`));
+    });
+    servers.push(server);
+    const port = await listen(server);
+    await expect(bootstrapPrivateServerBot({ port })).resolves.toMatchObject({
+      room: "W1N1",
+      spawnX: 20,
+      userId: "controlled-user",
+      transcript: { hash: expect.stringMatching(/^sha256:/) },
+    });
+    await expect(samplePrivateServerBot({ port })).resolves.toMatchObject({
+      hostileCreeps: 1,
+      ownedCreeps: 2,
+      ownedSpawns: 1,
+      tick: 42,
+    });
+    await expect(preparePrivateServerFixtureTarget({ port })).resolves.toMatchObject({
+      hostileX: 23,
+      targetX: 20,
+      userId: "controlled-user",
+    });
+  });
+
+  it("rejects extra operation fields and terminal CLI errors", async () => {
+    expect(() => privateServerCliCommand({ kind: "pause", extra: true })).toThrow("unknown");
+    const server = createServer((socket) => {
+      socket.write("< \r\n");
+      socket.once("data", () => socket.end("Error: rejected\r\n< \r\n"));
+    });
+    servers.push(server);
+    const port = await listen(server);
+    await expect(runPrivateServerCli({ kind: "pause" }, { port })).rejects.toThrow("failed");
   });
 
   it("rejects an oversized CLI transcript and fingerprints a bounded exact bundle", async () => {

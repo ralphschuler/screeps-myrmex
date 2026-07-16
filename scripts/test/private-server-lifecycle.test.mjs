@@ -14,11 +14,18 @@ describe("private-server lifecycle", () => {
     expect(lifecycleRecord("healthy")).toEqual({ kind: "healthy", runtime: "screeps@4.3.0" });
     expect(parseLifecycleArguments(["start", "--state-directory", ".private/state"])).toEqual({
       command: "start",
+      fixtureDefinition: null,
       stateDirectory: ".private/state",
     });
     expect(parseLifecycleArguments(["provision"])).toEqual({
       command: "provision",
+      fixtureDefinition: null,
       stateDirectory: ".myrmex-private-server",
+    });
+    expect(
+      parseLifecycleArguments(["start", "--fixture-definition", ".state/fixtures/definition.json"]),
+    ).toMatchObject({
+      fixtureDefinition: ".state/fixtures/definition.json",
     });
     expect(() => parseLifecycleArguments(["start", "--password", "secret"])).toThrow(
       "Unsupported private-server option",
