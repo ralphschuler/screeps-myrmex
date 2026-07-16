@@ -117,6 +117,15 @@ export function redactLifecycleError(error) {
     .slice(0, 240);
 }
 
+/** Maps ignored launcher text to a fixed public code without returning any launcher content. */
+export function classifyLauncherFailure(value) {
+  if (typeof value !== "string" || value.length === 0) return "health-timeout";
+  if (/assetdir|\.screepsrc|option .* not defined/i.test(value)) return "launch-configuration";
+  if (/steam|authenticat/i.test(value)) return "steam-authentication";
+  if (/EADDRINUSE|address already in use/i.test(value)) return "port-unavailable";
+  return "launcher-exited";
+}
+
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }

@@ -21,6 +21,10 @@ runner, and one processor. Health polling and cleanup are bounded. A non-success
 command; later scenario work must treat that as infrastructure failure rather than gameplay
 evidence.
 
+When a launcher cannot become healthy, the record may include only one fixed reason code:
+`launch-configuration`, `steam-authentication`, `port-unavailable`, `launcher-exited`, or
+`health-timeout`. It never includes launcher text, command arguments, credentials, or state.
+
 `provision` is the clean-checkout path for a headless local server. It requires
 `SCREEPS_STEAM_API_KEY` only in the invoking environment, supplies it to the upstream initializer on
 stdin, then removes the generated `steam_api_key` line from the ignored state configuration. Startup

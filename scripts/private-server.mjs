@@ -4,6 +4,7 @@ import { createConnection } from "node:net";
 import { cwd, env } from "node:process";
 import {
   PRIVATE_SERVER_LIMITS,
+  classifyLauncherFailure,
   clearPid,
   lifecyclePaths,
   lifecycleRecord,
@@ -131,7 +132,18 @@ async function start() {
   const result = await health();
   if (result.kind === "healthy") return lifecycleRecord("started", { pid: child.pid });
   await stop();
-  return lifecycleRecord("startup-timeout", { timeoutMs: PRIVATE_SERVER_LIMITS.startupTimeoutMs });
+  return lifecycleRecord("startup-failed", {
+    reason: classifyLauncherFailure(await readLauncherLog()),
+    timeoutMs: PRIVATE_SERVER_LIMITS.startupTimeoutMs,
+  });
+}
+
+async function readLauncherLog() {
+  try {
+    return await readFile(paths.log, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 async function executeWithInput(command, args, input, commandCwd) {
