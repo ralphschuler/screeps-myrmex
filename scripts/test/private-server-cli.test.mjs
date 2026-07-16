@@ -2,6 +2,7 @@ import { createServer } from "node:net";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   PRIVATE_SERVER_CLI_LIMITS,
@@ -55,18 +56,25 @@ describe("private-server CLI adapter", () => {
     expect(() => privateServerDeploymentCommand("")).toThrow("non-empty");
   });
 
-  it("requests a fresh bounded fixture pause before publishing its sequence", () => {
-    const command = privateServerCliCommand({
-      kind: "pause-fixture",
+  it("prepares and publishes a fresh bounded fixture pause through fixed operations", () => {
+    const prepare = privateServerCliCommand({
+      kind: "prepare-fixture-pause",
+      scenarioId: "hostile-reset-v1",
+    });
+    expect(prepare).toBe(
+      'storage.env.del("myrmexFixture:hostile-reset-v1:quiescent-main").then(()=>storage.env.del("myrmexFixture:hostile-reset-v1:pause-request")).then(()=>Promise.all([storage.env.get("myrmexFixture:hostile-reset-v1:quiescent-main"),storage.env.get("myrmexFixture:hostile-reset-v1:pause-request")])).then(values=>JSON.stringify({prepared:values.every(value=>value==null)}))',
+    );
+    const request = privateServerCliCommand({
+      kind: "request-fixture-pause",
       scenarioId: "hostile-reset-v1",
       sequence: 16,
     });
-    expect(command).toBe(
-      'Promise.all([storage.env.del("myrmexFixture:hostile-reset-v1:quiescent-main"),storage.env.del("myrmexFixture:hostile-reset-v1:pause-request")]).then(()=>system.pauseSimulation()).then(()=>storage.env.set("myrmexFixture:hostile-reset-v1:pause-request","{\\"scenarioId\\":\\"hostile-reset-v1\\",\\"sequence\\":16}")).then(()=>JSON.stringify({paused:true}))',
+    expect(request).toBe(
+      'storage.env.get(storage.env.keys.MAIN_LOOP_PAUSED).then(paused=>{if(+paused!==1)throw new Error(\'simulation is not paused\');return storage.env.set("myrmexFixture:hostile-reset-v1:pause-request","{\\"scenarioId\\":\\"hostile-reset-v1\\",\\"sequence\\":16}")}).then(()=>storage.env.get("myrmexFixture:hostile-reset-v1:pause-request")).then(value=>JSON.stringify({paused:value==="{\\"scenarioId\\":\\"hostile-reset-v1\\",\\"sequence\\":16}"}))',
     );
     expect(() =>
       privateServerCliCommand({
-        kind: "pause-fixture",
+        kind: "request-fixture-pause",
         scenarioId: "hostile-reset-v1",
         sequence: 1,
       }),
@@ -74,14 +82,18 @@ describe("private-server CLI adapter", () => {
     for (const sequence of [0, 17, 1.5]) {
       expect(() =>
         privateServerCliCommand({
-          kind: "pause-fixture",
+          kind: "request-fixture-pause",
           scenarioId: "hostile-reset-v1",
           sequence,
         }),
       ).toThrow("bounded");
     }
     expect(() =>
-      privateServerCliCommand({ kind: "pause-fixture", scenarioId: "../escape", sequence: 1 }),
+      privateServerCliCommand({
+        kind: "request-fixture-pause",
+        scenarioId: "../escape",
+        sequence: 1,
+      }),
     ).toThrow("invalid");
   });
 
@@ -107,6 +119,8 @@ describe("private-server CLI adapter", () => {
       `'${JSON.stringify({ hostileCreeps: 1, ownedCreeps: 2, ownedSpawns: 1, tick: 42 })}'`,
       `'${JSON.stringify({ hostileX: 23, hostileY: 24, room: "W1N1", targetX: 20, targetY: 21, userId: "controlled-user" })}'`,
       `'${JSON.stringify({ botException: "injected", processor: "ready", runner: "ready" })}'`,
+      `'${JSON.stringify({ prepared: true })}'`,
+      "'OK'",
       `'${JSON.stringify({ paused: true })}'`,
       `'${JSON.stringify({ quiescent: "ready" })}'`,
       `'${JSON.stringify({ cleared: true })}'`,
@@ -150,6 +164,132 @@ describe("private-server CLI adapter", () => {
     });
   });
 
+  it("classifies each independently acknowledged fixture pause boundary", async () => {
+    const cases = [
+      {
+        code: "cli-pause-fixture-clear-failed",
+        responses: ["Error: rejected"],
+      },
+      {
+        code: "cli-pause-fixture-clear-failed",
+        responses: [`'${JSON.stringify({ prepared: false })}'`],
+      },
+      {
+        code: "cli-pause-failed",
+        responses: [`'${JSON.stringify({ prepared: true })}'`, "Error: rejected"],
+      },
+      {
+        code: "cli-pause-fixture-request-failed",
+        responses: [`'${JSON.stringify({ prepared: true })}'`, "'OK'", "Error: rejected"],
+      },
+      {
+        code: "cli-pause-fixture-request-failed",
+        responses: [
+          `'${JSON.stringify({ prepared: true })}'`,
+          "'OK'",
+          `'${JSON.stringify({ paused: false })}'`,
+        ],
+      },
+    ];
+    for (const { code, responses } of cases) {
+      const expectedConnections = responses.length;
+      let connections = 0;
+      const server = createServer((socket) => {
+        connections += 1;
+        socket.write("< \r\n");
+        socket.once("data", () => socket.end(`< ${responses.shift()}\r\n`));
+      });
+      servers.push(server);
+      const port = await listen(server);
+      await expect(pausePrivateServerFixture("hostile-reset-v1", 2, { port })).rejects.toThrow(
+        code,
+      );
+      expect(connections).toBe(expectedConnections);
+      expect(responses).toEqual([]);
+    }
+  });
+
+  it("validates the complete pause request before opening a CLI connection", async () => {
+    let connections = 0;
+    await expect(
+      pausePrivateServerFixture("hostile-reset-v1", 0, {
+        connect() {
+          connections += 1;
+          throw new Error("unexpected connection");
+        },
+      }),
+    ).rejects.toThrow("bounded");
+    expect(connections).toBe(0);
+  });
+
+  it("serializes fixture env mutations across pause preparation and cleanup", async () => {
+    const values = new Map([
+      ["mainLoopPaused", "0"],
+      ["myrmexFixture:hostile-reset-v1:quiescent-main", "old"],
+      ["myrmexFixture:hostile-reset-v1:pause-request", "old"],
+      ["myrmexFixture:hostile-reset-v1:ready-processor", "old"],
+      ["myrmexFixture:hostile-reset-v1:ready-runner", "old"],
+      ["myrmexFixture:hostile-reset-v1:hostile", "old"],
+      ["myrmexFixture:hostile-reset-v1:reset", "old"],
+      ["myrmexFixture:hostile-reset-v1:bot-exception", "old"],
+    ]);
+    let mutationActive = false;
+    const mutate = async (operation) => {
+      if (mutationActive) throw new Error("overlapping env mutation");
+      mutationActive = true;
+      await Promise.resolve();
+      operation();
+      mutationActive = false;
+    };
+    const storage = {
+      env: {
+        keys: { MAIN_LOOP_PAUSED: "mainLoopPaused" },
+        async del(key) {
+          await mutate(() => values.delete(key));
+        },
+        async get(key) {
+          return values.get(key) ?? null;
+        },
+        async set(key, value) {
+          await mutate(() => values.set(key, value));
+        },
+      },
+    };
+    const system = {
+      pauseSimulation() {
+        return storage.env.set(storage.env.keys.MAIN_LOOP_PAUSED, "1").then(() => "OK");
+      },
+    };
+    const context = { Error, JSON, Promise, storage, system };
+
+    await expect(
+      runInNewContext(
+        privateServerCliCommand({
+          kind: "prepare-fixture-pause",
+          scenarioId: "hostile-reset-v1",
+        }),
+        context,
+      ),
+    ).resolves.toBe(JSON.stringify({ prepared: true }));
+    await runInNewContext(privateServerCliCommand({ kind: "pause" }), context);
+    await expect(
+      runInNewContext(
+        privateServerCliCommand({
+          kind: "request-fixture-pause",
+          scenarioId: "hostile-reset-v1",
+          sequence: 2,
+        }),
+        context,
+      ),
+    ).resolves.toBe(JSON.stringify({ paused: true }));
+    await expect(
+      runInNewContext(
+        privateServerCliCommand({ kind: "clear-fixture", scenarioId: "hostile-reset-v1" }),
+        context,
+      ),
+    ).resolves.toBe(JSON.stringify({ cleared: true }));
+  });
+
   it("rejects extra operation fields and terminal CLI errors", async () => {
     expect(() => privateServerCliCommand({ kind: "pause", extra: true })).toThrow("unknown");
     expect(() =>
@@ -164,6 +304,10 @@ describe("private-server CLI adapter", () => {
     expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:bot-exception");
     expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:pause-request");
     expect(clearCommand).toContain("myrmexFixture:hostile-reset-v1:quiescent-main");
+    expect(clearCommand).not.toContain("map(key=>storage.env.del(key))");
+    expect(clearCommand.indexOf("ready-processor")).toBeLessThan(
+      clearCommand.indexOf("ready-runner"),
+    );
     const server = createServer((socket) => {
       socket.write("< \r\n");
       socket.once("data", () => socket.end("< Error: rejected\r\n"));

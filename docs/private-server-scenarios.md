@@ -49,11 +49,15 @@ mapping immediately before spawn and returns `fixture-module-state-invalid` for 
 redirected mapping.
 
 `system.pauseSimulation()` sets the paused flag but does not prove that an already-started main-loop
-pass has drained. Before reset, publication, or cleanup, the runner writes a fresh sequenced pause
-request and waits at most 30 seconds for the fixed mod in the main process to acknowledge an idle
-paused `mainLoopStage` boundary. The mod acknowledges only a start-to-finish pass with no
-intervening work while the pinned paused flag is set. A rejection or missing acknowledgement fails
-closed; reset requires another barrier because it clears that paused flag.
+pass has drained. Before reset, publication, or cleanup, the runner uses three independently
+acknowledged fixed CLI operations: it serially deletes and verifies the old request and
+acknowledgement, pauses the simulation, then verifies the paused flag while publishing a fresh
+sequenced request. Splitting those writes avoids overlapping env mutations, isolates each
+acknowledgement, and gives each failed boundary its own fixed operation code. The runner then waits
+at most 30 seconds for the fixed mod in the main process to acknowledge an idle paused
+`mainLoopStage` boundary. The mod acknowledges only a start-to-finish pass with no intervening work
+while the pinned paused flag is set. A rejection or missing acknowledgement fails closed; reset
+requires another barrier because it clears that paused flag.
 
 After controlled-bot bootstrap and target selection, the runner waits for that publication barrier,
 then deletes and verifies exactly seven fixed receipts for the selected scenario: `pause-request`,
@@ -74,10 +78,10 @@ Every terminal path attempts cleanup. While the server is available, the runner 
 for a fresh idle paused main-loop boundary. It then removes the generated fixture publication—the
 definition, pending file, and `mods.json`—before deleting and verifying the same seven fixed
 receipts. This ordering prevents a later engine observation from republishing an action receipt
-after receipt clearance. The runner then attempts the bounded process-group stop even when an
-earlier cleanup step failed. Any missing acknowledgement, symlink rejection, file-removal failure,
-receipt clearance failure, or shutdown timeout makes cleanup incomplete and prevents successful
-evidence.
+after receipt clearance. Receipt deletions are issued serially and then read back together. The
+runner then attempts the bounded process-group stop even when an earlier cleanup step failed. Any
+missing acknowledgement, symlink rejection, file-removal failure, receipt clearance failure, or
+shutdown timeout makes cleanup incomplete and prevents successful evidence.
 
 ## Matrix and evidence
 

@@ -56,12 +56,14 @@ bootstrap guarantee.
 
 `system.pauseSimulation()` changes the simulation flag but is not itself a quiescence barrier: work
 from an already-started main-loop pass may still be in flight. For every reset, fixture publication,
-and fixture cleanup transition, the runner submits a bounded, sequenced pause request and waits for
-the fixed fixture mod in the main process to acknowledge a paused, idle `mainLoopStage` boundary.
-The acknowledgement is valid only when the pinned paused flag is set and the observed main-loop pass
-went directly from start to finish without work. `system.resetAllData()` restores
-`mainLoopPaused=0`, so the runner establishes a fresh acknowledged pause boundary immediately after
-reset and before controlled-bot bootstrap or deployment.
+and fixture cleanup transition, the runner serially removes and verifies the previous pause keys,
+invokes the fixed pause command, and verifies the paused flag while publishing the next bounded,
+sequenced request. Each step is acknowledged separately and same-store mutations do not overlap. The
+runner then waits for the fixed fixture mod in the main process to acknowledge a paused, idle
+`mainLoopStage` boundary. The acknowledgement is valid only when the pinned paused flag is set and
+the observed main-loop pass went directly from start to finish without work. `system.resetAllData()`
+restores `mainLoopPaused=0`, so the runner establishes a fresh acknowledged pause boundary
+immediately after reset and before controlled-bot bootstrap or deployment.
 
 The official standalone server documents the console launcher, its separate CLI port, and the
 multiple-process runtime. It requires a supported Node release and may require local authentication

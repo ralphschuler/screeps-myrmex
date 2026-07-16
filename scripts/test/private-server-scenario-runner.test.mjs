@@ -165,7 +165,10 @@ describe("private-server scenario runner", () => {
   });
 
   it.each([
+    ["CliOperationFailure", "cli-pause-failed", "cli-operation-failed"],
+    ["CliOperationFailure", "cli-pause-fixture-clear-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-pause-fixture-failed", "cli-operation-failed"],
+    ["CliOperationFailure", "cli-pause-fixture-request-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-sample-fixture-failed", "cli-operation-failed"],
     ["CliOperationFailure", "cli-sample-fixture-quiescence-failed", "cli-operation-failed"],
     ["StartupFailure", "fixture-definition-rejected", "startup-failed"],
