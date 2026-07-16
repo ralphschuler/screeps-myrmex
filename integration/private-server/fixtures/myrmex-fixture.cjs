@@ -1,7 +1,6 @@
 const fs = require("node:fs");
 const { Buffer } = require("node:buffer");
 const { env } = require("node:process");
-const common = require("@screeps/common");
 
 const BODY = Object.freeze([
   "tough",
@@ -29,7 +28,7 @@ module.exports.validateDefinition = validateDefinition;
 function attachFixture(
   config,
   definition = readDefinition(env.MYRMEX_PRIVATE_SERVER_FIXTURE),
-  storage = common.storage,
+  storage = loadStorage(),
 ) {
   if (!config.engine || !definition) return;
   let hostileInserted = false;
@@ -110,7 +109,7 @@ function hostileRejection(definition, objects, terrain) {
   }
   if (
     typeof terrain !== "string" ||
-    common.checkTerrain(terrain, definition.hostile.x, definition.hostile.y, 1)
+    (parseInt(terrain.charAt(definition.hostile.y * 50 + definition.hostile.x), 10) & 1) > 0
   ) {
     return "hostile-cell-invalid";
   }
@@ -185,4 +184,8 @@ function cell(x, y) {
 
 function tick(value) {
   return Number.isSafeInteger(value) && value >= 1 && value <= 10_000;
+}
+
+function loadStorage() {
+  return require("@screeps/common").storage;
 }
