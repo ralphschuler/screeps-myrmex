@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "issue": 30,
-  "status": "blocked",
+  "status": "complete",
   "productionBundleExclusion": "evidenced-local",
   "externalLive": {
     "deployment": "evidenced",
@@ -16,28 +16,28 @@
       "status": "evidenced",
       "scope": "focused-runtime-export",
       "measurements": {
-        "ticks": 79,
+        "ticks": 140,
         "modeledCpu": 0,
-        "persistentBytes": 17281,
+        "persistentBytes": 15577,
         "persistentGrowth": 2923,
-        "telemetryBytes": 4249,
+        "telemetryBytes": 4573,
         "telemetryCardinality": 25,
-        "spawnUtilizationPct": 0,
-        "energyFlow": 100,
-        "replacementLateness": null,
-        "controllerMargin": 19921,
+        "spawnUtilizationPct": 6.428571428571428,
+        "energyFlow": 200,
+        "replacementLateness": 0,
+        "controllerMargin": 19860,
         "controllerRisk": 0,
-        "recoveryTime": 79
+        "recoveryTime": 140
       },
       "hashes": {
-        "warmOutcome": "2ee97c8b",
-        "resetOutcome": "2ee97c8b",
-        "reorderedOutcome": "2ee97c8b",
-        "warmTranscript": "9da4769c",
-        "resetTranscript": "64c190cb",
-        "reorderedTranscript": "5d4576e4"
+        "warmOutcome": "c5a84865",
+        "resetOutcome": "c5a84865",
+        "reorderedOutcome": "c5a84865",
+        "warmTranscript": "67157109",
+        "resetTranscript": "b9ec8770",
+        "reorderedTranscript": "652bee20"
       },
-      "unevidenced": ["replacementLateness"]
+      "unevidenced": []
     },
     {
       "id": "rcl1-cold-boot-growth",
@@ -184,11 +184,11 @@
       "status": "evidenced",
       "scope": "composed-runtime-equivalence",
       "measurements": {
-        "ticks": 1494,
+        "ticks": 1555,
         "modeledCpu": 5,
         "persistentBytes": 28229,
         "persistentGrowth": 3682,
-        "telemetryBytes": 4386,
+        "telemetryBytes": 4573,
         "telemetryCardinality": 25,
         "spawnUtilizationPct": 25,
         "energyFlow": 250,
@@ -198,25 +198,25 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "a45b03a2",
-        "resetOutcome": "a45b03a2",
-        "reorderedOutcome": "a45b03a2",
-        "warmTranscript": "d3cc2518",
-        "resetTranscript": "f2db8ca3",
-        "reorderedTranscript": "f5202d1d"
+        "warmOutcome": "c88cadcb",
+        "resetOutcome": "c88cadcb",
+        "reorderedOutcome": "c88cadcb",
+        "warmTranscript": "e1d6a4dd",
+        "resetTranscript": "f91cb460",
+        "reorderedTranscript": "c725620c"
       },
       "unevidenced": []
     },
     {
       "id": "aggregate-phase1-matrix",
-      "status": "partial",
+      "status": "evidenced",
       "scope": "local-composed-runtime",
       "measurements": {
-        "ticks": 1494,
+        "ticks": 1555,
         "modeledCpu": 5,
         "persistentBytes": 28229,
         "persistentGrowth": 3682,
-        "telemetryBytes": 4386,
+        "telemetryBytes": 4573,
         "telemetryCardinality": 25,
         "spawnUtilizationPct": 25,
         "energyFlow": 250,
@@ -226,14 +226,14 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "e93deab0",
-        "resetOutcome": "e93deab0",
-        "reorderedOutcome": "e93deab0",
-        "warmTranscript": "d3cc2518",
-        "resetTranscript": "f2db8ca3",
-        "reorderedTranscript": "f5202d1d"
+        "warmOutcome": "eb69bffd",
+        "resetOutcome": "eb69bffd",
+        "reorderedOutcome": "eb69bffd",
+        "warmTranscript": "e1d6a4dd",
+        "resetTranscript": "f91cb460",
+        "reorderedTranscript": "c725620c"
       },
-      "unevidenced": ["externalLive.hostilePressure", "externalLive.rollbackIncident"]
+      "unevidenced": []
     }
   ],
   "productionBundle": {

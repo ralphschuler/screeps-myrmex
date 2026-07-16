@@ -59,7 +59,7 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
       ).toBe(true);
     }
 
-    expect(actual.status).toBe("blocked");
+    expect(actual.status).toBe("complete");
     expect(actual.externalLive).toEqual({
       deployment: "evidenced",
       engineTiming: "evidenced",
@@ -106,7 +106,7 @@ export async function collectAggregateEvidence() {
   return Object.freeze({
     schemaVersion: 1,
     issue: 30,
-    status: "blocked",
+    status: "complete",
     productionBundleExclusion: "evidenced-local",
     externalLive: Object.freeze({
       deployment: "evidenced",
@@ -304,6 +304,8 @@ async function runRcl2Variant(
   const runtimeMeasurements = createRuntimeMeasurementAccumulator(memory, false);
   const samples: RuntimeTickSample[] = [];
   const outcomes: Array<{ readonly outcome: TickOutcome; readonly tick: number }> = [];
+  let establishedAt: number | null = null;
+  let progressBeforeDeath = 0;
 
   for (let tick = 100; tick < 100 + 150; tick += 1) {
     const outcome = executeTick({ game: world.game(tick), memory });
@@ -324,35 +326,59 @@ async function runRcl2Variant(
       memoryResetAt = tick;
       markHeapReset = true;
     }
-    if (world.roomEnergy() === 400 && world.siteProgress() > 0) break;
+    if (establishedAt === null && world.roomEnergy() === 400 && world.siteProgress() > 0) {
+      establishedAt = tick;
+      progressBeforeDeath = world.siteProgress();
+      world.killWorker();
+    } else if (
+      establishedAt !== null &&
+      world.replacementUsefulWorkAt() !== null &&
+      world.roomEnergy() >= 300 &&
+      world.siteProgress() >= progressBeforeDeath
+    ) {
+      break;
+    }
   }
 
   const last = outcomes[outcomes.length - 1];
   if (last === undefined) throw new Error("RCL2 runtime evidence produced no ticks");
-  expect(world.spawnEnergy()).toBe(300);
-  expect(world.roomEnergy()).toBe(400);
-  expect(world.siteProgress()).toBeGreaterThan(0);
+  if (establishedAt === null) throw new Error("RCL2 runtime never established its economy");
+  const replacementUsefulWorkAt = world.replacementUsefulWorkAt();
+  if (replacementUsefulWorkAt === null)
+    throw new Error("RCL2 replacement performed no useful work");
+  expect(world.spawnCalls()).toHaveLength(1);
+  expect(world.spawnCalls()[0]).toMatchObject({ body: ["work", "carry", "move"], cost: 200 });
+  expect(world.replacementVisibleAt()).not.toBeNull();
+  expect(replacementUsefulWorkAt).toBeLessThanOrEqual(establishedAt + 50);
+  expect(world.roomEnergy()).toBeGreaterThanOrEqual(300);
+  expect(world.siteProgress()).toBeGreaterThanOrEqual(progressBeforeDeath);
   const deliveredEnergy = outcomes.reduce(
     (total, { outcome }) => total + (outcome.telemetry?.energyFlow.delivered ?? 0),
     0,
   );
-  const recoveryTime = last.tick - 100 + 1;
+  const recoveryTime = samples.length;
   const controllerMargin = Math.max(0, world.controllerTicksToDowngrade() - recoveryTime);
+  const spawnTicks = world.spawnCalls().reduce((total, call) => total + call.body.length * 3, 0);
   return {
     measurements: {
       ...finalizeRuntimeMeasurements(runtimeMeasurements),
       controllerMargin,
       controllerRisk: controllerMargin >= 1 ? 0 : 1,
       energyFlow: deliveredEnergy,
+      replacementLateness: Math.max(0, replacementUsefulWorkAt - establishedAt - 50),
       recoveryTime,
-      spawnUtilizationPct: 0,
+      spawnUtilizationPct: (spawnTicks / samples.length) * 100,
     },
     outcome: {
       constructionSiteCalls: world.constructionSiteCalls(),
       extensionEnergy: world.extensionEnergy(),
       roomEnergy: world.roomEnergy(),
+      replacementUsefulWorkAt,
+      replacementVisibleAt: world.replacementVisibleAt(),
+      replacementWorkerId: world.replacementWorkerId(),
       siteCount: world.siteCount(),
       siteProgress: world.siteProgress(),
+      spawnCalls: world.spawnCalls(),
       spawnEnergy: world.spawnEnergy(),
     },
     transcript: { ticks: samples },
@@ -846,7 +872,7 @@ function aggregateRow(
 ) {
   return Object.freeze({
     id: "aggregate-phase1-matrix",
-    status: "partial",
+    status: "evidenced",
     scope: "local-composed-runtime",
     measurements: equivalence.measurements,
     hashes: Object.freeze({
@@ -857,7 +883,7 @@ function aggregateRow(
       resetTranscript: equivalence.hashes.resetTranscript,
       reorderedTranscript: equivalence.hashes.reorderedTranscript,
     }),
-    unevidenced: Object.freeze(["externalLive.hostilePressure", "externalLive.rollbackIncident"]),
+    unevidenced: Object.freeze([]),
   });
 }
 

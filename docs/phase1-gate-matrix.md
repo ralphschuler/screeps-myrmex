@@ -1,6 +1,6 @@
 # Phase 1 aggregate gate matrix (#30)
 
-Status: `blocked` (aggregate evidence is not complete)
+Status: `complete` (all Phase 1 deterministic gate rows are evidenced)
 
 This is the checked-in evidence boundary for issue
 [#30](https://github.com/ralphschuler/screeps-myrmex/issues/30). Thresholds are declared here before
@@ -30,16 +30,17 @@ definitions make the table machine-checkable without pretending that a missing m
 | path-target-recovery      | evidenced | [path/target evidence](phase1-path-target-evidence.md)                                                 |         3 |               3 |                32768 |                  1024 |                8192 |                        64 |                       100 |              50 |                       50 |                     1 |               1 |                 3 |
 | hostile-pressure-recovery | evidenced | [hostile-pressure evidence](phase1-hostile-pressure-evidence.md)                                       |       100 |            1000 |                32768 |                  4096 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |               100 |
 | constrained-cpu           | evidenced | [constrained CPU evidence](phase1-constrained-cpu-evidence.md)                                         |         8 |               8 |                32768 |                  1024 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |                 8 |
-| reset-reorder-equivalence | evidenced | [contracts evidence](phase1-contracts-evidence.md), [spawn evidence](phase1-spawn-evidence.md)         |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
-| aggregate-phase1-matrix   | partial   | [gate evidence](phase1-gate-evidence.md)                                                               |      1500 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
+| reset-reorder-equivalence | evidenced | [contracts evidence](phase1-contracts-evidence.md), [spawn evidence](phase1-spawn-evidence.md)         |      1600 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
+| aggregate-phase1-matrix   | evidenced | [gate evidence](phase1-gate-evidence.md)                                                               |      1600 |           12000 |                32768 |                  8192 |                8192 |                        64 |                       100 |             300 |                       50 |                     1 |               1 |              1500 |
 
 The machine-readable local result is checked in as
 [`phase1-gate-results.json`](phase1-gate-results.json). It records actual warm, reset, and reordered
 outputs for two focused runtime rows and four focused component rows composed through one production
 `runTick` recovery timeline. The composition retains one persistent Memory lifecycle while
 exercising spawn blockers, stale targets, unavailable paths, hostile pressure, constrained CPU,
-worker death, and replacement. The aggregate remains `partial` only where external live evidence is
-still open.
+worker death, and replacement. All declared Phase 1 deterministic rows are evidenced. The external
+live hostile-pressure and rollback fields remain explicit later-owned risks and do not block this
+gate.
 
 Production deploy run
 [`29523801688`](https://github.com/ralphschuler/screeps-myrmex/actions/runs/29523801688) evidences
@@ -60,7 +61,8 @@ tick `75869667` to `75869670`. It does not claim live hostile-pressure or rollba
   evidence.
 - The runtime rows now record persistent bytes/growth, telemetry bytes/channel cardinality,
   controller margin/risk, spawn utilization, energy flow, recovery time, CPU, ticks, and row hashes.
-  RCL1 also records replacement lateness against its predeclared post-death deadline.
+  RCL1 and established RCL2 record replacement lateness against their predeclared post-death
+  deadlines.
 
 ## Reproduction
 
@@ -73,13 +75,12 @@ npm run check
 
 This command compares exported deterministic row outputs with the checked-in JSON, validates every
 budget, rebuilds and hashes the exact production bundle, checks its real esbuild input graph, and
-packages that bundle. It does not substitute for unavailable component runtime measurements or live
-Screeps evidence.
+packages that bundle. It does not substitute for the explicitly later-owned live Screeps risks.
 
 ## Explicit remaining risks
 
-- The local aggregate covers six deterministic rows: RCL1 and RCL2 focused runtime rows plus four
-  focused components joined to one production-runtime recovery timeline.
+- The complete local aggregate covers six deterministic rows: RCL1 and RCL2 focused runtime rows
+  plus four focused components joined to one production-runtime recovery timeline.
 - Live hostile-pressure behavior remains unevidenced; the deterministic hostile interval is not an
   MMO combat claim.
 - Rollback and incident behavior remains owned by

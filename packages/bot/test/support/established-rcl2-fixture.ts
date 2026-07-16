@@ -10,16 +10,34 @@ export interface EstablishedRcl2WorldOptions {
   readonly reverseCollections?: boolean;
 }
 
+export interface EstablishedRcl2SpawnCall {
+  readonly body: readonly BodyPartConstant[];
+  readonly cost: number;
+  readonly name: string;
+  readonly tick: number;
+}
+
 export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) {
   let tick = START_TICK - 1;
-  const spawnEnergy = 300;
+  let spawnEnergy = 300;
   const extensionEnergy = new Map([
     ["extension-a", 0],
     ["extension-b", 0],
   ]);
-  let siteProgress = 0;
+  let siteProgress = 5;
   const constructionSiteCalls = 0;
   const sourceEnergy = { value: 3_000 };
+  const spawnCalls: EstablishedRcl2SpawnCall[] = [];
+  let worker: Creep | null = null;
+  let workerEnergy = 50;
+  let replacementVisibleAt: number | null = null;
+  let replacementUsefulWorkAt: number | null = null;
+  let replacementWorkerId: string | null = null;
+  let pendingSpawn: {
+    readonly body: readonly BodyPartConstant[];
+    readonly completeAt: number;
+    readonly name: string;
+  } | null = null;
   const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
   const site = {
     id: "road-site",
@@ -53,11 +71,34 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     owner: { username: "Myrmex" },
     pos: position(10, 10),
     room: { name: "W1N1" },
-    spawning: null,
+    get spawning() {
+      return pendingSpawn === null
+        ? null
+        : {
+            name: pendingSpawn.name,
+            needTime: pendingSpawn.body.length * 3,
+            remainingTime: Math.max(1, pendingSpawn.completeAt - tick),
+          };
+    },
+    spawnCreep: (body: BodyPartConstant[], name: string) => {
+      if (pendingSpawn !== null) return -4;
+      if (worker?.name === name) return -3;
+      const cost = body.reduce((total, part) => total + bodyPartCost(part), 0);
+      if (room.energyAvailable < cost) return -6;
+      let remaining = cost;
+      for (const [id, energy] of extensionEnergy) {
+        const used = Math.min(energy, remaining);
+        extensionEnergy.set(id, energy - used);
+        remaining -= used;
+      }
+      spawnEnergy -= remaining;
+      spawnCalls.push({ body: [...body], cost, name, tick });
+      pendingSpawn = { body: [...body], completeAt: tick + body.length * 3, name };
+      return 0;
+    },
     store: storeFor(() => spawnEnergy, 300),
     structureType: "spawn",
   } as unknown as StructureSpawn;
-  const workerEnergy = { value: 50 };
   const source = {
     energyCapacity: 3_000,
     get energy() {
@@ -67,60 +108,78 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     pos: position(11, 10),
     ticksToRegeneration: 300,
   } as unknown as Source;
-  const worker = {
-    body: [
-      { hits: 100, type: "work" },
-      { hits: 100, type: "carry" },
-      { hits: 100, type: "carry" },
-      { hits: 100, type: "move" },
-    ],
-    get fatigue() {
-      return 0;
-    },
-    hits: 300,
-    hitsMax: 300,
-    id: "worker-a",
-    my: true,
-    name: "worker-a",
-    owner: { username: "Myrmex" },
-    pos: position(11, 10),
-    spawning: false,
-    store: storeFor(() => workerEnergy.value, 100),
-    ticksToLive: 1_000,
-    build: (target: ConstructionSite) => {
-      if (target.id !== site.id) return -7;
-      if (workerEnergy.value < 5) return -6;
-      workerEnergy.value -= 5;
-      siteProgress += 5;
-      return 0;
-    },
-    repair: () => -7,
-    harvest: (target: Source) => {
-      if (target.id !== source.id || workerEnergy.value >= 100 || sourceEnergy.value <= 0)
-        return -6;
-      const amount = Math.min(2, 100 - workerEnergy.value, sourceEnergy.value);
-      workerEnergy.value += amount;
-      sourceEnergy.value -= amount;
-      return 0;
-    },
-    transfer: (target: StructureExtension, resource: ResourceConstant, amount?: number) => {
-      if (resource !== "energy" || !extensionEnergy.has(String(target.id))) return -6;
-      const id = String(target.id);
-      const amountToTransfer = Math.min(
-        amount ?? workerEnergy.value,
-        workerEnergy.value,
-        50 - (extensionEnergy.get(id) ?? 0),
-      );
-      if (amountToTransfer <= 0) return -8;
-      workerEnergy.value -= amountToTransfer;
-      extensionEnergy.set(id, (extensionEnergy.get(id) ?? 0) + amountToTransfer);
-      return 0;
-    },
-    pickup: () => -7,
-    withdraw: () => -7,
-    upgradeController: () => -7,
-    move: () => -7,
-  } as unknown as Creep;
+
+  const markReplacementWork = (result: number) => {
+    if (result === 0 && replacementWorkerId !== null && worker?.id === replacementWorkerId) {
+      replacementUsefulWorkAt ??= tick;
+    }
+    return result;
+  };
+  const createWorker = (
+    id: string,
+    name: string,
+    body: readonly BodyPartConstant[],
+    initialEnergy: number,
+  ): Creep => {
+    workerEnergy = initialEnergy;
+    const capacity = body.filter((part) => part === "carry").length * 50;
+    return {
+      body: body.map((type) => ({ hits: 100, type })),
+      get fatigue() {
+        return 0;
+      },
+      hits: body.length * 100,
+      hitsMax: body.length * 100,
+      id,
+      my: true,
+      name,
+      owner: { username: "Myrmex" },
+      pos: position(11, 10),
+      spawning: false,
+      store: storeFor(() => workerEnergy, capacity),
+      ticksToLive: 1_000,
+      build: (target: ConstructionSite) => {
+        if (target.id !== site.id) return -7;
+        if (workerEnergy < 5) return -6;
+        workerEnergy -= 5;
+        siteProgress += 5;
+        return markReplacementWork(0);
+      },
+      repair: () => -7,
+      harvest: (target: Source) => {
+        if (target.id !== source.id || workerEnergy >= capacity || sourceEnergy.value <= 0)
+          return -6;
+        const amount = Math.min(2, capacity - workerEnergy, sourceEnergy.value);
+        workerEnergy += amount;
+        sourceEnergy.value -= amount;
+        return markReplacementWork(0);
+      },
+      transfer: (target: AnyStoreStructure, resource: ResourceConstant, amount?: number) => {
+        if (resource !== "energy") return -6;
+        const targetId = String(target.id);
+        const targetEnergy = targetId === spawn.id ? spawnEnergy : extensionEnergy.get(targetId);
+        const targetCapacity =
+          targetId === spawn.id ? 300 : extensionEnergy.has(targetId) ? 50 : null;
+        if (targetEnergy === undefined || targetCapacity === null) return -6;
+        const amountToTransfer = Math.min(
+          amount ?? workerEnergy,
+          workerEnergy,
+          targetCapacity - targetEnergy,
+        );
+        if (amountToTransfer <= 0) return -8;
+        workerEnergy -= amountToTransfer;
+        if (targetId === spawn.id) spawnEnergy += amountToTransfer;
+        else extensionEnergy.set(targetId, targetEnergy + amountToTransfer);
+        return markReplacementWork(0);
+      },
+      pickup: () => -7,
+      withdraw: () => -7,
+      upgradeController: () => -7,
+      move: () => -7,
+    } as unknown as Creep;
+  };
+  worker = createWorker("worker-a", "worker-a", ["work", "carry", "carry", "move"], 50);
+
   const controller = {
     id: "controller-a",
     level: 2,
@@ -142,7 +201,9 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     energyCapacityAvailable: 400,
     find: (findType: number): unknown[] =>
       findType === FIND_CREEPS_VALUE
-        ? [worker]
+        ? worker === null
+          ? []
+          : [worker]
         : findType === FIND_STRUCTURES_VALUE
           ? options.reverseCollections
             ? [spawn, ...extensions].reverse()
@@ -163,11 +224,18 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     game: (nextTick: number): RuntimeGame => {
       if (nextTick <= tick) throw new Error("ticks must advance monotonically");
       tick = nextTick;
+      if (pendingSpawn !== null && nextTick >= pendingSpawn.completeAt) {
+        replacementWorkerId = `replacement-${pendingSpawn.name}`;
+        worker = createWorker(replacementWorkerId, pendingSpawn.name, pendingSpawn.body, 0);
+        replacementVisibleAt = nextTick;
+        pendingSpawn = null;
+      }
+      const creeps = worker === null ? {} : { [worker.name]: worker };
       return {
         cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
-        creeps: { "worker-a": worker },
+        creeps,
         getObjectById: (id: string) =>
-          id === "worker-a"
+          id === worker?.id
             ? worker
             : id === "spawn-a"
               ? spawn
@@ -181,11 +249,32 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
         time: nextTick,
       };
     },
+    killWorker: () => {
+      worker = null;
+      workerEnergy = 0;
+    },
+    replacementUsefulWorkAt: () => replacementUsefulWorkAt,
+    replacementVisibleAt: () => replacementVisibleAt,
+    replacementWorkerId: () => replacementWorkerId,
     roomEnergy: () => room.energyAvailable,
     siteCount: () => 1,
     siteProgress: () => siteProgress,
+    spawnCalls: () => [...spawnCalls],
     spawnEnergy: () => spawnEnergy,
   };
+}
+
+function bodyPartCost(part: BodyPartConstant): number {
+  return {
+    attack: 80,
+    carry: 50,
+    claim: 600,
+    heal: 250,
+    move: 50,
+    ranged_attack: 150,
+    tough: 10,
+    work: 100,
+  }[part];
 }
 
 function storeFor(energy: () => number, capacity: number): StoreDefinition {
