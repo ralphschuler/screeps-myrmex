@@ -2,7 +2,11 @@ import type { ColonyPlanningResult } from "../colony";
 import type { ContractReconciliationResult } from "../contracts";
 import type { ArbitrationBatch } from "../execution";
 import type { GrowthCandidate } from "../growth";
-import type { CriticalMaintenanceCandidate } from "../maintenance";
+import {
+  projectMaintenanceTelemetry,
+  type CriticalMaintenanceCandidate,
+  type MaintenanceTelemetryInput,
+} from "../maintenance";
 import type { MovementRuntimeResult } from "../movement";
 import type { SpawnRuntimeResult } from "../spawn";
 import type { JsonObject } from "../state/schema";
@@ -33,7 +37,13 @@ import {
 
 type TickTelemetryBase = Omit<
   TickTelemetry,
-  "activity" | "status" | "recoveryProgress" | "reporterTransitions" | "staticMining" | "logistics"
+  | "activity"
+  | "status"
+  | "recoveryProgress"
+  | "reporterTransitions"
+  | "staticMining"
+  | "logistics"
+  | "maintenanceV2"
 >;
 
 export const TELEMETRY_OWNER_SCHEMA_VERSION = 4 as const;
@@ -58,6 +68,8 @@ export interface TelemetryServiceInput {
   readonly execution: ArbitrationBatch | null;
   readonly growth: readonly GrowthCandidate[];
   readonly maintenance: readonly CriticalMaintenanceCandidate[];
+  /** Settled phase-2 maintenance receipts; omitted while the gate is inactive. */
+  readonly maintenanceTelemetry?: MaintenanceTelemetryInput;
   readonly movement: MovementRuntimeResult;
   readonly snapshot: WorldSnapshot;
   readonly spawn: SpawnRuntimeResult;
@@ -89,6 +101,7 @@ export class TelemetryService {
     const owner = readOwnerSafely(ownerValue, input.base.telemetryPolicy.maximumHistoryEntries);
     const staticMining = safelyReduceStaticMining(owner.staticMining, input);
     const logistics = safelyReduceLogistics(owner.logistics, input);
+    const maintenanceV2 = projectMaintenanceTelemetry(input.maintenanceTelemetry);
     const detailLimit = input.base.telemetryPolicy.maximumDetailRecords;
     const allDetails = collectDetails(input);
     const details = allDetails
@@ -101,6 +114,7 @@ export class TelemetryService {
         base: telemetryHashView(input.base),
         details,
         logistics: logistics.telemetry,
+        maintenanceV2,
         staticMining: staticMining.telemetry,
       }),
       details: Object.freeze(details),
@@ -110,6 +124,7 @@ export class TelemetryService {
       ...input.base,
       activity: activity(input),
       logistics: logistics.telemetry,
+      maintenanceV2,
       staticMining: staticMining.telemetry,
       status,
     };

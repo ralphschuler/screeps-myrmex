@@ -7,6 +7,7 @@ import type {
   OwnedTowerSnapshot,
   WorldSnapshot,
 } from "../world/snapshot";
+import type { MaintenanceProposal } from "../maintenance";
 
 export type DefenseIntentKind = "tower.attack" | "tower.heal" | "tower.repair" | "safe-mode";
 export type DefenseIntent = IntentEnvelope<DefenseIntentKind>;
@@ -98,6 +99,51 @@ export function planDefense(
     }
   }
   return Object.freeze(intents.sort((left, right) => left.id.localeCompare(right.id)));
+}
+
+/** Defense-owned adapter for funded routine repair; safety intents retain higher priority. */
+export function planRoutineTowerMaintenance(
+  snapshot: WorldSnapshot,
+  config: RuntimeConfig,
+  candidates: readonly MaintenanceProposal[],
+): readonly DefenseIntent[] {
+  const intents: DefenseIntent[] = [];
+  const revision = `${snapshot.observation.shard}:${String(snapshot.observation.tick)}:${String(snapshot.stats.estimatedPayloadBytes)}`;
+  for (const room of snapshot.rooms) {
+    if (
+      room.controller?.ownership !== "owned" ||
+      room.hostileCreeps.length > 0 ||
+      room.ownedCreeps.some(({ hits, hitsMax }) => hits < hitsMax)
+    )
+      continue;
+    const targets = candidates
+      .filter(({ roomName, towerEligible }) => roomName === room.name && towerEligible)
+      .sort((a, b) => b.priority - a.priority || a.targetId.localeCompare(b.targetId));
+    const usedTargets = new Set<string>();
+    for (const tower of [...room.ownedTowers].sort(compareById)) {
+      if (!canRepair(tower, config)) continue;
+      const target = targets.find(({ targetId }) => !usedTargets.has(targetId));
+      if (target === undefined) break;
+      usedTargets.add(target.targetId);
+      intents.push(
+        defineIntent({
+          id: `maintenance/${room.name}/${tower.id}/tower.repair/${target.targetId}/${String(snapshot.observedAt)}`,
+          kind: "tower.repair",
+          issuer: `maintenance/${room.name}`,
+          tick: snapshot.observedAt,
+          target: target.targetId,
+          snapshotRevision: revision,
+          exclusiveResourceKey: `tower/${tower.id}`,
+          priority: { class: "maintenance", value: target.priority },
+          deadline: snapshot.observedAt,
+          budget: { id: `maintenance-v2/${room.name}`, cost: TOWER_ACTION_ENERGY },
+          preconditions: [],
+          payload: { towerId: tower.id },
+        }),
+      );
+    }
+  }
+  return Object.freeze(intents.sort((a, b) => a.id.localeCompare(b.id)));
 }
 
 function towerIntent(

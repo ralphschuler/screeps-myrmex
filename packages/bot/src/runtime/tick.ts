@@ -1,5 +1,5 @@
 import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
-import { executeDefenseIntents, planDefense } from "../defense";
+import { executeDefenseIntents, planDefense, planRoutineTowerMaintenance } from "../defense";
 import {
   authorizedSurvivalFlow,
   emptyStaticMiningPlan,
@@ -10,10 +10,19 @@ import {
   type SurvivalFlowCandidate,
 } from "../economy";
 import {
+  ConstructionPlanner,
+  assignMaintenanceExecution,
+  authorizeMaintenanceWork,
   authorizedCriticalMaintenance,
+  projectMaintenanceBudgets,
+  maintenanceWorkOutcomes,
+  measureMaintenanceTraffic,
   planCriticalMaintenance,
   renewCriticalMaintenanceBudgets,
   type CriticalMaintenanceCandidate,
+  type AuthorizedMaintenanceProjection,
+  type MaintenanceBudgetProjection,
+  type MaintenanceTelemetryInput,
 } from "../maintenance";
 import {
   authorizedSurvivalGrowth,
@@ -156,6 +165,7 @@ const spawnExecutor = new SpawnExecutor();
 const telemetryService = new TelemetryService();
 const constructionSiteExecutor = new ConstructionSiteExecutor();
 const linkExecutor = new LinkExecutor();
+const constructionPlanner = new ConstructionPlanner();
 const layoutCaches = new WeakMap<CacheManager, ReturnType<typeof registerLayoutCompiledCache>>();
 
 export interface TickInput {
@@ -354,6 +364,10 @@ interface LayoutTickDraft {
   planning: readonly LayoutRuntimePlanRecord[];
   status: LayoutRuntimeResult["status"];
   linkEvidence: readonly LinkRoomLayoutEvidence[];
+  maintenanceLayouts: readonly {
+    readonly placements: readonly LayoutPlacement[];
+    readonly roomName: string;
+  }[];
 }
 
 /** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
@@ -375,6 +389,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     planning: Object.freeze([]),
     status: "not-run",
     linkEvidence: Object.freeze([]),
+    maintenanceLayouts: Object.freeze([]),
   };
   let leaseAgentPlan: LeaseAgentPlan = Object.freeze({
     actions: Object.freeze([]),
@@ -387,9 +402,28 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let staticMiningPlan: StaticMiningPlan = emptyStaticMiningPlan();
   let logisticsRuntime = emptyLogisticsRuntimeProjection();
   let linkDraft = emptyLinkRuntimeResult();
+  let maintenanceBudget: MaintenanceBudgetProjection = Object.freeze({
+    budgets: Object.freeze([]),
+    planning: Object.freeze({
+      deferred: Object.freeze([]),
+      deferredCount: 0,
+      proposals: Object.freeze([]),
+      scannedStructures: 0,
+      truncatedStructures: 0,
+    }),
+  });
+  let authorizedMaintenance: AuthorizedMaintenanceProjection = Object.freeze({
+    creepRequests: Object.freeze([]),
+    fundedProposals: Object.freeze([]),
+    retirements: Object.freeze([]),
+    towerCandidates: Object.freeze([]),
+  });
   let staticMiningCpuUsed = 0;
   let logisticsCpuUsed = 0;
   let collectedTelemetry: TickTelemetry | null = null;
+  let maintenanceTowerCommands: MaintenanceTelemetryInput["towerCommands"] = Object.freeze([]);
+  let maintenanceTowerRejections: MaintenanceTelemetryInput["towerRejections"] = Object.freeze([]);
+  let maintenanceDuplicateTargetsSuppressed = 0;
   return Object.freeze([
     configBootSystem(input),
     {
@@ -536,7 +570,16 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     colonyDirectorSystem(
       input,
       spawnDraft,
-      (economy, maintenance, growth, mining, miningCpuUsed, logistics, logisticsCpu) => {
+      (
+        economy,
+        maintenance,
+        growth,
+        mining,
+        miningCpuUsed,
+        logistics,
+        logisticsCpu,
+        matureMaintenance,
+      ) => {
         survivalCandidates = economy;
         maintenanceCandidates = maintenance;
         growthCandidates = growth;
@@ -544,9 +587,75 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         staticMiningCpuUsed = miningCpuUsed;
         logisticsRuntime = logistics;
         logisticsCpuUsed = logisticsCpu;
+        maintenanceBudget = matureMaintenance;
       },
     ),
     layoutPlanningSystem(input, layoutDraft),
+    {
+      descriptor: {
+        id: "maintenance.routine-contracts",
+        phase: "plan",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase2.maintenance")) return staged(() => undefined);
+        const planning = constructionPlanner.plan({
+          layouts: new Map(
+            layoutDraft.maintenanceLayouts.map(({ placements, roomName }) => [
+              roomName,
+              placements,
+            ]),
+          ),
+          reserves: context.snapshot.rooms.map((room) => ({
+            roomName: room.name,
+            state:
+              context.colony.colonies.find(({ roomName }) => roomName === room.name)?.rclPolicy
+                .protectedSpawnReserve.state === "restored"
+                ? "surplus"
+                : "protected",
+          })),
+          snapshot: context.snapshot,
+          traffic: measureMaintenanceTraffic(context.snapshot),
+        });
+        maintenanceBudget = Object.freeze({ ...maintenanceBudget, planning });
+        authorizedMaintenance = authorizeMaintenanceWork({
+          budgets: maintenanceBudget.budgets,
+          contracts: context.contractPlanning,
+          planning,
+          reservations: context.colony.reservations,
+          tick: context.tick,
+        });
+        const towerIntents = planRoutineTowerMaintenance(
+          context.snapshot,
+          context.config,
+          authorizedMaintenance.towerCandidates,
+        );
+        const assignment = assignMaintenanceExecution(authorizedMaintenance, towerIntents);
+        maintenanceDuplicateTargetsSuppressed = assignment.duplicateTargetsSuppressed;
+        const contracts = input.contractChannel.openProducer("maintenance.routine-contracts");
+        for (const request of assignment.creepRequests) contracts.producer.submit(request);
+        for (const transition of authorizedMaintenance.retirements)
+          contracts.producer.transition(transition);
+        const stagedContracts = contracts.stage();
+        const intents = input.intentChannel.openProducer("maintenance.towers");
+        for (const intent of towerIntents) intents.producer.submit(intent);
+        const stagedIntents = intents.stage();
+        return staged(
+          () => {
+            stagedContracts.commit();
+            stagedIntents.commit();
+          },
+          () => {
+            stagedContracts.discard();
+            stagedIntents.discard();
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "links.plan",
@@ -868,6 +977,13 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           tick: context.tick,
           snapshotRevision: snapshotRevision(context.snapshot),
         });
+        maintenanceTowerRejections = Object.freeze(
+          batch.decisions.flatMap((decision) =>
+            decision.intent.kind === "tower.repair" && decision.status !== "accepted"
+              ? [{ targetId: decision.intent.target, reason: decision.reason }]
+              : [],
+          ),
+        );
         return staged(
           () => {
             input.runtime.publishExecution(batch);
@@ -888,7 +1004,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
       run: ({ context }) => {
         if (context.execution !== null)
-          executeDefenseIntents(
+          maintenanceTowerCommands = executeDefenseIntents(
             context.execution,
             context.tick,
             (id) => resolveLiveObject(input.game, id),
@@ -1078,6 +1194,16 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                   execution: context.execution,
                   growth: growthCandidates,
                   maintenance: maintenanceCandidates,
+                  ...maintenanceTelemetryProperty(
+                    maintenanceTelemetryInput(
+                      context,
+                      maintenanceBudget,
+                      authorizedMaintenance,
+                      maintenanceTowerCommands,
+                      maintenanceTowerRejections,
+                      maintenanceDuplicateTargetsSuppressed,
+                    ),
+                  ),
                   movement: context.movement,
                   snapshot: context.snapshot,
                   spawn: context.spawn,
@@ -1153,6 +1279,16 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 execution: context.execution,
                 growth: growthCandidates,
                 maintenance: maintenanceCandidates,
+                ...maintenanceTelemetryProperty(
+                  maintenanceTelemetryInput(
+                    context,
+                    maintenanceBudget,
+                    authorizedMaintenance,
+                    maintenanceTowerCommands,
+                    maintenanceTowerRejections,
+                    maintenanceDuplicateTargetsSuppressed,
+                  ),
+                ),
                 movement: context.movement,
                 snapshot: context.snapshot,
                 spawn: context.spawn,
@@ -1179,12 +1315,70 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   ]);
 }
 
+function maintenanceTelemetryInput(
+  context: TickContext,
+  budget: MaintenanceBudgetProjection,
+  authorized: AuthorizedMaintenanceProjection,
+  towerCommands: MaintenanceTelemetryInput["towerCommands"],
+  towerRejections: MaintenanceTelemetryInput["towerRejections"],
+  duplicateTargetsSuppressed: number,
+): MaintenanceTelemetryInput | undefined {
+  if (!isFeatureEnabled(context.config, "phase2.maintenance")) return undefined;
+  const fundedRooms = new Set(
+    context.colony.reservations
+      .filter(({ category, status }) => category === "maintenance" && status === "active")
+      .map(({ colonyId }) => colonyId),
+  );
+  const acceptedTowerIds = new Set(
+    towerCommands
+      .filter(({ command, status }) => command.kind === "tower.repair" && status === "executed")
+      .map(({ command }) => command.exclusiveResourceKey.replace(/^tower\//u, "")),
+  );
+  const emergencyReservePreserved = context.snapshot.rooms.every((room) =>
+    room.ownedTowers.every((tower) => {
+      if (!acceptedTowerIds.has(tower.id)) return true;
+      const energy =
+        tower.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0;
+      return energy > context.config.policy.tower.emergencyReserveEnergy;
+    }),
+  );
+  return {
+    planning: budget.planning,
+    requestedEnergyCaps: budget.budgets.flatMap(({ energy }) =>
+      energy === null ? [] : [energy.desired],
+    ),
+    fundedEnergyCaps: budget.budgets
+      .filter(({ colonyId, energy }) => fundedRooms.has(colonyId) && energy !== null)
+      .flatMap(({ energy }) => (energy === null ? [] : [energy.desired])),
+    towerCommands,
+    towerRejections,
+    emergencyReservePreserved,
+    duplicateTargetsSuppressed,
+    workOutcomes: maintenanceWorkOutcomes(
+      context.contractPlanning,
+      context.snapshot,
+      authorized.retirements,
+    ),
+  };
+}
+
+function maintenanceTelemetryProperty(
+  input: MaintenanceTelemetryInput | undefined,
+): Readonly<Partial<{ maintenanceTelemetry: MaintenanceTelemetryInput }>> {
+  return input === undefined ? {} : { maintenanceTelemetry: input };
+}
+
 function telemetryBase(
   input: CompositionInput,
   context: TickContext,
 ): Omit<
   TickTelemetry,
-  "activity" | "status" | "recoveryProgress" | "reporterTransitions" | "staticMining"
+  | "activity"
+  | "status"
+  | "recoveryProgress"
+  | "reporterTransitions"
+  | "staticMining"
+  | "maintenanceV2"
 > {
   return recordTickTelemetry({
     tick: context.tick,
@@ -1227,6 +1421,7 @@ function layoutPlanningSystem(
       let changed = false;
       const planning: LayoutRuntimePlanRecord[] = [];
       const linkEvidence: LinkRoomLayoutEvidence[] = [];
+      const maintenanceLayouts: { placements: readonly LayoutPlacement[]; roomName: string }[] = [];
       const proposals = [] as ReturnType<typeof diffOwnedRoomLayout>["proposals"][number][];
       const authorizations: {
         authorized: boolean;
@@ -1331,6 +1526,7 @@ function layoutPlanningSystem(
           },
           roomName: room.name,
         });
+        maintenanceLayouts.push({ placements, roomName: room.name });
         proposals.push(
           ...diffOwnedRoomLayout({
             colonyId: colony.id,
@@ -1373,6 +1569,7 @@ function layoutPlanningSystem(
         draft.owner = owner;
         draft.planning = Object.freeze(planning);
         draft.linkEvidence = Object.freeze(linkEvidence);
+        draft.maintenanceLayouts = Object.freeze(maintenanceLayouts);
         draft.status = "planned";
         input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
       });
@@ -1481,6 +1678,7 @@ function colonyDirectorSystem(
     miningCpuUsed: number,
     logistics: LogisticsRuntimeProjection,
     logisticsCpuUsed: number,
+    matureMaintenance: MaintenanceBudgetProjection,
   ) => void,
 ): TickSystem<TickContext> {
   return {
@@ -1557,6 +1755,31 @@ function colonyDirectorSystem(
         logisticsPlan,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
       );
+      const provisionalMaintenance = projectMaintenanceBudgets({
+        existing: resolveColoniesOwner(owner).owner?.ledger ?? [],
+        planning: isFeatureEnabled(context.config, "phase2.maintenance")
+          ? constructionPlanner.plan({
+              layouts: new Map(),
+              reserves: context.snapshot.rooms.map((room) => ({
+                roomName: room.name,
+                state:
+                  room.energyAvailable >= context.config.policy.recovery.protectedSpawnEnergy
+                    ? "surplus"
+                    : "protected",
+              })),
+              snapshot: context.snapshot,
+              traffic: measureMaintenanceTraffic(context.snapshot),
+            })
+          : Object.freeze({
+              deferred: Object.freeze([]),
+              deferredCount: 0,
+              proposals: Object.freeze([]),
+              scannedStructures: 0,
+              truncatedStructures: 0,
+            }),
+        tick: context.tick,
+        ttl: context.config.policy.leases.durationTicks,
+      });
       const logisticsActorIds = new Set(
         context.contractExecution.leases.flatMap(({ actorId, execution }) =>
           execution.version === 3 ? [actorId] : [],
@@ -1587,6 +1810,7 @@ function colonyDirectorSystem(
         miningCpuUsed,
         logistics,
         logisticsCpuUsed,
+        provisionalMaintenance,
       );
       const budgetRequests = [
         ...economyCandidates.map(({ budgetRequest }) => budgetRequest),
@@ -1596,6 +1820,7 @@ function colonyDirectorSystem(
           budgetRequest === null ? [] : [budgetRequest],
         ),
         ...logistics.budgets,
+        ...provisionalMaintenance.budgets,
       ];
       const provisional = colonyDirector.begin({
         tick: context.tick,

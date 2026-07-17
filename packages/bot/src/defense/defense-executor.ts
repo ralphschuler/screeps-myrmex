@@ -1,6 +1,7 @@
 import {
   executeAcceptedIntentBatch,
   type ArbitrationBatch,
+  type CommandExecutionResult,
   type IntentEnvelope,
 } from "../execution";
 import type { CommandCpuMeter } from "../execution";
@@ -20,9 +21,9 @@ export function executeDefenseIntents(
   tick: number,
   resolveObject: (id: string) => unknown,
   cpu: CommandCpuMeter,
-): void {
+): readonly CommandExecutionResult<IntentEnvelope<DefenseIntentKind>>[] {
   const accepted = batch.accepted.filter(isDefenseIntent);
-  if (accepted.length === 0) return;
+  if (accepted.length === 0) return Object.freeze([]);
   const defenseBatch: ArbitrationBatch<DefenseIntentKind> = Object.freeze({
     tick: batch.tick,
     submitted: accepted.length,
@@ -30,7 +31,7 @@ export function executeDefenseIntents(
     accepted: Object.freeze(accepted),
     decisions: Object.freeze([]),
   });
-  executeAcceptedIntentBatch({
+  return executeAcceptedIntentBatch({
     tick,
     arbitration: defenseBatch,
     commandFor: (intent) => intent,

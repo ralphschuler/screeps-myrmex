@@ -91,7 +91,7 @@ describe("Phase 1 runtime config scenario", () => {
     expect(reset.outcomes[4]?.configRevision).toBe(reset.outcomes[1]?.configRevision);
     expect(reset.outcomes[5]?.configBytes).toBe(reset.outcomes[0]?.configBytes);
     expect(
-      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v22"),
+      reset.outcomes.every(({ sourceRevision }) => sourceRevision === "runtime-config-source-v23"),
     ).toBe(true);
 
     for (const outcome of reset.outcomes.slice(1, 5)) {
@@ -123,41 +123,49 @@ describe("Phase 1 runtime config scenario", () => {
     expect(
       reset.outcomes.every((outcome) =>
         outcome.gates.every(({ id, enabled, reason, blockedBy }) =>
-          id === "phase2.links"
+          id === "phase2.maintenance"
             ? (enabled && reason === "enabled") ||
-              (!enabled &&
-                reason === "prerequisite-blocked" &&
-                blockedBy !== null &&
-                ["phase2.layout", "phase2.mining", "phase2.logistics", "phase1.telemetry"].includes(
-                  blockedBy,
-                ))
-            : id === "phase2.logistics"
+              (!enabled && reason === "prerequisite-blocked" && blockedBy !== null)
+            : id === "phase2.links"
               ? (enabled && reason === "enabled") ||
-                (!enabled && reason === "prerequisite-blocked" && blockedBy === "phase2.mining")
-              : id === "phase2.mining"
+                (!enabled &&
+                  reason === "prerequisite-blocked" &&
+                  blockedBy !== null &&
+                  [
+                    "phase2.layout",
+                    "phase2.mining",
+                    "phase2.logistics",
+                    "phase1.telemetry",
+                  ].includes(blockedBy))
+              : id === "phase2.logistics"
                 ? (enabled && reason === "enabled") ||
-                  (!enabled && reason === "prerequisite-blocked" && blockedBy === "phase2.layout")
-                : id === "phase2.layout"
+                  (!enabled && reason === "prerequisite-blocked" && blockedBy === "phase2.mining")
+                : id === "phase2.mining"
                   ? (enabled && reason === "enabled") ||
-                    (!enabled && reason === "prerequisite-blocked" && blockedBy === "phase2.colony")
-                  : id === "phase2.colony"
+                    (!enabled && reason === "prerequisite-blocked" && blockedBy === "phase2.layout")
+                  : id === "phase2.layout"
                     ? (enabled && reason === "enabled") ||
                       (!enabled &&
                         reason === "prerequisite-blocked" &&
-                        blockedBy === "phase1.growth")
-                    : id === "phase1.colony" ||
-                        id === "phase1.contracts" ||
-                        id === "phase1.spawn" ||
-                        id === "phase1.movement" ||
-                        id === "phase1.agents" ||
-                        id === "phase1.economy" ||
-                        id === "phase1.safety" ||
-                        id === "phase1.recovery" ||
-                        id === "phase1.telemetry" ||
-                        id === "phase1.critical-maintenance"
-                      ? enabled && reason === "enabled"
-                      : (enabled && reason === "enabled") ||
-                        (!enabled && reason === "operator-disabled"),
+                        blockedBy === "phase2.colony")
+                    : id === "phase2.colony"
+                      ? (enabled && reason === "enabled") ||
+                        (!enabled &&
+                          reason === "prerequisite-blocked" &&
+                          blockedBy === "phase1.growth")
+                      : id === "phase1.colony" ||
+                          id === "phase1.contracts" ||
+                          id === "phase1.spawn" ||
+                          id === "phase1.movement" ||
+                          id === "phase1.agents" ||
+                          id === "phase1.economy" ||
+                          id === "phase1.safety" ||
+                          id === "phase1.recovery" ||
+                          id === "phase1.telemetry" ||
+                          id === "phase1.critical-maintenance"
+                        ? enabled && reason === "enabled"
+                        : (enabled && reason === "enabled") ||
+                          (!enabled && reason === "operator-disabled"),
         ),
       ),
     ).toBe(true);
