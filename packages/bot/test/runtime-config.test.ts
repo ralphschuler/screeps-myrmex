@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v24");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v25");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v24",
+      "runtime-config-source-v25",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,11 +631,11 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("activates phase2 industry only after its economy prerequisites under policy v24", () => {
+  it("activates phase2 industry only after its economy prerequisites under policy v25", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v24");
+    expect(config.sourceRevision).toBe("runtime-config-source-v25");
     expect(config.policy.industry).toEqual({
-      sourceVersion: "industry-policy-v1",
+      sourceVersion: "industry-policy-v2",
       stockMinimum: 1_000,
       stockTarget: 5_000,
       stockMaximum: 10_000,
@@ -645,6 +645,17 @@ describe("source feature gates", () => {
       maximumExtractionProposalsPerTick: 8,
       maximumSendProposalsPerTick: 4,
       maximumRoomsPerTick: 8,
+      maximumLabObjectivesPerTick: 32,
+      maximumActiveReactionChainsPerRoom: 1,
+      maximumBoostManifestsPerRoom: 4,
+      maximumReactionDependencyDepth: 4,
+      maximumReactionCatalogRecipes: 256,
+      maximumLabsPerRoom: 10,
+      maximumLabCommitments: 64,
+      maximumLabBatchAmount: 3_000,
+      maximumBoostPartsPerManifest: 50,
+      maximumLabResourceDemandsPerTick: 32,
+      maximumLabDeadlineHorizon: 5_000,
     });
     expect(config.policy.colony).toEqual({
       rclPolicyVersion: 1,

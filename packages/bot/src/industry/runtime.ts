@@ -7,6 +7,7 @@ import type {
   IndustryRoomState,
   StockBand,
 } from "./stock-policy";
+import type { LabPolicyProjection } from "./lab-policy";
 
 export interface IndustryRoomPolicy {
   readonly bands: readonly StockBand[];
@@ -108,6 +109,29 @@ export function projectIndustryBudgets(plan: IndustryPlan, tick: number): readon
       spawn: null,
     })),
   ]);
+}
+
+/** Funds each lab staging demand independently; Logistics remains the admission authority. */
+export function projectIndustryLabBudgets(
+  projection: LabPolicyProjection,
+  tick: number,
+): readonly BudgetRequest[] {
+  return freeze(
+    projection.budgets.map((budget): BudgetRequest => {
+      const demand = projection.demands.find(({ id }) => id === budget.demandId);
+      const energy = demand?.resourceType === "energy" ? demand.amount : 0;
+      return {
+        category: "industry",
+        colonyId: budget.colonyId,
+        issuer: budget.identity,
+        revision: demand?.revision ?? 1,
+        expiresAt: Math.max(tick, budget.deadline),
+        energy: { minimum: energy, desired: energy },
+        cpu: { minimum: 0.05, desired: 0.25 },
+        spawn: null,
+      };
+    }),
+  );
 }
 
 export function authorizeIndustryWork(input: {

@@ -7,6 +7,7 @@ import {
   executeTerminalSendIntents,
   observeIndustryRooms,
   projectIndustryBudgets,
+  projectIndustryLabBudgets,
   projectIndustryTelemetry,
   projectTerminalSendIntents,
   reconcileIndustryCommands,
@@ -146,7 +147,61 @@ describe("industry runtime authority chain", () => {
       sendProposals: 1,
     });
   });
+
+  it("funds every lab staging demand independently without authorizing work", () => {
+    const budgets = projectIndustryLabBudgets(
+      {
+        blockers: [],
+        commitments: [],
+        dispositions: [],
+        budgets: [
+          {
+            colonyId: "W1N1",
+            deadline: 150,
+            demandId: "compound",
+            identity: "industry/boost/compound",
+            priority: "mandatory",
+          },
+          {
+            colonyId: "W1N1",
+            deadline: 150,
+            demandId: "energy",
+            identity: "industry/boost/energy",
+            priority: "mandatory",
+          },
+        ],
+        demands: [labDemand("compound", "XUH2O", 60), labDemand("energy", "energy", 40)],
+      },
+      100,
+    );
+
+    expect(budgets.map(({ issuer }) => issuer)).toEqual([
+      "industry/boost/compound",
+      "industry/boost/energy",
+    ]);
+    expect(budgets.map(({ energy }) => energy)).toEqual([
+      { minimum: 0, desired: 0 },
+      { minimum: 40, desired: 40 },
+    ]);
+  });
 });
+
+function labDemand(id: string, resourceType: string, amount: number) {
+  return {
+    amount,
+    clusterFingerprint: "cluster-v1",
+    colonyId: "W1N1",
+    deadline: 150,
+    endpointId: "storage",
+    id,
+    industryBudgetId: `industry/boost/${id}`,
+    labId: "lab-c",
+    mode: "fill" as const,
+    priority: "mandatory" as const,
+    resourceType,
+    revision: 1,
+  };
+}
 
 function industryPlan(): IndustryPlan {
   return {

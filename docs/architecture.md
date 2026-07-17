@@ -1417,6 +1417,16 @@ drain amount, deadline, and existing industry budget. Logistics remains the sole
 owner; survival and mandatory flows preempt these normal-priority demands, shared stock/capacity
 cannot be oversubscribed, and incompatible mineral is drained before a requested fill.
 
+One bounded lab policy arbitrates reaction objectives and explicit boost manifests before staging.
+Funded boosts precede discretionary reactions; one canonical forward dependency chain may be active
+per room. `IndustryOwnerV2` persists only objective terms, assignment/catalog fingerprints, and
+settlement counters while preserving terminal-send retry state through an owner-local V1 migration.
+Lab roles, expanded chains, observations, logistics reservations, and readiness remain derived. Each
+remaining staging requirement receives its own industry budget issuer and ordinary #251 resource
+demand. A `ready` disposition is data only: it cannot enter the intent channel or authorize a lab
+API call, and aggregate stock changes cannot settle an active reaction commitment. This boundary is
+recorded in [ADR 0023](adr/0023-industry-lab-commitments.md).
+
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
 state.

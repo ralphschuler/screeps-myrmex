@@ -167,14 +167,15 @@ import {
   emptyIndustryOwner,
   executeTerminalSendIntents,
   observeIndustryRooms,
+  migrateIndustryOwner,
   parseIndustryOwner,
-  persistIndustryCommands,
+  persistIndustryOwner,
   projectIndustryBudgets,
   projectIndustryTelemetry,
   projectTerminalSendIntents,
   reconcileIndustryCommands,
   type IndustryCommandState,
-  type IndustryOwnerV1,
+  type IndustryOwnerV2,
   type IndustryPlan,
   type IndustryRoomState,
   type IndustryTelemetry,
@@ -399,7 +400,8 @@ interface LayoutTickDraft {
 interface IndustryTickDraft {
   eligiblePlan: IndustryPlan;
   execution: readonly CommandExecutionResult<TerminalSendCommand>[];
-  owner: IndustryOwnerV1;
+  owner: IndustryOwnerV2;
+  ownerNeedsPersistence: boolean;
   plan: IndustryPlan;
   rooms: readonly IndustryRoomState[];
   states: readonly IndustryCommandState[];
@@ -427,14 +429,16 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     linkEvidence: Object.freeze([]),
     maintenanceLayouts: Object.freeze([]),
   };
-  const industryOwner = industryOwnerForPolicy(
+  const industryOwnerResult = industryOwnerForPolicy(
     input.manager?.ownerView("industry") ?? null,
     input.runtime.context.config.policy.industry.sourceVersion,
   );
+  const industryOwner = industryOwnerResult.owner;
   const industryDraft: IndustryTickDraft = {
     eligiblePlan: emptyIndustryPlan(),
     execution: Object.freeze([]),
     owner: industryOwner,
+    ownerNeedsPersistence: industryOwnerResult.needsPersistence,
     plan: emptyIndustryPlan(),
     rooms: Object.freeze([]),
     states: industryOwner.commands,
@@ -1219,10 +1223,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           results: industryDraft.execution,
           tick: context.tick,
         });
-        const owner = persistIndustryCommands(
+        const owner = persistIndustryOwner(
           industryDraft.owner,
           context.config.policy.industry.sourceVersion,
           states,
+          industryDraft.owner.labCommitments,
         );
         const telemetry = projectIndustryTelemetry({
           plan: industryDraft.plan,
@@ -1232,9 +1237,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         return staged(
           () => {
             industryDraft.owner = owner;
+            const needsPersistence = industryDraft.ownerNeedsPersistence;
+            industryDraft.ownerNeedsPersistence = false;
             industryDraft.states = states;
             industryDraft.telemetry = telemetry;
-            if (input.manager !== null && owner !== previousOwner) {
+            if (input.manager !== null && (owner !== previousOwner || needsPersistence)) {
               const transaction = input.manager.transaction("industry");
               transaction.replace(owner);
               const stagedResult = transaction.stage();
@@ -2258,10 +2265,18 @@ function industryRoomStock(room: IndustryRoomState, resourceType: string): numbe
   );
 }
 
-function industryOwnerForPolicy(value: unknown, policySourceVersion: string): IndustryOwnerV1 {
+function industryOwnerForPolicy(
+  value: unknown,
+  policySourceVersion: string,
+): { readonly needsPersistence: boolean; readonly owner: IndustryOwnerV2 } {
   const parsed = parseIndustryOwner(value);
-  if (parsed !== null && parsed.policySourceVersion === policySourceVersion) return parsed;
-  return Object.freeze({ ...emptyIndustryOwner(), policySourceVersion });
+  if (parsed !== null && parsed.policySourceVersion === policySourceVersion)
+    return Object.freeze({ needsPersistence: false, owner: parsed });
+  const migrated = migrateIndustryOwner(value);
+  if (migrated !== null && migrated.policySourceVersion === policySourceVersion)
+    return Object.freeze({ needsPersistence: parsed === null, owner: migrated });
+  const owner = Object.freeze({ ...emptyIndustryOwner(), policySourceVersion });
+  return Object.freeze({ needsPersistence: false, owner });
 }
 
 function emptyIndustryProjection(): IndustryTickProjection {
