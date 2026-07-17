@@ -173,6 +173,13 @@ function snapshotStructure(structure: AnyStructure): StructureSnapshot {
     ownership: structureOwnership(structure),
     pos: snapshotPosition(structure.pos),
     structureType: structure.structureType,
+    isPublic: structure.structureType === "rampart" ? structure.isPublic : null,
+    ticksToDecay:
+      structure.structureType === "road" ||
+      structure.structureType === "container" ||
+      structure.structureType === "rampart"
+        ? nullableNumber(structure.ticksToDecay)
+        : null,
   };
 }
 
