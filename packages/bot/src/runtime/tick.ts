@@ -175,7 +175,7 @@ import {
   projectTerminalSendIntents,
   reconcileIndustryCommands,
   type IndustryCommandState,
-  type IndustryOwnerV2,
+  type IndustryOwnerV3,
   type IndustryPlan,
   type IndustryRoomState,
   type IndustryTelemetry,
@@ -400,7 +400,7 @@ interface LayoutTickDraft {
 interface IndustryTickDraft {
   eligiblePlan: IndustryPlan;
   execution: readonly CommandExecutionResult<TerminalSendCommand>[];
-  owner: IndustryOwnerV2;
+  owner: IndustryOwnerV3;
   ownerNeedsPersistence: boolean;
   plan: IndustryPlan;
   rooms: readonly IndustryRoomState[];
@@ -1228,6 +1228,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           context.config.policy.industry.sourceVersion,
           states,
           industryDraft.owner.labCommitments,
+          industryDraft.owner.labAttempts,
         );
         const telemetry = projectIndustryTelemetry({
           plan: industryDraft.plan,
@@ -2268,7 +2269,7 @@ function industryRoomStock(room: IndustryRoomState, resourceType: string): numbe
 function industryOwnerForPolicy(
   value: unknown,
   policySourceVersion: string,
-): { readonly needsPersistence: boolean; readonly owner: IndustryOwnerV2 } {
+): { readonly needsPersistence: boolean; readonly owner: IndustryOwnerV3 } {
   const parsed = parseIndustryOwner(value);
   if (parsed !== null && parsed.policySourceVersion === policySourceVersion)
     return Object.freeze({ needsPersistence: false, owner: parsed });
