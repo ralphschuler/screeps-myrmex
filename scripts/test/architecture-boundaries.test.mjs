@@ -607,6 +607,41 @@ describe("runtime architecture boundaries", () => {
     }
   });
 
+  it("allows factory and power processing only in the exact mature executor", () => {
+    expect(
+      findArchitectureViolations([
+        {
+          path: "industry/mature-executor.ts",
+          contents: "factory.produce(product); powerSpawn.processPower();",
+        },
+      ]),
+    ).toEqual([]);
+    for (const path of ["industry/policy.ts", "industry/fake-executor.ts", "execution/mature.ts"]) {
+      expect(
+        findArchitectureViolations([
+          { path, contents: "factory.produce(product); powerSpawn.processPower();" },
+        ]),
+      ).toEqual(
+        expect.arrayContaining([
+          { path, rule: "factory-command-outside-mature-executor" },
+          { path, rule: "power-process-command-outside-mature-executor" },
+        ]),
+      );
+    }
+  });
+
+  it("forbids every launchNuke path before operations authorization exists", () => {
+    for (const path of [
+      "industry/mature-executor.ts",
+      "execution/nuker-executor.ts",
+      "operations/executor.ts",
+    ]) {
+      expect(
+        findArchitectureViolations([{ path, contents: "nuker.launchNuke(position);" }]),
+      ).toContainEqual({ path, rule: "nuke-launch-before-operations-forbidden" });
+    }
+  });
+
   it("rejects direct, destructured, transitive, bound, call, and apply spawnCreep aliases", () => {
     for (const contents of [
       'spawn["spawnCreep"](body, name);',

@@ -11,6 +11,8 @@ import {
   type PendingLabAttempt,
 } from "../src/industry";
 import type { PendingMatureAttempt } from "../src/industry/mature-attempt";
+import type { MaturePolicyCommitment } from "../src/industry/mature-policy";
+import type { PendingObserverAttempt } from "../src/observer";
 
 describe("industry persistence", () => {
   const command = (identity: string): IndustryCommandState => ({
@@ -21,7 +23,7 @@ describe("industry persistence", () => {
     status: "backoff",
   });
 
-  it("round-trips canonical bounded command, lab, and mature state across a heap reset", () => {
+  it("round-trips every canonical industry commitment and pending receipt across a heap reset", () => {
     const owner = persistIndustryOwner(
       emptyIndustryOwner(),
       "industry-policy-v2",
@@ -29,14 +31,25 @@ describe("industry persistence", () => {
       [commitment("z"), commitment("a")],
       [attempt("z"), attempt("a")],
       [matureAttempt("z"), matureAttempt("a")],
+      [matureCommitment("z"), matureCommitment("a")],
+      [observerAttempt("z"), observerAttempt("a")],
     );
     expect(parseIndustryOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(owner.schemaVersion).toBe(5);
     expect(owner.commands.map(({ identity }) => identity)).toEqual(["send/a", "send/b"]);
     expect(owner.labCommitments.map(({ objectiveId }) => objectiveId)).toEqual(["a", "z"]);
     expect(owner.labAttempts.map(({ attemptId }) => attemptId)).toEqual(["attempt/a", "attempt/z"]);
     expect(owner.matureAttempts.map(({ attemptId }) => attemptId)).toEqual([
       "mature-attempt/a",
       "mature-attempt/z",
+    ]);
+    expect(owner.matureCommitments.map(({ objective }) => objective.id)).toEqual([
+      "mature-objective/a",
+      "mature-objective/z",
+    ]);
+    expect(owner.observerAttempts.map(({ attemptId }) => attemptId)).toEqual([
+      "observer-attempt/a",
+      "observer-attempt/z",
     ]);
   });
 
@@ -49,13 +62,15 @@ describe("industry persistence", () => {
     };
     const migrated = migrateIndustryOwner(v1);
     expect(migrated).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       revision: 8,
       policySourceVersion: "industry-policy-v2",
       commands: [{ identity: "send/a" }, { identity: "send/b" }],
       labCommitments: [],
       labAttempts: [],
       matureAttempts: [],
+      matureCommitments: [],
+      observerAttempts: [],
     });
     expect(migrateIndustryOwner(JSON.parse(JSON.stringify(migrated)))).toEqual(migrated);
   });
@@ -69,11 +84,13 @@ describe("industry persistence", () => {
       labCommitments: [commitment("reaction")],
     });
     expect(migrated).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       revision: 10,
       labCommitments: [{ objectiveId: "reaction" }],
       labAttempts: [],
       matureAttempts: [],
+      matureCommitments: [],
+      observerAttempts: [],
     });
   });
 
@@ -87,10 +104,31 @@ describe("industry persistence", () => {
       labAttempts: [attempt("reaction")],
     });
     expect(migrated).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       revision: 12,
       labAttempts: [{ attemptId: "attempt/reaction" }],
       matureAttempts: [],
+      matureCommitments: [],
+      observerAttempts: [],
+    });
+  });
+
+  it("migrates V4 attempts without inventing commitments or observer effects", () => {
+    const migrated = migrateIndustryOwner({
+      schemaVersion: 4,
+      revision: 13,
+      policySourceVersion: "industry-policy-v2",
+      commands: [command("send/a")],
+      labCommitments: [commitment("reaction")],
+      labAttempts: [attempt("reaction")],
+      matureAttempts: [matureAttempt("factory")],
+    });
+    expect(migrated).toMatchObject({
+      schemaVersion: 5,
+      revision: 14,
+      matureAttempts: [{ attemptId: "mature-attempt/factory" }],
+      matureCommitments: [],
+      observerAttempts: [],
     });
   });
 
@@ -107,6 +145,8 @@ describe("industry persistence", () => {
       labCommitments: [],
       labAttempts: [],
       matureAttempts: [],
+      matureCommitments: [],
+      observerAttempts: [],
     });
   });
 
@@ -181,6 +221,47 @@ function matureAttempt(objectiveId: string): PendingMatureAttempt {
     ],
     storeCapacity: 50_000,
     storeUsedBefore: 140,
+  };
+}
+
+function matureCommitment(objectiveId: string): MaturePolicyCommitment {
+  return {
+    objective: {
+      batches: 1,
+      colonyId: "W1N1",
+      deadline: 150,
+      endpointId: "storage",
+      funded: true,
+      id: `mature-objective/${objectiveId}`,
+      industryBudgetId: `mature-budget/${objectiveId}`,
+      kind: "factory-batch",
+      mechanicsFingerprint: "mechanics-v1",
+      priority: "normal",
+      product: "wire",
+      revision: 1,
+      structureId: "factory",
+    },
+    status: "ready",
+  };
+}
+
+function observerAttempt(requestId: string): PendingObserverAttempt {
+  return {
+    attemptId: `observer-attempt/${requestId}`,
+    authorizationId: `observer-authorization/${requestId}`,
+    authorizationRevision: 1,
+    capabilityFingerprint: "observer-capability",
+    deadline: 150,
+    issuedAt: 100,
+    issuer: "intel",
+    mechanicsFingerprint: "mechanics-v1",
+    observeAt: 101,
+    observerId: "observer",
+    originRoomName: "W1N1",
+    requestId,
+    requestRevision: 1,
+    retry: 0,
+    targetRoomName: "W2N2",
   };
 }
 

@@ -32,6 +32,7 @@ describe("ReporterStatus", () => {
       "phase2.maintenance",
       "phase2.industry",
       "phase2.labs",
+      "phase2.mature",
     ]);
   });
 

@@ -64,6 +64,7 @@ const ROOT_COMMIT_METHODS = new Set(["commitReconciliation"]);
 const SPAWN_BROKER_PATH = "spawn/spawn-broker.ts";
 const SPAWN_EXECUTOR_PATH = "spawn/spawn-executor.ts";
 const OBSERVER_EXECUTOR_PATH = "observer/executor.ts";
+const MATURE_EXECUTOR_PATH = "industry/mature-executor.ts";
 const MOVEMENT_EXECUTOR_PATH = "movement/executor.ts";
 const CREEP_ACTION_EXECUTOR_PATH = "movement/executor.ts";
 const DEFENSE_EXECUTOR_PATH = "defense/defense-executor.ts";
@@ -318,6 +319,21 @@ function inspectSource(contents, path) {
             "observer-command-outside-observer-executor",
             path === OBSERVER_EXECUTOR_PATH,
           );
+        }
+        if (commandMethodCall.methods.has("produce")) {
+          addUnlessAllowed(
+            "factory-command-outside-mature-executor",
+            path === MATURE_EXECUTOR_PATH,
+          );
+        }
+        if (commandMethodCall.methods.has("processPower")) {
+          addUnlessAllowed(
+            "power-process-command-outside-mature-executor",
+            path === MATURE_EXECUTOR_PATH,
+          );
+        }
+        if (commandMethodCall.methods.has("launchNuke")) {
+          rules.add("nuke-launch-before-operations-forbidden");
         }
         if (commandMethodCall.methods.has("move")) {
           addUnlessAllowed(

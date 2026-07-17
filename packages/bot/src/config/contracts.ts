@@ -20,6 +20,7 @@ export const FEATURE_GATE_IDS = [
   "phase2.maintenance",
   "phase2.industry",
   "phase2.labs",
+  "phase2.mature",
 ] as const;
 
 export type FeatureGateId = (typeof FEATURE_GATE_IDS)[number];
@@ -98,6 +99,29 @@ export interface GrowthPolicy {
   readonly maximumEnergyPerTick: number;
 }
 
+/** Source-owned bounds for optional mature structures and their shared logistics projection. */
+export interface MatureInfrastructurePolicy {
+  readonly sourceVersion: "mature-policy-v1";
+  readonly maximumAmountPerTransfer: number;
+  readonly maximumBatchesPerObjective: number;
+  readonly maximumCandidates: number;
+  readonly maximumCommodities: number;
+  readonly maximumComponentsPerCommodity: number;
+  readonly maximumDeadlineHorizon: number;
+  readonly maximumEdges: number;
+  readonly maximumEffectsPerStructure: number;
+  readonly maximumNodes: number;
+  readonly maximumNukerEnergyTarget: number;
+  readonly maximumNukerGhodiumTarget: number;
+  readonly maximumObjectives: number;
+  readonly maximumPowerProcessingUnits: number;
+  readonly maximumResourceTypes: number;
+  readonly maximumRooms: number;
+  readonly maximumStringLength: number;
+  readonly maximumStructuresPerRoom: number;
+  readonly maximumTransfersPerObjective: number;
+}
+
 /** Source-owned bounds for optional mineral extraction and internal terminal balancing. */
 export interface IndustryPolicy {
   readonly sourceVersion: "industry-policy-v2";
@@ -121,6 +145,7 @@ export interface IndustryPolicy {
   readonly maximumBoostPartsPerManifest: number;
   readonly maximumLabResourceDemandsPerTick: number;
   readonly maximumLabDeadlineHorizon: number;
+  readonly mature: MatureInfrastructurePolicy;
 }
 
 /** Hard caps for observer-only telemetry; never an input to gameplay admission. */

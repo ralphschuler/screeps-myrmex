@@ -2,6 +2,8 @@ import type { CommandExecutionResult } from "../execution";
 import type { IndustryPlan } from "./stock-policy";
 import type { TerminalSendCommand } from "./terminal-executor";
 import type { LabTelemetry } from "./lab-composition";
+import type { MatureCommandTelemetry } from "./mature-telemetry";
+import type { ObserverTelemetry } from "../observer/telemetry";
 
 export interface IndustryCommandState {
   readonly attempt: number;
@@ -23,6 +25,8 @@ export interface IndustryTelemetry {
   readonly sendProposals: number;
   readonly states: readonly IndustryCommandState[];
   readonly labs?: LabTelemetry;
+  readonly mature?: MatureCommandTelemetry;
+  readonly observer?: ObserverTelemetry;
 }
 
 const MAX_STATES = 128;
@@ -69,6 +73,8 @@ export function reconcileIndustryCommands(input: {
 
 export function projectIndustryTelemetry(input: {
   readonly labs?: LabTelemetry;
+  readonly mature?: MatureCommandTelemetry;
+  readonly observer?: ObserverTelemetry;
   readonly plan: IndustryPlan;
   readonly results: readonly CommandExecutionResult<TerminalSendCommand>[];
   readonly states: readonly IndustryCommandState[];
@@ -85,6 +91,8 @@ export function projectIndustryTelemetry(input: {
     sendProposals: input.plan.sends.length,
     states: input.states,
     ...(input.labs === undefined ? {} : { labs: input.labs }),
+    ...(input.mature === undefined ? {} : { mature: input.mature }),
+    ...(input.observer === undefined ? {} : { observer: input.observer }),
   });
 }
 

@@ -20,7 +20,7 @@
         "modeledCpu": 0,
         "persistentBytes": 25553,
         "persistentGrowth": 3115,
-        "telemetryBytes": 6985,
+        "telemetryBytes": 7059,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 200,
@@ -48,7 +48,7 @@
         "modeledCpu": 0.1230000000000001,
         "persistentBytes": 29659,
         "persistentGrowth": 5115,
-        "telemetryBytes": 6630,
+        "telemetryBytes": 6704,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
@@ -76,7 +76,7 @@
         "modeledCpu": 2,
         "persistentBytes": 5669,
         "persistentGrowth": 818,
-        "telemetryBytes": 6411,
+        "telemetryBytes": 6485,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 25,
         "energyFlow": 200,
@@ -89,9 +89,9 @@
         "warmOutcome": "87c8166f",
         "resetOutcome": "87c8166f",
         "reorderedOutcome": "87c8166f",
-        "warmTranscript": "2c8ba56c",
-        "resetTranscript": "06cbda3a",
-        "reorderedTranscript": "e1cae74e"
+        "warmTranscript": "9fa6a097",
+        "resetTranscript": "6d286ac1",
+        "reorderedTranscript": "e9baa774"
       },
       "unevidenced": []
     },
@@ -104,7 +104,7 @@
         "modeledCpu": 2,
         "persistentBytes": 8645,
         "persistentGrowth": 152,
-        "telemetryBytes": 6379,
+        "telemetryBytes": 6453,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -117,9 +117,9 @@
         "warmOutcome": "df53697a",
         "resetOutcome": "df53697a",
         "reorderedOutcome": "df53697a",
-        "warmTranscript": "b03ecc32",
-        "resetTranscript": "0d949a7a",
-        "reorderedTranscript": "fb08b60a"
+        "warmTranscript": "7b5d5245",
+        "resetTranscript": "95a77e01",
+        "reorderedTranscript": "f84df038"
       },
       "unevidenced": []
     },
@@ -132,7 +132,7 @@
         "modeledCpu": 2,
         "persistentBytes": 8838,
         "persistentGrowth": 151,
-        "telemetryBytes": 6171,
+        "telemetryBytes": 6245,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -145,9 +145,9 @@
         "warmOutcome": "f329c328",
         "resetOutcome": "f329c328",
         "reorderedOutcome": "f329c328",
-        "warmTranscript": "bbb3957d",
-        "resetTranscript": "9536d933",
-        "reorderedTranscript": "93dd6162"
+        "warmTranscript": "14b9b5f6",
+        "resetTranscript": "f632b1f8",
+        "reorderedTranscript": "08e177e0"
       },
       "unevidenced": []
     },
@@ -160,7 +160,7 @@
         "modeledCpu": 5,
         "persistentBytes": 9039,
         "persistentGrowth": 201,
-        "telemetryBytes": 6007,
+        "telemetryBytes": 6254,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -173,9 +173,9 @@
         "warmOutcome": "4b8c61be",
         "resetOutcome": "4b8c61be",
         "reorderedOutcome": "4b8c61be",
-        "warmTranscript": "a621794c",
-        "resetTranscript": "eedca30a",
-        "reorderedTranscript": "f25f9ab9"
+        "warmTranscript": "74c826f7",
+        "resetTranscript": "ebc8f191",
+        "reorderedTranscript": "f33142af"
       },
       "unevidenced": []
     },
@@ -188,7 +188,7 @@
         "modeledCpu": 5,
         "persistentBytes": 29659,
         "persistentGrowth": 5115,
-        "telemetryBytes": 6985,
+        "telemetryBytes": 7059,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -201,9 +201,9 @@
         "warmOutcome": "92710e0a",
         "resetOutcome": "92710e0a",
         "reorderedOutcome": "92710e0a",
-        "warmTranscript": "7253f42d",
-        "resetTranscript": "e8248472",
-        "reorderedTranscript": "41e11eb9"
+        "warmTranscript": "8abad4ca",
+        "resetTranscript": "176a9c90",
+        "reorderedTranscript": "ecabd79c"
       },
       "unevidenced": []
     },
@@ -216,7 +216,7 @@
         "modeledCpu": 5,
         "persistentBytes": 29659,
         "persistentGrowth": 5115,
-        "telemetryBytes": 6985,
+        "telemetryBytes": 7059,
         "telemetryCardinality": 29,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -229,17 +229,17 @@
         "warmOutcome": "b5987958",
         "resetOutcome": "b5987958",
         "reorderedOutcome": "b5987958",
-        "warmTranscript": "7253f42d",
-        "resetTranscript": "e8248472",
-        "reorderedTranscript": "41e11eb9"
+        "warmTranscript": "8abad4ca",
+        "resetTranscript": "176a9c90",
+        "reorderedTranscript": "ecabd79c"
       },
       "unevidenced": []
     }
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 881545,
-    "inputCount": 122,
-    "sha256": "sha256:f8b28c8edd29283e24061f055e14c400de99e66c88f5e95e7529f3ab71913eb1"
+    "bytes": 999318,
+    "inputCount": 134,
+    "sha256": "sha256:e4391acba5458f1b0593bb4739bb2967ae65acb2d5da327befed0a7dfb397bfd"
   }
 }

@@ -2,7 +2,7 @@ import { deepFreeze } from "./canonical";
 import type { ConfiguredRelations, SurvivalPolicy } from "./contracts";
 
 /** Bump whenever defaults, validation meaning, or the source gate manifest changes. */
-export const RUNTIME_CONFIG_SOURCE_REVISION = "runtime-config-source-v26" as const;
+export const RUNTIME_CONFIG_SOURCE_REVISION = "runtime-config-source-v27" as const;
 
 export const DEFAULT_SURVIVAL_POLICY: SurvivalPolicy = deepFreeze({
   colony: {
@@ -72,6 +72,27 @@ export const DEFAULT_SURVIVAL_POLICY: SurvivalPolicy = deepFreeze({
     maximumBoostPartsPerManifest: 50,
     maximumLabResourceDemandsPerTick: 32,
     maximumLabDeadlineHorizon: 5_000,
+    mature: {
+      sourceVersion: "mature-policy-v1",
+      maximumAmountPerTransfer: 300_000,
+      maximumBatchesPerObjective: 1,
+      maximumCandidates: 32,
+      maximumCommodities: 512,
+      maximumComponentsPerCommodity: 64,
+      maximumDeadlineHorizon: 50,
+      maximumEdges: 128,
+      maximumEffectsPerStructure: 32,
+      maximumNodes: 128,
+      maximumNukerEnergyTarget: 300_000,
+      maximumNukerGhodiumTarget: 5_000,
+      maximumObjectives: 32,
+      maximumPowerProcessingUnits: 100,
+      maximumResourceTypes: 512,
+      maximumRooms: 8,
+      maximumStringLength: 128,
+      maximumStructuresPerRoom: 32,
+      maximumTransfersPerObjective: 64,
+    },
   },
   telemetry: {
     maximumDetailRecords: 64,

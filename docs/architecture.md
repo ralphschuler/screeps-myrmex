@@ -436,10 +436,13 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `world.observe`       | Observe   | mandatory, recovery-safe        |         1.00 |
 | `safety.foundation`   | Safety    | mandatory, recovery-safe        |         0.10 |
 | `colony.director`     | Plan      | mandatory, recovery-safe        |         1.50 |
+| `industry.publish`    | Plan      | optional economic               |         0.50 |
 | `cache.sweep`         | Plan      | surplus maintenance, cadence 25 |         0.25 |
 | `execution.arbitrate` | Execute   | mandatory tail                  |         0.50 |
+| `industry.execute`    | Execute   | mandatory tail                  |         0.25 |
 | `spawn.execute`       | Execute   | mandatory tail, recovery-safe   |         0.75 |
 | `spawn.settle`        | Execute   | mandatory tail, recovery-safe   |         0.75 |
+| `industry.reconcile`  | Reconcile | mandatory before root commit    |         0.50 |
 | `contracts.reconcile` | Reconcile | operational, recovery-safe      |         0.50 |
 | `state.reconcile`     | Reconcile | mandatory tail                  |         1.00 |
 | `telemetry.minimum`   | Telemetry | mandatory tail                  |         0.50 |
@@ -451,8 +454,10 @@ phase orchestrator. The Phase 1 colony outcome replaces `planning.foundation` wi
 `spawn.settle`; the latter performs durable colony staging after command results and before
 budget-consuming contract reconciliation. When admitted, operational `contracts.reconcile` stages
 its owner transaction before mandatory-tail `state.reconcile`; only the latter commits the
-`Memory.myrmex` root. Later outcomes replace their own foundation markers without adding another
-loop.
+`Memory.myrmex` root. `industry.execute` follows shared intent arbitration in the mandatory Execute
+tail; `industry.reconcile` stages terminal, lab, mature, and observer effects through one industry
+owner transaction before `state.reconcile`. Later outcomes replace their own foundation markers
+without adding another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -1269,8 +1274,9 @@ capability, object identity, ownership, activity, RCL8, room syntax, range, and 
 before one call. `OK` is pending, not success: exact next-tick target visibility settles the
 receipt, while no effect has a fixed retry cap. Fixed-cardinality telemetry observes dispositions,
 commands, and settlements without owning work.
-[ADR 0027](adr/0027-observer-request-command-authority.md) records the boundary. Tick-graph and
-persistent-owner composition remain issue #267.
+[ADR 0027](adr/0027-observer-request-command-authority.md) records the authority. Issue #267
+composes it into the static tick graph and persists pending receipts in `IndustryOwnerV5`; Phase 3
+still owns every production observer target request.
 
 ### 12.5 Layout and construction
 
@@ -1470,7 +1476,7 @@ Current `ready` commitments project typed reaction or boost intents under one fi
 lab-cluster exclusive key; boosts use defense priority while discretionary reactions remain
 speculation. The shared intent arbiter is final authority, and the sole `LabExecutor` revalidates
 the exact live preconditions before one Screeps API call. Normalized `OK` records only a pending
-attempt in `IndustryOwnerV4`; exact next-observation body/resource deltas settle the effect, while
+attempt in `IndustryOwnerV5`; exact next-observation body/resource deltas settle the effect, while
 drift, timeout, and retry exhaustion fail closed.
 [ADR 0024](adr/0024-lab-execution-and-settlement.md) records this command and settlement boundary
 without activating the industry gate.
@@ -1479,25 +1485,29 @@ The complete lab path is composed by one pure projection before static tick publ
 layout/lab facts derive cluster roles, detached reaction constants derive the catalog, source-owned
 stock bands create bounded funded objectives, and policy demands enter the existing logistics graph
 before readiness. Forward, explicitly funded reverse, and boost intents share one cluster key and
-the common arbiter. `IndustryOwnerV4` distinguishes pending observation from durable retry-ready
-state, while bounded observer telemetry reports commands, blockers, exact settlement, retries, and
-cancellations. Checked `phase2-labs-results.json` evidence makes `phase2.labs` source-available
-under `runtime-config-source-v26` without enabling factory behavior.
+the common arbiter. `IndustryOwnerV5` preserves the V4 lab boundary and distinguishes pending
+observation from durable retry-ready state, while bounded observer telemetry reports commands,
+blockers, exact settlement, retries, and cancellations. Checked `phase2-labs-results.json` evidence
+makes `phase2.labs` source-available under `runtime-config-source-v26` without enabling factory
+behavior.
 
 Funded `ready` factory and power-processing commitments enter one bounded mature command projection.
 Both intent kinds claim the canonical physical-structure exclusive key before the shared channel's
 final arbitration. The sole `MatureStructureExecutor` revalidates current mechanics, ownership,
 activation, RCL, cooldown, level/effect, exact stock, and factory capacity before calling `produce`
 or `processPower`. Only normalized `OK` creates one of at most 64 mature attempts in
-`IndustryOwnerV4`; exact next-tick recipe/store/cooldown or operated-power/energy deltas settle it.
+`IndustryOwnerV5`; exact next-tick recipe/store/cooldown or operated-power/energy deltas settle it.
 An issued attempt may record its exact irreversible effect after its objective disappears, but that
 receipt authorizes no retry. No effect retries within a fixed cap, while stale, conflicting,
 missing, unfunded, or late retry evidence fails closed. A fixed-cardinality observer projection
 reports intent, command, retry, cancellation, and settled factory/power totals without becoming an
-authorization input. [ADR 0026](adr/0026-mature-command-execution-and-settlement.md) records this
-boundary. Tick-graph and telemetry-service composition plus gate activation remain issue #267. The
-standalone observer authority is defined by ADR 0027 but is not yet composed; nuke command paths
-remain absent.
+authorization input. [ADR 0026](adr/0026-mature-command-execution-and-settlement.md) records the
+command boundary. Issue #267 composes mature budgets, shared logistics demands, intents, sole
+executors, telemetry, and one V5 owner transaction behind `phase2.mature` and
+`runtime-config-source-v27`; [ADR 0028](adr/0028-mature-runtime-composition-and-receipts.md) records
+that integration. Normal/surplus CPU and current mechanics are required. Lower modes preserve
+commitments and attempts without authorizing commands. Observer target production and every nuke
+command path remain absent.
 
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
@@ -1659,11 +1669,12 @@ blocking. Issue `#37` made `phase1.colony` source-available under `runtime-confi
 gate as its prerequisite. Issue `#24` makes `phase1.spawn` source-available under
 `runtime-config-source-v4`, also with the colony gate as its prerequisite. Every later gameplay gate
 remains unavailable until its own outcome is proved; issue `#257` makes `phase2.labs` available
-under `runtime-config-source-v26` with `phase2.industry` as its prerequisite. Operational Memory may
-disable an available gate but cannot activate another gate. A source-v3 receipt is incompatible
-under v4 and is reissued only after a present candidate revalidates; an incompatible receipt with no
-candidate falls back to source defaults without rewriting operator bytes. Secrets never enter
-source, Memory, telemetry, Wiki, or committed config.
+under `runtime-config-source-v26` with `phase2.industry` as its prerequisite, and issue `#267` makes
+`phase2.mature` available under `runtime-config-source-v27` with `phase2.labs` as its prerequisite.
+Operational Memory may disable an available gate but cannot activate another gate. A source-v3
+receipt is incompatible under v4 and is reissued only after a present candidate revalidates; an
+incompatible receipt with no candidate falls back to source defaults without rewriting operator
+bytes. Secrets never enter source, Memory, telemetry, Wiki, or committed config.
 
 The versioned policy fields, limits, statuses, gates, and deterministic matrices are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md) and
