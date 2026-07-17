@@ -1190,6 +1190,14 @@ issue #49, and PR A never infers terminal sends, market value, hostile safety, o
 The authority decision and exact consulted Store/storage/terminal/transfer/withdraw and Wiki
 mechanics pages are recorded in [ADR 0018](adr/0018-logistics-planner-authority.md).
 
+Lab staging uses that same authority rather than a lab-local hauling planner. `IndustryDirector`
+emits bounded resource-specific fill/drain demands with a derived cluster fingerprint and active
+industry budget binding. The adapter projects current lab and storage/terminal facts into ordinary
+logistics nodes, endpoints, and edges. Logistics admits shared stock and grouped lab/general-store
+capacity exactly once; contamination drains preempt incompatible fills. Existing contracts and lease
+executors perform withdraw/transfer work, and later observation settles partial progress, loss, lab
+removal, or completion. No lab API command is introduced by this path.
+
 ### 12.4 MovementArbiter
 
 Every creep movement request is a `MovementIntent` with actor ID, desired position/range, deadline,
@@ -1402,6 +1410,12 @@ reagent labs and only range-two product/boost-capable labs. Missing, inactive, d
 non-adjacent, malformed, or over-cap facts fail closed.
 [ADR 0022](adr/0022-derived-lab-cluster-roles.md) records this reconstructible boundary; it
 introduces no lab command authority.
+
+Production policy may request staging only through the bounded logistics demand boundary. Each
+demand names one current cluster fingerprint, lab, storage/terminal endpoint, resource, desired or
+drain amount, deadline, and existing industry budget. Logistics remains the sole flow admission
+owner; survival and mandatory flows preempt these normal-priority demands, shared stock/capacity
+cannot be oversubscribed, and incompatible mineral is drained before a requested fill.
 
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market

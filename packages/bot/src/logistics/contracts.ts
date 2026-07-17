@@ -7,6 +7,7 @@ import {
 } from "../contracts";
 import type {
   LogisticsNode,
+  LogisticsBudgetBinding,
   LogisticsPlan,
   LogisticsPriorityClass,
   LogisticsProjection,
@@ -49,6 +50,7 @@ export interface LogisticsFlowProgress {
 }
 
 export interface LogisticsCommitmentState {
+  readonly budgetBinding?: LogisticsBudgetBinding;
   readonly colonyId: string;
   readonly cycle: number;
   readonly cycleAmount: number;
@@ -205,6 +207,7 @@ function createState(
   tick: number,
 ): LogisticsCommitmentState {
   return {
+    ...(flow.budgetBinding === undefined ? {} : { budgetBinding: flow.budgetBinding }),
     colonyId: flow.colonyId ?? "",
     cycle: 0,
     cycleAmount: flow.admittedAmount,
@@ -269,7 +272,7 @@ function requestFor(
   const mandatory = state.priorityClass === "mandatory";
   const identity = flowIssuer(state.flowId);
   return {
-    budgetBinding: {
+    budgetBinding: state.budgetBinding ?? {
       category: mandatory ? "harvesting-filling" : "optional-growth",
       issuer: `${identity}/${String(state.cycle)}/${state.stage}`,
     },

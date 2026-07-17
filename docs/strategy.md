@@ -123,6 +123,12 @@ minimum, while terminal cooldown, destination capacity, protected energy, config
 cost, and shared colony funding can defer the transfer. Failed sends use bounded durable backoff;
 completed sends become eligible again only after observed destination stock changes.
 
+Lab staging is contamination-first and budget-bound. Industry may request finite reagent, product,
+boost-compound, or energy levels, but Logistics alone admits the corresponding local haul against
+current stock and shared capacity. An incompatible mineral is drained before another mineral enters
+the lab. Survival, defense, spawn supply, and mandatory logistics preempt every lab demand; missing
+funding or exact owned endpoint facts defer staging without market use.
+
 ## Military Operations
 
 Every operation declares an objective, owner, target, intelligence freshness requirement, body and
