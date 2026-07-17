@@ -13,8 +13,12 @@ import {
   type MineralSnapshot,
   type OwnedExtractorSnapshot,
   type OwnedExtensionSnapshot,
+  type OwnedFactorySnapshot,
   type OwnedLinkSnapshot,
   type OwnedLabSnapshot,
+  type OwnedNukerSnapshot,
+  type OwnedObserverSnapshot,
+  type OwnedPowerSpawnSnapshot,
   type OwnedRoomSnapshot,
   type OwnedSpawnSnapshot,
   type OwnedStorageSnapshot,
@@ -30,11 +34,13 @@ import {
   type StoredStructureSnapshot,
   type StructureSnapshot,
   type StoreSnapshot,
+  type StructureEffectSnapshot,
   type TombstoneSnapshot,
   type WorldSnapshot,
 } from "./snapshot";
 
 const MAX_CREEP_BODY_PARTS = 50;
+const MAX_STRUCTURE_EFFECTS = 16;
 const BODY_PART_TYPES = [
   "move",
   "work",
@@ -138,6 +144,10 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
       .filter((structure) => isMyStructureOfType(structure, "extension"))
       .map((structure) => snapshotExtension(structure as StructureExtension))
       .sort(compareById),
+    ownedFactories: structures
+      .filter((structure) => isMyStructureOfType(structure, "factory"))
+      .map((structure) => snapshotFactory(structure as StructureFactory))
+      .sort(compareById),
     ownedLabs: structures
       .filter((structure) => isMyStructureOfType(structure, "lab"))
       .map((structure) => snapshotLab(structure as StructureLab))
@@ -145,6 +155,18 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     ownedLinks: structures
       .filter((structure) => isMyStructureOfType(structure, "link"))
       .map((structure) => snapshotLink(structure as StructureLink))
+      .sort(compareById),
+    ownedNukers: structures
+      .filter((structure) => isMyStructureOfType(structure, "nuker"))
+      .map((structure) => snapshotNuker(structure as StructureNuker))
+      .sort(compareById),
+    ownedObservers: structures
+      .filter((structure) => isMyStructureOfType(structure, "observer"))
+      .map((structure) => snapshotObserver(structure as StructureObserver))
+      .sort(compareById),
+    ownedPowerSpawns: structures
+      .filter((structure) => isMyStructureOfType(structure, "powerSpawn"))
+      .map((structure) => snapshotPowerSpawn(structure as StructurePowerSpawn))
       .sort(compareById),
     ownedSpawns: structures
       .filter((structure) => isMyStructureOfType(structure, "spawn"))
@@ -238,6 +260,75 @@ function snapshotLab(lab: StructureLab): OwnedLabSnapshot {
     pos: snapshotPosition(lab.pos),
     store: snapshotStore(lab.store),
   };
+}
+
+function snapshotFactory(factory: StructureFactory): OwnedFactorySnapshot {
+  return {
+    active: factory.isActive(),
+    cooldown: factory.cooldown,
+    effects: snapshotEffects(factory.effects ?? []),
+    hits: factory.hits,
+    hitsMax: factory.hitsMax,
+    id: String(factory.id),
+    level: factory.level ?? null,
+    pos: snapshotPosition(factory.pos),
+    store: snapshotStore(factory.store),
+  };
+}
+
+function snapshotPowerSpawn(powerSpawn: StructurePowerSpawn): OwnedPowerSpawnSnapshot {
+  return {
+    active: powerSpawn.isActive(),
+    effects: snapshotEffects(powerSpawn.effects ?? []),
+    hits: powerSpawn.hits,
+    hitsMax: powerSpawn.hitsMax,
+    id: String(powerSpawn.id),
+    pos: snapshotPosition(powerSpawn.pos),
+    store: snapshotStore(powerSpawn.store),
+  };
+}
+
+function snapshotObserver(observer: StructureObserver): OwnedObserverSnapshot {
+  return {
+    active: observer.isActive(),
+    effects: snapshotEffects(observer.effects ?? []),
+    hits: observer.hits,
+    hitsMax: observer.hitsMax,
+    id: String(observer.id),
+    pos: snapshotPosition(observer.pos),
+  };
+}
+
+function snapshotNuker(nuker: StructureNuker): OwnedNukerSnapshot {
+  return {
+    active: nuker.isActive(),
+    cooldown: nuker.cooldown,
+    effects: snapshotEffects(nuker.effects ?? []),
+    hits: nuker.hits,
+    hitsMax: nuker.hitsMax,
+    id: String(nuker.id),
+    pos: snapshotPosition(nuker.pos),
+    store: snapshotStore(nuker.store),
+  };
+}
+
+function snapshotEffects(
+  effects: readonly {
+    readonly effect: number;
+    readonly level?: number;
+    readonly ticksRemaining: number;
+  }[],
+): readonly StructureEffectSnapshot[] {
+  if (effects.length > MAX_STRUCTURE_EFFECTS) {
+    throw new Error(`Structure effect observation exceeds ${String(MAX_STRUCTURE_EFFECTS)}`);
+  }
+  return effects
+    .map(({ effect, level, ticksRemaining }) => ({
+      effect,
+      level: level ?? null,
+      ticksRemaining,
+    }))
+    .sort((a, b) => a.effect - b.effect || (a.level ?? 0) - (b.level ?? 0));
 }
 
 function snapshotStructure(structure: AnyStructure): StructureSnapshot {
