@@ -22,6 +22,10 @@ contract, logistics, intent-arbitration, and executor authorities remain respons
 workforce movement, hauling, and commands. A later composition change will bind proposals to those
 authorities and reconcile observed results.
 
+`TerminalSendExecutor` is the sole owner of live `StructureTerminal.send` calls. Only funded typed
+intents accepted by the shared intent arbiter reach it. Normalized command results feed bounded
+backoff, retirement, and accounting telemetry; the executor cannot alter stock policy.
+
 Stock bands are explicit `min`, `target`, and `max` values. Extraction requires a funded deficit,
 active RCL6 extractor, available mineral, and destination capacity. Internal sends preserve source
 minimums and protected energy, respect destination maximum/free capacity and terminal cooldown, and
