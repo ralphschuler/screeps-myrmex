@@ -50,23 +50,6 @@ export function observeLogisticsGraph(
   const endpoints: LogisticsContractEndpoint[] = [];
   for (const room of [...snapshot.rooms].sort((a, b) => a.name.localeCompare(b.name))) {
     if (room.controller?.ownership !== "owned") continue;
-    for (const resource of [...(room.droppedResources ?? [])].sort((a, b) =>
-      a.id.localeCompare(b.id),
-    )) {
-      addEndpoint(nodes, endpoints, {
-        acquireAction: "pickup",
-        amount: resource.amount,
-        colonyId: room.name,
-        freeCapacity: 0,
-        id: `drop:${resource.id}:${resource.resourceType}`,
-        kind: "source",
-        mandatory: true,
-        observedAt: room.observedAt,
-        position: resource.pos,
-        resourceType: resource.resourceType,
-        targetId: resource.id,
-      });
-    }
     for (const structure of [...room.storedStructures].sort((a, b) => a.id.localeCompare(b.id))) {
       if (structure.ownership === "foreign" || !LOGISTICS_STORE_TYPES.has(structure.structureType))
         continue;

@@ -16,26 +16,26 @@
       "status": "evidenced",
       "scope": "focused-runtime-export",
       "measurements": {
-        "ticks": 29,
+        "ticks": 33,
         "modeledCpu": 0,
-        "persistentBytes": 40944,
-        "persistentGrowth": 6151,
-        "telemetryBytes": 5337,
+        "persistentBytes": 24797,
+        "persistentGrowth": 3093,
+        "telemetryBytes": 5211,
         "telemetryCardinality": 26,
-        "spawnUtilizationPct": 31.03448275862069,
+        "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 200,
         "replacementLateness": 0,
-        "controllerMargin": 19971,
+        "controllerMargin": 19967,
         "controllerRisk": 0,
-        "recoveryTime": 29
+        "recoveryTime": 33
       },
       "hashes": {
-        "warmOutcome": "4247a0d8",
-        "resetOutcome": "4247a0d8",
-        "reorderedOutcome": "4247a0d8",
-        "warmTranscript": "330d786a",
-        "resetTranscript": "4aebfc4d",
-        "reorderedTranscript": "bf897abc"
+        "warmOutcome": "a383b8ac",
+        "resetOutcome": "a383b8ac",
+        "reorderedOutcome": "a383b8ac",
+        "warmTranscript": "2e3a309b",
+        "resetTranscript": "300c075e",
+        "reorderedTranscript": "a87a6a27"
       },
       "unevidenced": []
     },
@@ -48,7 +48,7 @@
         "modeledCpu": 0.09700000000000007,
         "persistentBytes": 28904,
         "persistentGrowth": 4454,
-        "telemetryBytes": 5046,
+        "telemetryBytes": 5045,
         "telemetryCardinality": 26,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
@@ -184,13 +184,13 @@
       "status": "evidenced",
       "scope": "composed-runtime-equivalence",
       "measurements": {
-        "ticks": 1444,
+        "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 40944,
-        "persistentGrowth": 6151,
-        "telemetryBytes": 5337,
+        "persistentBytes": 28904,
+        "persistentGrowth": 4454,
+        "telemetryBytes": 5211,
         "telemetryCardinality": 26,
-        "spawnUtilizationPct": 31.03448275862069,
+        "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
         "controllerMargin": 8599,
@@ -198,12 +198,12 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "35903645",
-        "resetOutcome": "35903645",
-        "reorderedOutcome": "35903645",
-        "warmTranscript": "dca56aa2",
-        "resetTranscript": "71ddaab2",
-        "reorderedTranscript": "f36fd9de"
+        "warmOutcome": "92710e0a",
+        "resetOutcome": "92710e0a",
+        "reorderedOutcome": "92710e0a",
+        "warmTranscript": "856c2f55",
+        "resetTranscript": "8914e654",
+        "reorderedTranscript": "f573deef"
       },
       "unevidenced": []
     },
@@ -212,13 +212,13 @@
       "status": "evidenced",
       "scope": "local-composed-runtime",
       "measurements": {
-        "ticks": 1444,
+        "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 40944,
-        "persistentGrowth": 6151,
-        "telemetryBytes": 5337,
+        "persistentBytes": 28904,
+        "persistentGrowth": 4454,
+        "telemetryBytes": 5211,
         "telemetryCardinality": 26,
-        "spawnUtilizationPct": 31.03448275862069,
+        "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
         "controllerMargin": 8599,
@@ -226,20 +226,20 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "19263ba3",
-        "resetOutcome": "19263ba3",
-        "reorderedOutcome": "19263ba3",
-        "warmTranscript": "dca56aa2",
-        "resetTranscript": "71ddaab2",
-        "reorderedTranscript": "f36fd9de"
+        "warmOutcome": "b5987958",
+        "resetOutcome": "b5987958",
+        "reorderedOutcome": "b5987958",
+        "warmTranscript": "856c2f55",
+        "resetTranscript": "8914e654",
+        "reorderedTranscript": "f573deef"
       },
       "unevidenced": []
     }
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 677033,
+    "bytes": 676490,
     "inputCount": 100,
-    "sha256": "sha256:1572c9f298e52380f33ee5f92a75d92b1ea8bd9f508859b775bd6957593edc40"
+    "sha256": "sha256:6707030574cf55a244c2ec27453e395198684db1838891e6db89fa7434ee8bee"
   }
 }

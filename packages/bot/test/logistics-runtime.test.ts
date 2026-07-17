@@ -22,6 +22,33 @@ describe("logistics runtime adapter", () => {
     expect(constrained.nodes.some(({ id }) => id === "store:spawn:sink:energy")).toBe(true);
   });
 
+  it("leaves dropped energy with the established fallback while observing stored sources", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new TypeError("logistics fixture room is missing");
+    const graph = observeLogisticsGraph(
+      {
+        ...snapshot,
+        rooms: [
+          {
+            ...room,
+            droppedResources: [
+              {
+                amount: 50,
+                id: "drop-a",
+                pos: { roomName: "W1N1", x: 9, y: 10 },
+                resourceType: "energy",
+              },
+            ],
+          },
+        ],
+      },
+      true,
+    );
+    expect(graph.nodes.some(({ id }) => id.startsWith("drop:"))).toBe(false);
+    expect(graph.nodes.some(({ id }) => id.startsWith("store:container:source:"))).toBe(true);
+  });
+
   it("projects one mandatory reservation-backed haul without duplicate flow identities", () => {
     const result = planLogisticsRuntime({
       execution: emptyContractExecutionView("ready"),
