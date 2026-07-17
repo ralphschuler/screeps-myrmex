@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  assignMaintenanceExecution,
   authorizeMaintenanceWork,
+  maintenanceWorkOutcomes,
+  measureMaintenanceTraffic,
   projectMaintenanceBudgets,
   type ConstructionPlanningResult,
   type MaintenanceProposal,
@@ -8,6 +11,53 @@ import {
 import type { ContractPlanningRecord } from "../src/contracts";
 
 describe("maintenance budget and contract projection", () => {
+  it("measures current traffic deterministically and assigns tower targets exclusively", () => {
+    const room = {
+      name: "W1N1",
+      ownedCreeps: [
+        { id: "creep-b", pos: { x: 10, y: 10 } },
+        { id: "creep-a", pos: { x: 11, y: 10 } },
+      ],
+      roads: [
+        { id: "road-b", pos: { x: 13, y: 10 } },
+        { id: "road-a", pos: { x: 10, y: 10 } },
+      ],
+      storedStructures: [],
+      structures: [],
+    };
+    const snapshot = { rooms: [room] } as unknown as Parameters<
+      typeof measureMaintenanceTraffic
+    >[0];
+    const traffic = measureMaintenanceTraffic(snapshot);
+    expect(traffic).toEqual([
+      { targetId: "road-a", score: 6 },
+      { targetId: "road-b", score: 2 },
+    ]);
+    expect(
+      measureMaintenanceTraffic({
+        rooms: [
+          {
+            ...room,
+            ownedCreeps: [...room.ownedCreeps].reverse(),
+            roads: [...room.roads].reverse(),
+          },
+        ],
+      } as unknown as Parameters<typeof measureMaintenanceTraffic>[0]),
+    ).toEqual(traffic);
+
+    const request = (targetId: string) => ({ targetId }) as never;
+    const authorized = {
+      creepRequests: [request("road-a"), request("road-b")],
+      fundedProposals: [],
+      retirements: [],
+      towerCandidates: [],
+    };
+    const assigned = assignMaintenanceExecution(authorized, [{ target: "road-a" }]);
+    expect(assigned.creepRequests.map(({ targetId }) => targetId)).toEqual(["road-b"]);
+    expect(assigned.duplicateTargetsSuppressed).toBe(1);
+    expect(assignMaintenanceExecution(authorized, []).creepRequests).toHaveLength(2);
+  });
+
   it("projects one bounded discretionary room tranche after critical maintenance", () => {
     const projection = projectMaintenanceBudgets({
       existing: [],
@@ -114,6 +164,42 @@ describe("maintenance budget and contract projection", () => {
         tick: 100,
       }),
     ).toMatchObject({ creepRequests: [], fundedProposals: [], towerCandidates: [] });
+  });
+
+  it("classifies destroyed, exact, and over-target retirement receipts", () => {
+    const contracts = {
+      status: "ready" as const,
+      contracts: [
+        {
+          ...contract("destroyed", "maintenance-v2/W1N1/destroyed/9000", "active"),
+          targetId: "gone",
+        },
+        { ...contract("exact", "maintenance-v2/W1N1/exact/9000", "active"), targetId: "exact" },
+        { ...contract("over", "maintenance-v2/W1N1/over/9000", "active"), targetId: "over" },
+      ],
+    };
+    const outcomes = maintenanceWorkOutcomes(
+      contracts,
+      {
+        rooms: [
+          {
+            roads: [
+              { id: "exact", hits: 9_000 },
+              { id: "over", hits: 9_001 },
+            ],
+            storedStructures: [],
+            structures: [],
+          },
+        ],
+      } as unknown as Parameters<typeof maintenanceWorkOutcomes>[1],
+      contracts.contracts.map(({ contractId }) => ({
+        contractId,
+        reason: "maintenance-band-resolved",
+        tick: 101,
+        to: "cancelled" as const,
+      })),
+    );
+    expect(outcomes).toEqual(["overshoot", "retired", "satisfied"]);
   });
 });
 

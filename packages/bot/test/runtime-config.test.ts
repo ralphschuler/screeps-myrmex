@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v22");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v23");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v22",
+      "runtime-config-source-v23",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("activates phase2 links only after layout, mining, logistics, and telemetry under policy v22", () => {
+  it("activates phase2 links only after layout, mining, logistics, and telemetry under policy v23", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v22");
+    expect(config.sourceRevision).toBe("runtime-config-source-v23");
     expect(config.policy.colony).toEqual({
       rclPolicyVersion: 1,
       populationPolicyVersion: 1,

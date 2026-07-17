@@ -5,8 +5,10 @@ import type {
   WorkContractRequest,
 } from "../contracts";
 import type { ConstructionPlanningResult, MaintenanceProposal } from "./construction-planner";
+import type { WorldSnapshot } from "../world/snapshot";
 
 const MAINTENANCE_ISSUER_PREFIX = "maintenance-v2/";
+const MAXIMUM_TRAFFIC_OBSERVATIONS = 128;
 
 export interface MaintenanceBudgetProjection {
   readonly budgets: readonly BudgetRequest[];
@@ -18,6 +20,95 @@ export interface AuthorizedMaintenanceProjection {
   readonly fundedProposals: readonly MaintenanceProposal[];
   readonly retirements: readonly ContractTransitionRequest[];
   readonly towerCandidates: readonly MaintenanceProposal[];
+}
+
+export interface MaintenanceExecutionAssignment {
+  readonly creepRequests: readonly WorkContractRequest[];
+  readonly duplicateTargetsSuppressed: number;
+}
+
+/** Current-tick, bounded traffic evidence. Layout membership remains a separate planner input. */
+export function measureMaintenanceTraffic(snapshot: WorldSnapshot): readonly {
+  readonly score: number;
+  readonly targetId: string;
+}[] {
+  const scores = new Map<string, number>();
+  for (const room of [...snapshot.rooms].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )) {
+    const creeps = [...room.ownedCreeps].sort((left, right) => left.id.localeCompare(right.id));
+    const structures = [...(room.roads ?? []), ...room.storedStructures, ...(room.structures ?? [])]
+      .filter((structure, index, all) => all.findIndex(({ id }) => id === structure.id) === index)
+      .sort((left, right) => left.id.localeCompare(right.id));
+    for (const structure of structures) {
+      let score = 0;
+      for (const creep of creeps) {
+        const range = Math.max(
+          Math.abs(creep.pos.x - structure.pos.x),
+          Math.abs(creep.pos.y - structure.pos.y),
+        );
+        if (range <= 3) score += range === 0 ? 4 : range === 1 ? 2 : 1;
+      }
+      if (score > 0) scores.set(structure.id, score);
+    }
+  }
+  return freeze(
+    [...scores]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .slice(0, MAXIMUM_TRAFFIC_OBSERVATIONS)
+      .map(([targetId, score]) => ({ score, targetId })),
+  );
+}
+
+/** Assigns each target to exactly one executor, retaining creep fallback when no tower was planned. */
+export function assignMaintenanceExecution(
+  authorized: AuthorizedMaintenanceProjection,
+  towerTargets: readonly { readonly target: string }[],
+): MaintenanceExecutionAssignment {
+  const assignedToTower = new Set(towerTargets.map(({ target }) => target));
+  const creepRequests = authorized.creepRequests.filter(
+    ({ targetId }) => targetId === null || !assignedToTower.has(targetId),
+  );
+  return freeze({
+    creepRequests,
+    duplicateTargetsSuppressed: authorized.creepRequests.length - creepRequests.length,
+  });
+}
+
+/** Classifies only observable terminal target state; ambiguous replans emit no outcome. */
+export function maintenanceWorkOutcomes(
+  contracts: ContractPlanningView,
+  snapshot: WorldSnapshot,
+  retirements: readonly ContractTransitionRequest[],
+): readonly ("overshoot" | "retired" | "satisfied")[] {
+  if (contracts.status !== "ready") return freeze([]);
+  const retiring = new Set(
+    retirements
+      .filter(({ reason }) => reason === "maintenance-band-resolved")
+      .map(({ contractId }) => contractId),
+  );
+  const structures = snapshot.rooms.flatMap((room) => [
+    ...(room.roads ?? []),
+    ...room.storedStructures,
+    ...(room.structures ?? []),
+  ]);
+  const outcomes: ("overshoot" | "retired" | "satisfied")[] = [];
+  for (const contract of contracts.contracts) {
+    if (
+      !retiring.has(contract.contractId) ||
+      !contract.issuer.startsWith(MAINTENANCE_ISSUER_PREFIX)
+    )
+      continue;
+    const target = structures.find(({ id }) => id === contract.targetId);
+    if (target === undefined) outcomes.push("retired");
+    else if (contract.execution.version === 1) {
+      const completionHits = contract.execution.completionHits;
+      if (typeof completionHits !== "number") continue;
+      if (target.hits > completionHits) outcomes.push("overshoot");
+      else if (target.hits === completionHits) outcomes.push("satisfied");
+    }
+  }
+  return freeze(outcomes.sort());
 }
 
 /** Projects one discretionary room tranche; ColonyDirector remains the sole budget authority. */

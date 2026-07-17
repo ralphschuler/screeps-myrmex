@@ -14,6 +14,7 @@ import {
   type RuntimeConfigResolutionMetadata,
 } from "../config";
 import type { WorldSnapshot } from "../world/snapshot";
+import type { MaintenanceTelemetry } from "../maintenance";
 import type { TelemetryStatus } from "./service";
 import type { LogisticsTelemetry } from "./logistics";
 import type { StaticMiningTelemetry } from "./static-mining";
@@ -86,6 +87,8 @@ export interface TickTelemetry {
   readonly staticMining: StaticMiningTelemetry;
   /** Present on TelemetryService output; optional only across the runtime integration handoff. */
   readonly logistics?: LogisticsTelemetry;
+  /** Bounded settled maintenance outcomes; never consumed by gameplay authorities. */
+  readonly maintenanceV2: MaintenanceTelemetry;
 }
 
 export type ReporterTransitionTelemetry =
@@ -166,7 +169,12 @@ export function recordTickTelemetry(
   input: TickTelemetryInput,
 ): Omit<
   TickTelemetry,
-  "activity" | "status" | "recoveryProgress" | "reporterTransitions" | "staticMining"
+  | "activity"
+  | "status"
+  | "recoveryProgress"
+  | "reporterTransitions"
+  | "staticMining"
+  | "maintenanceV2"
 > {
   return Object.freeze({
     tick: input.tick,
