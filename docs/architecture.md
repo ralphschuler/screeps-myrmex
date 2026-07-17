@@ -1382,6 +1382,11 @@ transaction-cost facts produce bounded extraction and internal-send proposals. E
 `min`/`target`/`max` bands, protected energy, shared capacity, cooldowns, deadlines, and stable
 identities fail closed before proposals reach budgets, contracts, logistics, or structure arbiters.
 
+Funded extraction proposals become ordinary harvest contracts. Funded internal-send proposals become
+typed intents with one exclusive terminal key; only `TerminalSendExecutor` may call `send`. Expected
+game errors and adapter faults reconcile into bounded retry state and mined, hauled, reserved, sent,
+transaction-energy, consumed, and unmet accounting.
+
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
 state.

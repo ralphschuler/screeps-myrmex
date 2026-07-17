@@ -30,6 +30,7 @@ export interface IndustryRoomState {
   readonly mineral: {
     readonly amount: number;
     readonly id: string;
+    readonly pos?: { readonly roomName: string; readonly x: number; readonly y: number };
     readonly resourceType: string;
     readonly ticksToRegeneration: number | null;
   } | null;
