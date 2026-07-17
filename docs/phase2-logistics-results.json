@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "issue": 47,
+  "status": "complete",
+  "deterministicScenario": {
+    "admittedFlowOrder": [
+      "flow/container-extension",
+      "flow/container-spawn",
+      "flow/container-storage",
+      "flow/drop-storage",
+      "flow/ruin-factory",
+      "flow/storage-terminal",
+      "flow/tombstone-lab"
+    ],
+    "boundedWork": {
+      "edgeCount": 7,
+      "nodeCount": 10,
+      "telemetryFlowCap": 8
+    },
+    "equivalentAfterWarmResetAndReorder": true,
+    "haulerDemand": {
+      "admittedAmount": 520,
+      "carry": 4,
+      "converged": true,
+      "move": 4
+    },
+    "mandatoryUnderPressure": {
+      "admittedAmount": 250,
+      "admittedFlows": ["flow/container-extension", "flow/container-spawn"],
+      "carry": 2,
+      "optionalFlowsScheduled": 0,
+      "protectedRecoveryEnergy": 300
+    },
+    "noDoubleReservation": true,
+    "observedEndpoints": [
+      "container",
+      "drop",
+      "extension",
+      "factory",
+      "lab",
+      "ruin",
+      "spawn",
+      "storage",
+      "terminal",
+      "tombstone"
+    ],
+    "reservations": [
+      {
+        "nodeId": "container/source/energy",
+        "sourceAmount": 300,
+        "sinkCapacity": 0
+      },
+      {
+        "nodeId": "drop/source/energy",
+        "sourceAmount": 50,
+        "sinkCapacity": 0
+      },
+      {
+        "nodeId": "extension/sink/energy",
+        "sourceAmount": 0,
+        "sinkCapacity": 50
+      },
+      {
+        "nodeId": "factory/sink/O",
+        "sourceAmount": 0,
+        "sinkCapacity": 30
+      },
+      {
+        "nodeId": "lab/sink/H",
+        "sourceAmount": 0,
+        "sinkCapacity": 40
+      },
+      {
+        "nodeId": "ruin/source/O",
+        "sourceAmount": 30,
+        "sinkCapacity": 0
+      },
+      {
+        "nodeId": "spawn/sink/energy",
+        "sourceAmount": 0,
+        "sinkCapacity": 200
+      },
+      {
+        "nodeId": "storage/buffer/energy",
+        "sourceAmount": 100,
+        "sinkCapacity": 100
+      },
+      {
+        "nodeId": "terminal/sink/energy",
+        "sourceAmount": 0,
+        "sinkCapacity": 100
+      },
+      {
+        "nodeId": "tombstone/source/H",
+        "sourceAmount": 40,
+        "sinkCapacity": 0
+      }
+    ]
+  },
+  "recovery": {
+    "actorDeath": {
+      "cycle": 1,
+      "delivered": 30,
+      "reacquireAmount": 170,
+      "reason": "actor-dead"
+    },
+    "droppedDecay": {
+      "observed": 20,
+      "reserved": 0
+    },
+    "fullAndEmptyStores": {
+      "emptySourceReason": "empty-source",
+      "emptySourceReservations": 0,
+      "fullSinkReason": "full-sink",
+      "fullSinkReservations": 0
+    },
+    "partialDelivery": {
+      "cargo": 20,
+      "delivered": 30,
+      "remaining": 170,
+      "stage": "deliver"
+    },
+    "resetRecovery": {
+      "cycle": 1,
+      "delivered": 30,
+      "flowId": "flow/container-spawn",
+      "reserved": 200
+    },
+    "vanishedEndpoint": {
+      "admittedAfterVanishing": 0,
+      "ghostSinkReservations": 0,
+      "reason": "sink-vanished",
+      "requestActive": false,
+      "retirements": 1
+    }
+  },
+  "telemetry": {
+    "activeContracts": 7,
+    "cpuUsed": 0.25,
+    "deliveredDelta": 30,
+    "droppedAtCap": 1,
+    "latencyTicks": 1,
+    "lossDelta": 20,
+    "persistedBytes": 1442,
+    "pickedUpDelta": 50,
+    "planUnchanged": true,
+    "resetDeltas": {
+      "delivered": 0,
+      "loss": 0,
+      "pickedUp": 0
+    },
+    "schemaVersion": 1,
+    "requested": 520,
+    "scheduled": 520,
+    "shortfall": 0
+  },
+  "boundaries": {
+    "commandsIssued": 0,
+    "nonGoals": ["#48 link commands", "#49 container repair", "terminal sends", "market"],
+    "observerOnly": true
+  }
+}

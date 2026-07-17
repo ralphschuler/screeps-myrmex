@@ -93,6 +93,7 @@ import {
 import type { JsonObject, StateView } from "../state/schema";
 import { recordTickTelemetry, type TickTelemetry } from "../telemetry/metrics";
 import { measureSurvivalEnergyFlow } from "../telemetry/energy-flow";
+import type { LogisticsFlowObservation } from "../telemetry/logistics";
 import type { StaticMiningSourceObservation } from "../telemetry/static-mining";
 import { TelemetryService } from "../telemetry/service";
 import { ConsoleReporter, type ConsoleSink } from "../telemetry/console-reporter";
@@ -373,6 +374,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let staticMiningPlan: StaticMiningPlan = emptyStaticMiningPlan();
   let logisticsRuntime = emptyLogisticsRuntimeProjection();
   let staticMiningCpuUsed = 0;
+  let logisticsCpuUsed = 0;
   let collectedTelemetry: TickTelemetry | null = null;
   return Object.freeze([
     configBootSystem(input),
@@ -520,13 +522,14 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     colonyDirectorSystem(
       input,
       spawnDraft,
-      (economy, maintenance, growth, mining, miningCpuUsed, logistics) => {
+      (economy, maintenance, growth, mining, miningCpuUsed, logistics, logisticsCpu) => {
         survivalCandidates = economy;
         maintenanceCandidates = maintenance;
         growthCandidates = growth;
         staticMiningPlan = mining;
         staticMiningCpuUsed = miningCpuUsed;
         logisticsRuntime = logistics;
+        logisticsCpuUsed = logisticsCpu;
       },
     ),
     layoutPlanningSystem(input, layoutDraft),
@@ -1008,6 +1011,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                     cpuUsed: staticMiningCpuUsed,
                     observations: staticMiningObservations(context, staticMiningPlan),
                   },
+                  logistics: {
+                    cpuUsed: logisticsCpuUsed,
+                    observations: logisticsObservations(context, logisticsRuntime),
+                  },
                   reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
                 });
                 const telemetryTransaction = input.manager.transaction("telemetry");
@@ -1078,6 +1085,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 staticMining: {
                   cpuUsed: staticMiningCpuUsed,
                   observations: staticMiningObservations(context, staticMiningPlan),
+                },
+                logistics: {
+                  cpuUsed: logisticsCpuUsed,
+                  observations: logisticsObservations(context, logisticsRuntime),
                 },
                 reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
               }).telemetry,
@@ -1372,6 +1383,7 @@ function colonyDirectorSystem(
     mining: StaticMiningPlan,
     miningCpuUsed: number,
     logistics: LogisticsRuntimeProjection,
+    logisticsCpuUsed: number,
   ) => void,
 ): TickSystem<TickContext> {
   return {
@@ -1430,16 +1442,22 @@ function colonyDirectorSystem(
         const elapsed = input.game.cpu.getUsed() - startedAt;
         miningCpuUsed = Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
       }
+      let logisticsCpuUsed = 0;
+      let logisticsPlan = emptyLogisticsRuntimeProjection();
+      if (isFeatureEnabled(context.config, "phase2.logistics")) {
+        const startedAt = input.game.cpu.getUsed();
+        logisticsPlan = planLogisticsRuntime({
+          execution: context.contractExecution,
+          includeOptional: mode === "normal",
+          planning: context.contractPlanning,
+          snapshot: context.snapshot,
+          tick: context.tick,
+        });
+        const elapsed = input.game.cpu.getUsed() - startedAt;
+        logisticsCpuUsed = Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
+      }
       const logistics = renewLogisticsBudgets(
-        isFeatureEnabled(context.config, "phase2.mining")
-          ? planLogisticsRuntime({
-              execution: context.contractExecution,
-              includeOptional: mode === "normal",
-              planning: context.contractPlanning,
-              snapshot: context.snapshot,
-              tick: context.tick,
-            })
-          : emptyLogisticsRuntimeProjection(),
+        logisticsPlan,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
       );
       const logisticsActorIds = new Set(
@@ -1447,8 +1465,22 @@ function colonyDirectorSystem(
           execution.version === 3 ? [actorId] : [],
         ),
       );
+      const logisticsPickupTargetIds = new Set(
+        logistics.plan.projections
+          .filter(({ admittedAmount, blocker }) => blocker === null && admittedAmount > 0)
+          .flatMap(({ sourceNodeId }) => {
+            const endpoint = logistics.graph.endpoints.find(
+              ({ nodeId }) => nodeId === sourceNodeId,
+            );
+            return endpoint?.acquireAction === "pickup" && endpoint.targetId !== null
+              ? [endpoint.targetId]
+              : [];
+          }),
+      );
       economyCandidates = economyCandidates.filter(
-        ({ action, actorId }) => action !== "transfer" || !logisticsActorIds.has(actorId),
+        ({ action, actorId, targetId }) =>
+          (action !== "transfer" || !logisticsActorIds.has(actorId)) &&
+          (action !== "pickup" || !logisticsPickupTargetIds.has(targetId)),
       );
       publishCandidates(
         economyCandidates,
@@ -1457,6 +1489,7 @@ function colonyDirectorSystem(
         miningPlan,
         miningCpuUsed,
         logistics,
+        logisticsCpuUsed,
       );
       const budgetRequests = [
         ...economyCandidates.map(({ budgetRequest }) => budgetRequest),
@@ -1642,6 +1675,54 @@ function staticMiningObservations(
                 }),
         }),
       ];
+    }),
+  );
+}
+
+function logisticsObservations(
+  context: TickContext,
+  runtime: LogisticsRuntimeProjection,
+): readonly LogisticsFlowObservation[] {
+  const commitments = new Map(
+    runtime.contracts.commitments.map((commitment) => [commitment.flowId, commitment]),
+  );
+  const nodes = new Map(runtime.graph.nodes.map((node) => [node.id, node]));
+  const edges = new Map(runtime.graph.edges.map((edge) => [edge.id, edge]));
+  return Object.freeze(
+    runtime.plan.projections.map((projection): LogisticsFlowObservation => {
+      const commitment = commitments.get(projection.id);
+      const source = nodes.get(projection.sourceNodeId);
+      const sink = nodes.get(projection.sinkNodeId);
+      const edge = edges.get(projection.id);
+      const requested = Math.max(
+        0,
+        Math.min(
+          source?.observedAmount ?? 0,
+          sink?.freeCapacity ?? 0,
+          edge?.maximumAmount ?? Number.MAX_SAFE_INTEGER,
+        ),
+      );
+      const activeContract = context.contractPlanning.contracts.find(
+        ({ execution, state }) =>
+          state === "active" && execution.version === 3 && execution.flowId === projection.id,
+      );
+      const loss = commitment === undefined || commitment.cycle === 0 ? 0 : commitment.cycleAmount;
+      return Object.freeze({
+        flowId: projection.id,
+        contractId: commitment?.request?.issuer ?? activeContract?.issuer ?? null,
+        requested,
+        scheduled: commitment?.reservedAmount ?? projection.admittedAmount,
+        pickedUp:
+          (commitment?.deliveredAmount ?? 0) +
+          (commitment?.stage === "deliver"
+            ? commitment.reservedAmount - commitment.deliveredAmount
+            : 0) +
+          loss,
+        delivered: commitment?.deliveredAmount ?? 0,
+        loss,
+        firstRequestedAt: commitment?.stageStartedAt ?? context.tick,
+        active: commitment?.request != null || activeContract !== undefined,
+      });
     }),
   );
 }

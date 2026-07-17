@@ -25,13 +25,18 @@ import {
   type StaticMiningSourceObservation,
   type StaticMiningTelemetryState,
 } from "./static-mining";
+import {
+  reduceLogisticsTelemetry,
+  type LogisticsFlowObservation,
+  type LogisticsTelemetryState,
+} from "./logistics";
 
 type TickTelemetryBase = Omit<
   TickTelemetry,
-  "activity" | "status" | "recoveryProgress" | "reporterTransitions" | "staticMining"
+  "activity" | "status" | "recoveryProgress" | "reporterTransitions" | "staticMining" | "logistics"
 >;
 
-export const TELEMETRY_OWNER_SCHEMA_VERSION = 3 as const;
+export const TELEMETRY_OWNER_SCHEMA_VERSION = 4 as const;
 
 export interface TelemetryDetail {
   readonly domain: "budget" | "contract" | "intent" | "movement" | "spawn";
@@ -61,6 +66,11 @@ export interface TelemetryServiceInput {
     readonly cpuUsed: number;
     readonly observations: readonly StaticMiningSourceObservation[];
   };
+  /** Cumulative settled flow facts; telemetry derives tick deltas from its bounded owner state. */
+  readonly logistics?: {
+    readonly cpuUsed: number;
+    readonly observations: readonly LogisticsFlowObservation[];
+  };
   /** Fixed tick-local signals derived from settled runtime health; never raw error payloads. */
   readonly reporterSignals: readonly ReporterSignal[];
 }
@@ -78,6 +88,7 @@ export class TelemetryService {
   public record(ownerValue: unknown, input: TelemetryServiceInput): TelemetryServiceResult {
     const owner = readOwnerSafely(ownerValue, input.base.telemetryPolicy.maximumHistoryEntries);
     const staticMining = safelyReduceStaticMining(owner.staticMining, input);
+    const logistics = safelyReduceLogistics(owner.logistics, input);
     const detailLimit = input.base.telemetryPolicy.maximumDetailRecords;
     const allDetails = collectDetails(input);
     const details = allDetails
@@ -89,6 +100,7 @@ export class TelemetryService {
       hash: canonicalHash({
         base: telemetryHashView(input.base),
         details,
+        logistics: logistics.telemetry,
         staticMining: staticMining.telemetry,
       }),
       details: Object.freeze(details),
@@ -97,6 +109,7 @@ export class TelemetryService {
     const telemetryWithoutRecovery = {
       ...input.base,
       activity: activity(input),
+      logistics: logistics.telemetry,
       staticMining: staticMining.telemetry,
       status,
     };
@@ -106,6 +119,7 @@ export class TelemetryService {
       details,
       input.reporterSignals,
       staticMining.state,
+      logistics.state,
     );
     const telemetry = deepFreeze({
       ...telemetryWithoutRecovery,
@@ -124,6 +138,7 @@ interface ParsedOwner {
   readonly droppedHistory: number;
   readonly reporter: unknown;
   readonly staticMining: StaticMiningTelemetryState | null;
+  readonly logistics: LogisticsTelemetryState | null;
 }
 
 function readOwnerSafely(value: unknown, maximumHistoryEntries: number): ParsedOwner {
@@ -140,13 +155,17 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
   }
   const root = value as Record<string, unknown>;
   if (
-    (root.schemaVersion !== 1 && root.schemaVersion !== 2 && root.schemaVersion !== 3) ||
+    (root.schemaVersion !== 1 &&
+      root.schemaVersion !== 2 &&
+      root.schemaVersion !== 3 &&
+      root.schemaVersion !== 4) ||
     !Array.isArray(root.history)
   ) {
     return emptyParsedOwner();
   }
-  const reporter = root.schemaVersion === 2 || root.schemaVersion === 3 ? root.reporter : undefined;
-  const staticMining = root.schemaVersion === 3 ? readStaticMiningState(root.staticMining) : null;
+  const reporter = root.schemaVersion >= 2 ? root.reporter : undefined;
+  const staticMining = root.schemaVersion >= 3 ? readStaticMiningState(root.staticMining) : null;
+  const logistics = root.schemaVersion === 4 ? readLogisticsState(root.logistics) : null;
   const priorDroppedHistory = readCounter(root.droppedHistory);
   const retainedLimit = safeNonnegativeInteger(maximumHistoryEntries);
   if (root.history.length > retainedLimit) {
@@ -155,6 +174,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
       droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
       reporter,
       staticMining,
+      logistics,
     };
   }
   const history: { tick: number; hash: string }[] = [];
@@ -165,6 +185,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
         droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
         reporter,
         staticMining,
+        logistics,
       };
     }
     const row = entry as Record<string, unknown>;
@@ -181,6 +202,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
         droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
         reporter,
         staticMining,
+        logistics,
       };
     }
     history.push({ tick, hash: row.hash });
@@ -190,11 +212,26 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
     droppedHistory: priorDroppedHistory,
     reporter,
     staticMining,
+    logistics,
   };
 }
 
 function emptyParsedOwner(): ParsedOwner {
-  return { history: [], droppedHistory: 0, reporter: undefined, staticMining: null };
+  return {
+    history: [],
+    droppedHistory: 0,
+    reporter: undefined,
+    staticMining: null,
+    logistics: null,
+  };
+}
+
+function readLogisticsState(value: unknown): LogisticsTelemetryState | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  return row.schemaVersion === 1 && Array.isArray(row.flows)
+    ? (value as LogisticsTelemetryState)
+    : null;
 }
 
 function readStaticMiningState(value: unknown): StaticMiningTelemetryState | null {
@@ -221,6 +258,22 @@ function safelyReduceStaticMining(
   }
 }
 
+function safelyReduceLogistics(
+  previous: LogisticsTelemetryState | null,
+  input: TelemetryServiceInput,
+) {
+  const reduction = {
+    tick: input.base.tick,
+    cpuUsed: input.logistics?.cpuUsed ?? 0,
+    observations: input.logistics?.observations ?? [],
+  };
+  try {
+    return reduceLogisticsTelemetry({ ...reduction, previous });
+  } catch {
+    return reduceLogisticsTelemetry({ ...reduction, previous: null, observations: [] });
+  }
+}
+
 function readCounter(value: unknown): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
@@ -242,6 +295,10 @@ interface MutableTelemetryOwner {
   staticMining: {
     schemaVersion: 1;
     sources: StaticMiningTelemetryState["sources"][number][];
+  };
+  logistics: {
+    schemaVersion: 1;
+    flows: LogisticsTelemetryState["flows"][number][];
   };
 }
 
@@ -280,6 +337,9 @@ function fitOwnerToByteBudget(owner: MutableTelemetryOwner, maximumBytes: number
   if (exceedsBudget()) owner.reporter.recovery = null;
   while (exceedsBudget() && owner.staticMining.sources.length > 0) {
     owner.staticMining.sources.pop();
+  }
+  while (exceedsBudget() && owner.logistics.flows.length > 0) {
+    owner.logistics.flows.pop();
   }
 }
 
@@ -419,6 +479,7 @@ function writeOwner(
   details: readonly TelemetryDetail[],
   reporterSignals: readonly ReporterSignal[],
   staticMining: StaticMiningTelemetryState,
+  logistics: LogisticsTelemetryState,
 ): {
   readonly owner: JsonObject;
   readonly recoveryProgress: TickTelemetry["recoveryProgress"];
@@ -470,6 +531,10 @@ function writeOwner(
       staticMining: {
         schemaVersion: staticMining.schemaVersion,
         sources: staticMining.sources.map((source) => ({ ...source })),
+      },
+      logistics: {
+        schemaVersion: logistics.schemaVersion,
+        flows: logistics.flows.map((flow) => ({ ...flow })),
       },
     };
     const generatedEntries = generatedReporterEntries(result.reporter.entries).length;

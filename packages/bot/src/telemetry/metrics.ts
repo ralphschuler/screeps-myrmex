@@ -15,6 +15,7 @@ import {
 } from "../config";
 import type { WorldSnapshot } from "../world/snapshot";
 import type { TelemetryStatus } from "./service";
+import type { LogisticsTelemetry } from "./logistics";
 import type { StaticMiningTelemetry } from "./static-mining";
 
 export interface FeatureGateTelemetry {
@@ -83,6 +84,8 @@ export interface TickTelemetry {
   readonly energyFlow: EnergyFlowTelemetry;
   /** Bounded observer-only evidence for static extraction; gameplay never consumes it. */
   readonly staticMining: StaticMiningTelemetry;
+  /** Present on TelemetryService output; optional only across the runtime integration handoff. */
+  readonly logistics?: LogisticsTelemetry;
 }
 
 export type ReporterTransitionTelemetry =

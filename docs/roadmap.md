@@ -103,11 +103,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
   link commands remain #48, and container repair remains #49.
-- Issue #47 PR A establishes the sole bounded LogisticsPlanner authority, fresh owned-room
-  normalization, exact resource reservations, deterministic admission, and convergent body
-  recommendations. PR B owns funded contracts, population, execution/reconciliation, and runtime
-  activation; PR C owns telemetry, composed evidence, and gate activation. Terminal sends, link
-  commands (#48), and container repair (#49) remain non-goals of PR A.
+- Issue #47 establishes the sole bounded LogisticsPlanner authority, fresh owned-room normalization,
+  exact resource reservations, deterministic admission, funded V3 acquire/deliver contracts,
+  convergent dedicated-hauler demand, runtime reconciliation, and observer-only telemetry. Its
+  reset/reorder/failure evidence is recorded in
+  [`phase2-logistics-evidence.md`](phase2-logistics-evidence.md). Terminal sends, link commands
+  (#48), and container repair (#49) remain separate authorities.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

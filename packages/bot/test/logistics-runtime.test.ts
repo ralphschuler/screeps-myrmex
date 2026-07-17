@@ -22,7 +22,7 @@ describe("logistics runtime adapter", () => {
     expect(constrained.nodes.some(({ id }) => id === "store:spawn:sink:energy")).toBe(true);
   });
 
-  it("leaves dropped energy with the established fallback while observing stored sources", () => {
+  it("normalizes dropped, tombstone, ruin, and stored sources for one runtime graph", () => {
     const snapshot = world();
     const room = snapshot.rooms[0];
     if (room === undefined) throw new TypeError("logistics fixture room is missing");
@@ -40,6 +40,60 @@ describe("logistics runtime adapter", () => {
                 resourceType: "energy",
               },
             ],
+            ruins: [
+              {
+                id: "ruin-a",
+                pos: { roomName: "W1N1", x: 8, y: 10 },
+                store: {
+                  capacity: null,
+                  freeCapacity: null,
+                  resources: [{ amount: 25, resourceType: "H" }],
+                  usedCapacity: 25,
+                },
+              },
+            ],
+            tombstones: [
+              {
+                id: "tomb-a",
+                pos: { roomName: "W1N1", x: 7, y: 10 },
+                store: {
+                  capacity: null,
+                  freeCapacity: null,
+                  resources: [{ amount: 30, resourceType: "energy" }],
+                  usedCapacity: 30,
+                },
+              },
+            ],
+          },
+        ],
+      },
+      true,
+    );
+    expect(graph.nodes.some(({ id }) => id.startsWith("drop:"))).toBe(true);
+    expect(graph.nodes.some(({ id }) => id.startsWith("ruin:"))).toBe(true);
+    expect(graph.nodes.some(({ id }) => id.startsWith("tombstone:"))).toBe(true);
+    expect(graph.nodes.some(({ id }) => id.startsWith("store:container:source:"))).toBe(true);
+  });
+
+  it("leaves loose-resource recovery with bootstrap fallback until a dedicated hauler exists", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new TypeError("logistics fixture room is missing");
+    const graph = observeLogisticsGraph(
+      {
+        ...snapshot,
+        rooms: [
+          {
+            ...room,
+            droppedResources: [
+              {
+                amount: 50,
+                id: "drop-a",
+                pos: { roomName: "W1N1", x: 9, y: 10 },
+                resourceType: "energy",
+              },
+            ],
+            ownedCreeps: [],
           },
         ],
       },

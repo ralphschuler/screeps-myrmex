@@ -1,6 +1,6 @@
 # ADR 0018: LogisticsPlanner authority and observation boundary
 
-Status: accepted (PR B data authority)
+Status: accepted
 
 ## Context
 
@@ -44,10 +44,12 @@ reserve. Mandatory planner order receives scarce recommendation slots before opt
 projector does not persist state; a later runtime caller must supply durable commitment state and
 reconciled world progress through existing owners.
 
-PR C owns runtime activation, telemetry, composed deterministic scenario evidence, gate activation,
-and issue closure. Issue #48 remains the sole link-command authority, and #49 remains the container
-repair authority. Terminal sends, market value, remote hauling, hostile-safety policy, and direct
-runtime commands are not PR A outputs.
+Runtime activation retains these boundaries: the planner remains the sole admission authority,
+contracts remain the executable commitment, and telemetry consumes reconciled cumulative facts
+without authorizing work. The composed deterministic gate covers pressure, partial delivery, actor
+death, endpoint loss, dropped-resource decay, reset, and reordered observations. Issue #48 remains
+the sole link-command authority, and #49 remains the container-repair authority. Terminal sends,
+market value, remote hauling, and hostile-safety policy remain outside this decision.
 
 ## Consequences
 
