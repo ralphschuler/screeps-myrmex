@@ -10,10 +10,13 @@ import {
   type CreepSnapshot,
   type DroppedResourceSnapshot,
   type MineralSnapshot,
+  type OwnedExtractorSnapshot,
   type OwnedExtensionSnapshot,
   type OwnedLinkSnapshot,
   type OwnedRoomSnapshot,
   type OwnedSpawnSnapshot,
+  type OwnedStorageSnapshot,
+  type OwnedTerminalSnapshot,
   type OwnedTowerSnapshot,
   type PositionSnapshot,
   type RoomSnapshot,
@@ -125,6 +128,10 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     name: room.name,
     observedAt,
     ownedCreeps: ownedCreeps.map(snapshotCreep).sort(compareById),
+    ownedExtractors: structures
+      .filter((structure) => isMyStructureOfType(structure, "extractor"))
+      .map((structure) => snapshotExtractor(structure as StructureExtractor))
+      .sort(compareById),
     ownedExtensions: structures
       .filter((structure) => isMyStructureOfType(structure, "extension"))
       .map((structure) => snapshotExtension(structure as StructureExtension))
@@ -136,6 +143,14 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     ownedSpawns: structures
       .filter((structure) => isMyStructureOfType(structure, "spawn"))
       .map((structure) => snapshotSpawn(structure as StructureSpawn))
+      .sort(compareById),
+    ownedStorages: structures
+      .filter((structure) => isMyStructureOfType(structure, "storage"))
+      .map((structure) => snapshotStorage(structure as StructureStorage))
+      .sort(compareById),
+    ownedTerminals: structures
+      .filter((structure) => isMyStructureOfType(structure, "terminal"))
+      .map((structure) => snapshotTerminal(structure as StructureTerminal))
       .sort(compareById),
     ownedTowers: structures
       .filter((structure) => isMyStructureOfType(structure, "tower"))
@@ -157,9 +172,46 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
 
 function snapshotMineral(mineral: Mineral): MineralSnapshot {
   return {
+    amount: mineral.mineralAmount,
+    density: mineral.density,
     id: String(mineral.id),
     mineralType: mineral.mineralType,
     pos: snapshotPosition(mineral.pos),
+    ticksToRegeneration: nullableNumber(mineral.ticksToRegeneration),
+  };
+}
+
+function snapshotExtractor(extractor: StructureExtractor): OwnedExtractorSnapshot {
+  return {
+    active: extractor.isActive(),
+    cooldown: extractor.cooldown,
+    hits: extractor.hits,
+    hitsMax: extractor.hitsMax,
+    id: String(extractor.id),
+    pos: snapshotPosition(extractor.pos),
+  };
+}
+
+function snapshotStorage(storage: StructureStorage): OwnedStorageSnapshot {
+  return {
+    active: storage.isActive(),
+    hits: storage.hits,
+    hitsMax: storage.hitsMax,
+    id: String(storage.id),
+    pos: snapshotPosition(storage.pos),
+    store: snapshotStore(storage.store),
+  };
+}
+
+function snapshotTerminal(terminal: StructureTerminal): OwnedTerminalSnapshot {
+  return {
+    active: terminal.isActive(),
+    cooldown: terminal.cooldown,
+    hits: terminal.hits,
+    hitsMax: terminal.hitsMax,
+    id: String(terminal.id),
+    pos: snapshotPosition(terminal.pos),
+    store: snapshotStore(terminal.store),
   };
 }
 

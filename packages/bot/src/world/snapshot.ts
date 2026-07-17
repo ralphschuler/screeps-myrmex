@@ -152,9 +152,37 @@ export interface ConstructionSiteSnapshot {
 }
 
 export interface MineralSnapshot {
+  /** Runtime observations always provide the current harvestable amount. */
+  readonly amount?: number;
+  /** Runtime observations always provide the current density constant. */
+  readonly density?: number;
   readonly id: string;
   readonly mineralType: string;
   readonly pos: PositionSnapshot;
+  /** Runtime observations always provide null while mineral is available. */
+  readonly ticksToRegeneration?: number | null;
+}
+
+export interface OwnedExtractorSnapshot {
+  readonly active: boolean;
+  readonly cooldown: number;
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+}
+
+export interface OwnedStorageSnapshot {
+  readonly active: boolean;
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
+export interface OwnedTerminalSnapshot extends OwnedStorageSnapshot {
+  readonly cooldown: number;
 }
 
 export interface StructureSnapshot {
@@ -229,10 +257,16 @@ export interface RoomSnapshot {
   readonly name: string;
   readonly observedAt: number;
   readonly ownedCreeps: readonly CreepSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedExtractors?: readonly OwnedExtractorSnapshot[];
   readonly ownedExtensions: readonly OwnedExtensionSnapshot[];
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
   readonly ownedLinks?: readonly OwnedLinkSnapshot[];
   readonly ownedSpawns: readonly OwnedSpawnSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedStorages?: readonly OwnedStorageSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedTerminals?: readonly OwnedTerminalSnapshot[];
   readonly ownedTowers: readonly OwnedTowerSnapshot[];
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
   readonly roads?: readonly RoadSnapshot[];
