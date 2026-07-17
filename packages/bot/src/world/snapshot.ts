@@ -165,6 +165,10 @@ export interface StructureSnapshot {
   readonly ownership: "owned" | "foreign" | "unowned";
   readonly pos: PositionSnapshot;
   readonly structureType: string;
+  /** Present for ramparts; null for other runtime-observed structures. */
+  readonly isPublic?: boolean | null;
+  /** Present for decaying roads, containers, and ramparts; null otherwise. */
+  readonly ticksToDecay?: number | null;
 }
 
 export interface TerrainSnapshot {

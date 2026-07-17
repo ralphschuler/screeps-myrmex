@@ -61,6 +61,11 @@ and performs canonical classification and arbitration. `links.execute` revalidat
 dependency, issues at most one command per source, and publishes typed command settlement with
 actual flow and loss attribution. Command errors never consume or release another owner's budget.
 
+`ConstructionPlanner` is the sole mature-colony maintenance-demand policy owner. It derives bounded
+road, container, ordinary-structure, wall, and rampart targets from current observation, layout,
+traffic consequence, reserve posture, RCL, and threat presence. It emits data only; ContractLedger
+owns funded creep work, while defense arbitration exclusively owns tower attack, heal, and repair.
+
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
 3. `main.ts` exports the Screeps loop and performs no gameplay planning.
