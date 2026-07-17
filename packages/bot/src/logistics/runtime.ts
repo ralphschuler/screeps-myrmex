@@ -14,6 +14,7 @@ import {
   type LogisticsNode,
   type LogisticsPlan,
 } from "./planner";
+import type { LabResourceDemandProjection } from "./resource-demands";
 
 const LOGISTICS_RECOVERY_RESERVE = 300;
 const LOGISTICS_MAXIMUM_NODE_AGE = 0;
@@ -191,12 +192,14 @@ export function planLogisticsRuntime(input: {
   readonly execution: ContractExecutionView;
   readonly includeOptional: boolean;
   readonly planning: ContractPlanningView;
+  readonly resourceDemands?: LabResourceDemandProjection;
   readonly snapshot: WorldSnapshot;
   readonly tick: number;
 }): LogisticsRuntimeProjection {
   if (input.execution.status !== "ready" || input.planning.status !== "ready")
     return emptyLogisticsRuntimeProjection();
-  const graph = observeLogisticsGraph(input.snapshot, input.includeOptional);
+  const observed = observeLogisticsGraph(input.snapshot, input.includeOptional);
+  const graph = mergeDemandGraph(observed, input.resourceDemands);
   const plan = planLogistics({
     edges: graph.edges,
     maximumNodeAge: LOGISTICS_MAXIMUM_NODE_AGE,
@@ -215,6 +218,7 @@ export function planLogisticsRuntime(input: {
     tick: input.tick,
   });
   const budgets = contracts.commitments.flatMap((commitment) => {
+    if (commitment.budgetBinding?.category === "industry") return [];
     const { request, priorityClass } = commitment;
     const persisted = input.planning.contracts.find(
       ({ execution }) =>
@@ -320,8 +324,28 @@ function previousCommitments(
         sourceNodeId: flow.sourceNodeId,
         stage: execution.stage,
         stageStartedAt: input.tick,
+        ...(contract.budgetBinding.category === "industry"
+          ? {
+              budgetBinding: {
+                category: "industry" as const,
+                issuer: contract.budgetBinding.issuer,
+              },
+            }
+          : {}),
       },
     ];
+  });
+}
+
+function mergeDemandGraph(
+  observed: LogisticsGraphObservation,
+  demands: LabResourceDemandProjection | undefined,
+): LogisticsGraphObservation {
+  if (demands === undefined) return observed;
+  return freeze({
+    edges: [...observed.edges, ...demands.edges],
+    endpoints: [...observed.endpoints, ...demands.endpoints],
+    nodes: [...observed.nodes, ...demands.nodes],
   });
 }
 

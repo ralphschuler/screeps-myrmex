@@ -156,6 +156,83 @@ describe("logistics runtime adapter", () => {
     expect(constrained.budgets.map(({ category }) => category)).toEqual(["harvesting-filling"]);
   });
 
+  it("composes externally funded lab demand without creating a second budget", () => {
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: false,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: {
+        blockers: [],
+        dispositions: [],
+        edges: [
+          {
+            budgetBinding: { category: "industry", issuer: "industry/labs/U" },
+            id: "lab-demand:u:r1:fill:U",
+            maximumAmount: 100,
+            roundTripTicks: 10,
+            sinkNodeId: "lab:W1N1:lab-a:mineral:U",
+            sourceNodeId: "inventory:W1N1:storage:U",
+          },
+        ],
+        endpoints: [
+          {
+            acquireAction: "withdraw",
+            freeCapacity: 0,
+            nodeId: "inventory:W1N1:storage:U",
+            observedAmount: 100,
+            observedAt: 10,
+            position: position(15, 15),
+            resourceType: "U",
+            targetId: "storage",
+          },
+          {
+            freeCapacity: 3_000,
+            nodeId: "lab:W1N1:lab-a:mineral:U",
+            observedAmount: 0,
+            observedAt: 10,
+            position: position(14, 15),
+            resourceType: "U",
+            targetId: "lab-a",
+          },
+        ],
+        nodes: [
+          {
+            colonyId: "W1N1",
+            freeCapacity: 0,
+            id: "inventory:W1N1:storage:U",
+            kind: "source",
+            observedAmount: 100,
+            observedAt: 10,
+            position: position(15, 15),
+            priority: { class: "normal", deadline: 50 },
+            resourceType: "U",
+          },
+          {
+            capacityReservationKey: "lab:W1N1:lab-a:mineral-capacity",
+            colonyId: "W1N1",
+            freeCapacity: 3_000,
+            id: "lab:W1N1:lab-a:mineral:U",
+            kind: "sink",
+            observedAmount: 0,
+            observedAt: 10,
+            position: position(14, 15),
+            priority: { class: "normal", deadline: 50 },
+            resourceType: "U",
+          },
+        ],
+      },
+      snapshot: world(),
+      tick: 10,
+    });
+
+    const lab = result.contracts.commitments.find(({ flowId }) => flowId.startsWith("lab-demand:"));
+    expect(lab?.request?.budgetBinding).toEqual({
+      category: "industry",
+      issuer: "industry/labs/U",
+    });
+    expect(result.budgets.some(({ category }) => category === "industry")).toBe(false);
+  });
+
   it("clamps V3 acquire and partial delivery to observed exact quantities", () => {
     const acquire = planLeaseAgents({
       availablePathCpu: 1,

@@ -93,6 +93,21 @@ describe("logistics contract projection", () => {
     ).toEqual([]);
   });
 
+  it("preserves an externally funded industry budget binding", () => {
+    const binding = { category: "industry" as const, issuer: "industry/labs/W1N1/U" };
+    const result = projectLogisticsContracts(
+      base({
+        plan: {
+          ...base().plan,
+          projections: [{ ...required(base().plan.projections[0]), budgetBinding: binding }],
+        },
+      }),
+    );
+
+    expect(result.commitments[0]?.budgetBinding).toEqual(binding);
+    expect(result.commitments[0]?.request?.budgetBinding).toEqual(binding);
+  });
+
   it("moves acquire to partial delivery and starts a bounded next cycle", () => {
     const first = projectLogisticsContracts(base()).commitments[0];
     if (first === undefined) throw new Error("expected acquire commitment");

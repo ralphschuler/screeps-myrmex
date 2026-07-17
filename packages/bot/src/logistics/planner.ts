@@ -17,6 +17,11 @@ export interface LogisticsPriority {
   readonly deadline: number;
 }
 
+export interface LogisticsBudgetBinding {
+  readonly category: "industry";
+  readonly issuer: string;
+}
+
 export interface LogisticsNode {
   readonly id: string;
   readonly colonyId: string;
@@ -27,6 +32,7 @@ export interface LogisticsNode {
   readonly observedAt: number;
   readonly priority: LogisticsPriority;
   readonly position: LogisticsPosition;
+  readonly capacityReservationKey?: string;
 }
 
 export interface LogisticsEdge {
@@ -35,6 +41,7 @@ export interface LogisticsEdge {
   readonly sinkNodeId: string;
   readonly roundTripTicks: number;
   readonly maximumAmount?: number;
+  readonly budgetBinding?: LogisticsBudgetBinding;
 }
 
 export interface LogisticsPlanningInput {
@@ -74,6 +81,7 @@ export interface LogisticsProjection {
   readonly admittedAmount: number;
   readonly roundTripTicks: number;
   readonly blocker: LogisticsBlockerReason | null;
+  readonly budgetBinding?: LogisticsBudgetBinding;
 }
 
 export interface LogisticsReservation {
@@ -109,6 +117,7 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
   const edges = admitEdges(input.edges, blockers);
   const sourceRemaining = new Map<string, number>();
   const sinkRemaining = new Map<string, number>();
+  const sinkInitial = new Map<string, number>();
   const candidates: Candidate[] = [];
   const projections: LogisticsProjection[] = [];
 
@@ -123,7 +132,13 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
       continue;
     }
     sourceRemaining.set(source.id, source.observedAmount);
-    sinkRemaining.set(sink.id, sink.freeCapacity);
+    const sinkKey = capacityKey(sink);
+    const sharedCapacity = Math.min(
+      sinkRemaining.get(sinkKey) ?? sink.freeCapacity,
+      sink.freeCapacity,
+    );
+    sinkRemaining.set(sinkKey, sharedCapacity);
+    sinkInitial.set(sinkKey, sharedCapacity);
     candidates.push({ edge, source, sink });
   }
 
@@ -133,7 +148,8 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
   for (const candidate of candidates) {
     const { edge, source, sink } = candidate;
     const available = sourceRemaining.get(source.id) ?? 0;
-    const capacity = sinkRemaining.get(sink.id) ?? 0;
+    const sinkKey = capacityKey(sink);
+    const capacity = sinkRemaining.get(sinkKey) ?? 0;
     let blocker: LogisticsBlockerReason | null = null;
     if (available === 0) blocker = "empty-source";
     else if (capacity === 0) blocker = "full-sink";
@@ -145,7 +161,7 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
     if (admittedAmount > 0) {
       admittedFlows += 1;
       sourceRemaining.set(source.id, available - admittedAmount);
-      sinkRemaining.set(sink.id, capacity - admittedAmount);
+      sinkRemaining.set(sinkKey, capacity - admittedAmount);
       const colony = admittedByColony.get(source.colonyId) ?? { amount: 0, carryLoad: 0 };
       colony.amount += admittedAmount;
       colony.carryLoad +=
@@ -165,17 +181,30 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
       admittedAmount,
       roundTripTicks: edge.roundTripTicks,
       blocker,
+      ...(edge.budgetBinding === undefined ? {} : { budgetBinding: edge.budgetBinding }),
     });
   }
 
-  const reservations = [...nodes.values()]
-    .map((node): LogisticsReservation => ({
-      nodeId: node.id,
-      sourceAmount: node.observedAmount - (sourceRemaining.get(node.id) ?? node.observedAmount),
-      sinkCapacity: node.freeCapacity - (sinkRemaining.get(node.id) ?? node.freeCapacity),
-    }))
-    .filter((reservation) => reservation.sourceAmount > 0 || reservation.sinkCapacity > 0)
-    .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+  const reservationById = new Map<string, LogisticsReservation>();
+  for (const node of nodes.values()) {
+    const sourceAmount =
+      node.observedAmount - (sourceRemaining.get(node.id) ?? node.observedAmount);
+    if (sourceAmount <= 0) continue;
+    reservationById.set(node.id, { nodeId: node.id, sourceAmount, sinkCapacity: 0 });
+  }
+  for (const [nodeId, initial] of sinkInitial) {
+    const sinkCapacity = initial - (sinkRemaining.get(nodeId) ?? initial);
+    if (sinkCapacity <= 0) continue;
+    const existing = reservationById.get(nodeId);
+    reservationById.set(nodeId, {
+      nodeId,
+      sourceAmount: existing?.sourceAmount ?? 0,
+      sinkCapacity,
+    });
+  }
+  const reservations = [...reservationById.values()].sort((left, right) =>
+    left.nodeId.localeCompare(right.nodeId),
+  );
 
   const recommendations = [...admittedByColony.entries()]
     .map(([colonyId, flow]): LogisticsBodyRecommendation => {
@@ -320,7 +349,12 @@ function blockedProjection(
     admittedAmount: 0,
     roundTripTicks: edge.roundTripTicks,
     blocker,
+    ...(edge.budgetBinding === undefined ? {} : { budgetBinding: edge.budgetBinding }),
   };
+}
+
+function capacityKey(node: LogisticsNode): string {
+  return node.capacityReservationKey ?? node.id;
 }
 
 function countIds(items: readonly { readonly id: string }[]): ReadonlyMap<string, number> {

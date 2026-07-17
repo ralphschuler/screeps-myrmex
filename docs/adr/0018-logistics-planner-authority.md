@@ -51,12 +51,22 @@ death, endpoint loss, dropped-resource decay, reset, and reordered observations.
 the sole link-command authority, and #49 remains the container-repair authority. Terminal sends,
 market value, remote hauling, and hostile-safety policy remain outside this decision.
 
+Issue #251 extends the same boundary for lab staging. `IndustryDirector` may publish bounded,
+resource-specific fill or drain demands carrying the current derived cluster fingerprint and an
+existing `industry` budget binding. A data-only adapter resolves exact owned lab and
+storage/terminal facts into ordinary nodes, endpoints, and edges; `LogisticsPlanner` still performs
+the only stock and capacity admission. Resource-specific lab energy and mineral capacities use
+separate reservation groups, while every mineral drain into one storage or terminal shares that
+structure's aggregate free-capacity group. Contamination drains replace incompatible fills until a
+later clean observation. The existing contract, workforce, lease, and executor path performs the
+haul, and completion is reconciled from later observation rather than an API `OK` result.
+
 ## Consequences
 
 - No source amount or sink capacity can be admitted twice within one canonical graph.
 - Stale or missing visibility authorizes no optimistic capacity and cannot create ghost cargo.
-- Mixed resources remain separate while shared general-store sink capacity is represented only by
-  the explicit energy reserve buffer in this slice.
+- Mixed resources remain separate while explicit capacity reservation groups prevent independent
+  resource nodes from double-reserving one general store or lab capacity.
 - The observation adapter and planner emit projections, reservations, recommendations, and blockers
   only; they do not emit `WorkContract`, population demand, telemetry, or Screeps commands.
 - The PR B projector emits typed contract requests and lifecycle retirements only. LeaseAgent can

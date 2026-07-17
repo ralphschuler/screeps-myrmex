@@ -85,6 +85,36 @@ describe("LogisticsPlanner", () => {
     ]);
   });
 
+  it("reserves shared aggregate sink capacity once across resource nodes", () => {
+    const result = plan(
+      [
+        node("u-source", "source", { observedAmount: 80, resourceType: "U" }),
+        node("h-source", "source", { observedAmount: 80, resourceType: "H" }),
+        node("u-sink", "sink", {
+          capacityReservationKey: "store:storage-1:aggregate-capacity",
+          freeCapacity: 100,
+          resourceType: "U",
+        }),
+        node("h-sink", "sink", {
+          capacityReservationKey: "store:storage-1:aggregate-capacity",
+          freeCapacity: 100,
+          resourceType: "H",
+        }),
+      ],
+      [edge("u", "u-source", "u-sink"), edge("h", "h-source", "h-sink")],
+    );
+
+    expect(result.projections.map(({ id, admittedAmount }) => [id, admittedAmount])).toEqual([
+      ["h", 80],
+      ["u", 20],
+    ]);
+    expect(result.reservations).toContainEqual({
+      nodeId: "store:storage-1:aggregate-capacity",
+      sourceAmount: 0,
+      sinkCapacity: 100,
+    });
+  });
+
   it("blocks stale, vanished, invalid, empty, and full nodes", () => {
     const result = plan(
       [
