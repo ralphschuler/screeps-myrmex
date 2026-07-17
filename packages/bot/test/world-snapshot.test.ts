@@ -46,6 +46,8 @@ describe("WorldSnapshot", () => {
       "extension-a",
       "link-d",
       "spawn-b",
+      "storage-e",
+      "terminal-f",
       "tower-c",
     ]);
     expect(forward.rooms[0]?.sources[0]?.pos.sourceId).toBe("source-a");
@@ -62,7 +64,24 @@ describe("WorldSnapshot", () => {
     const ownedLink = forward.rooms[0]?.ownedLinks?.[0];
     expect(ownedLink).toMatchObject({ active: true, cooldown: 3, id: "link-d" });
     expect(ownedLink?.store.usedCapacity).toBe(400);
-    expect(forward.stats.entities.total).toBe(15);
+    expect(forward.rooms[0]?.mineral).toMatchObject({
+      amount: 12_000,
+      density: 2,
+      id: "mineral-a",
+      ticksToRegeneration: 321,
+    });
+    expect(forward.rooms[0]?.ownedExtractors?.[0]).toMatchObject({
+      active: true,
+      cooldown: 2,
+      id: "extractor-g",
+    });
+    expect(forward.rooms[0]?.ownedStorages?.[0]).toMatchObject({ active: true, id: "storage-e" });
+    expect(forward.rooms[0]?.ownedTerminals?.[0]).toMatchObject({
+      active: true,
+      cooldown: 4,
+      id: "terminal-f",
+    });
+    expect(forward.stats.entities.total).toBe(17);
 
     const payload = {
       observation: forward.observation,
@@ -404,6 +423,40 @@ function makeOwnedRoom(
       structureType: "container",
       ticksToDecay: 87,
     },
+    {
+      hits: 10_000,
+      hitsMax: 10_000,
+      id: "storage-e",
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(20, 25, "W1N1"),
+      store: makeStore({ energy: 50_000, H: 1_000 }, 1_000_000),
+      structureType: "storage",
+    },
+    {
+      cooldown: 4,
+      hits: 3_000,
+      hitsMax: 3_000,
+      id: "terminal-f",
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(21, 25, "W1N1"),
+      store: makeStore({ energy: 8_000, H: 2_000 }, 300_000),
+      structureType: "terminal",
+    },
+    {
+      cooldown: 2,
+      hits: 500,
+      hitsMax: 500,
+      id: "extractor-g",
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(7, 40, "W1N1"),
+      structureType: "extractor",
+    },
   ];
   const hostileBody = Array.from({ length: hostileBodySize }, (_, index) => ({
     boost: index % 2 === 0 ? "UH" : undefined,
@@ -494,7 +547,16 @@ function makeOwnedRoom(
               : findType === FIND_CONSTRUCTION_SITES_VALUE
                 ? constructionSites
                 : findType === FIND_MINERALS_VALUE
-                  ? [{ id: "mineral-a", mineralType: "H", pos: new LivePosition(7, 40, "W1N1") }]
+                  ? [
+                      {
+                        density: 2,
+                        id: "mineral-a",
+                        mineralAmount: 12_000,
+                        mineralType: "H",
+                        pos: new LivePosition(7, 40, "W1N1"),
+                        ticksToRegeneration: 321,
+                      },
+                    ]
                   : [];
 
       return maybeReverse(values, reversed);

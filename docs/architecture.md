@@ -1377,6 +1377,11 @@ and risk reservations.
 factory, terminal, power-spawn, and related cooldown slots. `MarketPlanner` proposes trades within
 price, inventory, credit, transaction-energy, exposure, and freshness limits.
 
+Its stock-policy boundary is pure: detached mineral, extractor, storage, terminal, commitment, and
+transaction-cost facts produce bounded extraction and internal-send proposals. Explicit
+`min`/`target`/`max` bands, protected energy, shared capacity, cooldowns, deadlines, and stable
+identities fail closed before proposals reach budgets, contracts, logistics, or structure arbiters.
+
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
 state.
