@@ -113,6 +113,9 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   links, derives ephemeral roles from versioned layout geometry, and admits funded proposals with
   deterministic source, capacity, and loss reservations. Runtime proposal production, command
   execution, settlement, and composed recovery evidence remain the next #48 slice.
+- Issue #266 establishes the sole bounded ObserverArbiter and ObserverExecutor. Versioned authorized
+  requests deterministically claim at most one slot per observer, and `OK` settles only from exact
+  next-tick visibility with bounded no-effect retry. Runtime owner/tick composition remains #267.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

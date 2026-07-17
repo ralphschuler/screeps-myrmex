@@ -1247,6 +1247,31 @@ Room routing and intra-room movement share policy inputs but remain separate cac
 Military formations extend the same reservation authority; they do not create a second movement
 system.
 
+### 12.4.1 ObserverArbiter
+
+`ObserverArbiter` is the sole observer-slot request authority. It consumes at most 64 versioned
+requests, 64 separate current authorizations, 128 detached mature capabilities including at most 32
+observers, current visibility, and 64 pending receipts. A request states its stable identity and
+revision, issuer, first-request tick, deadline, minimum acceptable observation tick, priority,
+authorization identity/revision, and source snapshot revision. It cannot authorize itself.
+
+Malformed, duplicate, stale, expired, unauthorized, missing, inactive, insufficient-RCL, and
+out-of-range requests fail closed. Policy classes start in 101-point bands and each wait tick adds
+one point before deadline, first-request tick, and stable-identity tie-breaks. A waiting request can
+therefore overtake every newly submitted class within 707 ticks when its deadline permits.
+Deterministic augmenting-path matching keeps assignments work-conserving. The arbiter emits at most
+one intent for each observer under the canonical `observer/{observerId}` exclusive key. Current
+`PWR_OPERATE_OBSERVER` evidence removes the normal source-controlled range restriction; otherwise
+room range uses deterministic world coordinates and the official Chebyshev distance.
+
+Only `ObserverExecutor` may call `StructureObserver.observeRoom`. It revalidates current mechanics,
+capability, object identity, ownership, activity, RCL8, room syntax, range, and active power effect
+before one call. `OK` is pending, not success: exact next-tick target visibility settles the
+receipt, while no effect has a fixed retry cap. Fixed-cardinality telemetry observes dispositions,
+commands, and settlements without owning work.
+[ADR 0027](adr/0027-observer-request-command-authority.md) records the boundary. Tick-graph and
+persistent-owner composition remain issue #267.
+
 ### 12.5 Layout and construction
 
 `LayoutPlanner` owns a versioned desired layout. `ConstructionPlanner` compares that layout and
@@ -1470,8 +1495,9 @@ receipt authorizes no retry. No effect retries within a fixed cap, while stale, 
 missing, unfunded, or late retry evidence fails closed. A fixed-cardinality observer projection
 reports intent, command, retry, cancellation, and settled factory/power totals without becoming an
 authorization input. [ADR 0026](adr/0026-mature-command-execution-and-settlement.md) records this
-boundary. Tick-graph and telemetry-service composition plus gate activation remain issue #267;
-observer and nuke command paths remain absent.
+boundary. Tick-graph and telemetry-service composition plus gate activation remain issue #267. The
+standalone observer authority is defined by ADR 0027 but is not yet composed; nuke command paths
+remain absent.
 
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
@@ -1737,6 +1763,7 @@ packages/bot/src/
   spawn/                  spawn demand, body builder, broker, executor adapter
   logistics/              resource-flow planning and stock policy
   movement/               route/path policy, reservations, movement execution
+  observer/               observer request arbitration, execution, settlement, telemetry
   construction/           layouts, build/repair/site arbitration
   defense/                threats, posture, safety intents, tower policy
   diplomacy/              configured relations, evidence, reputation
@@ -1824,6 +1851,9 @@ Required architecture assertions include:
 - funding and assignment require the tick-local BudgetLedger authorization view;
 - `SpawnBroker` and `SpawnExecutor` each have one declaration at their canonical `spawn/` path;
 - direct or aliased `spawnCreep` calls occur only in `SpawnExecutor`;
+- direct or aliased `observeRoom` calls occur only in `ObserverExecutor`;
+- observer selection admits at most one intent per observer and `OK` settles only from exact
+  next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before
   live resolution;
 - mandatory-tail `spawn.execute` precedes mandatory-tail `spawn.settle`, and contract funding cannot
