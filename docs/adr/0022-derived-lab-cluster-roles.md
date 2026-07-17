@@ -35,3 +35,6 @@ future shared lab arbiter serializes the room cluster; this ADR grants no comman
 - Exact boost settlement can distinguish compounds instead of relying on aggregate boosted counts.
 - Reaction planning, logistics demands, commands, durable commitments, and gate activation remain
   outside this enabling slice.
+
+ADR 0023 now owns the later durable policy boundary. It preserves this decision by storing only
+assignment/catalog fingerprints and objective terms, never lab IDs or derived roles.

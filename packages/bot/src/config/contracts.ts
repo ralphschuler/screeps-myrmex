@@ -99,7 +99,7 @@ export interface GrowthPolicy {
 
 /** Source-owned bounds for optional mineral extraction and internal terminal balancing. */
 export interface IndustryPolicy {
-  readonly sourceVersion: "industry-policy-v1";
+  readonly sourceVersion: "industry-policy-v2";
   readonly stockMinimum: number;
   readonly stockTarget: number;
   readonly stockMaximum: number;
@@ -109,6 +109,17 @@ export interface IndustryPolicy {
   readonly maximumExtractionProposalsPerTick: number;
   readonly maximumSendProposalsPerTick: number;
   readonly maximumRoomsPerTick: number;
+  readonly maximumLabObjectivesPerTick: number;
+  readonly maximumActiveReactionChainsPerRoom: number;
+  readonly maximumBoostManifestsPerRoom: number;
+  readonly maximumReactionDependencyDepth: number;
+  readonly maximumReactionCatalogRecipes: number;
+  readonly maximumLabsPerRoom: number;
+  readonly maximumLabCommitments: number;
+  readonly maximumLabBatchAmount: number;
+  readonly maximumBoostPartsPerManifest: number;
+  readonly maximumLabResourceDemandsPerTick: number;
+  readonly maximumLabDeadlineHorizon: number;
 }
 
 /** Hard caps for observer-only telemetry; never an input to gameplay admission. */

@@ -129,6 +129,12 @@ current stock and shared capacity. An incompatible mineral is drained before ano
 the lab. Survival, defense, spawn supply, and mandatory logistics preempt every lab demand; missing
 funding or exact owned endpoint facts defer staging without market use.
 
+Reaction and boost staging share one policy. Explicit funded boost manifests preempt discretionary
+reaction objectives; otherwise the policy selects one bounded canonical forward dependency chain.
+Commitments survive reset but remain bound to current cluster and catalog fingerprints. Exact
+staging completion yields `ready`, not a command. Active reaction completion requires later executor
+evidence and re-observation rather than an unrelated increase in aggregate stock.
+
 ## Military Operations
 
 Every operation declares an objective, owner, target, intelligence freshness requirement, body and
