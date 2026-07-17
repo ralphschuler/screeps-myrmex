@@ -1445,7 +1445,7 @@ Current `ready` commitments project typed reaction or boost intents under one fi
 lab-cluster exclusive key; boosts use defense priority while discretionary reactions remain
 speculation. The shared intent arbiter is final authority, and the sole `LabExecutor` revalidates
 the exact live preconditions before one Screeps API call. Normalized `OK` records only a pending
-attempt in `IndustryOwnerV3`; exact next-observation body/resource deltas settle the effect, while
+attempt in `IndustryOwnerV4`; exact next-observation body/resource deltas settle the effect, while
 drift, timeout, and retry exhaustion fail closed.
 [ADR 0024](adr/0024-lab-execution-and-settlement.md) records this command and settlement boundary
 without activating the industry gate.
@@ -1454,10 +1454,24 @@ The complete lab path is composed by one pure projection before static tick publ
 layout/lab facts derive cluster roles, detached reaction constants derive the catalog, source-owned
 stock bands create bounded funded objectives, and policy demands enter the existing logistics graph
 before readiness. Forward, explicitly funded reverse, and boost intents share one cluster key and
-the common arbiter. `IndustryOwnerV3` distinguishes pending observation from durable retry-ready
+the common arbiter. `IndustryOwnerV4` distinguishes pending observation from durable retry-ready
 state, while bounded observer telemetry reports commands, blockers, exact settlement, retries, and
 cancellations. Checked `phase2-labs-results.json` evidence makes `phase2.labs` source-available
 under `runtime-config-source-v26` without enabling factory behavior.
+
+Funded `ready` factory and power-processing commitments enter one bounded mature command projection.
+Both intent kinds claim the canonical physical-structure exclusive key before the shared channel's
+final arbitration. The sole `MatureStructureExecutor` revalidates current mechanics, ownership,
+activation, RCL, cooldown, level/effect, exact stock, and factory capacity before calling `produce`
+or `processPower`. Only normalized `OK` creates one of at most 64 mature attempts in
+`IndustryOwnerV4`; exact next-tick recipe/store/cooldown or operated-power/energy deltas settle it.
+An issued attempt may record its exact irreversible effect after its objective disappears, but that
+receipt authorizes no retry. No effect retries within a fixed cap, while stale, conflicting,
+missing, unfunded, or late retry evidence fails closed. A fixed-cardinality observer projection
+reports intent, command, retry, cancellation, and settled factory/power totals without becoming an
+authorization input. [ADR 0026](adr/0026-mature-command-execution-and-settlement.md) records this
+boundary. Tick-graph and telemetry-service composition plus gate activation remain issue #267;
+observer and nuke command paths remain absent.
 
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
@@ -1522,7 +1536,8 @@ policy module are forbidden.
 | link action             | `LinkArbiter`             | `LinkExecutor`             |
 | terminal action         | `TerminalArbiter`         | `TerminalExecutor`         |
 | lab action              | `LabArbiter`              | `LabExecutor`              |
-| factory action          | `FactoryArbiter`          | `FactoryExecutor`          |
+| factory action          | `MatureStructureArbiter`  | `MatureStructureExecutor`  |
+| power-spawn action      | `MatureStructureArbiter`  | `MatureStructureExecutor`  |
 | construction-site slot  | `ConstructionSiteArbiter` | `ConstructionSiteExecutor` |
 | observer action         | `ObserverArbiter`         | `ObserverExecutor`         |
 | market mutation         | `MarketArbiter`           | `MarketExecutor`           |

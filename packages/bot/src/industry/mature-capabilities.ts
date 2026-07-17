@@ -23,6 +23,8 @@ export interface MatureMechanicsConstants {
   readonly observerRange: number;
   readonly operateFactoryPower: number;
   readonly operateObserverPower: number;
+  readonly operatePowerEffects: readonly [number, number, number, number, number];
+  readonly operatePowerPower: number;
   readonly powerSpawnEnergyCapacity: number;
   readonly powerSpawnEnergyPerPower: number;
   readonly powerSpawnPowerCapacity: number;
@@ -320,14 +322,32 @@ function normalizeConstants(value: Record<string, unknown>): MatureMechanicsCons
     "observerRange",
     "operateFactoryPower",
     "operateObserverPower",
+    "operatePowerPower",
     "powerSpawnEnergyCapacity",
     "powerSpawnEnergyPerPower",
     "powerSpawnPowerCapacity",
   ] as const;
   if (keys.some((key) => !positiveInteger(value[key], 1_000_000))) return null;
-  return freeze(
-    Object.fromEntries(keys.map((key) => [key, value[key]])) as unknown as MatureMechanicsConstants,
-  );
+  const operatePowerEffects = value.operatePowerEffects;
+  if (
+    !Array.isArray(operatePowerEffects) ||
+    operatePowerEffects.length !== 5 ||
+    !operatePowerEffects.every((effect) => positiveInteger(effect, 100))
+  )
+    return null;
+  return freeze({
+    ...(Object.fromEntries(keys.map((key) => [key, value[key]])) as unknown as Omit<
+      MatureMechanicsConstants,
+      "operatePowerEffects"
+    >),
+    operatePowerEffects: freeze([...operatePowerEffects] as [
+      number,
+      number,
+      number,
+      number,
+      number,
+    ]),
+  });
 }
 
 function validStructure(

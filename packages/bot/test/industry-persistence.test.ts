@@ -10,6 +10,7 @@ import {
   type LabPolicyCommitment,
   type PendingLabAttempt,
 } from "../src/industry";
+import type { PendingMatureAttempt } from "../src/industry/mature-attempt";
 
 describe("industry persistence", () => {
   const command = (identity: string): IndustryCommandState => ({
@@ -20,18 +21,23 @@ describe("industry persistence", () => {
     status: "backoff",
   });
 
-  it("round-trips canonical bounded command and lab state across a heap reset", () => {
+  it("round-trips canonical bounded command, lab, and mature state across a heap reset", () => {
     const owner = persistIndustryOwner(
       emptyIndustryOwner(),
       "industry-policy-v2",
       [command("send/b"), command("send/a")],
       [commitment("z"), commitment("a")],
       [attempt("z"), attempt("a")],
+      [matureAttempt("z"), matureAttempt("a")],
     );
     expect(parseIndustryOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(owner.commands.map(({ identity }) => identity)).toEqual(["send/a", "send/b"]);
     expect(owner.labCommitments.map(({ objectiveId }) => objectiveId)).toEqual(["a", "z"]);
     expect(owner.labAttempts.map(({ attemptId }) => attemptId)).toEqual(["attempt/a", "attempt/z"]);
+    expect(owner.matureAttempts.map(({ attemptId }) => attemptId)).toEqual([
+      "mature-attempt/a",
+      "mature-attempt/z",
+    ]);
   });
 
   it("migrates V1 locally and preserves terminal retry state idempotently", () => {
@@ -43,12 +49,13 @@ describe("industry persistence", () => {
     };
     const migrated = migrateIndustryOwner(v1);
     expect(migrated).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       revision: 8,
       policySourceVersion: "industry-policy-v2",
       commands: [{ identity: "send/a" }, { identity: "send/b" }],
       labCommitments: [],
       labAttempts: [],
+      matureAttempts: [],
     });
     expect(migrateIndustryOwner(JSON.parse(JSON.stringify(migrated)))).toEqual(migrated);
   });
@@ -62,10 +69,28 @@ describe("industry persistence", () => {
       labCommitments: [commitment("reaction")],
     });
     expect(migrated).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       revision: 10,
       labCommitments: [{ objectiveId: "reaction" }],
       labAttempts: [],
+      matureAttempts: [],
+    });
+  });
+
+  it("migrates V3 lab attempts without inventing mature command effects", () => {
+    const migrated = migrateIndustryOwner({
+      schemaVersion: 3,
+      revision: 11,
+      policySourceVersion: "industry-policy-v2",
+      commands: [command("send/a")],
+      labCommitments: [commitment("reaction")],
+      labAttempts: [attempt("reaction")],
+    });
+    expect(migrated).toMatchObject({
+      schemaVersion: 4,
+      revision: 12,
+      labAttempts: [{ attemptId: "attempt/reaction" }],
+      matureAttempts: [],
     });
   });
 
@@ -81,6 +106,7 @@ describe("industry persistence", () => {
       commands: [],
       labCommitments: [],
       labAttempts: [],
+      matureAttempts: [],
     });
   });
 
@@ -95,6 +121,12 @@ describe("industry persistence", () => {
       migrateIndustryOwner({
         ...emptyIndustryOwner(),
         commands: [{ ...command("send/a"), nextEligibleTick: -1 }],
+      }),
+    ).toBeNull();
+    expect(
+      migrateIndustryOwner({
+        ...emptyIndustryOwner(),
+        matureAttempts: [{ ...matureAttempt("bad"), storeUsedBefore: 141 }],
       }),
     ).toBeNull();
     expect(migrateIndustryOwner({ schemaVersion: 99, revision: 1 })).toBeNull();
@@ -117,6 +149,38 @@ function commitment(objectiveId: string): LabPolicyCommitment {
     reagents: ["U", "H"],
     settledAmount: 0,
     targetProduct: "XUH2O",
+  };
+}
+
+function matureAttempt(objectiveId: string): PendingMatureAttempt {
+  return {
+    attemptId: `mature-attempt/${objectiveId}`,
+    capabilityFingerprint: "factory-capability",
+    commitmentFingerprint: `mature-objective:${objectiveId}`,
+    issuedAt: 100,
+    mechanicsFingerprint: "mechanics-v1",
+    objectiveId,
+    objectiveRevision: 1,
+    observeAt: 101,
+    retry: 0,
+    roomName: "W1N1",
+    snapshotRevision: "snapshot/100",
+    structureId: "factory",
+    batchAmount: 20,
+    components: [
+      { amount: 40, resourceType: "energy" },
+      { amount: 100, resourceType: "silicon" },
+    ],
+    cooldown: 8,
+    kind: "factory",
+    product: "wire",
+    resourcesBefore: [
+      { amount: 40, resourceType: "energy" },
+      { amount: 100, resourceType: "silicon" },
+      { amount: 0, resourceType: "wire" },
+    ],
+    storeCapacity: 50_000,
+    storeUsedBefore: 140,
   };
 }
 
