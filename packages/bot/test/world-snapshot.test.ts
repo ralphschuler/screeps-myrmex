@@ -44,6 +44,7 @@ describe("WorldSnapshot", () => {
     expect(forward.rooms[0]?.storedStructures.map((structure) => structure.id)).toEqual([
       "container-a",
       "extension-a",
+      "link-d",
       "spawn-b",
       "tower-c",
     ]);
@@ -58,7 +59,10 @@ describe("WorldSnapshot", () => {
     ]);
     expect(forward.rooms[0]?.ownedSpawns[0]?.active).toBe(true);
     expect(forward.rooms[0]?.ownedExtensions[0]?.active).toBe(true);
-    expect(forward.stats.entities.total).toBe(14);
+    const ownedLink = forward.rooms[0]?.ownedLinks?.[0];
+    expect(ownedLink).toMatchObject({ active: true, cooldown: 3, id: "link-d" });
+    expect(ownedLink?.store.usedCapacity).toBe(400);
+    expect(forward.stats.entities.total).toBe(15);
 
     const payload = {
       observation: forward.observation,
@@ -344,6 +348,18 @@ function makeOwnedRoom(
       owner: { username: "Myrmex" },
       pos: new LivePosition(23, 25, "W1N1"),
       structureType: "rampart",
+    },
+    {
+      cooldown: 3,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id: "link-d",
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(12, 11, "W1N1"),
+      store: makeStore({ energy: 400 }, 800),
+      structureType: "link",
     },
     {
       hits: 5_000,

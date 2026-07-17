@@ -109,6 +109,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   reset/reorder/failure evidence is recorded in
   [`phase2-logistics-evidence.md`](phase2-logistics-evidence.md). Terminal sends, link commands
   (#48), and container repair (#49) remain separate authorities.
+- Issue #48 establishes the sole bounded LinkArbiter authority. Its pure foundation observes owned
+  links, derives ephemeral roles from versioned layout geometry, and admits funded proposals with
+  deterministic source, capacity, and loss reservations. Runtime proposal production, command
+  execution, settlement, and composed recovery evidence remain the next #48 slice.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

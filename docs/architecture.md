@@ -53,6 +53,10 @@ facts and fresh semantic source-service placements, emits stable `mining/{colony
 contracts, and owns neither commands nor persistent mining state. ContractLedger, population policy,
 SpawnBroker, movement arbitration, and executors retain their existing authorities.
 
+`LinkArbiter` is the sole link-transfer admission authority. Mining, logistics, and controller
+policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
+Roles are ephemeral derivatives of owned-link observation and one versioned layout commitment.
+
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
 3. `main.ts` exports the Screeps loop and performs no gameplay planning.

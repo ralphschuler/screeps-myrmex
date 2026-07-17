@@ -11,6 +11,7 @@ import {
   type DroppedResourceSnapshot,
   type MineralSnapshot,
   type OwnedExtensionSnapshot,
+  type OwnedLinkSnapshot,
   type OwnedRoomSnapshot,
   type OwnedSpawnSnapshot,
   type OwnedTowerSnapshot,
@@ -127,6 +128,10 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     ownedExtensions: structures
       .filter((structure) => isMyStructureOfType(structure, "extension"))
       .map((structure) => snapshotExtension(structure as StructureExtension))
+      .sort(compareById),
+    ownedLinks: structures
+      .filter((structure) => isMyStructureOfType(structure, "link"))
+      .map((structure) => snapshotLink(structure as StructureLink))
       .sort(compareById),
     ownedSpawns: structures
       .filter((structure) => isMyStructureOfType(structure, "spawn"))
@@ -309,6 +314,18 @@ function snapshotStoredStructure(
       structure.structureType === "container"
         ? nullableNumber((structure as StructureContainer).ticksToDecay)
         : null,
+  };
+}
+
+function snapshotLink(link: StructureLink): OwnedLinkSnapshot {
+  return {
+    active: link.isActive(),
+    cooldown: link.cooldown,
+    hits: link.hits,
+    hitsMax: link.hitsMax,
+    id: String(link.id),
+    pos: snapshotPosition(link.pos),
+    store: snapshotStore(link.store),
   };
 }
 

@@ -108,6 +108,17 @@ export interface OwnedTowerSnapshot {
   readonly store: StoreSnapshot;
 }
 
+export interface OwnedLinkSnapshot {
+  /** Current-tick controller/RCL activation, detached from the live structure. */
+  readonly active: boolean;
+  readonly cooldown: number;
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
 export interface StoredStructureSnapshot {
   readonly hits: number;
   readonly hitsMax: number;
@@ -215,6 +226,8 @@ export interface RoomSnapshot {
   readonly observedAt: number;
   readonly ownedCreeps: readonly CreepSnapshot[];
   readonly ownedExtensions: readonly OwnedExtensionSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedLinks?: readonly OwnedLinkSnapshot[];
   readonly ownedSpawns: readonly OwnedSpawnSnapshot[];
   readonly ownedTowers: readonly OwnedTowerSnapshot[];
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
