@@ -790,17 +790,18 @@ amounts. A priority is not authorization to overspend.
 
 The Phase 1 local ledger implements energy, exact spawn-time intervals, and abstract CPU units. Its
 canonical category order is emergency spawning, defense, replacement, harvesting/filling, controller
-survival, critical maintenance, then optional growth. Existing commitments and new requests compete
-together by category, deadline or expiry, colony ID, issuer, and revision. Every normalized request
-receives one grant, retained result, or denial with a bounded reason.
+survival, critical maintenance, discretionary maintenance, then optional growth. Existing
+commitments and new requests compete together by category, deadline or expiry, colony ID, issuer,
+and revision. Every normalized request receives one grant, retained result, or denial with a bounded
+reason.
 
 Energy capacity is current spawn/extension energy, not storage or expected future income. Only
 emergency, defense, and replacement commitments may consume the configured protected spawn-energy
-tranche. Harvesting/filling, controller survival, critical maintenance, and optional growth must
-leave its remaining balance intact. Spawn reservations are half-open intervals, include the observed
-live spawning interval, and never overlap on one spawn. CPU values are integer milli-CPU derived
-from the system's admitted `CpuBudget`; they partition that admission and never become a second
-scheduler.
+tranche. Harvesting/filling, controller survival, critical maintenance, discretionary maintenance,
+and optional growth must leave its remaining balance intact. Spawn reservations are half-open
+intervals, include the observed live spawning interval, and never overlap on one spawn. CPU values
+are integer milli-CPU derived from the system's admitted `CpuBudget`; they partition that admission
+and never become a second scheduler.
 
 Consumption uses cumulative totals, so retrying the same consume, release, expiry, or reconciliation
 is idempotent. Visible colony loss releases active local reservations. Observation-unknown colonies

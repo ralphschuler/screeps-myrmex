@@ -40,6 +40,7 @@ export const BUDGET_CATEGORIES = [
   "controller-risk",
   "bootstrap-controller",
   "critical-maintenance",
+  "maintenance",
   "optional-growth",
 ] as const;
 

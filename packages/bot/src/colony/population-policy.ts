@@ -43,7 +43,11 @@ const COST: Readonly<Record<keyof CapabilityVector, number>> = Object.freeze({
   tough: 10,
   work: 100,
 });
-const OPTIONAL = new Set<BudgetCategory>(["bootstrap-controller", "optional-growth"]);
+const OPTIONAL = new Set<BudgetCategory>([
+  "bootstrap-controller",
+  "maintenance",
+  "optional-growth",
+]);
 const RESERVE_ALLOWED = new Set<BudgetCategory>(["emergency-spawn", "defense", "replacement"]);
 
 export interface ColonyPopulationPolicyInput {
