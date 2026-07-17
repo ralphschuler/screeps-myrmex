@@ -260,7 +260,10 @@ describe("tick lifecycle", () => {
         expect.objectContaining({ status: "completed", systemId: "telemetry.minimum" }),
       ]),
     );
-    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel", "telemetry"] });
+    expect(outcome.stateCommit).toMatchObject({
+      committed: true,
+      owners: ["kernel", "telemetry"],
+    });
     expect(JSON.stringify(memory.myrmex.contracts)).toBe(before);
   });
 
@@ -979,7 +982,10 @@ describe("tick lifecycle", () => {
         expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
       ]),
     );
-    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel", "telemetry"] });
+    expect(outcome.stateCommit).toMatchObject({
+      committed: true,
+      owners: ["kernel", "telemetry"],
+    });
     expect(JSON.stringify(memory.myrmex.contracts)).toBe(ownerBytes);
   });
 
@@ -1357,7 +1363,10 @@ describe("tick lifecycle", () => {
         expect.objectContaining({ systemId: "telemetry.minimum", status: "completed" }),
       ]),
     );
-    expect(outcome.stateCommit).toMatchObject({ committed: true, owners: ["kernel", "telemetry"] });
+    expect(outcome.stateCommit).toMatchObject({
+      committed: true,
+      owners: ["kernel", "telemetry"],
+    });
     expect(JSON.stringify(memory.myrmex.contracts)).toBe(ownerBytes);
   });
 

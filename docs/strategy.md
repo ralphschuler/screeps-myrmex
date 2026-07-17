@@ -114,6 +114,15 @@ Current unowned creeps are not automatically threats. Configured exclusions are 
 fresh local offensive capability may move a colony into threatened posture. Clearing that evidence
 enters recovery before optional growth resumes.
 
+## Industry stock balancing
+
+At RCL6 and above, visible owned minerals receive finite source-controlled minimum, target, and
+maximum bands. Extraction is proposed only for the mineral's funded target deficit and available
+shared storage capacity. Internal sends move resources from colonies above target to colonies below
+minimum, while terminal cooldown, destination capacity, protected energy, configured transaction
+cost, and shared colony funding can defer the transfer. Failed sends use bounded durable backoff;
+completed sends become eligible again only after observed destination stock changes.
+
 ## Military Operations
 
 Every operation declares an objective, owner, target, intelligence freshness requirement, body and

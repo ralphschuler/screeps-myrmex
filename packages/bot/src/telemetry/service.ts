@@ -2,6 +2,7 @@ import type { ColonyPlanningResult } from "../colony";
 import type { ContractReconciliationResult } from "../contracts";
 import type { ArbitrationBatch } from "../execution";
 import type { GrowthCandidate } from "../growth";
+import type { IndustryTelemetry } from "../industry";
 import {
   projectMaintenanceTelemetry,
   type CriticalMaintenanceCandidate,
@@ -44,6 +45,7 @@ type TickTelemetryBase = Omit<
   | "staticMining"
   | "logistics"
   | "maintenanceV2"
+  | "industry"
 >;
 
 export const TELEMETRY_OWNER_SCHEMA_VERSION = 4 as const;
@@ -70,6 +72,7 @@ export interface TelemetryServiceInput {
   readonly maintenance: readonly CriticalMaintenanceCandidate[];
   /** Settled phase-2 maintenance receipts; omitted while the gate is inactive. */
   readonly maintenanceTelemetry?: MaintenanceTelemetryInput;
+  readonly industry?: IndustryTelemetry;
   readonly movement: MovementRuntimeResult;
   readonly snapshot: WorldSnapshot;
   readonly spawn: SpawnRuntimeResult;
@@ -102,6 +105,7 @@ export class TelemetryService {
     const staticMining = safelyReduceStaticMining(owner.staticMining, input);
     const logistics = safelyReduceLogistics(owner.logistics, input);
     const maintenanceV2 = projectMaintenanceTelemetry(input.maintenanceTelemetry);
+    const industry = input.industry ?? emptyIndustryTelemetry();
     const detailLimit = input.base.telemetryPolicy.maximumDetailRecords;
     const allDetails = collectDetails(input);
     const details = allDetails
@@ -115,6 +119,7 @@ export class TelemetryService {
         details,
         logistics: logistics.telemetry,
         maintenanceV2,
+        industry,
         staticMining: staticMining.telemetry,
       }),
       details: Object.freeze(details),
@@ -125,6 +130,7 @@ export class TelemetryService {
       activity: activity(input),
       logistics: logistics.telemetry,
       maintenanceV2,
+      industry,
       staticMining: staticMining.telemetry,
       status,
     };
@@ -146,6 +152,25 @@ export class TelemetryService {
       telemetry,
     });
   }
+}
+
+function emptyIndustryTelemetry(): IndustryTelemetry {
+  return deepFreeze({
+    accounting: {
+      consumed: 0,
+      hauled: 0,
+      mined: 0,
+      reserved: 0,
+      sent: 0,
+      transactionEnergy: 0,
+      unmet: 0,
+    },
+    commands: { executed: 0, failed: 0, rejected: 0 },
+    deferred: 0,
+    extractionProposals: 0,
+    sendProposals: 0,
+    states: [],
+  });
 }
 
 interface ParsedOwner {

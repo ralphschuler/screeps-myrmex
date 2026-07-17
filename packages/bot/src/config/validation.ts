@@ -724,6 +724,7 @@ export function mergePolicy(
     spawn: { ...defaults.spawn, ...overrides?.spawn },
     repair: { ...defaults.repair, ...overrides?.repair },
     growth: { ...defaults.growth, ...overrides?.growth },
+    industry: defaults.industry,
     telemetry: { ...defaults.telemetry, ...overrides?.telemetry },
     reporter: defaults.reporter,
     tower: { ...defaults.tower, ...overrides?.tower },

@@ -93,7 +93,11 @@ export function eligibleIndustrySendIds(
   return Object.freeze(
     [...identities].sort().filter((identity) => {
       const state = byId.get(identity);
-      return state === undefined || state.status === "active" || tick >= state.nextEligibleTick;
+      return (
+        state === undefined ||
+        state.status === "active" ||
+        (state.status === "backoff" && tick >= state.nextEligibleTick)
+      );
     }),
   );
 }

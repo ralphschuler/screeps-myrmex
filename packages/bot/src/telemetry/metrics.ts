@@ -18,6 +18,7 @@ import type { MaintenanceTelemetry } from "../maintenance";
 import type { TelemetryStatus } from "./service";
 import type { LogisticsTelemetry } from "./logistics";
 import type { StaticMiningTelemetry } from "./static-mining";
+import type { IndustryTelemetry } from "../industry";
 
 export interface FeatureGateTelemetry {
   readonly id: FeatureGateId;
@@ -89,6 +90,8 @@ export interface TickTelemetry {
   readonly logistics?: LogisticsTelemetry;
   /** Bounded settled maintenance outcomes; never consumed by gameplay authorities. */
   readonly maintenanceV2: MaintenanceTelemetry;
+  /** Bounded observer-only industry plan, command, and accounting evidence. */
+  readonly industry: IndustryTelemetry;
 }
 
 export type ReporterTransitionTelemetry =
@@ -175,6 +178,7 @@ export function recordTickTelemetry(
   | "reporterTransitions"
   | "staticMining"
   | "maintenanceV2"
+  | "industry"
 > {
   return Object.freeze({
     tick: input.tick,

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "issue": 50,
+  "status": "complete",
+  "deterministicScenario": {
+    "ownedRcl6Rooms": 2,
+    "equivalentAfterWarmResetAndReorder": true,
+    "extraction": {
+      "fundedAmount": 300,
+      "fundedContracts": 1,
+      "unfundedProposals": 0
+    },
+    "terminal": {
+      "affordableSends": 1,
+      "expensiveSends": 0,
+      "expensiveReason": "insufficient-energy",
+      "identity": "industry/send/balance/H/1/W1N1/W2N2/H"
+    },
+    "noGhostReservation": true
+  },
+  "recovery": {
+    "attempt": 1,
+    "nextEligibleTick": 1002,
+    "resetEquivalent": true,
+    "statusAfterDestinationLoss": "retired"
+  },
+  "accounting": {
+    "consumed": 300,
+    "hauled": 0,
+    "mined": 300,
+    "reserved": 300,
+    "sent": 200,
+    "transactionEnergy": 20,
+    "unmet": 0
+  },
+  "telemetry": {
+    "commands": {
+      "executed": 0,
+      "failed": 0,
+      "rejected": 1
+    },
+    "deferred": 1,
+    "stateCount": 1
+  },
+  "boundaries": {
+    "commandExecutors": ["terminal.send"],
+    "maximumExtractionProposals": 2,
+    "maximumSendProposals": 1,
+    "maximumRoomsScanned": 2,
+    "nonGoals": ["market orders", "remote minerals", "labs", "factories"]
+  }
+}

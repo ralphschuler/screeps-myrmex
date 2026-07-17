@@ -1,4 +1,9 @@
-import { createIntentChannel, type ArbitrationBatch, type IntentChannel } from "../execution";
+import {
+  createIntentChannel,
+  type ArbitrationBatch,
+  type CommandExecutionResult,
+  type IntentChannel,
+} from "../execution";
 import { executeDefenseIntents, planDefense, planRoutineTowerMaintenance } from "../defense";
 import {
   authorizedSurvivalFlow,
@@ -155,6 +160,27 @@ import {
   type LinkRoomLayoutEvidence,
   type LinkRuntimeResult,
 } from "../links";
+import {
+  IndustryDirector,
+  authorizeIndustryWork,
+  eligibleIndustrySendIds,
+  emptyIndustryOwner,
+  executeTerminalSendIntents,
+  observeIndustryRooms,
+  parseIndustryOwner,
+  persistIndustryCommands,
+  projectIndustryBudgets,
+  projectIndustryTelemetry,
+  projectTerminalSendIntents,
+  reconcileIndustryCommands,
+  type IndustryCommandState,
+  type IndustryOwnerV1,
+  type IndustryPlan,
+  type IndustryRoomState,
+  type IndustryTelemetry,
+  type InternalSendRequest,
+  type TerminalSendCommand,
+} from "../industry";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
@@ -166,6 +192,7 @@ const telemetryService = new TelemetryService();
 const constructionSiteExecutor = new ConstructionSiteExecutor();
 const linkExecutor = new LinkExecutor();
 const constructionPlanner = new ConstructionPlanner();
+const industryDirector = new IndustryDirector();
 const layoutCaches = new WeakMap<CacheManager, ReturnType<typeof registerLayoutCompiledCache>>();
 
 export interface TickInput {
@@ -369,6 +396,15 @@ interface LayoutTickDraft {
     readonly roomName: string;
   }[];
 }
+interface IndustryTickDraft {
+  eligiblePlan: IndustryPlan;
+  execution: readonly CommandExecutionResult<TerminalSendCommand>[];
+  owner: IndustryOwnerV1;
+  plan: IndustryPlan;
+  rooms: readonly IndustryRoomState[];
+  states: readonly IndustryCommandState[];
+  telemetry: IndustryTelemetry;
+}
 
 /** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
 function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<TickContext>[] {
@@ -390,6 +426,23 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     status: "not-run",
     linkEvidence: Object.freeze([]),
     maintenanceLayouts: Object.freeze([]),
+  };
+  const industryOwner = industryOwnerForPolicy(
+    input.manager?.ownerView("industry") ?? null,
+    input.runtime.context.config.policy.industry.sourceVersion,
+  );
+  const industryDraft: IndustryTickDraft = {
+    eligiblePlan: emptyIndustryPlan(),
+    execution: Object.freeze([]),
+    owner: industryOwner,
+    plan: emptyIndustryPlan(),
+    rooms: Object.freeze([]),
+    states: industryOwner.commands,
+    telemetry: projectIndustryTelemetry({
+      plan: emptyIndustryPlan(),
+      results: [],
+      states: industryOwner.commands,
+    }),
   };
   let leaseAgentPlan: LeaseAgentPlan = Object.freeze({
     actions: Object.freeze([]),
@@ -570,6 +623,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     colonyDirectorSystem(
       input,
       spawnDraft,
+      industryDraft,
       (
         economy,
         maintenance,
@@ -590,6 +644,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         maintenanceBudget = matureMaintenance;
       },
     ),
+    industryPublicationSystem(input, industryDraft),
     layoutPlanningSystem(input, layoutDraft),
     {
       descriptor: {
@@ -1015,6 +1070,29 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     },
     {
       descriptor: {
+        id: "industry.execute",
+        phase: "execute",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        industryDraft.execution =
+          isFeatureEnabled(context.config, "phase2.industry") && context.execution !== null
+            ? executeTerminalSendIntents(
+                context.execution,
+                context.tick,
+                (id) => resolveLiveObject(input.game, id) as StructureTerminal | null,
+                input.game.cpu,
+              )
+            : Object.freeze([]);
+        return staged(() => undefined);
+      },
+    },
+    {
+      descriptor: {
         id: "spawn.execute",
         phase: "execute",
         criticality: "mandatory",
@@ -1125,6 +1203,51 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     spawnSettleSystem(input, spawnDraft),
     {
       descriptor: {
+        id: "industry.reconcile",
+        phase: "reconcile",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        const previousOwner = industryDraft.owner;
+        const states = reconcileIndustryCommands({
+          plan: industryDraft.plan,
+          previous: industryDraft.owner.commands,
+          results: industryDraft.execution,
+          tick: context.tick,
+        });
+        const owner = persistIndustryCommands(
+          industryDraft.owner,
+          context.config.policy.industry.sourceVersion,
+          states,
+        );
+        const telemetry = projectIndustryTelemetry({
+          plan: industryDraft.plan,
+          results: industryDraft.execution,
+          states,
+        });
+        return staged(
+          () => {
+            industryDraft.owner = owner;
+            industryDraft.states = states;
+            industryDraft.telemetry = telemetry;
+            if (input.manager !== null && owner !== previousOwner) {
+              const transaction = input.manager.transaction("industry");
+              transaction.replace(owner);
+              const stagedResult = transaction.stage();
+              if (!stagedResult.staged)
+                throw new Error(stagedResult.fault?.message ?? "industry state staging failed");
+            }
+          },
+          () => input.manager?.discard("industry"),
+        );
+      },
+    },
+    {
+      descriptor: {
         id: "layout.reconcile",
         phase: "reconcile",
         criticality: "mandatory",
@@ -1215,6 +1338,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                     cpuUsed: logisticsCpuUsed,
                     observations: logisticsObservations(context, logisticsRuntime),
                   },
+                  industry: industryDraft.telemetry,
                   reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
                 });
                 const telemetryTransaction = input.manager.transaction("telemetry");
@@ -1300,6 +1424,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                   cpuUsed: logisticsCpuUsed,
                   observations: logisticsObservations(context, logisticsRuntime),
                 },
+                industry: industryDraft.telemetry,
                 reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
               }).telemetry,
             );
@@ -1379,6 +1504,7 @@ function telemetryBase(
   | "reporterTransitions"
   | "staticMining"
   | "maintenanceV2"
+  | "industry"
 > {
   return recordTickTelemetry({
     tick: context.tick,
@@ -1670,6 +1796,7 @@ function withoutDurableReporterState(telemetry: TickTelemetry): TickTelemetry {
 function colonyDirectorSystem(
   input: CompositionInput,
   spawnDraft: SpawnTickDraft,
+  industryDraft: IndustryTickDraft,
   publishCandidates: (
     economy: readonly SurvivalFlowCandidate[],
     maintenance: readonly CriticalMaintenanceCandidate[],
@@ -1755,6 +1882,20 @@ function colonyDirectorSystem(
         logisticsPlan,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
       );
+      const industryProjection = isFeatureEnabled(context.config, "phase2.industry")
+        ? projectIndustryTickPlan({
+            policy: context.config.policy.industry,
+            previous: industryDraft.owner.commands,
+            snapshot: context.snapshot,
+            tick: context.tick,
+            transactionCost: (amount, sourceRoom, destinationRoom) =>
+              input.game.market?.calcTransactionCost(amount, sourceRoom, destinationRoom) ??
+              Number.MAX_SAFE_INTEGER,
+          })
+        : emptyIndustryProjection();
+      industryDraft.plan = industryProjection.plan;
+      industryDraft.eligiblePlan = industryProjection.eligiblePlan;
+      industryDraft.rooms = industryProjection.rooms;
       const provisionalMaintenance = projectMaintenanceBudgets({
         existing: resolveColoniesOwner(owner).owner?.ledger ?? [],
         planning: isFeatureEnabled(context.config, "phase2.maintenance")
@@ -1821,6 +1962,7 @@ function colonyDirectorSystem(
         ),
         ...logistics.budgets,
         ...provisionalMaintenance.budgets,
+        ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
       ];
       const provisional = colonyDirector.begin({
         tick: context.tick,
@@ -1937,6 +2079,216 @@ function staticMiningLayouts(manager: MemoryManager | null) {
   return new Map(
     owner.records.map(({ roomName }) => [roomName, freshSourceServicePlacements(owner, roomName)]),
   );
+}
+
+function industryPublicationSystem(
+  input: CompositionInput,
+  draft: IndustryTickDraft,
+): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "industry.publish",
+      phase: "plan",
+      criticality: "economic",
+      cadence: 1,
+      estimate: 0.5,
+      admitInRecovery: false,
+      mandatoryTail: false,
+    },
+    run: ({ context }) => {
+      if (!isFeatureEnabled(context.config, "phase2.industry")) return staged(() => undefined);
+      const authorized = authorizeIndustryWork({
+        plan: draft.eligiblePlan,
+        reservations: context.colony.reservations,
+        rooms: draft.rooms,
+        tick: context.tick,
+      });
+      const terminalIds = new Map(
+        context.snapshot.ownedRooms.flatMap((room) => {
+          const terminal = room.ownedTerminals?.[0];
+          return terminal === undefined ? [] : [[room.name, terminal.id] as const];
+        }),
+      );
+      const terminalIntents = projectTerminalSendIntents({
+        plan: draft.eligiblePlan,
+        reservations: context.colony.reservations,
+        terminalIds,
+        tick: context.tick,
+      });
+      const contracts = input.contractChannel.openProducer("industry.contracts");
+      for (const request of authorized.extractionContracts) contracts.producer.submit(request);
+      const stagedContracts = contracts.stage();
+      const intents = input.intentChannel.openProducer("industry.terminals");
+      const currentSnapshotRevision = snapshotRevision(context.snapshot);
+      for (const intent of terminalIntents)
+        intents.producer.submit(
+          Object.freeze({ ...intent, snapshotRevision: currentSnapshotRevision }),
+        );
+      const stagedIntents = intents.stage();
+      return staged(
+        () => {
+          stagedContracts.commit();
+          stagedIntents.commit();
+        },
+        () => {
+          stagedContracts.discard();
+          stagedIntents.discard();
+        },
+      );
+    },
+  };
+}
+
+export interface IndustryTickProjection {
+  readonly eligiblePlan: IndustryPlan;
+  readonly plan: IndustryPlan;
+  readonly rooms: readonly IndustryRoomState[];
+}
+
+export function projectIndustryTickPlan(input: {
+  readonly policy: RuntimeConfig["policy"]["industry"];
+  readonly previous: readonly IndustryCommandState[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+  readonly transactionCost: (amount: number, sourceRoom: string, destinationRoom: string) => number;
+}): IndustryTickProjection {
+  const resourceTypes = Object.freeze(
+    [
+      ...new Set(input.snapshot.ownedRooms.flatMap((room) => room.mineral?.mineralType ?? [])),
+    ].sort(),
+  );
+  const policies = input.snapshot.ownedRooms.map((room) => ({
+    bands: resourceTypes.map((resourceType) => ({
+      resourceType,
+      min: input.policy.stockMinimum,
+      target: input.policy.stockTarget,
+      max: input.policy.stockMaximum,
+    })),
+    commitments:
+      room.mineral === null || room.mineral === undefined
+        ? []
+        : [
+            {
+              amount: 0,
+              fundedAmount: input.policy.stockTarget,
+              id: `stock/${room.name}/${room.mineral.mineralType}`,
+              resourceType: room.mineral.mineralType,
+            },
+          ],
+    protectedEnergy: input.policy.protectedTerminalEnergy,
+    roomName: room.name,
+  }));
+  const rooms = observeIndustryRooms(input.snapshot, policies);
+  const plan = industryDirector.plan({
+    limits: {
+      maxExtractionProposals: input.policy.maximumExtractionProposalsPerTick,
+      maxRoomsScanned: input.policy.maximumRoomsPerTick,
+      maxSendProposals: input.policy.maximumSendProposalsPerTick,
+      maxSendRequestsScanned: Math.max(
+        input.policy.maximumSendProposalsPerTick,
+        input.policy.maximumRoomsPerTick * input.policy.maximumRoomsPerTick,
+      ),
+    },
+    requests: industrySendRequests(rooms, resourceTypes, input.policy, input.tick),
+    rooms,
+    tick: input.tick,
+    transactionCost: (amount, sourceRoom, destinationRoom) => {
+      const cost = input.transactionCost(amount, sourceRoom, destinationRoom);
+      return Number.isSafeInteger(cost) &&
+        cost >= 0 &&
+        cost <= input.policy.maximumTransactionEnergyPerSend
+        ? cost
+        : Number.MAX_SAFE_INTEGER;
+    },
+  });
+  const eligible = new Set(
+    eligibleIndustrySendIds(
+      plan.sends.map(({ identity }) => identity),
+      input.previous,
+      input.tick,
+    ),
+  );
+  return Object.freeze({
+    eligiblePlan: Object.freeze({
+      ...plan,
+      sends: Object.freeze(plan.sends.filter(({ identity }) => eligible.has(identity))),
+    }),
+    plan,
+    rooms,
+  });
+}
+
+function industrySendRequests(
+  rooms: readonly IndustryRoomState[],
+  resourceTypes: readonly string[],
+  policy: RuntimeConfig["policy"]["industry"],
+  tick: number,
+): readonly InternalSendRequest[] {
+  const requests: InternalSendRequest[] = [];
+  for (const resourceType of resourceTypes) {
+    const donors = rooms
+      .filter((room) => industryRoomStock(room, resourceType) > policy.stockTarget)
+      .sort((a, b) => a.roomName.localeCompare(b.roomName));
+    const destinations = rooms
+      .filter((room) => industryRoomStock(room, resourceType) < policy.stockMinimum)
+      .sort((a, b) => a.roomName.localeCompare(b.roomName));
+    for (const destination of destinations) {
+      const destinationStock = industryRoomStock(destination, resourceType);
+      for (const donor of donors) {
+        if (donor.roomName === destination.roomName) continue;
+        requests.push({
+          amount: Math.min(policy.maximumResourcePerSend, policy.stockTarget - destinationStock),
+          deadline: safeAddTick(tick, 20),
+          destinationRoom: destination.roomName,
+          id: `rebalance/${donor.roomName}/${destination.roomName}/${resourceType}/${String(destinationStock)}`,
+          resourceType,
+          sourceRoom: donor.roomName,
+        });
+      }
+    }
+  }
+  return Object.freeze(requests);
+}
+
+function industryRoomStock(room: IndustryRoomState, resourceType: string): number {
+  return [room.storage, room.terminal].reduce(
+    (total, store) =>
+      total + (store?.stocks.find((stock) => stock.resourceType === resourceType)?.amount ?? 0),
+    0,
+  );
+}
+
+function industryOwnerForPolicy(value: unknown, policySourceVersion: string): IndustryOwnerV1 {
+  const parsed = parseIndustryOwner(value);
+  if (parsed !== null && parsed.policySourceVersion === policySourceVersion) return parsed;
+  return Object.freeze({ ...emptyIndustryOwner(), policySourceVersion });
+}
+
+function emptyIndustryProjection(): IndustryTickProjection {
+  return Object.freeze({
+    eligiblePlan: emptyIndustryPlan(),
+    plan: emptyIndustryPlan(),
+    rooms: Object.freeze([]),
+  });
+}
+
+function emptyIndustryPlan(): IndustryPlan {
+  return Object.freeze({
+    accounting: Object.freeze({
+      consumed: 0,
+      hauled: 0,
+      mined: 0,
+      reserved: 0,
+      sent: 0,
+      transactionEnergy: 0,
+      unmet: 0,
+    }),
+    deferrals: Object.freeze([]),
+    extraction: Object.freeze([]),
+    scannedRooms: 0,
+    scannedSendRequests: 0,
+    sends: Object.freeze([]),
+  });
 }
 
 function staticMiningObservations(
