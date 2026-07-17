@@ -39,3 +39,10 @@ sinks for one physical structure use the same aggregate capacity reservation key
 and contamination may drain to an inventory endpoint; power-spawn inputs only fill; nuker resources
 only fill and are never exposed as withdrawable sources. The projection remains data-only and adds
 no mature-structure command authority.
+
+Mature policy is also data-only. It emits ColonyDirector-compatible industry budgets alongside
+versioned objectives, marks objectives funded only from active/pending ledger issuers, and
+reconciles logistics dispositions into explicit commitment states. Protected resource amounts are
+subtracted before optional factory, power-processing, or nuker-stock work is admitted. Lost funding
+immediately removes readiness; later command composition cannot infer authorization from stock
+alone.
