@@ -16,26 +16,26 @@
       "status": "evidenced",
       "scope": "focused-runtime-export",
       "measurements": {
-        "ticks": 33,
+        "ticks": 29,
         "modeledCpu": 0,
-        "persistentBytes": 24692,
-        "persistentGrowth": 3093,
-        "telemetryBytes": 5211,
+        "persistentBytes": 40944,
+        "persistentGrowth": 6151,
+        "telemetryBytes": 5337,
         "telemetryCardinality": 26,
-        "spawnUtilizationPct": 27.27272727272727,
+        "spawnUtilizationPct": 31.03448275862069,
         "energyFlow": 200,
         "replacementLateness": 0,
-        "controllerMargin": 19967,
+        "controllerMargin": 19971,
         "controllerRisk": 0,
-        "recoveryTime": 33
+        "recoveryTime": 29
       },
       "hashes": {
-        "warmOutcome": "a383b8ac",
-        "resetOutcome": "a383b8ac",
-        "reorderedOutcome": "a383b8ac",
-        "warmTranscript": "2e3a309b",
-        "resetTranscript": "300c075e",
-        "reorderedTranscript": "a87a6a27"
+        "warmOutcome": "4247a0d8",
+        "resetOutcome": "4247a0d8",
+        "reorderedOutcome": "4247a0d8",
+        "warmTranscript": "330d786a",
+        "resetTranscript": "4aebfc4d",
+        "reorderedTranscript": "bf897abc"
       },
       "unevidenced": []
     },
@@ -45,10 +45,10 @@
       "scope": "focused-runtime-export",
       "measurements": {
         "ticks": 1401,
-        "modeledCpu": 0.09300000000000007,
-        "persistentBytes": 28798,
-        "persistentGrowth": 4349,
-        "telemetryBytes": 5045,
+        "modeledCpu": 0.09700000000000007,
+        "persistentBytes": 28904,
+        "persistentGrowth": 4454,
+        "telemetryBytes": 5046,
         "telemetryCardinality": 26,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
@@ -61,9 +61,9 @@
         "warmOutcome": "09e32b5c",
         "resetOutcome": "09e32b5c",
         "reorderedOutcome": "09e32b5c",
-        "warmTranscript": "137a4037",
-        "resetTranscript": "39e04310",
-        "reorderedTranscript": "a838adfa"
+        "warmTranscript": "7fb58372",
+        "resetTranscript": "9e029b1d",
+        "reorderedTranscript": "0da934e7"
       },
       "unevidenced": []
     },
@@ -74,7 +74,7 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 2,
-        "persistentBytes": 4903,
+        "persistentBytes": 5008,
         "persistentGrowth": 818,
         "telemetryBytes": 5002,
         "telemetryCardinality": 26,
@@ -89,9 +89,9 @@
         "warmOutcome": "87c8166f",
         "resetOutcome": "87c8166f",
         "reorderedOutcome": "87c8166f",
-        "warmTranscript": "78fe8e50",
-        "resetTranscript": "c180a340",
-        "reorderedTranscript": "963980b5"
+        "warmTranscript": "d3ca9aca",
+        "resetTranscript": "a9d268e1",
+        "reorderedTranscript": "135963d1"
       },
       "unevidenced": []
     },
@@ -102,7 +102,7 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 7879,
+        "persistentBytes": 7984,
         "persistentGrowth": 238,
         "telemetryBytes": 4849,
         "telemetryCardinality": 26,
@@ -117,9 +117,9 @@
         "warmOutcome": "df53697a",
         "resetOutcome": "df53697a",
         "reorderedOutcome": "df53697a",
-        "warmTranscript": "2f405376",
-        "resetTranscript": "a1384a80",
-        "reorderedTranscript": "18588589"
+        "warmTranscript": "b2b79e00",
+        "resetTranscript": "094eefa1",
+        "reorderedTranscript": "33e44d55"
       },
       "unevidenced": []
     },
@@ -130,7 +130,7 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 8072,
+        "persistentBytes": 8177,
         "persistentGrowth": 260,
         "telemetryBytes": 4670,
         "telemetryCardinality": 26,
@@ -145,9 +145,9 @@
         "warmOutcome": "f329c328",
         "resetOutcome": "f329c328",
         "reorderedOutcome": "f329c328",
-        "warmTranscript": "a4109ce9",
-        "resetTranscript": "82448e19",
-        "reorderedTranscript": "dfc745a1"
+        "warmTranscript": "88df1eb7",
+        "resetTranscript": "d4ac6950",
+        "reorderedTranscript": "e91799ed"
       },
       "unevidenced": []
     },
@@ -158,7 +158,7 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 5,
-        "persistentBytes": 8273,
+        "persistentBytes": 8378,
         "persistentGrowth": 201,
         "telemetryBytes": 4771,
         "telemetryCardinality": 26,
@@ -173,9 +173,9 @@
         "warmOutcome": "4b8c61be",
         "resetOutcome": "4b8c61be",
         "reorderedOutcome": "4b8c61be",
-        "warmTranscript": "e5ed3e30",
-        "resetTranscript": "a523cf90",
-        "reorderedTranscript": "dc5af0e6"
+        "warmTranscript": "e97fd02a",
+        "resetTranscript": "3ca4add1",
+        "reorderedTranscript": "a3dadd76"
       },
       "unevidenced": []
     },
@@ -184,13 +184,13 @@
       "status": "evidenced",
       "scope": "composed-runtime-equivalence",
       "measurements": {
-        "ticks": 1448,
+        "ticks": 1444,
         "modeledCpu": 5,
-        "persistentBytes": 28798,
-        "persistentGrowth": 4349,
-        "telemetryBytes": 5211,
+        "persistentBytes": 40944,
+        "persistentGrowth": 6151,
+        "telemetryBytes": 5337,
         "telemetryCardinality": 26,
-        "spawnUtilizationPct": 27.27272727272727,
+        "spawnUtilizationPct": 31.03448275862069,
         "energyFlow": 250,
         "replacementLateness": 0,
         "controllerMargin": 8599,
@@ -198,12 +198,12 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "92710e0a",
-        "resetOutcome": "92710e0a",
-        "reorderedOutcome": "92710e0a",
-        "warmTranscript": "86bd2f4f",
-        "resetTranscript": "356eba29",
-        "reorderedTranscript": "6d963f3d"
+        "warmOutcome": "35903645",
+        "resetOutcome": "35903645",
+        "reorderedOutcome": "35903645",
+        "warmTranscript": "dca56aa2",
+        "resetTranscript": "71ddaab2",
+        "reorderedTranscript": "f36fd9de"
       },
       "unevidenced": []
     },
@@ -212,13 +212,13 @@
       "status": "evidenced",
       "scope": "local-composed-runtime",
       "measurements": {
-        "ticks": 1448,
+        "ticks": 1444,
         "modeledCpu": 5,
-        "persistentBytes": 28798,
-        "persistentGrowth": 4349,
-        "telemetryBytes": 5211,
+        "persistentBytes": 40944,
+        "persistentGrowth": 6151,
+        "telemetryBytes": 5337,
         "telemetryCardinality": 26,
-        "spawnUtilizationPct": 27.27272727272727,
+        "spawnUtilizationPct": 31.03448275862069,
         "energyFlow": 250,
         "replacementLateness": 0,
         "controllerMargin": 8599,
@@ -226,12 +226,12 @@
         "recoveryTime": 1332
       },
       "hashes": {
-        "warmOutcome": "b5987958",
-        "resetOutcome": "b5987958",
-        "reorderedOutcome": "b5987958",
-        "warmTranscript": "86bd2f4f",
-        "resetTranscript": "356eba29",
-        "reorderedTranscript": "6d963f3d"
+        "warmOutcome": "19263ba3",
+        "resetOutcome": "19263ba3",
+        "reorderedOutcome": "19263ba3",
+        "warmTranscript": "dca56aa2",
+        "resetTranscript": "71ddaab2",
+        "reorderedTranscript": "f36fd9de"
       },
       "unevidenced": []
     }
