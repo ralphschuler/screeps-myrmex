@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "deterministic": {
+    "commandKinds": ["factory.produce", "power-spawn.process-power"],
+    "observerSettlement": "visible-next-tick",
+    "observerWinner": "alpha",
+    "resetAndReorderEquivalent": true
+  },
+  "resources": {
+    "fundedBudgets": 3,
+    "nukerEnergyTarget": 300000,
+    "nukerGhodiumTarget": 5000,
+    "nukerProjectedTransfers": 2,
+    "protectedSourceTransfers": 0,
+    "stagedObjectives": 2
+  },
+  "failures": {
+    "invalidMechanics": "deferred",
+    "invalidReason": "invalid-input",
+    "launchIntentCount": 0,
+    "observerLosers": 1
+  },
+  "telemetry": {
+    "mature": {
+      "commands": { "executed": 0, "failed": 0, "rejected": 0 },
+      "intents": { "factory": 1, "powerProcessing": 1, "total": 2 },
+      "settlements": {
+        "cancelled": 0,
+        "pending": 0,
+        "retries": 0,
+        "settledFactoryAmount": 0,
+        "settledPower": 0
+      },
+      "truncated": false
+    },
+    "observer": {
+      "commands": { "executed": 0, "failed": 0, "rejected": 0 },
+      "dispositions": {
+        "accepted": 1,
+        "deferred": 1,
+        "pending": 0,
+        "rejected": 0,
+        "satisfied": 0
+      },
+      "intents": 1,
+      "settlements": { "cancelled": 0, "pending": 0, "retries": 0, "settled": 1 },
+      "truncated": false
+    }
+  },
+  "boundaries": {
+    "gate": "phase2.mature",
+    "maximumCommandsPerStructure": 1,
+    "observerExclusiveKey": "observer/observer",
+    "ownerSchemaVersion": 5
+  }
+}

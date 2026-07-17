@@ -64,6 +64,49 @@ export interface MaturePolicyProjection {
   readonly objectives: readonly MatureResourceObjective[];
 }
 
+export function isMaturePolicyCommitment(value: unknown): value is MaturePolicyCommitment {
+  if (
+    !record(value) ||
+    typeof value.status !== "string" ||
+    !MATURE_COMMITMENT_STATUSES.has(value.status as MatureCommitmentStatus)
+  )
+    return false;
+  const objective = value.objective;
+  if (
+    !record(objective) ||
+    !identity(objective.id, 160) ||
+    !identity(objective.colonyId, 16) ||
+    !identity(objective.endpointId, 128) ||
+    !identity(objective.industryBudgetId, 160) ||
+    !identity(objective.mechanicsFingerprint, 160) ||
+    !identity(objective.structureId, 128) ||
+    typeof objective.funded !== "boolean" ||
+    !positiveInteger(objective.revision, Number.MAX_SAFE_INTEGER) ||
+    !nonnegativeInteger(objective.deadline) ||
+    (objective.priority !== "mandatory" && objective.priority !== "normal")
+  )
+    return false;
+  if (objective.kind === "factory-batch")
+    return identity(objective.product, 64) && positiveInteger(objective.batches, 1_000);
+  if (objective.kind === "power-processing") return positiveInteger(objective.units, 1_000_000);
+  return (
+    objective.kind === "nuker-stock" &&
+    nonnegativeInteger(objective.energyTarget) &&
+    objective.energyTarget <= 300_000 &&
+    nonnegativeInteger(objective.ghodiumTarget) &&
+    objective.ghodiumTarget <= 5_000
+  );
+}
+
+const MATURE_COMMITMENT_STATUSES = new Set<MatureCommitmentStatus>([
+  "blocked",
+  "pending-funding",
+  "pending-logistics",
+  "ready",
+  "retired",
+  "staging",
+]);
+
 export function reconcileMaturePolicy(input: {
   readonly capabilities: readonly MatureStructureCapability[];
   readonly catalog: MatureMechanicsCatalog;
@@ -133,8 +176,11 @@ export function reconcileMaturePolicy(input: {
       ({ active, kind, roomName }) => active && kind === "power-spawn" && roomName === room.name,
     );
     if (power !== undefined) {
-      const powerStock = available(stocks, protectedStocks, "power");
-      const energyStock = available(stocks, protectedStocks, "energy");
+      const powerFact = (room.ownedPowerSpawns ?? []).find(({ id }) => id === power.id);
+      const powerStock =
+        available(stocks, protectedStocks, "power") + storeAmount(powerFact?.store, "power");
+      const energyStock =
+        available(stocks, protectedStocks, "energy") + storeAmount(powerFact?.store, "energy");
       const units = Math.min(
         input.limits.maximumPowerProcessingUnits,
         powerStock,
@@ -208,10 +254,13 @@ export function reconcileMaturePolicy(input: {
     }
   }
 
-  const admitted = planned.sort(compareObjectives).slice(0, input.limits.maximumObjectives);
+  const stabilized = planned.map((objective) =>
+    stabilizeObjective(objective, input.previousCommitments, input.tick),
+  );
+  const admitted = stabilized.sort(compareObjectives).slice(0, input.limits.maximumObjectives);
   if (planned.length > admitted.length)
     blockers.push(freeze({ identity: "mature-objectives", reason: "objective-cap" }));
-  const budgets = admitted.map((objective) => budgetFor(objective, input));
+  const budgets = admitted.map(budgetFor);
   const dispositions = new Map(
     input.logisticsDispositions.map((value) => [value.objectiveId, value]),
   );
@@ -288,7 +337,13 @@ function factoryObjective(
       );
       continue;
     }
-    const deficit = Math.max(0, candidate.targetStock - (stocks.get(candidate.product) ?? 0));
+    const factory = (room.ownedFactories ?? []).find(({ id }) => id === capability.id);
+    const deficit = Math.max(
+      0,
+      candidate.targetStock -
+        (stocks.get(candidate.product) ?? 0) -
+        storeAmount(factory?.store, candidate.product),
+    );
     const desiredBatches = Math.min(
       candidate.maximumBatches,
       input.limits.maximumBatchesPerObjective,
@@ -298,7 +353,11 @@ function factoryObjective(
     for (const component of recipe.components)
       batches = Math.min(
         batches,
-        Math.floor(available(stocks, protectedStocks, component.resourceType) / component.amount),
+        Math.floor(
+          (available(stocks, protectedStocks, component.resourceType) +
+            storeAmount(factory?.store, component.resourceType)) /
+            component.amount,
+        ),
       );
     if (batches <= 0) {
       if (desiredBatches > 0)
@@ -339,39 +398,17 @@ function objectiveWithFunding<T extends MatureResourceObjective>(
   return freeze({ ...objective, funded: funded.has(objective.industryBudgetId) });
 }
 
-function budgetFor(
-  objective: MatureResourceObjective,
-  input: Parameters<typeof reconcileMaturePolicy>[0],
-): BudgetRequest {
-  const energy = objectiveEnergy(objective, input);
+function budgetFor(objective: MatureResourceObjective): BudgetRequest {
   return freeze({
     category: "industry",
     colonyId: objective.colonyId,
-    cpu: freeze({ desired: 0.25, minimum: 0.05 }),
-    energy: freeze({ desired: energy, minimum: energy }),
+    cpu: freeze({ desired: 250, minimum: 50 }),
+    energy: null,
     expiresAt: objective.deadline,
     issuer: objective.industryBudgetId,
     revision: objective.revision,
     spawn: null,
   });
-}
-
-function objectiveEnergy(
-  objective: MatureResourceObjective,
-  input: Parameters<typeof reconcileMaturePolicy>[0],
-): number {
-  if (objective.kind === "factory-batch") {
-    const recipe = input.catalog.recipes.find(({ product }) => product === objective.product);
-    return (
-      (recipe?.components.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0) *
-      objective.batches
-    );
-  }
-  if (objective.kind === "power-processing")
-    return objective.units * input.catalog.constants.powerSpawnEnergyPerPower;
-  const room = input.world.ownedRooms.find(({ name }) => name === objective.colonyId);
-  const nuker = (room?.ownedNukers ?? []).find(({ id }) => id === objective.structureId);
-  return Math.max(0, objective.energyTarget - storeAmount(nuker?.store, "energy"));
 }
 
 function inventoryEndpoint(room: OwnedRoomSnapshot) {
@@ -449,6 +486,23 @@ function deadline(tick: number, horizon: number): number {
   return Math.min(Number.MAX_SAFE_INTEGER, tick + horizon);
 }
 
+function stabilizeObjective<T extends MatureResourceObjective>(
+  objective: T,
+  previous: readonly MaturePolicyCommitment[],
+  tick: number,
+): T {
+  const prior = previous.find(
+    ({ objective: candidate }) => candidate.id === objective.id,
+  )?.objective;
+  if (prior === undefined) return objective;
+  const expired = prior.deadline < tick;
+  return freeze({
+    ...objective,
+    deadline: expired ? objective.deadline : prior.deadline,
+    revision: expired ? Math.min(Number.MAX_SAFE_INTEGER, prior.revision + 1) : prior.revision,
+  });
+}
+
 function compareCandidates(a: MatureFactoryCandidate, b: MatureFactoryCandidate): number {
   return (
     compare(a.roomName, b.roomName) ||
@@ -459,6 +513,10 @@ function compareCandidates(a: MatureFactoryCandidate, b: MatureFactoryCandidate)
 
 function compareObjectives(a: MatureResourceObjective, b: MatureResourceObjective): number {
   return compare(a.id, b.id) || a.revision - b.revision;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function identity(value: unknown, maximum: number): value is string {

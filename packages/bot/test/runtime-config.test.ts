@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v26");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v27");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v26",
+      "runtime-config-source-v27",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("activates phase2 labs only after industry under policy v26", () => {
+  it("activates the mature infrastructure gate only after labs under policy v27", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v26");
+    expect(config.sourceRevision).toBe("runtime-config-source-v27");
     expect(config.policy.industry).toEqual({
       sourceVersion: "industry-policy-v2",
       stockMinimum: 1_000,
@@ -656,6 +656,27 @@ describe("source feature gates", () => {
       maximumBoostPartsPerManifest: 50,
       maximumLabResourceDemandsPerTick: 32,
       maximumLabDeadlineHorizon: 5_000,
+      mature: {
+        sourceVersion: "mature-policy-v1",
+        maximumAmountPerTransfer: 300_000,
+        maximumBatchesPerObjective: 1,
+        maximumCandidates: 32,
+        maximumCommodities: 512,
+        maximumComponentsPerCommodity: 64,
+        maximumDeadlineHorizon: 50,
+        maximumEdges: 128,
+        maximumEffectsPerStructure: 32,
+        maximumNodes: 128,
+        maximumNukerEnergyTarget: 300_000,
+        maximumNukerGhodiumTarget: 5_000,
+        maximumObjectives: 32,
+        maximumPowerProcessingUnits: 100,
+        maximumResourceTypes: 512,
+        maximumRooms: 8,
+        maximumStringLength: 128,
+        maximumStructuresPerRoom: 32,
+        maximumTransfersPerObjective: 64,
+      },
     });
     expect(config.policy.colony).toEqual({
       rclPolicyVersion: 1,
@@ -756,6 +777,11 @@ describe("source feature gates", () => {
       enabled: true,
       reason: "enabled",
     });
+    expect(buildRuntimeConfig().features.gates["phase2.mature"]).toEqual({
+      blockedBy: null,
+      enabled: true,
+      reason: "enabled",
+    });
     const phase2Disabled = buildRuntimeConfig({ features: { disabled: ["phase2.colony"] } });
     expect(phase2Disabled.features.gates["phase2.layout"]).toEqual({
       blockedBy: "phase2.colony",
@@ -788,6 +814,12 @@ describe("source feature gates", () => {
     const industryDisabled = buildRuntimeConfig({ features: { disabled: ["phase2.industry"] } });
     expect(industryDisabled.features.gates["phase2.labs"]).toEqual({
       blockedBy: "phase2.industry",
+      enabled: false,
+      reason: "prerequisite-blocked",
+    });
+    const labsDisabled = buildRuntimeConfig({ features: { disabled: ["phase2.labs"] } });
+    expect(labsDisabled.features.gates["phase2.mature"]).toEqual({
+      blockedBy: "phase2.labs",
       enabled: false,
       reason: "prerequisite-blocked",
     });

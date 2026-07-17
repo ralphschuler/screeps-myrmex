@@ -115,7 +115,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   execution, settlement, and composed recovery evidence remain the next #48 slice.
 - Issue #266 establishes the sole bounded ObserverArbiter and ObserverExecutor. Versioned authorized
   requests deterministically claim at most one slot per observer, and `OK` settles only from exact
-  next-tick visibility with bounded no-effect retry. Runtime owner/tick composition remains #267.
+  next-tick visibility with bounded no-effect retry.
+- Issue #267 composes mature factory, power-spawn, capped nuker-stock, and observer authorities into
+  the static tick graph behind `phase2.mature` and `runtime-config-source-v27`. Exact next-tick
+  effects and observer receipts persist atomically in `IndustryOwnerV5`; checked evidence is in
+  [`phase2-mature-evidence.md`](phase2-mature-evidence.md). Observer target strategy and nuke launch
+  remain unavailable.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

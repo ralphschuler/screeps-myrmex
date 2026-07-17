@@ -154,6 +154,7 @@ import {
   renewLogisticsBudgets,
   type LogisticsRuntimeProjection,
 } from "../logistics/runtime";
+import type { LogisticsResourceDemandProjection } from "../logistics/resource-demands";
 import {
   LinkExecutor,
   emptyLinkRuntimeResult,
@@ -164,8 +165,11 @@ import {
 import {
   IndustryDirector,
   composeLabRuntime,
+  composeMatureInfrastructure,
   emptyLabCompositionProjection,
+  emptyMatureInfrastructureProjection,
   executeLabIntents,
+  executeMatureIntents,
   fingerprintLiveLabCreep,
   settleLabComposition,
   authorizeIndustryWork,
@@ -174,23 +178,38 @@ import {
   executeTerminalSendIntents,
   observeIndustryRooms,
   migrateIndustryOwner,
+  normalizeMatureMechanics,
   parseIndustryOwner,
   persistIndustryOwner,
   projectIndustryBudgets,
   projectIndustryTelemetry,
   projectLabTelemetry,
+  projectMatureCommandTelemetry,
   projectTerminalSendIntents,
   reconcileIndustryCommands,
+  settleMatureInfrastructure,
   type IndustryCommandState,
-  type IndustryOwnerV4,
+  type IndustryOwnerV5,
   type IndustryPlan,
   type IndustryRoomState,
   type IndustryTelemetry,
   type LabCommand,
   type LabCompositionProjection,
   type InternalSendRequest,
+  type MatureCommand,
+  type MatureInfrastructureProjection,
+  type MatureMechanicsInput,
   type TerminalSendCommand,
 } from "../industry";
+import {
+  composeObserverRuntime,
+  emptyObserverRuntimeProjection,
+  executeObserverIntents,
+  projectObserverTelemetry,
+  settleObserverRuntime,
+  type ObserverCommand,
+  type ObserverRuntimeProjection,
+} from "../observer";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
@@ -411,7 +430,11 @@ interface IndustryTickDraft {
   execution: readonly CommandExecutionResult<TerminalSendCommand>[];
   labExecution: readonly CommandExecutionResult<LabCommand>[];
   labs: LabCompositionProjection;
-  owner: IndustryOwnerV4;
+  mature: MatureInfrastructureProjection;
+  matureExecution: readonly CommandExecutionResult<MatureCommand>[];
+  observer: ObserverRuntimeProjection;
+  observerExecution: readonly CommandExecutionResult<ObserverCommand>[];
+  owner: IndustryOwnerV5;
   ownerNeedsPersistence: boolean;
   plan: IndustryPlan;
   rooms: readonly IndustryRoomState[];
@@ -450,6 +473,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     execution: Object.freeze([]),
     labExecution: Object.freeze([]),
     labs: emptyLabCompositionProjection(),
+    mature: emptyMatureInfrastructureProjection(),
+    matureExecution: Object.freeze([]),
+    observer: emptyObserverRuntimeProjection(),
+    observerExecution: Object.freeze([]),
     owner: industryOwner,
     ownerNeedsPersistence: industryOwnerResult.needsPersistence,
     plan: emptyIndustryPlan(),
@@ -1089,11 +1116,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       descriptor: {
         id: "industry.execute",
         phase: "execute",
-        criticality: "economic",
+        criticality: "mandatory",
         cadence: 1,
         estimate: 0.25,
         admitInRecovery: false,
-        mandatoryTail: false,
+        mandatoryTail: true,
       },
       run: ({ context }) => {
         const enabled = isFeatureEnabled(context.config, "phase2.industry");
@@ -1119,6 +1146,45 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 input.game.cpu,
               )
             : Object.freeze([]);
+        const matureEnabled =
+          enabled &&
+          isFeatureEnabled(context.config, "phase2.mature") &&
+          context.execution !== null;
+        const currentCatalog = matureEnabled ? matureCatalogFromGlobals(context.config) : null;
+        industryDraft.matureExecution = matureEnabled
+          ? executeMatureIntents(
+              context.execution,
+              context.tick,
+              {
+                currentCapabilityFingerprint: (kind, id) =>
+                  industryDraft.mature.capabilities.find(
+                    (capability) => capability.kind === kind && capability.id === id,
+                  )?.fingerprint ?? null,
+                currentMechanicsFingerprint: () => currentCatalog?.fingerprint ?? null,
+                resolveFactory: (id) =>
+                  resolveLiveObject(input.game, id) as StructureFactory | null,
+                resolvePowerSpawn: (id) =>
+                  resolveLiveObject(input.game, id) as StructurePowerSpawn | null,
+              },
+              input.game.cpu,
+            )
+          : Object.freeze([]);
+        industryDraft.observerExecution = matureEnabled
+          ? executeObserverIntents(
+              context.execution,
+              context.tick,
+              {
+                currentCapabilityFingerprint: (id) =>
+                  industryDraft.mature.capabilities.find(
+                    (capability) => capability.kind === "observer" && capability.id === id,
+                  )?.fingerprint ?? null,
+                currentMechanicsFingerprint: () => currentCatalog?.fingerprint ?? null,
+                resolveObserver: (id) =>
+                  resolveLiveObject(input.game, id) as StructureObserver | null,
+              },
+              input.game.cpu,
+            )
+          : Object.freeze([]);
         return staged(() => undefined);
       },
     },
@@ -1236,9 +1302,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       descriptor: {
         id: "industry.reconcile",
         phase: "reconcile",
-        criticality: "economic",
+        criticality: "mandatory",
         cadence: 1,
-        estimate: 0.25,
+        estimate: 0.5,
         admitInRecovery: false,
         mandatoryTail: false,
       },
@@ -1255,15 +1321,52 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           previousAttempts: industryDraft.owner.labAttempts,
           projection: industryDraft.labs,
         });
+        const matureState =
+          industryDraft.mature.catalog === null
+            ? {
+                attempts: industryDraft.owner.matureAttempts,
+                commitments: industryDraft.owner.matureCommitments,
+              }
+            : settleMatureInfrastructure({
+                execution: industryDraft.matureExecution,
+                previousAttempts: industryDraft.owner.matureAttempts,
+                projection: industryDraft.mature,
+              });
+        const observerAttempts =
+          industryDraft.mature.catalog === null
+            ? industryDraft.owner.observerAttempts
+            : settleObserverRuntime({
+                execution: industryDraft.observerExecution,
+                previousAttempts: industryDraft.owner.observerAttempts,
+                projection: industryDraft.observer,
+              });
         const owner = persistIndustryOwner(
           industryDraft.owner,
           context.config.policy.industry.sourceVersion,
           states,
           labState.commitments,
           labState.attempts,
+          matureState.attempts,
+          matureState.commitments,
+          observerAttempts,
         );
         const telemetry = projectIndustryTelemetry({
           labs: projectLabTelemetry(industryDraft.labs, industryDraft.labExecution),
+          ...(industryDraft.mature.catalog === null
+            ? {}
+            : {
+                mature: projectMatureCommandTelemetry({
+                  execution: industryDraft.matureExecution,
+                  intents: industryDraft.mature.intents,
+                  settlements: industryDraft.mature.settlements,
+                }),
+                observer: projectObserverTelemetry({
+                  dispositions: industryDraft.observer.arbitration.dispositions,
+                  execution: industryDraft.observerExecution,
+                  intents: industryDraft.observer.arbitration.intents,
+                  settlements: industryDraft.observer.settlements,
+                }),
+              }),
           plan: industryDraft.plan,
           results: industryDraft.execution,
           states,
@@ -1907,16 +2010,18 @@ function colonyDirectorSystem(
       }
       let logisticsCpuUsed = 0;
       let logisticsPlan = emptyLogisticsRuntimeProjection();
+      const priorLedger = resolveColoniesOwner(owner).owner?.ledger ?? [];
+      const fundedIndustryBudgetIds = new Set(
+        priorLedger
+          .filter(
+            ({ category, status }) =>
+              category === "industry" && (status === "active" || status === "pending"),
+          )
+          .map(({ issuer }) => issuer),
+      );
       const labs = isFeatureEnabled(context.config, "phase2.labs")
         ? composeLabRuntime({
-            fundedBudgetIds: new Set(
-              context.colony.reservations
-                .filter(
-                  ({ category, status }) =>
-                    category === "industry" && (status === "active" || status === "pending"),
-                )
-                .map(({ issuer }) => issuer),
-            ),
+            fundedBudgetIds: fundedIndustryBudgetIds,
             pendingAttempts: industryDraft.owner.labAttempts,
             policy: context.config.policy.industry,
             previousCommitments: industryDraft.owner.labCommitments,
@@ -1927,13 +2032,41 @@ function colonyDirectorSystem(
           })
         : emptyLabCompositionProjection();
       industryDraft.labs = labs;
+      const mature =
+        isFeatureEnabled(context.config, "phase2.mature") &&
+        (mode === "normal" || mode === "surplus") &&
+        hasMatureStructure(context.snapshot)
+          ? composeMatureInfrastructure({
+              fundedBudgetIds: fundedIndustryBudgetIds,
+              labDemands: labs.policy.demands,
+              mechanics: matureMechanicsInput(),
+              pendingAttempts: industryDraft.owner.matureAttempts,
+              policy: context.config.policy.industry,
+              previousCommitments: industryDraft.owner.matureCommitments,
+              snapshot: context.snapshot,
+              snapshotRevision: snapshotRevision(context.snapshot),
+            })
+          : emptyMatureInfrastructureProjection();
+      industryDraft.mature = mature;
+      industryDraft.observer =
+        mature.catalog === null
+          ? emptyObserverRuntimeProjection()
+          : composeObserverRuntime({
+              authorizations: [],
+              capabilities: mature.capabilities,
+              catalog: mature.catalog,
+              pendingAttempts: industryDraft.owner.observerAttempts,
+              requests: [],
+              snapshot: context.snapshot,
+              snapshotRevision: snapshotRevision(context.snapshot),
+            });
       if (isFeatureEnabled(context.config, "phase2.logistics")) {
         const startedAt = input.game.cpu.getUsed();
         logisticsPlan = planLogisticsRuntime({
           execution: context.contractExecution,
-          includeOptional: mode === "normal",
+          includeOptional: mode === "normal" || mode === "surplus",
           planning: context.contractPlanning,
-          resourceDemands: labs.resourceDemands,
+          resourceDemands: mergeResourceDemands(labs.resourceDemands, mature.resourceDemands),
           snapshot: context.snapshot,
           tick: context.tick,
         });
@@ -2026,6 +2159,7 @@ function colonyDirectorSystem(
         ...provisionalMaintenance.budgets,
         ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
         ...projectLabBudgetRequests(labs, context.tick),
+        ...mature.policy.budgets,
       ];
       const provisional = colonyDirector.begin({
         tick: context.tick,
@@ -2188,6 +2322,8 @@ function industryPublicationSystem(
           Object.freeze({ ...intent, snapshotRevision: currentSnapshotRevision }),
         );
       for (const intent of draft.labs.intents) intents.producer.submit(intent);
+      for (const intent of draft.mature.intents) intents.producer.submit(intent);
+      for (const intent of draft.observer.arbitration.intents) intents.producer.submit(intent);
       const stagedIntents = intents.stage();
       return staged(
         () => {
@@ -2322,10 +2458,92 @@ function industryRoomStock(room: IndustryRoomState, resourceType: string): numbe
   );
 }
 
+function hasMatureStructure(snapshot: WorldSnapshot): boolean {
+  return snapshot.ownedRooms.some(
+    (room) =>
+      (room.ownedFactories?.length ?? 0) > 0 ||
+      (room.ownedNukers?.length ?? 0) > 0 ||
+      (room.ownedObservers?.length ?? 0) > 0 ||
+      (room.ownedPowerSpawns?.length ?? 0) > 0,
+  );
+}
+
+function mergeResourceDemands(
+  ...projections: readonly LogisticsResourceDemandProjection[]
+): LogisticsResourceDemandProjection {
+  return Object.freeze({
+    blockers: Object.freeze(projections.flatMap(({ blockers }) => blockers ?? [])),
+    dispositions: Object.freeze(projections.flatMap(({ dispositions }) => dispositions ?? [])),
+    edges: Object.freeze(
+      projections
+        .flatMap(({ edges }) => edges)
+        .sort((left, right) => left.id.localeCompare(right.id)),
+    ),
+    endpoints: Object.freeze(
+      projections
+        .flatMap(({ endpoints }) => endpoints)
+        .sort((left, right) => left.nodeId.localeCompare(right.nodeId)),
+    ),
+    nodes: Object.freeze(
+      projections
+        .flatMap(({ nodes }) => nodes)
+        .sort((left, right) => left.id.localeCompare(right.id)),
+    ),
+  });
+}
+
+function matureMechanicsInput(): MatureMechanicsInput {
+  return Object.freeze({
+    commodities: typeof COMMODITIES === "undefined" ? null : COMMODITIES,
+    constants: Object.freeze({
+      factoryCapacity: typeof FACTORY_CAPACITY === "undefined" ? null : FACTORY_CAPACITY,
+      nukerCooldown: typeof NUKER_COOLDOWN === "undefined" ? null : NUKER_COOLDOWN,
+      nukerEnergyCapacity:
+        typeof NUKER_ENERGY_CAPACITY === "undefined" ? null : NUKER_ENERGY_CAPACITY,
+      nukerGhodiumCapacity:
+        typeof NUKER_GHODIUM_CAPACITY === "undefined" ? null : NUKER_GHODIUM_CAPACITY,
+      nukerRange: typeof NUKE_RANGE === "undefined" ? null : NUKE_RANGE,
+      observerRange: typeof OBSERVER_RANGE === "undefined" ? null : OBSERVER_RANGE,
+      operateFactoryPower: typeof PWR_OPERATE_FACTORY === "undefined" ? null : PWR_OPERATE_FACTORY,
+      operateObserverPower:
+        typeof PWR_OPERATE_OBSERVER === "undefined" ? null : PWR_OPERATE_OBSERVER,
+      operatePowerEffects:
+        typeof POWER_INFO === "undefined" || typeof PWR_OPERATE_POWER === "undefined"
+          ? null
+          : POWER_INFO[PWR_OPERATE_POWER].effect,
+      operatePowerPower: typeof PWR_OPERATE_POWER === "undefined" ? null : PWR_OPERATE_POWER,
+      powerSpawnEnergyCapacity:
+        typeof POWER_SPAWN_ENERGY_CAPACITY === "undefined" ? null : POWER_SPAWN_ENERGY_CAPACITY,
+      powerSpawnEnergyPerPower:
+        typeof POWER_SPAWN_ENERGY_RATIO === "undefined" ? null : POWER_SPAWN_ENERGY_RATIO,
+      powerSpawnPowerCapacity:
+        typeof POWER_SPAWN_POWER_CAPACITY === "undefined" ? null : POWER_SPAWN_POWER_CAPACITY,
+    }),
+    resourceTypes: typeof RESOURCES_ALL === "undefined" ? [] : RESOURCES_ALL,
+  });
+}
+
+function matureCatalogFromGlobals(config: RuntimeConfig) {
+  const mechanics = matureMechanicsInput();
+  const limits = config.policy.industry.mature;
+  const result = normalizeMatureMechanics({
+    commodities: mechanics.commodities,
+    constants: mechanics.constants,
+    limits: {
+      maximumCommodities: limits.maximumCommodities,
+      maximumComponentsPerCommodity: limits.maximumComponentsPerCommodity,
+      maximumResourceTypes: limits.maximumResourceTypes,
+      maximumStringLength: limits.maximumStringLength,
+    },
+    resourceTypes: mechanics.resourceTypes,
+  });
+  return result.status === "ready" ? result.catalog : null;
+}
+
 function industryOwnerForPolicy(
   value: unknown,
   policySourceVersion: string,
-): { readonly needsPersistence: boolean; readonly owner: IndustryOwnerV4 } {
+): { readonly needsPersistence: boolean; readonly owner: IndustryOwnerV5 } {
   const parsed = parseIndustryOwner(value);
   if (parsed !== null && parsed.policySourceVersion === policySourceVersion)
     return Object.freeze({ needsPersistence: false, owner: parsed });
