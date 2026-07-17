@@ -1436,6 +1436,15 @@ drift, timeout, and retry exhaustion fail closed.
 [ADR 0024](adr/0024-lab-execution-and-settlement.md) records this command and settlement boundary
 without activating the industry gate.
 
+The complete lab path is composed by one pure projection before static tick publication. Current
+layout/lab facts derive cluster roles, detached reaction constants derive the catalog, source-owned
+stock bands create bounded funded objectives, and policy demands enter the existing logistics graph
+before readiness. Forward, explicitly funded reverse, and boost intents share one cluster key and
+the common arbiter. `IndustryOwnerV3` distinguishes pending observation from durable retry-ready
+state, while bounded observer telemetry reports commands, blockers, exact settlement, retries, and
+cancellations. Checked `phase2-labs-results.json` evidence makes `phase2.labs` source-available
+under `runtime-config-source-v26` without enabling factory behavior.
+
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
 state.
@@ -1594,11 +1603,12 @@ blocking. Issue `#37` made `phase1.colony` source-available under `runtime-confi
 `#23` makes `phase1.contracts` source-available under `runtime-config-source-v3`, with the colony
 gate as its prerequisite. Issue `#24` makes `phase1.spawn` source-available under
 `runtime-config-source-v4`, also with the colony gate as its prerequisite. Every later gameplay gate
-remains unavailable until its own outcome is proved. Operational Memory may disable an available
-gate but cannot activate another gate. A source-v3 receipt is incompatible under v4 and is reissued
-only after a present candidate revalidates; an incompatible receipt with no candidate falls back to
-source defaults without rewriting operator bytes. Secrets never enter source, Memory, telemetry,
-Wiki, or committed config.
+remains unavailable until its own outcome is proved; issue `#257` makes `phase2.labs` available
+under `runtime-config-source-v26` with `phase2.industry` as its prerequisite. Operational Memory may
+disable an available gate but cannot activate another gate. A source-v3 receipt is incompatible
+under v4 and is reissued only after a present candidate revalidates; an incompatible receipt with no
+candidate falls back to source defaults without rewriting operator bytes. Secrets never enter
+source, Memory, telemetry, Wiki, or committed config.
 
 The versioned policy fields, limits, statuses, gates, and deterministic matrices are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md) and

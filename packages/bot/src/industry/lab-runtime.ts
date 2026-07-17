@@ -39,6 +39,19 @@ export type LabRunReactionIntent = IntentEnvelope<
   }
 >;
 
+export type LabReverseReactionIntent = IntentEnvelope<
+  "lab.reverse-reaction",
+  LabIntentPayloadBase & {
+    readonly amount: 5;
+    readonly compound: string;
+    readonly resultLabIds: readonly [string, string];
+    readonly resultMineralsBefore: readonly [number, number];
+    readonly reagents: readonly [string, string];
+    readonly sourceLabId: string;
+    readonly sourceMineralBefore: number;
+  }
+>;
+
 export type LabBoostCreepIntent = IntentEnvelope<
   "lab.boost-creep",
   LabIntentPayloadBase & {
@@ -54,7 +67,8 @@ export type LabBoostCreepIntent = IntentEnvelope<
   }
 >;
 
-export type LabCommandIntent = LabRunReactionIntent | LabBoostCreepIntent;
+export type LabCommandIntent =
+  LabRunReactionIntent | LabReverseReactionIntent | LabBoostCreepIntent;
 
 export interface PlanLabCommandInput {
   readonly assignments: readonly LabClusterAssignment[];
@@ -76,6 +90,7 @@ export function arbitrateLabCommands(input: PlanLabCommandInput): readonly LabCo
   const pending = new Set(
     (input.pendingAttempts ?? [])
       .slice(0, LAB_RUNTIME_CAPS.maximumPendingAttempts)
+      .filter(({ retryReady }) => retryReady !== true)
       .map(commitmentKeyForAttempt),
   );
   const ready = new Set(
@@ -120,7 +135,9 @@ export function arbitrateLabCommands(input: PlanLabCommandInput): readonly LabCo
             input.snapshotRevision,
             tick,
           )
-        : reactionIntent(commitment, assignment, room, input.snapshotRevision, tick);
+        : commitment.direction === "reverse"
+          ? reverseReactionIntent(commitment, assignment, room, input.snapshotRevision, tick)
+          : reactionIntent(commitment, assignment, room, input.snapshotRevision, tick);
     if (intent !== null) candidates.push(intent);
     if (candidates.length >= LAB_RUNTIME_CAPS.maximumCandidates) break;
   }
@@ -151,6 +168,7 @@ interface PendingLabAttemptBase {
   readonly objectiveRevision: number;
   readonly observeAt: number;
   readonly retry: number;
+  readonly retryReady?: true;
   readonly roomName: string;
   readonly snapshotRevision: string;
 }
@@ -163,6 +181,16 @@ export interface PendingReactionAttempt extends PendingLabAttemptBase {
   readonly reagentLabIds: readonly [string, string];
   readonly reagentMineralsBefore: readonly [number, number];
   readonly reagents: readonly [string, string];
+}
+
+export interface PendingReverseReactionAttempt extends PendingLabAttemptBase {
+  readonly compound: string;
+  readonly kind: "reverse-reaction";
+  readonly resultLabIds: readonly [string, string];
+  readonly resultMineralsBefore: readonly [number, number];
+  readonly reagents: readonly [string, string];
+  readonly sourceLabId: string;
+  readonly sourceMineralBefore: number;
 }
 
 export interface PendingBoostAttempt extends PendingLabAttemptBase {
@@ -178,7 +206,8 @@ export interface PendingBoostAttempt extends PendingLabAttemptBase {
   readonly targetBoostedPartsBefore: number;
 }
 
-export type PendingLabAttempt = PendingReactionAttempt | PendingBoostAttempt;
+export type PendingLabAttempt =
+  PendingReactionAttempt | PendingReverseReactionAttempt | PendingBoostAttempt;
 
 /** OK schedules observation; every other normalized command result creates no attempt. */
 export function createPendingLabAttempt(
@@ -212,19 +241,30 @@ export function createPendingLabAttempt(
         reagentMineralsBefore: intent.payload.reagentMineralsBefore,
         reagents: intent.payload.reagents,
       })
-    : freeze({
-        ...base,
-        bodyPartsCount: intent.payload.bodyPartsCount,
-        compound: intent.payload.compound,
-        creepFingerprint: intent.payload.creepFingerprint,
-        creepId: intent.payload.creepId,
-        energyBefore: intent.payload.energyBefore,
-        kind: "boost" as const,
-        labId: intent.payload.labId,
-        mineralBefore: intent.payload.mineralBefore,
-        partType: intent.payload.partType,
-        targetBoostedPartsBefore: intent.payload.targetBoostedPartsBefore,
-      });
+    : intent.kind === "lab.reverse-reaction"
+      ? freeze({
+          ...base,
+          compound: intent.payload.compound,
+          kind: "reverse-reaction" as const,
+          resultLabIds: intent.payload.resultLabIds,
+          resultMineralsBefore: intent.payload.resultMineralsBefore,
+          reagents: intent.payload.reagents,
+          sourceLabId: intent.payload.sourceLabId,
+          sourceMineralBefore: intent.payload.sourceMineralBefore,
+        })
+      : freeze({
+          ...base,
+          bodyPartsCount: intent.payload.bodyPartsCount,
+          compound: intent.payload.compound,
+          creepFingerprint: intent.payload.creepFingerprint,
+          creepId: intent.payload.creepId,
+          energyBefore: intent.payload.energyBefore,
+          kind: "boost" as const,
+          labId: intent.payload.labId,
+          mineralBefore: intent.payload.mineralBefore,
+          partType: intent.payload.partType,
+          targetBoostedPartsBefore: intent.payload.targetBoostedPartsBefore,
+        });
 }
 
 export type LabSettlementReason =
@@ -240,11 +280,12 @@ export type LabSettlementReason =
   | "cluster-changed"
   | "deadline"
   | "observation-timeout"
-  | "retry-cap";
+  | "retry-cap"
+  | "awaiting-retry";
 
 export interface LabAttemptSettlement {
   readonly attemptId: string;
-  readonly kind: "boost" | "reaction";
+  readonly kind: "boost" | "reaction" | "reverse-reaction";
   readonly objectiveId: string;
   readonly objectiveRevision: number;
   readonly reason: LabSettlementReason;
@@ -270,12 +311,13 @@ export function reconcilePendingLabAttempts(input: {
       .slice(0, LAB_RUNTIME_CAPS.maximumPendingAttempts)
       .sort((left, right) => compare(left.attemptId, right.attemptId))
       .map((attempt) => {
+        if (attempt.retryReady === true) return settlement(attempt, "pending", "awaiting-retry", 0);
         if (tick <= attempt.issuedAt)
           return settlement(attempt, "pending", "awaiting-observation", 0);
         const commitment = commitments.get(commitmentKeyForAttempt(attempt));
         if (
           commitment === undefined ||
-          commitment.kind !== attempt.kind ||
+          commitment.kind !== (attempt.kind === "reverse-reaction" ? "reaction" : attempt.kind) ||
           commitment.objectiveFingerprint !== attempt.commitmentFingerprint ||
           commitment.catalogFingerprint !== attempt.catalogFingerprint
         )
@@ -291,12 +333,14 @@ export function reconcilePendingLabAttempts(input: {
         if (room === undefined) return settlement(attempt, "cancelled", "missing-lab", 0);
         return attempt.kind === "reaction"
           ? reconcileReaction(attempt, room.ownedLabs ?? [])
-          : reconcileBoost(
-              attempt,
-              room.ownedLabs ?? [],
-              room.ownedCreeps,
-              input.creepFingerprints,
-            );
+          : attempt.kind === "reverse-reaction"
+            ? reconcileReverseReaction(attempt, room.ownedLabs ?? [])
+            : reconcileBoost(
+                attempt,
+                room.ownedLabs ?? [],
+                room.ownedCreeps,
+                input.creepFingerprints,
+              );
       }),
   );
 }
@@ -313,6 +357,7 @@ export function isPendingLabAttempt(value: unknown): value is PendingLabAttempt 
     !positiveInteger(value.objectiveRevision) ||
     value.observeAt !== value.issuedAt + LAB_RUNTIME_CAPS.observationDelay ||
     !nonnegativeInteger(value.retry, LAB_RUNTIME_CAPS.maximumRetries - 1) ||
+    (value.retryReady !== undefined && value.retryReady !== true) ||
     !identity(value.roomName, 16) ||
     !identity(value.snapshotRevision)
   )
@@ -327,6 +372,16 @@ export function isPendingLabAttempt(value: unknown): value is PendingLabAttempt 
       stringPair(value.reagents, 64)
     );
   }
+  if (value.kind === "reverse-reaction") {
+    return (
+      identity(value.compound, 64) &&
+      stringPair(value.resultLabIds, 128) &&
+      integerPair(value.resultMineralsBefore) &&
+      stringPair(value.reagents, 64) &&
+      identity(value.sourceLabId, 128) &&
+      nonnegativeInteger(value.sourceMineralBefore)
+    );
+  }
   return (
     value.kind === "boost" &&
     positiveInteger(value.bodyPartsCount, LAB_RUNTIME_CAPS.maximumBoostParts) &&
@@ -339,6 +394,19 @@ export function isPendingLabAttempt(value: unknown): value is PendingLabAttempt 
     identity(value.partType, 32) &&
     nonnegativeInteger(value.targetBoostedPartsBefore, LAB_RUNTIME_CAPS.maximumBoostParts)
   );
+}
+
+export function markLabAttemptRetryReady(
+  attempt: PendingLabAttempt,
+  settlementValue: LabAttemptSettlement,
+): PendingLabAttempt | null {
+  if (
+    settlementValue.attemptId !== attempt.attemptId ||
+    settlementValue.status !== "retry" ||
+    settlementValue.retry >= LAB_RUNTIME_CAPS.maximumRetries
+  )
+    return null;
+  return freeze({ ...attempt, retry: settlementValue.retry, retryReady: true as const });
 }
 
 function reactionIntent(
@@ -393,6 +461,65 @@ function reactionIntent(
       reagentMineralsBefore: [reagentA.mineralAmount, reagentB.mineralAmount] as const,
       reagents: commitment.reagents,
       roomName: commitment.colonyId,
+    },
+  });
+}
+
+function reverseReactionIntent(
+  commitment: Extract<LabPolicyCommitment, { kind: "reaction" }>,
+  assignment: LabClusterAssignment,
+  room: WorldSnapshot["ownedRooms"][number],
+  snapshotRevision: string,
+  tick: number,
+): LabReverseReactionIntent | null {
+  const sourceLabId = [...assignment.productLabIds].sort(compare)[0];
+  if (sourceLabId === undefined) return null;
+  const labs = room.ownedLabs ?? [];
+  const source = labs.find(({ id }) => id === sourceLabId);
+  const resultA = labs.find(({ id }) => id === assignment.reagentLabIds[0]);
+  const resultB = labs.find(({ id }) => id === assignment.reagentLabIds[1]);
+  if (
+    source === undefined ||
+    resultA === undefined ||
+    resultB === undefined ||
+    !source.active ||
+    !resultA.active ||
+    !resultB.active ||
+    source.cooldown !== 0 ||
+    source.mineralType !== commitment.product ||
+    source.mineralAmount < LAB_RUNTIME_CAPS.reactionAmount ||
+    !readyReverseResult(resultA, commitment.reagents[0]) ||
+    !readyReverseResult(resultB, commitment.reagents[1]) ||
+    range(source, resultA) > 2 ||
+    range(source, resultB) > 2
+  )
+    return null;
+  return freeze({
+    id: intentId(commitment, tick),
+    kind: "lab.reverse-reaction" as const,
+    issuer: `industry/${commitment.colonyId}/labs`,
+    tick,
+    target: source.id,
+    snapshotRevision,
+    exclusiveResourceKey: clusterKey(commitment.colonyId, assignment.fingerprint),
+    priority: { class: "speculation" as const, value: commitment.priority },
+    deadline: Math.min(tick, commitment.deadline),
+    budget: { id: commitment.objectiveId, cost: 1 },
+    preconditions: [],
+    payload: {
+      amount: 5 as const,
+      assignmentFingerprint: assignment.fingerprint,
+      catalogFingerprint: commitment.catalogFingerprint,
+      commitmentFingerprint: commitment.objectiveFingerprint,
+      compound: commitment.product,
+      objectiveId: commitment.objectiveId,
+      objectiveRevision: commitment.objectiveRevision,
+      resultLabIds: [resultA.id, resultB.id] as const,
+      resultMineralsBefore: [resultA.mineralAmount, resultB.mineralAmount] as const,
+      reagents: commitment.reagents,
+      roomName: commitment.colonyId,
+      sourceLabId: source.id,
+      sourceMineralBefore: source.mineralAmount,
     },
   });
 }
@@ -507,6 +634,34 @@ function reagentTypeAfterConsumption(
   );
 }
 
+function reconcileReverseReaction(
+  attempt: PendingReverseReactionAttempt,
+  labs: readonly OwnedLabSnapshot[],
+): LabAttemptSettlement {
+  const source = labs.find(({ id }) => id === attempt.sourceLabId);
+  const resultA = labs.find(({ id }) => id === attempt.resultLabIds[0]);
+  const resultB = labs.find(({ id }) => id === attempt.resultLabIds[1]);
+  if (source === undefined || resultA === undefined || resultB === undefined)
+    return settlement(attempt, "cancelled", "missing-lab", 0);
+  if (!source.active || !resultA.active || !resultB.active)
+    return settlement(attempt, "cancelled", "inactive-lab", 0);
+  const sourceDelta = attempt.sourceMineralBefore - source.mineralAmount;
+  const resultADelta = resultA.mineralAmount - attempt.resultMineralsBefore[0];
+  const resultBDelta = resultB.mineralAmount - attempt.resultMineralsBefore[1];
+  if (
+    sourceDelta === LAB_RUNTIME_CAPS.reactionAmount &&
+    resultADelta === LAB_RUNTIME_CAPS.reactionAmount &&
+    resultBDelta === LAB_RUNTIME_CAPS.reactionAmount &&
+    (source.mineralType === attempt.compound || source.mineralAmount === 0) &&
+    resultA.mineralType === attempt.reagents[0] &&
+    resultB.mineralType === attempt.reagents[1]
+  )
+    return settlement(attempt, "settled", "exact-effect", LAB_RUNTIME_CAPS.reactionAmount);
+  if (sourceDelta === 0 && resultADelta === 0 && resultBDelta === 0)
+    return retry(attempt, "no-effect");
+  return settlement(attempt, "cancelled", "conflicting-effect", 0);
+}
+
 function reconcileBoost(
   attempt: PendingBoostAttempt,
   labs: readonly OwnedLabSnapshot[],
@@ -570,6 +725,13 @@ function readyReactionLab(
   );
 }
 
+function readyReverseResult(lab: OwnedLabSnapshot, reagent: string): boolean {
+  return (
+    (lab.mineralType === null || lab.mineralType === reagent) &&
+    lab.mineralCapacity - lab.mineralAmount >= LAB_RUNTIME_CAPS.reactionAmount
+  );
+}
+
 function bodyPartCount(creep: CreepSnapshot, partType: string): number {
   const key = partType === "ranged_attack" ? "rangedAttack" : partType;
   const value = creep.body[key as keyof CreepSnapshot["body"]];
@@ -616,7 +778,8 @@ function commitmentKey(value: LabPolicyCommitment): string {
   return `${value.kind}:${value.objectiveId}:${String(value.objectiveRevision)}`;
 }
 function commitmentKeyForAttempt(value: PendingLabAttempt): string {
-  return `${value.kind}:${value.objectiveId}:${String(value.objectiveRevision)}`;
+  const kind = value.kind === "reverse-reaction" ? "reaction" : value.kind;
+  return `${kind}:${value.objectiveId}:${String(value.objectiveRevision)}`;
 }
 function dispositionKey(
   value: Pick<LabPolicyDisposition, "kind" | "objectiveId" | "objectiveRevision">,

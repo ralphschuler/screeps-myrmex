@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "deterministic": {
+    "exactReverseAmount": 5,
+    "forwardIntent": "lab.run-reaction",
+    "resetAndReorderEquivalent": true,
+    "reverseIntent": "lab.reverse-reaction",
+    "settledCommitmentAmount": 5
+  },
+  "failures": {
+    "contaminationDemands": 1,
+    "cooldownCommands": 0,
+    "fullResultCommands": 0,
+    "missingLabAssignments": 0,
+    "retryReady": true
+  },
+  "telemetry": {
+    "cancelled": 0,
+    "commands": { "executed": 0, "failed": 0, "rejected": 0 },
+    "commitments": 1,
+    "intents": 0,
+    "readinessBlockers": 1,
+    "resourceDemands": 1,
+    "retries": 0,
+    "settledAmount": 5
+  },
+  "boundaries": {
+    "commandKinds": ["lab.reverse-reaction", "lab.run-reaction"],
+    "gate": "phase2.labs",
+    "maximumCommandsPerRoom": 1
+  }
+}

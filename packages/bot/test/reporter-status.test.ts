@@ -31,6 +31,7 @@ describe("ReporterStatus", () => {
       "phase2.links",
       "phase2.maintenance",
       "phase2.industry",
+      "phase2.labs",
     ]);
   });
 

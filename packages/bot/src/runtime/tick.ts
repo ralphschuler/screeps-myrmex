@@ -63,6 +63,7 @@ import {
   type ColonyDirectorSession,
   type ColonyPlanningResult,
   type ColonySpawnCommandSettlement,
+  type BudgetRequest,
 } from "../colony";
 import {
   isFeatureEnabled,
@@ -162,6 +163,11 @@ import {
 } from "../links";
 import {
   IndustryDirector,
+  composeLabRuntime,
+  emptyLabCompositionProjection,
+  executeLabIntents,
+  fingerprintLiveLabCreep,
+  settleLabComposition,
   authorizeIndustryWork,
   eligibleIndustrySendIds,
   emptyIndustryOwner,
@@ -172,6 +178,7 @@ import {
   persistIndustryOwner,
   projectIndustryBudgets,
   projectIndustryTelemetry,
+  projectLabTelemetry,
   projectTerminalSendIntents,
   reconcileIndustryCommands,
   type IndustryCommandState,
@@ -179,6 +186,8 @@ import {
   type IndustryPlan,
   type IndustryRoomState,
   type IndustryTelemetry,
+  type LabCommand,
+  type LabCompositionProjection,
   type InternalSendRequest,
   type TerminalSendCommand,
 } from "../industry";
@@ -400,6 +409,8 @@ interface LayoutTickDraft {
 interface IndustryTickDraft {
   eligiblePlan: IndustryPlan;
   execution: readonly CommandExecutionResult<TerminalSendCommand>[];
+  labExecution: readonly CommandExecutionResult<LabCommand>[];
+  labs: LabCompositionProjection;
   owner: IndustryOwnerV3;
   ownerNeedsPersistence: boolean;
   plan: IndustryPlan;
@@ -437,6 +448,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   const industryDraft: IndustryTickDraft = {
     eligiblePlan: emptyIndustryPlan(),
     execution: Object.freeze([]),
+    labExecution: Object.freeze([]),
+    labs: emptyLabCompositionProjection(),
     owner: industryOwner,
     ownerNeedsPersistence: industryOwnerResult.needsPersistence,
     plan: emptyIndustryPlan(),
@@ -1083,12 +1096,26 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         mandatoryTail: false,
       },
       run: ({ context }) => {
+        const enabled = isFeatureEnabled(context.config, "phase2.industry");
         industryDraft.execution =
-          isFeatureEnabled(context.config, "phase2.industry") && context.execution !== null
+          enabled && context.execution !== null
             ? executeTerminalSendIntents(
                 context.execution,
                 context.tick,
                 (id) => resolveLiveObject(input.game, id) as StructureTerminal | null,
+                input.game.cpu,
+              )
+            : Object.freeze([]);
+        industryDraft.labExecution =
+          enabled && isFeatureEnabled(context.config, "phase2.labs") && context.execution !== null
+            ? executeLabIntents(
+                context.execution,
+                context.tick,
+                {
+                  creepFingerprint: fingerprintLiveLabCreep,
+                  resolveCreep: (id) => resolveLiveObject(input.game, id) as Creep | null,
+                  resolveLab: (id) => resolveLiveObject(input.game, id) as StructureLab | null,
+                },
                 input.game.cpu,
               )
             : Object.freeze([]);
@@ -1223,14 +1250,20 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           results: industryDraft.execution,
           tick: context.tick,
         });
+        const labState = settleLabComposition({
+          execution: industryDraft.labExecution,
+          previousAttempts: industryDraft.owner.labAttempts,
+          projection: industryDraft.labs,
+        });
         const owner = persistIndustryOwner(
           industryDraft.owner,
           context.config.policy.industry.sourceVersion,
           states,
-          industryDraft.owner.labCommitments,
-          industryDraft.owner.labAttempts,
+          labState.commitments,
+          labState.attempts,
         );
         const telemetry = projectIndustryTelemetry({
+          labs: projectLabTelemetry(industryDraft.labs, industryDraft.labExecution),
           plan: industryDraft.plan,
           results: industryDraft.execution,
           states,
@@ -1874,12 +1907,33 @@ function colonyDirectorSystem(
       }
       let logisticsCpuUsed = 0;
       let logisticsPlan = emptyLogisticsRuntimeProjection();
+      const labs = isFeatureEnabled(context.config, "phase2.labs")
+        ? composeLabRuntime({
+            fundedBudgetIds: new Set(
+              context.colony.reservations
+                .filter(
+                  ({ category, status }) =>
+                    category === "industry" && (status === "active" || status === "pending"),
+                )
+                .map(({ issuer }) => issuer),
+            ),
+            pendingAttempts: industryDraft.owner.labAttempts,
+            policy: context.config.policy.industry,
+            previousCommitments: industryDraft.owner.labCommitments,
+            reactions: typeof REACTIONS === "undefined" ? {} : REACTIONS,
+            reactionTimes: typeof REACTION_TIME === "undefined" ? {} : REACTION_TIME,
+            snapshot: context.snapshot,
+            snapshotRevision: snapshotRevision(context.snapshot),
+          })
+        : emptyLabCompositionProjection();
+      industryDraft.labs = labs;
       if (isFeatureEnabled(context.config, "phase2.logistics")) {
         const startedAt = input.game.cpu.getUsed();
         logisticsPlan = planLogisticsRuntime({
           execution: context.contractExecution,
           includeOptional: mode === "normal",
           planning: context.contractPlanning,
+          resourceDemands: labs.resourceDemands,
           snapshot: context.snapshot,
           tick: context.tick,
         });
@@ -1971,6 +2025,7 @@ function colonyDirectorSystem(
         ...logistics.budgets,
         ...provisionalMaintenance.budgets,
         ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
+        ...projectLabBudgetRequests(labs, context.tick),
       ];
       const provisional = colonyDirector.begin({
         tick: context.tick,
@@ -2132,6 +2187,7 @@ function industryPublicationSystem(
         intents.producer.submit(
           Object.freeze({ ...intent, snapshotRevision: currentSnapshotRevision }),
         );
+      for (const intent of draft.labs.intents) intents.producer.submit(intent);
       const stagedIntents = intents.stage();
       return staged(
         () => {
@@ -3144,6 +3200,22 @@ function isOptionalTick(value: unknown): value is number | null {
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function projectLabBudgetRequests(
+  projection: LabCompositionProjection,
+  tick: number,
+): readonly BudgetRequest[] {
+  return [...projection.objectiveBudgets, ...projection.policy.budgets].map((budget) => ({
+    colonyId: budget.colonyId,
+    category: "industry" as const,
+    cpu: { minimum: 0, desired: 100 },
+    energy: null,
+    expiresAt: Math.max(tick, budget.deadline),
+    issuer: budget.identity,
+    revision: 1,
+    spawn: null,
+  }));
 }
 
 function snapshotRevision(snapshot: WorldSnapshot): string {

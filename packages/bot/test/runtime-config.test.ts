@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v25");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v26");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v25",
+      "runtime-config-source-v26",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("activates phase2 industry only after its economy prerequisites under policy v25", () => {
+  it("activates phase2 labs only after industry under policy v26", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v25");
+    expect(config.sourceRevision).toBe("runtime-config-source-v26");
     expect(config.policy.industry).toEqual({
       sourceVersion: "industry-policy-v2",
       stockMinimum: 1_000,
@@ -751,6 +751,11 @@ describe("source feature gates", () => {
       enabled: true,
       reason: "enabled",
     });
+    expect(buildRuntimeConfig().features.gates["phase2.labs"]).toEqual({
+      blockedBy: null,
+      enabled: true,
+      reason: "enabled",
+    });
     const phase2Disabled = buildRuntimeConfig({ features: { disabled: ["phase2.colony"] } });
     expect(phase2Disabled.features.gates["phase2.layout"]).toEqual({
       blockedBy: "phase2.colony",
@@ -777,6 +782,12 @@ describe("source feature gates", () => {
     });
     expect(logisticsDisabled.features.gates["phase2.industry"]).toMatchObject({
       blockedBy: "phase2.logistics",
+      enabled: false,
+      reason: "prerequisite-blocked",
+    });
+    const industryDisabled = buildRuntimeConfig({ features: { disabled: ["phase2.industry"] } });
+    expect(industryDisabled.features.gates["phase2.labs"]).toEqual({
+      blockedBy: "phase2.industry",
       enabled: false,
       reason: "prerequisite-blocked",
     });
