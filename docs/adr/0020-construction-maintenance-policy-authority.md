@@ -26,6 +26,12 @@ PR A establishes observation and pure policy only. BudgetLedger and ContractLedg
 funding and creep-work authorities. Defense arbitration remains the sole tower-action authority and
 must preserve attack/heal precedence plus emergency tower energy before PR B may compose proposals.
 
+PR B adds a room-scoped discretionary `maintenance` budget tranche after critical maintenance and
+before optional growth. Target-specific repair contracts bind to that tranche and include target
+hits in their issuer identity, so destruction, satisfaction, and policy-band changes retire old work
+without reopening a retired sequence. Tower-eligible funded proposals remain data until defense
+arbitration composes them.
+
 ## Consequences
 
 - Reordering, target loss, target satisfaction, and heap reset recompute identical demand from
