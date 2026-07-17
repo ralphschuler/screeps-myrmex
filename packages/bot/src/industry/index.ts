@@ -5,3 +5,5 @@ export * from "./telemetry";
 export * from "./persistence";
 export * from "./lab-cluster";
 export * from "./lab-policy";
+export * from "./lab-runtime";
+export * from "./lab-executor";

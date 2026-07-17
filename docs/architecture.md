@@ -1427,6 +1427,15 @@ demand. A `ready` disposition is data only: it cannot enter the intent channel o
 API call, and aggregate stock changes cannot settle an active reaction commitment. This boundary is
 recorded in [ADR 0023](adr/0023-industry-lab-commitments.md).
 
+Current `ready` commitments project typed reaction or boost intents under one fingerprinted
+lab-cluster exclusive key; boosts use defense priority while discretionary reactions remain
+speculation. The shared intent arbiter is final authority, and the sole `LabExecutor` revalidates
+the exact live preconditions before one Screeps API call. Normalized `OK` records only a pending
+attempt in `IndustryOwnerV3`; exact next-observation body/resource deltas settle the effect, while
+drift, timeout, and retry exhaustion fail closed.
+[ADR 0024](adr/0024-lab-execution-and-settlement.md) records this command and settlement boundary
+without activating the industry gate.
+
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
 state.
