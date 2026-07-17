@@ -589,6 +589,24 @@ describe("runtime architecture boundaries", () => {
     }
   });
 
+  it("allows observeRoom only in the exact ObserverExecutor", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "observer/executor.ts", contents: "observer.observeRoom(roomName);" },
+      ]),
+    ).toEqual([]);
+
+    for (const path of [
+      "observer/arbiter.ts",
+      "observer/fake-executor.ts",
+      "industry/observer-executor.ts",
+    ]) {
+      expect(
+        findArchitectureViolations([{ path, contents: "observer.observeRoom(roomName);" }]),
+      ).toContainEqual({ path, rule: "observer-command-outside-observer-executor" });
+    }
+  });
+
   it("rejects direct, destructured, transitive, bound, call, and apply spawnCreep aliases", () => {
     for (const contents of [
       'spawn["spawnCreep"](body, name);',
