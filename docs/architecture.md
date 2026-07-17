@@ -1394,6 +1394,15 @@ maintenance. Only active reservations may publish extraction contracts or termin
 shared channels. Accepted terminal intents execute in the common execute phase, then the dedicated
 `industry` Memory owner records capped retry state before observer-only telemetry is emitted.
 
+Lab facts follow the same detached boundary. The observer records current owned-lab activity,
+cooldown, resource-specific amounts/capacities, and bounded exact creep boost compounds. A bounded
+reaction catalog normalizes runtime `REACTIONS` and cooldown facts. Lab cluster roles are derived,
+not persisted: sorted current lab IDs and positions plus the versioned layout fingerprint select two
+reagent labs and only range-two product/boost-capable labs. Missing, inactive, duplicate,
+non-adjacent, malformed, or over-cap facts fail closed.
+[ADR 0022](adr/0022-derived-lab-cluster-roles.md) records this reconstructible boundary; it
+introduces no lab command authority.
+
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
 state.

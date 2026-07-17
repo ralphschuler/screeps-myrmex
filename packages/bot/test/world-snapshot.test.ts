@@ -44,6 +44,7 @@ describe("WorldSnapshot", () => {
     expect(forward.rooms[0]?.storedStructures.map((structure) => structure.id)).toEqual([
       "container-a",
       "extension-a",
+      "lab-h",
       "link-d",
       "spawn-b",
       "storage-e",
@@ -81,7 +82,20 @@ describe("WorldSnapshot", () => {
       cooldown: 4,
       id: "terminal-f",
     });
-    expect(forward.stats.entities.total).toBe(17);
+    expect(forward.rooms[0]?.ownedLabs?.[0]).toMatchObject({
+      active: true,
+      cooldown: 6,
+      energy: 1_200,
+      energyCapacity: 2_000,
+      id: "lab-h",
+      mineralAmount: 500,
+      mineralCapacity: 3_000,
+      mineralType: "UH",
+    });
+    expect(forward.rooms[0]?.hostileCreeps[0]?.boosts).toEqual([
+      { bodyPart: "attack", compound: "UH", count: 2 },
+    ]);
+    expect(forward.stats.entities.total).toBe(18);
 
     const payload = {
       observation: forward.observation,
@@ -195,6 +209,9 @@ describe("WorldSnapshot", () => {
       heal: { active: 24, boosted: 0, total: 25 },
       size: 50,
     });
+    expect(snapshot.rooms[0]?.hostileCreeps[0]?.boosts).toEqual([
+      { bodyPart: "attack", compound: "UH", count: 25 },
+    ]);
     expect(Object.keys(hostileBody ?? {})).toEqual([
       "activeParts",
       "attack",
@@ -457,6 +474,22 @@ function makeOwnedRoom(
       pos: new LivePosition(7, 40, "W1N1"),
       structureType: "extractor",
     },
+    {
+      cooldown: 6,
+      energyCapacity: 2_000,
+      hits: 500,
+      hitsMax: 500,
+      id: "lab-h",
+      isActive: () => true,
+      mineralAmount: 500,
+      mineralCapacity: 3_000,
+      mineralType: "UH",
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(22, 24, "W1N1"),
+      store: makeStore({ energy: 1_200, UH: 500 }, 5_000, { energy: 2_000, H: 3_000, UH: 3_000 }),
+      structureType: "lab",
+    },
   ];
   const hostileBody = Array.from({ length: hostileBodySize }, (_, index) => ({
     boost: index % 2 === 0 ? "UH" : undefined,
@@ -594,22 +627,30 @@ function makeNeutralRoom(reversed: boolean): Room {
   return room as unknown as Room;
 }
 
-function makeStore(resources: Record<string, number>, capacity: number): StoreLikeFixture {
+function makeStore(
+  resources: Record<string, number>,
+  capacity: number,
+  resourceCapacities: Readonly<Record<string, number>> = {},
+): StoreLikeFixture {
+  const capacityFor = (resource?: string) =>
+    resource === undefined ? capacity : (resourceCapacities[resource] ?? capacity);
+  const usedFor = (resource?: string) =>
+    resource === undefined ? sumValues(resources) : (resources[resource] ?? 0);
   const store: StoreLikeFixture = {
     ...resources,
-    getCapacity: () => capacity,
-    getFreeCapacity: () => capacity - sumValues(resources),
-    getUsedCapacity: () => sumValues(resources),
+    getCapacity: (resource) => capacityFor(resource),
+    getFreeCapacity: (resource) => capacityFor(resource) - usedFor(resource),
+    getUsedCapacity: (resource) => usedFor(resource),
   };
 
   return store;
 }
 
 interface StoreLikeFixture {
-  [key: string]: number | (() => number);
-  getCapacity: () => number;
-  getFreeCapacity: () => number;
-  getUsedCapacity: () => number;
+  [key: string]: number | ((resource?: string) => number);
+  getCapacity: (resource?: string) => number;
+  getFreeCapacity: (resource?: string) => number;
+  getUsedCapacity: (resource?: string) => number;
 }
 
 function sumValues(values: Record<string, number>): number {
