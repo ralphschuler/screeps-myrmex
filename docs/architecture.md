@@ -1387,6 +1387,13 @@ typed intents with one exclusive terminal key; only `TerminalSendExecutor` may c
 game errors and adapter faults reconcile into bounded retry state and mined, hauled, reserved, sent,
 transaction-energy, consumed, and unmet accounting.
 
+Runtime composition observes visible owned mineral, extractor, storage, and terminal facts before
+`ColonyDirector`. Source policy creates bounded per-mineral stock commitments and deterministic
+below-minimum rebalance requests; the director admits their industry budgets after survival and
+maintenance. Only active reservations may publish extraction contracts or terminal intents into the
+shared channels. Accepted terminal intents execute in the common execute phase, then the dedicated
+`industry` Memory owner records capped retry state before observer-only telemetry is emitted.
+
 Only `MarketExecutor` calls game market methods. Every order creation/change/cancellation and deal
 is idempotently keyed, budgeted, capped per tick, and reconciled from the next observed market
 state.

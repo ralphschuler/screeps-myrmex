@@ -18,6 +18,7 @@ export const FEATURE_GATE_IDS = [
   "phase2.logistics",
   "phase2.links",
   "phase2.maintenance",
+  "phase2.industry",
 ] as const;
 
 export type FeatureGateId = (typeof FEATURE_GATE_IDS)[number];
@@ -96,6 +97,20 @@ export interface GrowthPolicy {
   readonly maximumEnergyPerTick: number;
 }
 
+/** Source-owned bounds for optional mineral extraction and internal terminal balancing. */
+export interface IndustryPolicy {
+  readonly sourceVersion: "industry-policy-v1";
+  readonly stockMinimum: number;
+  readonly stockTarget: number;
+  readonly stockMaximum: number;
+  readonly protectedTerminalEnergy: number;
+  readonly maximumResourcePerSend: number;
+  readonly maximumTransactionEnergyPerSend: number;
+  readonly maximumExtractionProposalsPerTick: number;
+  readonly maximumSendProposalsPerTick: number;
+  readonly maximumRoomsPerTick: number;
+}
+
 /** Hard caps for observer-only telemetry; never an input to gameplay admission. */
 export interface TelemetryPolicy {
   readonly maximumDetailRecords: number;
@@ -145,6 +160,7 @@ export interface SurvivalPolicy {
   readonly spawn: SpawnPolicy;
   readonly repair: CriticalRepairPolicy;
   readonly growth: GrowthPolicy;
+  readonly industry: IndustryPolicy;
   readonly telemetry: TelemetryPolicy;
   readonly reporter: ReporterPolicy;
   readonly tower: TowerPolicy;

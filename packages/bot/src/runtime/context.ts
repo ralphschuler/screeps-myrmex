@@ -30,6 +30,10 @@ export interface RuntimeGame {
   readonly rooms: Readonly<Record<string, Room>>;
   /** Narrow live-object lookup handed only to command executors. */
   readonly getObjectById?: (id: string) => unknown;
+  /** Narrow deterministic market fact used by industry planning; no market command authority. */
+  readonly market?: {
+    calcTransactionCost(amount: number, roomName1: string, roomName2: string): number;
+  };
   readonly shard: {
     readonly name: string;
   };

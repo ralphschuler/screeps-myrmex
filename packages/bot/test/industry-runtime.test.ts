@@ -81,6 +81,19 @@ describe("industry runtime authority chain", () => {
       returnCode: -7,
       status: "rejected",
     });
+
+    const firstIntent = intents[0];
+    if (firstIntent === undefined) throw new Error("expected projected terminal intent");
+    const mixed = executeTerminalSendIntents(
+      {
+        ...batch(intents),
+        accepted: [...intents, { ...firstIntent, id: "move/other", kind: "creep.move" }],
+        submitted: 2,
+      },
+      100,
+      () => ({ send }) as unknown as StructureTerminal,
+    );
+    expect(mixed).toHaveLength(1);
   });
 
   it("reconciles failures into bounded backoff and deterministic telemetry", () => {
@@ -110,6 +123,15 @@ describe("industry runtime authority chain", () => {
         102,
       ),
     ).toEqual(["industry/send/request/W1N1/W2N2/H"]);
+    const firstState = first[0];
+    if (firstState === undefined) throw new Error("expected reconciled industry command state");
+    expect(
+      eligibleIndustrySendIds(
+        plan.sends.map(({ identity }) => identity),
+        [{ ...firstState, status: "completed" }],
+        200,
+      ),
+    ).toEqual([]);
     const reordered = reconcileIndustryCommands({
       plan,
       previous: roundTrip([...first].reverse()),

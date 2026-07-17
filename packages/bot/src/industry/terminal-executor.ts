@@ -50,13 +50,18 @@ export function projectTerminalSendIntents(input: {
 }
 
 export function executeTerminalSendIntents(
-  arbitration: ArbitrationBatch<"terminal.send", TerminalSendIntent["payload"]>,
+  arbitration: ArbitrationBatch,
   tick: number,
   resolveTerminal: (id: string) => StructureTerminal | null,
   cpu?: CommandCpuMeter,
 ): readonly CommandExecutionResult<TerminalSendCommand>[] {
+  const accepted = arbitration.accepted.filter(isTerminalSendIntent);
   return executeAcceptedIntentBatch({
-    arbitration,
+    arbitration: {
+      ...arbitration,
+      accepted,
+      decisions: [],
+    },
     tick,
     commandFor: (intent) => ({
       amount: intent.payload.amount,
@@ -77,6 +82,19 @@ export function executeTerminalSendIntents(
     },
     ...(cpu === undefined ? {} : { cpu }),
   });
+}
+
+function isTerminalSendIntent(intent: IntentEnvelope): intent is TerminalSendIntent {
+  const payload = intent.payload as Partial<TerminalSendIntent["payload"]>;
+  return (
+    intent.kind === "terminal.send" &&
+    typeof payload.amount === "number" &&
+    typeof payload.destinationRoom === "string" &&
+    typeof payload.requestId === "string" &&
+    typeof payload.resourceType === "string" &&
+    typeof payload.terminalId === "string" &&
+    typeof payload.transactionEnergy === "number"
+  );
 }
 
 function terminalIntent(
