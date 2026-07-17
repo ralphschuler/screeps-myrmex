@@ -14,7 +14,7 @@ import {
   type LogisticsNode,
   type LogisticsPlan,
 } from "./planner";
-import type { LabResourceDemandProjection } from "./resource-demands";
+import type { LogisticsResourceDemandProjection } from "./resource-demands";
 
 const LOGISTICS_RECOVERY_RESERVE = 300;
 const LOGISTICS_MAXIMUM_NODE_AGE = 0;
@@ -100,6 +100,7 @@ export function observeLogisticsGraph(
       if (structure.ownership === "foreign" || !LOGISTICS_STORE_TYPES.has(structure.structureType))
         continue;
       for (const resource of structure.store.resources) {
+        if (structure.structureType === "nuker") continue;
         const reserve = structure.structureType === "storage" ? LOGISTICS_RECOVERY_RESERVE : 0;
         const amount = Math.max(0, resource.amount - reserve);
         if (amount <= 0) continue;
@@ -119,6 +120,7 @@ export function observeLogisticsGraph(
       }
       if (
         includeOptional &&
+        !MATURE_DEMAND_STORE_TYPES.has(structure.structureType) &&
         structure.store.freeCapacity !== null &&
         structure.store.freeCapacity > 0
       ) {
@@ -188,11 +190,13 @@ const LOGISTICS_STORE_TYPES = new Set([
   "terminal",
 ]);
 
+const MATURE_DEMAND_STORE_TYPES = new Set(["factory", "nuker", "powerSpawn"]);
+
 export function planLogisticsRuntime(input: {
   readonly execution: ContractExecutionView;
   readonly includeOptional: boolean;
   readonly planning: ContractPlanningView;
-  readonly resourceDemands?: LabResourceDemandProjection;
+  readonly resourceDemands?: LogisticsResourceDemandProjection;
   readonly snapshot: WorldSnapshot;
   readonly tick: number;
 }): LogisticsRuntimeProjection {
@@ -339,7 +343,7 @@ function previousCommitments(
 
 function mergeDemandGraph(
   observed: LogisticsGraphObservation,
-  demands: LabResourceDemandProjection | undefined,
+  demands: LogisticsResourceDemandProjection | undefined,
 ): LogisticsGraphObservation {
   if (demands === undefined) return observed;
   return freeze({

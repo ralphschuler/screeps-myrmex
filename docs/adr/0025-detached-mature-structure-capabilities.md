@@ -30,3 +30,12 @@ slots, or authorize factory, power-spawn, observer, or nuker commands.
 - Recipe or capability changes produce new fingerprints after effects, levels, constants, or stores
   change and reproduce byte-for-byte after heap reset.
 - Logistics composition and command authority remain separate follow-up decisions under issue #52.
+
+## Logistics extension
+
+Funded mature objectives may publish graph-only demand projections to the existing logistics
+runtime. They reference generic observed source nodes instead of copying stock, and all resource
+sinks for one physical structure use the same aggregate capacity reservation key. Factory product
+and contamination may drain to an inventory endpoint; power-spawn inputs only fill; nuker resources
+only fill and are never exposed as withdrawable sources. The projection remains data-only and adds
+no mature-structure command authority.
