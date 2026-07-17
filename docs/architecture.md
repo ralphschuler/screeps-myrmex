@@ -272,6 +272,10 @@ codes for telemetry.
   component fills and product/contamination drains, power-spawn energy/power fills, and capped
   one-way nuker fills share the physical store's aggregate capacity key and never republish observed
   stock as a second source;
+- admits mature work through one pure policy that emits a matching industry budget for every
+  objective, subtracts survival/defense/lab/terminal protected stock before selecting optional
+  factory or power work, caps one-way nuker stocking, and removes readiness immediately when funding
+  or logistics evidence is lost;
 - never makes strategic decisions; and
 - never mutates persistent state.
 
