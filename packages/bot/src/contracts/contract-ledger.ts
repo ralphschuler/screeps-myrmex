@@ -253,23 +253,55 @@ export class ContractLedger {
           record.owner.kind === "colony" &&
           (record.state === "funded" || record.state === "assigned" || record.state === "active"),
       )
-      .map((record): NormalizedPopulationLoad => ({
-        backlogWorkTicks: record.quantity,
-        category: record.budgetBinding.category,
-        colonyId: record.owner.id,
-        contractId: record.id,
-        measuredWorkTicks: record.estimatedWorkTicks,
-        minimumCapability: { ...record.requiredCapability },
-        objectiveId: record.budgetBinding.issuer,
-        reservationId: record.id,
-        revision: record.revision,
-        sourceCapacityWorkTicks: Math.min(
-          Number.MAX_SAFE_INTEGER,
-          record.estimatedWorkTicks + record.quantity,
-        ),
-        travelTicks: record.maxAssignmentCost,
-        ...(record.issuer.startsWith("mining/") ? { mode: "stationary" as const } : {}),
-      }))
+      .flatMap((record): NormalizedPopulationLoad[] => {
+        const execution = record.execution;
+        if (execution?.version === 3) {
+          return [
+            {
+              backlogWorkTicks: 0,
+              category: record.budgetBinding.category,
+              colonyId: record.owner.id,
+              contractId: record.id,
+              measuredWorkTicks: 1,
+              minimumCapability: {
+                attack: 0,
+                carry: Math.max(record.requiredCapability.carry, execution.recommendedCarry),
+                claim: 0,
+                heal: 0,
+                move: Math.max(record.requiredCapability.move, execution.recommendedMove),
+                rangedAttack: 0,
+                tough: 0,
+                work: 0,
+              },
+              objectiveId: record.budgetBinding.issuer,
+              reservationId: record.id,
+              revision: record.revision,
+              sourceCapacityWorkTicks: 1,
+              travelTicks: record.maxAssignmentCost,
+              mode: "logistics" as const,
+            },
+          ];
+        }
+        return [
+          {
+            backlogWorkTicks: record.quantity,
+            category: record.budgetBinding.category,
+            colonyId: record.owner.id,
+            contractId: record.id,
+            measuredWorkTicks: record.estimatedWorkTicks,
+            minimumCapability: { ...record.requiredCapability },
+            objectiveId: record.budgetBinding.issuer,
+            reservationId: record.id,
+            revision: record.revision,
+            sourceCapacityWorkTicks: Math.min(
+              Number.MAX_SAFE_INTEGER,
+              record.estimatedWorkTicks + record.quantity,
+            ),
+            travelTicks: record.maxAssignmentCost,
+            ...(record.issuer.startsWith("mining/") ? { mode: "stationary" as const } : {}),
+          },
+        ];
+      })
       .filter(validPopulationLoad)
       .sort((left, right) => compareStrings(left.objectiveId, right.objectiveId));
     return deepFreeze({ loads: accepted.slice(0, MAX_POPULATION_LOADS), status: "ready" });

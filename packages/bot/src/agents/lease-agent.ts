@@ -101,7 +101,7 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
         });
         continue;
       }
-      actions.push(actionIntent(lease));
+      actions.push(actionIntent(lease, actor, target));
       continue;
     }
     const path = input.paths.plan({
@@ -404,16 +404,17 @@ function needsEnergy(action: LeasedWorkExecution["execution"]["action"]): boolea
   return action === "build" || action === "repair" || action === "upgrade-controller";
 }
 
-function actionIntent(lease: LeasedWorkExecution): CreepActionIntent {
+function actionIntent(
+  lease: LeasedWorkExecution,
+  actor: CreepSnapshot,
+  target: TargetView,
+): CreepActionIntent {
   return {
     actorId: lease.actorId,
     // A continuous fill lease owns a sink slot, not one energy unit. Omitting the Screeps amount
     // transfers the assigned actor's available cargo without conflating contract quantity with a
     // resource amount.
-    amount:
-      lease.execution.action === "transfer" && lease.execution.completion === "continuous"
-        ? null
-        : lease.quantity,
+    amount: actionAmount(lease, actor, target),
     contractId: lease.contractId,
     contractRevision: lease.revision,
     deadline: actionDeadline(lease),
@@ -423,6 +424,35 @@ function actionIntent(lease: LeasedWorkExecution): CreepActionIntent {
     resourceType: lease.execution.resourceType,
     targetId: lease.targetId,
   };
+}
+
+function actionAmount(
+  lease: LeasedWorkExecution,
+  actor: CreepSnapshot,
+  target: TargetView,
+): number | null {
+  if (lease.execution.version !== 3) {
+    return lease.execution.action === "transfer" && lease.execution.completion === "continuous"
+      ? null
+      : lease.quantity;
+  }
+  const resource = lease.execution.resourceType;
+  const remaining = Math.min(lease.quantity, lease.execution.reservedAmount);
+  if (lease.execution.action === "pickup") {
+    return Math.min(remaining, target.amount ?? 0, actor.store.freeCapacity ?? remaining);
+  }
+  if (lease.execution.action === "withdraw") {
+    return Math.min(
+      remaining,
+      target.store === null ? 0 : resourceAmount(target.store, resource),
+      actor.store.freeCapacity ?? remaining,
+    );
+  }
+  return Math.min(
+    remaining,
+    resourceAmount(actor.store, resource),
+    target.store?.freeCapacity ?? remaining,
+  );
 }
 
 function actionDeadline(lease: LeasedWorkExecution): number {

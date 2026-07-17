@@ -18,7 +18,7 @@
       "measurements": {
         "ticks": 33,
         "modeledCpu": 0,
-        "persistentBytes": 24692,
+        "persistentBytes": 24797,
         "persistentGrowth": 3093,
         "telemetryBytes": 5211,
         "telemetryCardinality": 26,
@@ -45,9 +45,9 @@
       "scope": "focused-runtime-export",
       "measurements": {
         "ticks": 1401,
-        "modeledCpu": 0.09300000000000007,
-        "persistentBytes": 28798,
-        "persistentGrowth": 4349,
+        "modeledCpu": 0.09700000000000007,
+        "persistentBytes": 28904,
+        "persistentGrowth": 4454,
         "telemetryBytes": 5045,
         "telemetryCardinality": 26,
         "spawnUtilizationPct": 1.28,
@@ -61,9 +61,9 @@
         "warmOutcome": "09e32b5c",
         "resetOutcome": "09e32b5c",
         "reorderedOutcome": "09e32b5c",
-        "warmTranscript": "137a4037",
-        "resetTranscript": "39e04310",
-        "reorderedTranscript": "a838adfa"
+        "warmTranscript": "7fb58372",
+        "resetTranscript": "9e029b1d",
+        "reorderedTranscript": "0da934e7"
       },
       "unevidenced": []
     },
@@ -74,7 +74,7 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 2,
-        "persistentBytes": 4903,
+        "persistentBytes": 5008,
         "persistentGrowth": 818,
         "telemetryBytes": 5002,
         "telemetryCardinality": 26,
@@ -89,9 +89,9 @@
         "warmOutcome": "87c8166f",
         "resetOutcome": "87c8166f",
         "reorderedOutcome": "87c8166f",
-        "warmTranscript": "78fe8e50",
-        "resetTranscript": "c180a340",
-        "reorderedTranscript": "963980b5"
+        "warmTranscript": "d3ca9aca",
+        "resetTranscript": "a9d268e1",
+        "reorderedTranscript": "135963d1"
       },
       "unevidenced": []
     },
@@ -102,7 +102,7 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 7879,
+        "persistentBytes": 7984,
         "persistentGrowth": 238,
         "telemetryBytes": 4849,
         "telemetryCardinality": 26,
@@ -117,9 +117,9 @@
         "warmOutcome": "df53697a",
         "resetOutcome": "df53697a",
         "reorderedOutcome": "df53697a",
-        "warmTranscript": "2f405376",
-        "resetTranscript": "a1384a80",
-        "reorderedTranscript": "18588589"
+        "warmTranscript": "b2b79e00",
+        "resetTranscript": "094eefa1",
+        "reorderedTranscript": "33e44d55"
       },
       "unevidenced": []
     },
@@ -130,7 +130,7 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 8072,
+        "persistentBytes": 8177,
         "persistentGrowth": 260,
         "telemetryBytes": 4670,
         "telemetryCardinality": 26,
@@ -145,9 +145,9 @@
         "warmOutcome": "f329c328",
         "resetOutcome": "f329c328",
         "reorderedOutcome": "f329c328",
-        "warmTranscript": "a4109ce9",
-        "resetTranscript": "82448e19",
-        "reorderedTranscript": "dfc745a1"
+        "warmTranscript": "88df1eb7",
+        "resetTranscript": "d4ac6950",
+        "reorderedTranscript": "e91799ed"
       },
       "unevidenced": []
     },
@@ -158,7 +158,7 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 5,
-        "persistentBytes": 8273,
+        "persistentBytes": 8378,
         "persistentGrowth": 201,
         "telemetryBytes": 4771,
         "telemetryCardinality": 26,
@@ -173,9 +173,9 @@
         "warmOutcome": "4b8c61be",
         "resetOutcome": "4b8c61be",
         "reorderedOutcome": "4b8c61be",
-        "warmTranscript": "e5ed3e30",
-        "resetTranscript": "a523cf90",
-        "reorderedTranscript": "dc5af0e6"
+        "warmTranscript": "e97fd02a",
+        "resetTranscript": "3ca4add1",
+        "reorderedTranscript": "a3dadd76"
       },
       "unevidenced": []
     },
@@ -186,8 +186,8 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 28798,
-        "persistentGrowth": 4349,
+        "persistentBytes": 28904,
+        "persistentGrowth": 4454,
         "telemetryBytes": 5211,
         "telemetryCardinality": 26,
         "spawnUtilizationPct": 27.27272727272727,
@@ -201,9 +201,9 @@
         "warmOutcome": "92710e0a",
         "resetOutcome": "92710e0a",
         "reorderedOutcome": "92710e0a",
-        "warmTranscript": "86bd2f4f",
-        "resetTranscript": "356eba29",
-        "reorderedTranscript": "6d963f3d"
+        "warmTranscript": "856c2f55",
+        "resetTranscript": "8914e654",
+        "reorderedTranscript": "f573deef"
       },
       "unevidenced": []
     },
@@ -214,8 +214,8 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 28798,
-        "persistentGrowth": 4349,
+        "persistentBytes": 28904,
+        "persistentGrowth": 4454,
         "telemetryBytes": 5211,
         "telemetryCardinality": 26,
         "spawnUtilizationPct": 27.27272727272727,
@@ -229,17 +229,17 @@
         "warmOutcome": "b5987958",
         "resetOutcome": "b5987958",
         "reorderedOutcome": "b5987958",
-        "warmTranscript": "86bd2f4f",
-        "resetTranscript": "356eba29",
-        "reorderedTranscript": "6d963f3d"
+        "warmTranscript": "856c2f55",
+        "resetTranscript": "8914e654",
+        "reorderedTranscript": "f573deef"
       },
       "unevidenced": []
     }
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 638258,
-    "inputCount": 97,
-    "sha256": "sha256:2e1051b78d717309cb9745459a29c44f8fe2fe6924b6fd33dc0f379349b9f3b4"
+    "bytes": 676490,
+    "inputCount": 100,
+    "sha256": "sha256:6707030574cf55a244c2ec27453e395198684db1838891e6db89fa7434ee8bee"
   }
 }

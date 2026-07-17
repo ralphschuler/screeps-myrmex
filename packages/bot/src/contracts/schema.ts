@@ -86,6 +86,18 @@ const EXECUTION_V2_KEYS = [
   "version",
   "workPosition",
 ] as const;
+const EXECUTION_V3_KEYS = [
+  "action",
+  "completion",
+  "counterpartId",
+  "flowId",
+  "recommendedCarry",
+  "recommendedMove",
+  "reservedAmount",
+  "resourceType",
+  "stage",
+  "version",
+] as const;
 
 const RECORD_KEYS = [
   ...REQUEST_KEYS,
@@ -380,7 +392,9 @@ function parseRequest(
           `${path}.execution`,
           isRecord(record.execution) && record.execution.version === 2
             ? EXECUTION_V2_KEYS
-            : EXECUTION_KEYS,
+            : isRecord(record.execution) && record.execution.version === 3
+              ? EXECUTION_V3_KEYS
+              : EXECUTION_KEYS,
         );
   const request = {
     budgetBinding,

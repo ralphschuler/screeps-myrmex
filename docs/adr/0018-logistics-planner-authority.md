@@ -1,6 +1,6 @@
 # ADR 0018: LogisticsPlanner authority and observation boundary
 
-Status: accepted (PR A foundation)
+Status: accepted (PR B data authority)
 
 ## Context
 
@@ -28,8 +28,23 @@ controller supply proxy, and general storage/terminal reserve buffers. Unknown r
 acceptance fails closed. Tombstones and ruins are normalized only inside the fresh owned-room
 boundary; PR A does not infer hostile safety.
 
-PR B owns funded haul contracts, population demand, lease execution, command reconciliation, and
-runtime activation. PR C owns telemetry, composed deterministic scenario evidence, gate activation,
+PR B adds a pure contract projection without adding an authority. Each admitted flow becomes one
+stable logical commitment with an acquire (`pickup` or `withdraw`) stage followed by a `transfer`
+stage. Version 3 execution terms carry the stable flow identity, resource, reserved amount, stage,
+counterpart, and planner-recommended `CARRY`/`MOVE`. Contract identities remain stable through
+reset, partial work, lease expiry, and actor replacement; a new bounded cycle is issued only after
+cargo is delivered or lost. Fresh endpoint facts suspend vanished, empty, full, stale, or
+resource-mismatched work instead of preserving ghost cargo or optimistic capacity.
+
+`ContractLedger.populationView()` remains the sole bridge into population policy. It expands only
+the planner-recommended body pairs into bounded stable flow-slot loads. Population policy treats
+each logistics slot as one useful copy, suppresses committed duplicates, converges across actor
+death and replacement edges, and continues to enforce the existing protected recovery/replacement
+reserve. Mandatory planner order receives scarce recommendation slots before optional flows. The
+projector does not persist state; a later runtime caller must supply durable commitment state and
+reconciled world progress through existing owners.
+
+PR C owns runtime activation, telemetry, composed deterministic scenario evidence, gate activation,
 and issue closure. Issue #48 remains the sole link-command authority, and #49 remains the container
 repair authority. Terminal sends, market value, remote hauling, hostile-safety policy, and direct
 runtime commands are not PR A outputs.
@@ -42,6 +57,9 @@ runtime commands are not PR A outputs.
   the explicit energy reserve buffer in this slice.
 - The observation adapter and planner emit projections, reservations, recommendations, and blockers
   only; they do not emit `WorkContract`, population demand, telemetry, or Screeps commands.
+- The PR B projector emits typed contract requests and lifecycle retirements only. LeaseAgent can
+  consume its existing pickup, withdraw, and transfer fields, but no runtime wiring or command path
+  is introduced in this change.
 
 ## Mechanics sources consulted
 

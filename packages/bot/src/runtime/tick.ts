@@ -43,6 +43,7 @@ import {
   BUDGET_CATEGORIES,
   ColonyDirector,
   emptyColonyPlanningResult,
+  populationSpawnDemandBinding,
   recoverySpawnDemandBinding,
   resolveColoniesOwner,
   type ColonyDirectorSession,
@@ -131,6 +132,12 @@ import {
 } from "./kernel";
 import type { TickPhase } from "./phases";
 import { createLocalPathTravelEstimateView, localPathSearchAllowance } from "./local-path-travel";
+import {
+  emptyLogisticsRuntimeProjection,
+  planLogisticsRuntime,
+  renewLogisticsBudgets,
+  type LogisticsRuntimeProjection,
+} from "../logistics/runtime";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
@@ -364,6 +371,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let maintenanceCandidates: readonly CriticalMaintenanceCandidate[] = Object.freeze([]);
   let growthCandidates: readonly GrowthCandidate[] = Object.freeze([]);
   let staticMiningPlan: StaticMiningPlan = emptyStaticMiningPlan();
+  let logisticsRuntime = emptyLogisticsRuntimeProjection();
   let staticMiningCpuUsed = 0;
   let collectedTelemetry: TickTelemetry | null = null;
   return Object.freeze([
@@ -512,12 +520,13 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     colonyDirectorSystem(
       input,
       spawnDraft,
-      (economy, maintenance, growth, mining, miningCpuUsed) => {
+      (economy, maintenance, growth, mining, miningCpuUsed, logistics) => {
         survivalCandidates = economy;
         maintenanceCandidates = maintenance;
         growthCandidates = growth;
         staticMiningPlan = mining;
         staticMiningCpuUsed = miningCpuUsed;
+        logisticsRuntime = logistics;
       },
     ),
     layoutPlanningSystem(input, layoutDraft),
@@ -572,6 +581,63 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           },
           () => {
             stagedRequests.discard();
+          },
+        );
+      },
+    },
+    {
+      descriptor: {
+        id: "logistics.contracts",
+        phase: "plan",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.5,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!isFeatureEnabled(context.config, "phase2.mining")) return staged(() => undefined);
+        const funded = new Set(
+          context.colony.reservations
+            .filter(({ status }) => status === "active")
+            .map(({ category, colonyId, issuer }) => `${colonyId}\u0000${category}\u0000${issuer}`),
+        );
+        const scope = input.contractChannel.openProducer("logistics.contracts");
+        for (const commitment of logisticsRuntime.contracts.commitments) {
+          const request = commitment.request;
+          if (
+            request !== null &&
+            funded.has(
+              `${request.owner.id}\u0000${request.budgetBinding.category}\u0000${request.budgetBinding.issuer}`,
+            )
+          )
+            scope.producer.submit(request);
+        }
+        for (const transition of logisticsRuntime.contracts.retirements)
+          scope.producer.transition(transition);
+        for (const contract of context.contractPlanning.contracts) {
+          if (
+            contract.execution.version === 3 &&
+            contract.issuer.startsWith("logistics/") &&
+            (contract.state === "proposed" || contract.state === "suspended") &&
+            funded.has(
+              `${contract.owner.id}\u0000${contract.budgetBinding.category}\u0000${contract.budgetBinding.issuer}`,
+            )
+          )
+            scope.producer.transition({
+              contractId: contract.contractId,
+              reason: "logistics-funded",
+              tick: context.tick,
+              to: "funded",
+            });
+        }
+        const requests = scope.stage();
+        return staged(
+          () => {
+            requests.commit();
+          },
+          () => {
+            requests.discard();
           },
         );
       },
@@ -1305,6 +1371,7 @@ function colonyDirectorSystem(
     growth: readonly GrowthCandidate[],
     mining: StaticMiningPlan,
     miningCpuUsed: number,
+    logistics: LogisticsRuntimeProjection,
   ) => void,
 ): TickSystem<TickContext> {
   return {
@@ -1324,7 +1391,7 @@ function colonyDirectorSystem(
         ? planSurvivalFlow(context.snapshot, context.contractExecution, context.contractPlanning)
         : Object.freeze([]);
       const owner = input.manager?.ownerView("colonies") ?? null;
-      const economyCandidates = renewSurvivalFlowBudgets(
+      let economyCandidates = renewSurvivalFlowBudgets(
         plannedEconomyCandidates,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
         context.tick,
@@ -1363,12 +1430,33 @@ function colonyDirectorSystem(
         const elapsed = input.game.cpu.getUsed() - startedAt;
         miningCpuUsed = Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
       }
+      const logistics = renewLogisticsBudgets(
+        isFeatureEnabled(context.config, "phase2.mining")
+          ? planLogisticsRuntime({
+              execution: context.contractExecution,
+              includeOptional: mode === "normal",
+              planning: context.contractPlanning,
+              snapshot: context.snapshot,
+              tick: context.tick,
+            })
+          : emptyLogisticsRuntimeProjection(),
+        resolveColoniesOwner(owner).owner?.ledger ?? [],
+      );
+      const logisticsActorIds = new Set(
+        context.contractExecution.leases.flatMap(({ actorId, execution }) =>
+          execution.version === 3 ? [actorId] : [],
+        ),
+      );
+      economyCandidates = economyCandidates.filter(
+        ({ action, actorId }) => action !== "transfer" || !logisticsActorIds.has(actorId),
+      );
       publishCandidates(
         economyCandidates,
         maintenanceCandidates,
         growthCandidates,
         miningPlan,
         miningCpuUsed,
+        logistics,
       );
       const budgetRequests = [
         ...economyCandidates.map(({ budgetRequest }) => budgetRequest),
@@ -1377,6 +1465,7 @@ function colonyDirectorSystem(
         ...miningPlan.projections.flatMap(({ budgetRequest }) =>
           budgetRequest === null ? [] : [budgetRequest],
         ),
+        ...logistics.budgets,
       ];
       const provisional = colonyDirector.begin({
         tick: context.tick,
@@ -1763,31 +1852,34 @@ function populationSpawnDemands(
 ): readonly SpawnDemand[] {
   return Object.freeze(
     colony.colonies.flatMap(({ populationPolicy }) =>
-      populationPolicy.demands.map((demand) => ({
-        id: demand.id,
-        issuer: demand.objectiveId,
-        colonyId: demand.colonyId,
-        revision: demand.revision,
-        category: "funded-workforce" as const,
-        priorityValue: Math.max(0, 1_000 - BUDGET_CATEGORIES.indexOf(demand.category) * 100),
-        deadline: safeAddTick(tick, 50),
-        earliestTick: tick,
-        destinationRoomName: demand.colonyId,
-        replacementCreepName: null,
-        budgetId: demand.reservationId,
-        requiredPartCounts: {
-          tough: demand.requiredCapability.tough,
-          work: demand.requiredCapability.work,
-          carry: demand.requiredCapability.carry,
-          attack: demand.requiredCapability.attack,
-          ranged_attack: demand.requiredCapability.rangedAttack,
-          heal: demand.requiredCapability.heal,
-          claim: demand.requiredCapability.claim,
-          move: demand.requiredCapability.move,
-        },
-        energyCap: demand.energyCap,
-        nameBasis: null,
-      })),
+      populationPolicy.demands.map((demand) => {
+        const binding = populationSpawnDemandBinding(demand);
+        return {
+          id: demand.id,
+          issuer: demand.objectiveId,
+          colonyId: demand.colonyId,
+          revision: binding.revision,
+          category: "funded-workforce" as const,
+          priorityValue: Math.max(0, 1_000 - BUDGET_CATEGORIES.indexOf(demand.category) * 100),
+          deadline: safeAddTick(tick, 50),
+          earliestTick: tick,
+          destinationRoomName: demand.colonyId,
+          replacementCreepName: null,
+          budgetId: binding.reservationId,
+          requiredPartCounts: {
+            tough: demand.requiredCapability.tough,
+            work: demand.requiredCapability.work,
+            carry: demand.requiredCapability.carry,
+            attack: demand.requiredCapability.attack,
+            ranged_attack: demand.requiredCapability.rangedAttack,
+            heal: demand.requiredCapability.heal,
+            claim: demand.requiredCapability.claim,
+            move: demand.requiredCapability.move,
+          },
+          energyCap: demand.energyCap,
+          nameBasis: null,
+        };
+      }),
     ),
   );
 }
@@ -1923,16 +2015,21 @@ function authorizedSpawnIntents(
 ): readonly SpawnCommandIntent[] {
   const intents: SpawnCommandIntent[] = [];
   for (const selection of selections) {
-    const objective = session.result.objectives.find(({ id }) => id === selection.demandId);
-    if (objective?.status !== "funded" || objective.reservationId === null) {
-      continue;
-    }
+    const authority =
+      selection.category === "funded-workforce"
+        ? session.result.colonies
+            .flatMap(({ populationPolicy }) => populationPolicy.demands)
+            .find(({ id }) => id === selection.demandId)
+        : session.result.objectives.find(
+            ({ id, status }) => id === selection.demandId && status === "funded",
+          );
+    if (authority === undefined || authority.reservationId === null) continue;
     const reservation = session.result.reservations.find(
-      ({ reservationId }) => reservationId === objective.reservationId,
+      ({ reservationId }) => reservationId === authority.reservationId,
     );
     if (
-      selection.revision !== objective.revision ||
-      selection.budgetId !== objective.reservationId ||
+      selection.revision !== authority.revision ||
+      selection.budgetId !== authority.reservationId ||
       reservation === undefined ||
       reservation.grant.energy < selection.energyCost ||
       reservation.grant.spawn === null ||
@@ -1943,12 +2040,12 @@ function authorizedSpawnIntents(
       throw new Error("SpawnBroker selection does not match its atomic colony grant");
     }
     intents.push({
-      intentId: `spawn/${selection.spawnId}/${selection.name}/${String(objective.revision)}`,
+      intentId: `spawn/${selection.spawnId}/${selection.name}/${String(authority.revision)}`,
       demandId: selection.demandId,
       colonyId: selection.colonyId,
       issuer: selection.issuer,
-      revision: objective.revision,
-      reservationId: objective.reservationId,
+      revision: authority.revision,
+      reservationId: authority.reservationId,
       spawnId: selection.spawnId,
       spawnName: selection.spawnName,
       roomName: selection.destinationRoomName,

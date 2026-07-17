@@ -160,6 +160,33 @@ describe("ColonyPopulationPolicy", () => {
       }).demands,
     ).toEqual([]);
   });
+  it("keeps each logistics flow slot to one convergent replacement demand", () => {
+    const logistics = input({
+      funded: {
+        loads: [
+          load({
+            mode: "logistics",
+            objectiveId: "flow/slot/0",
+            minimumCapability: { ...WCM, work: 0 },
+          }),
+        ],
+        status: "ready",
+      },
+    });
+    const dead = new ColonyPopulationPolicy().project(logistics);
+    expect(dead.demands).toHaveLength(1);
+    expect(
+      new ColonyPopulationPolicy()
+        .project(JSON.parse(JSON.stringify(logistics)) as ColonyPopulationPolicyInput)
+        .demands.map(({ id }) => id),
+    ).toEqual(dead.demands.map(({ id }) => id));
+    expect(
+      new ColonyPopulationPolicy().project({
+        ...logistics,
+        actors: [{ ...actor(500), capability: { ...WCM, work: 0 } }],
+      }).demands,
+    ).toEqual([]);
+  });
   it("suppresses duplicate unaffordable and reserve violations", () => {
     const p = new ColonyPopulationPolicy();
     const first = p.project(input());
