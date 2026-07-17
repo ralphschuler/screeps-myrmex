@@ -8,11 +8,13 @@ import {
   type ConstructionSiteSnapshot,
   type ControllerSnapshot,
   type CreepSnapshot,
+  type CreepBoostSnapshot,
   type DroppedResourceSnapshot,
   type MineralSnapshot,
   type OwnedExtractorSnapshot,
   type OwnedExtensionSnapshot,
   type OwnedLinkSnapshot,
+  type OwnedLabSnapshot,
   type OwnedRoomSnapshot,
   type OwnedSpawnSnapshot,
   type OwnedStorageSnapshot,
@@ -136,6 +138,10 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
       .filter((structure) => isMyStructureOfType(structure, "extension"))
       .map((structure) => snapshotExtension(structure as StructureExtension))
       .sort(compareById),
+    ownedLabs: structures
+      .filter((structure) => isMyStructureOfType(structure, "lab"))
+      .map((structure) => snapshotLab(structure as StructureLab))
+      .sort(compareById),
     ownedLinks: structures
       .filter((structure) => isMyStructureOfType(structure, "link"))
       .map((structure) => snapshotLink(structure as StructureLink))
@@ -212,6 +218,25 @@ function snapshotTerminal(terminal: StructureTerminal): OwnedTerminalSnapshot {
     id: String(terminal.id),
     pos: snapshotPosition(terminal.pos),
     store: snapshotStore(terminal.store),
+  };
+}
+
+function snapshotLab(lab: StructureLab): OwnedLabSnapshot {
+  const mineralType = lab.mineralType ?? null;
+  const mineralCapacity = lab.store.getCapacity(mineralType ?? "H");
+  return {
+    active: lab.isActive(),
+    cooldown: lab.cooldown,
+    energy: lab.store["energy"],
+    energyCapacity: lab.store.getCapacity("energy"),
+    hits: lab.hits,
+    hitsMax: lab.hitsMax,
+    id: String(lab.id),
+    mineralAmount: mineralType === null ? 0 : lab.store[mineralType],
+    mineralCapacity,
+    mineralType,
+    pos: snapshotPosition(lab.pos),
+    store: snapshotStore(lab.store),
   };
 }
 
@@ -422,8 +447,10 @@ function snapshotRuin(ruin: Ruin): RuinSnapshot {
 }
 
 function snapshotCreep(creep: Creep): CreepSnapshot {
+  const boosts = snapshotBoosts(creep.body);
   return {
     body: snapshotBody(creep.body),
+    ...(boosts.length === 0 ? {} : { boosts }),
     fatigue: creep.fatigue,
     hits: creep.hits,
     hitsMax: creep.hitsMax,
@@ -435,6 +462,28 @@ function snapshotCreep(creep: Creep): CreepSnapshot {
     store: snapshotStore(creep.store),
     ticksToLive: nullableNumber(creep.ticksToLive),
   };
+}
+
+function snapshotBoosts(body: readonly BodyPartDefinition[]): readonly CreepBoostSnapshot[] {
+  const counts = new Map<string, CreepBoostSnapshot>();
+  const size = Math.min(body.length, MAX_CREEP_BODY_PARTS);
+  for (let index = 0; index < size; index += 1) {
+    const part = body[index];
+    if (part?.boost === undefined) continue;
+    const compound = String(part.boost);
+    const key = `${part.type}/${compound}`;
+    const current = counts.get(key);
+    counts.set(key, {
+      bodyPart: part.type,
+      compound,
+      count: (current?.count ?? 0) + 1,
+    });
+  }
+  return Object.freeze(
+    [...counts.values()].sort(
+      (a, b) => compareStrings(a.bodyPart, b.bodyPart) || compareStrings(a.compound, b.compound),
+    ),
+  );
 }
 
 function snapshotBody(body: readonly BodyPartDefinition[]): BodyCapabilitiesSnapshot {

@@ -47,6 +47,13 @@ export interface BodyCapabilitiesSnapshot {
   readonly work: BodyPartCapabilitySnapshot;
 }
 
+/** Exact bounded boost evidence retained only for currently boosted body parts. */
+export interface CreepBoostSnapshot {
+  readonly bodyPart: BodyPartConstant;
+  readonly compound: string;
+  readonly count: number;
+}
+
 export interface ControllerSnapshot {
   readonly id: string;
   readonly level: number;
@@ -115,6 +122,22 @@ export interface OwnedLinkSnapshot {
   readonly hits: number;
   readonly hitsMax: number;
   readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
+export interface OwnedLabSnapshot {
+  /** Current-tick controller/RCL activation, detached from the live structure. */
+  readonly active: boolean;
+  readonly cooldown: number;
+  readonly energy: number;
+  readonly energyCapacity: number;
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly mineralAmount: number;
+  readonly mineralCapacity: number;
+  readonly mineralType: string | null;
   readonly pos: PositionSnapshot;
   readonly store: StoreSnapshot;
 }
@@ -226,6 +249,8 @@ export interface RuinSnapshot {
 
 export interface CreepSnapshot {
   readonly body: BodyCapabilitiesSnapshot;
+  /** Absent when no bounded body part carries a boost. */
+  readonly boosts?: readonly CreepBoostSnapshot[];
   readonly fatigue: number;
   readonly hits: number;
   readonly hitsMax: number;
@@ -260,6 +285,8 @@ export interface RoomSnapshot {
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
   readonly ownedExtractors?: readonly OwnedExtractorSnapshot[];
   readonly ownedExtensions: readonly OwnedExtensionSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedLabs?: readonly OwnedLabSnapshot[];
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
   readonly ownedLinks?: readonly OwnedLinkSnapshot[];
   readonly ownedSpawns: readonly OwnedSpawnSnapshot[];
