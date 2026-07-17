@@ -106,6 +106,25 @@ describe("survival growth", () => {
         energy: null,
       },
     });
+    const funded = renewGrowthBudgets(
+      planned,
+      [],
+      100,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    );
+    const authorized = authorizedSurvivalGrowth(
+      funded,
+      funded.map(({ budgetRequest }) => ({
+        category: budgetRequest.category,
+        colonyId: budgetRequest.colonyId,
+        issuer: budgetRequest.issuer,
+        status: "active" as const,
+      })),
+      { status: "ready", contracts: [] },
+      100,
+    );
+    expect(authorized.requests).toEqual([expect.objectContaining({ maxAssignmentCost: 1_500 })]);
     expect(
       planSurvivalGrowth(
         world({

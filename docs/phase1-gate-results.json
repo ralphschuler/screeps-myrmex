@@ -18,9 +18,9 @@
       "measurements": {
         "ticks": 33,
         "modeledCpu": 0,
-        "persistentBytes": 24840,
-        "persistentGrowth": 3093,
-        "telemetryBytes": 5512,
+        "persistentBytes": 24935,
+        "persistentGrowth": 3115,
+        "telemetryBytes": 5897,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 200,
@@ -46,9 +46,9 @@
       "measurements": {
         "ticks": 1401,
         "modeledCpu": 0.09900000000000007,
-        "persistentBytes": 28947,
+        "persistentBytes": 29035,
         "persistentGrowth": 4497,
-        "telemetryBytes": 5366,
+        "telemetryBytes": 5542,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
@@ -103,8 +103,8 @@
         "ticks": 3,
         "modeledCpu": 2,
         "persistentBytes": 8027,
-        "persistentGrowth": 238,
-        "telemetryBytes": 5170,
+        "persistentGrowth": 152,
+        "telemetryBytes": 5291,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -131,8 +131,8 @@
         "ticks": 3,
         "modeledCpu": 2,
         "persistentBytes": 8220,
-        "persistentGrowth": 260,
-        "telemetryBytes": 4991,
+        "persistentGrowth": 151,
+        "telemetryBytes": 5083,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -186,9 +186,9 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 28947,
+        "persistentBytes": 29035,
         "persistentGrowth": 4497,
-        "telemetryBytes": 5512,
+        "telemetryBytes": 5897,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -214,9 +214,9 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 28947,
+        "persistentBytes": 29035,
         "persistentGrowth": 4497,
-        "telemetryBytes": 5512,
+        "telemetryBytes": 5897,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -238,8 +238,8 @@
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 688173,
+    "bytes": 688544,
     "inputCount": 101,
-    "sha256": "sha256:6b3c5d264ccf1ea667da21c093e3be92b102493b91db390df530f08edb1e7381"
+    "sha256": "sha256:c6422c7884f0d2741882f23452adec97031ae6d15c409fd5aa7b7b7abb5993a7"
   }
 }
