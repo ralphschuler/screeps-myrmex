@@ -17,7 +17,8 @@ export function telemetrySample(owner) {
   }
   const last = owner.last;
   if (
-    (owner.schemaVersion !== 1 && owner.schemaVersion !== 2) ||
+    !Number.isSafeInteger(owner.schemaVersion) ||
+    owner.schemaVersion < 1 ||
     typeof last !== "object" ||
     last === null ||
     Array.isArray(last) ||

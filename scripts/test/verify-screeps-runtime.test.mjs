@@ -3,11 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   decodeMemoryData,
   readTelemetrySample,
+  telemetrySample,
   verifyTelemetryAdvances,
 } from "../verify-screeps-runtime.mjs";
 
 const owner = {
-  schemaVersion: 2,
+  schemaVersion: 4,
   last: { tick: 123, hash: "fnv1a32-utf16:1234abcd", droppedDetails: 0 },
 };
 
@@ -35,6 +36,41 @@ describe("Screeps live runtime verification", () => {
     expect(url.searchParams.get("shard")).toBe("shard2");
     expect(request.headers).toEqual({ "X-Token": "secret" });
     expect(decodeMemoryData(JSON.stringify(owner))).toEqual(owner);
+  });
+
+  it.each([5, Number.MAX_SAFE_INTEGER])(
+    "accepts owner schema %s and additive fields when the stable latest receipt remains valid",
+    (schemaVersion) => {
+      expect(
+        telemetrySample({ ...owner, optionalDomain: { schemaVersion: 1 }, schemaVersion }),
+      ).toEqual({
+        tick: 123,
+        hash: "fnv1a32-utf16:1234abcd",
+      });
+    },
+  );
+
+  it.each([undefined, null, "4", 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid owner schema %s",
+    (schemaVersion) => {
+      expect(() => telemetrySample({ ...owner, schemaVersion })).toThrow(
+        "telemetry owner has no valid latest receipt",
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    null,
+    {},
+    { tick: -1, hash: "fnv1a32-utf16:1234abcd" },
+    { tick: 1.5, hash: "fnv1a32-utf16:1234abcd" },
+    { tick: Number.MAX_SAFE_INTEGER + 1, hash: "fnv1a32-utf16:1234abcd" },
+    { tick: 123, hash: "invalid" },
+  ])("rejects malformed latest receipt %#", (last) => {
+    expect(() => telemetrySample({ ...owner, last })).toThrow(
+      "telemetry owner has no valid latest receipt",
+    );
   });
 
   it("accepts only strictly advancing live telemetry", async () => {
