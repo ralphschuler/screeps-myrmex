@@ -18,9 +18,9 @@
       "measurements": {
         "ticks": 33,
         "modeledCpu": 0,
-        "persistentBytes": 24935,
+        "persistentBytes": 25130,
         "persistentGrowth": 3115,
-        "telemetryBytes": 5897,
+        "telemetryBytes": 5970,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 200,
@@ -45,10 +45,10 @@
       "scope": "focused-runtime-export",
       "measurements": {
         "ticks": 1401,
-        "modeledCpu": 0.09900000000000007,
-        "persistentBytes": 29035,
-        "persistentGrowth": 4497,
-        "telemetryBytes": 5542,
+        "modeledCpu": 0.10700000000000008,
+        "persistentBytes": 29232,
+        "persistentGrowth": 4692,
+        "telemetryBytes": 5615,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
@@ -61,9 +61,9 @@
         "warmOutcome": "09e32b5c",
         "resetOutcome": "09e32b5c",
         "reorderedOutcome": "09e32b5c",
-        "warmTranscript": "fef60028",
-        "resetTranscript": "1e639c53",
-        "reorderedTranscript": "cab124ed"
+        "warmTranscript": "aaffd653",
+        "resetTranscript": "492e02e4",
+        "reorderedTranscript": "2fa8565e"
       },
       "unevidenced": []
     },
@@ -74,9 +74,9 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 2,
-        "persistentBytes": 5051,
+        "persistentBytes": 5246,
         "persistentGrowth": 818,
-        "telemetryBytes": 5323,
+        "telemetryBytes": 5396,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 25,
         "energyFlow": 200,
@@ -89,9 +89,9 @@
         "warmOutcome": "87c8166f",
         "resetOutcome": "87c8166f",
         "reorderedOutcome": "87c8166f",
-        "warmTranscript": "5bb551db",
-        "resetTranscript": "54918b8e",
-        "reorderedTranscript": "aa158689"
+        "warmTranscript": "5b8de0c6",
+        "resetTranscript": "0668550c",
+        "reorderedTranscript": "f331e4fc"
       },
       "unevidenced": []
     },
@@ -102,9 +102,9 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 8027,
+        "persistentBytes": 8222,
         "persistentGrowth": 152,
-        "telemetryBytes": 5291,
+        "telemetryBytes": 5364,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -117,9 +117,9 @@
         "warmOutcome": "df53697a",
         "resetOutcome": "df53697a",
         "reorderedOutcome": "df53697a",
-        "warmTranscript": "9ffeeeb1",
-        "resetTranscript": "65634fce",
-        "reorderedTranscript": "4a54b6b5"
+        "warmTranscript": "0880f1ac",
+        "resetTranscript": "3b946c4c",
+        "reorderedTranscript": "1abd2fb8"
       },
       "unevidenced": []
     },
@@ -130,9 +130,9 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 8220,
+        "persistentBytes": 8415,
         "persistentGrowth": 151,
-        "telemetryBytes": 5083,
+        "telemetryBytes": 5156,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -145,9 +145,9 @@
         "warmOutcome": "f329c328",
         "resetOutcome": "f329c328",
         "reorderedOutcome": "f329c328",
-        "warmTranscript": "6567d016",
-        "resetTranscript": "ffee44eb",
-        "reorderedTranscript": "ac2e864d"
+        "warmTranscript": "a0f64ca3",
+        "resetTranscript": "61121b91",
+        "reorderedTranscript": "acb97220"
       },
       "unevidenced": []
     },
@@ -158,9 +158,9 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 5,
-        "persistentBytes": 8421,
+        "persistentBytes": 8616,
         "persistentGrowth": 201,
-        "telemetryBytes": 5092,
+        "telemetryBytes": 5165,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -173,9 +173,9 @@
         "warmOutcome": "4b8c61be",
         "resetOutcome": "4b8c61be",
         "reorderedOutcome": "4b8c61be",
-        "warmTranscript": "92d0483b",
-        "resetTranscript": "a52ae29e",
-        "reorderedTranscript": "2ed5966a"
+        "warmTranscript": "04c3b526",
+        "resetTranscript": "e7bb25dc",
+        "reorderedTranscript": "5a384567"
       },
       "unevidenced": []
     },
@@ -186,9 +186,9 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 29035,
-        "persistentGrowth": 4497,
-        "telemetryBytes": 5897,
+        "persistentBytes": 29232,
+        "persistentGrowth": 4692,
+        "telemetryBytes": 5970,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -201,9 +201,9 @@
         "warmOutcome": "92710e0a",
         "resetOutcome": "92710e0a",
         "reorderedOutcome": "92710e0a",
-        "warmTranscript": "665025ef",
-        "resetTranscript": "d140dd68",
-        "reorderedTranscript": "830543ff"
+        "warmTranscript": "f198cd75",
+        "resetTranscript": "ccae0e39",
+        "reorderedTranscript": "bf3894ea"
       },
       "unevidenced": []
     },
@@ -214,9 +214,9 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 29035,
-        "persistentGrowth": 4497,
-        "telemetryBytes": 5897,
+        "persistentBytes": 29232,
+        "persistentGrowth": 4692,
+        "telemetryBytes": 5970,
         "telemetryCardinality": 27,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -229,17 +229,17 @@
         "warmOutcome": "b5987958",
         "resetOutcome": "b5987958",
         "reorderedOutcome": "b5987958",
-        "warmTranscript": "665025ef",
-        "resetTranscript": "d140dd68",
-        "reorderedTranscript": "830543ff"
+        "warmTranscript": "f198cd75",
+        "resetTranscript": "ccae0e39",
+        "reorderedTranscript": "bf3894ea"
       },
       "unevidenced": []
     }
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 688950,
-    "inputCount": 101,
-    "sha256": "sha256:dee4ab6c1fd287dcfab21969a1562e85925121f6ba5b1567c99dd74bc98e553c"
+    "bytes": 710487,
+    "inputCount": 106,
+    "sha256": "sha256:f7455e7fa61e989fb997ebae205fd078af550485e4936fdea5f1d4202a73797c"
   }
 }

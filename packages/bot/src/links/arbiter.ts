@@ -51,6 +51,7 @@ export function deriveLinkRoleAnchors(layout: LinkLayoutEvidence): readonly Link
         layoutRevision: dependency,
         pos: { roomName: pos.roomName, x: pos.x, y: pos.y },
         role: assignment.role,
+        sourceId: assignment.sourceId ?? null,
       };
     }),
   );
@@ -100,6 +101,7 @@ export function classifyLinks(input: {
         anchorId: anchor.id,
         layoutRevision: input.layoutRevision,
         role: anchor.role,
+        sourceId: anchor.sourceId,
       });
   }
   for (const anchor of anchorByPosition.values())
@@ -150,9 +152,11 @@ export function arbitrateLinkTransfers(input: {
       deferred.push({ proposalId: proposal.id, reason: "zero-delivery" });
     else {
       accepted.push({
+        budget: proposal.budget,
         deliveredAmount,
         flowId: proposal.flowId,
         lostAmount,
+        layoutRevision: proposal.layoutRevision,
         proposalId: proposal.id,
         sentAmount,
         sourceLinkId: proposal.sourceLinkId,

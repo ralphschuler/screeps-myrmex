@@ -139,6 +139,13 @@ import {
   renewLogisticsBudgets,
   type LogisticsRuntimeProjection,
 } from "../logistics/runtime";
+import {
+  LinkExecutor,
+  emptyLinkRuntimeResult,
+  planLinkRuntime,
+  type LinkRoomLayoutEvidence,
+  type LinkRuntimeResult,
+} from "../links";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
@@ -148,6 +155,7 @@ const spawnBroker = new SpawnBroker();
 const spawnExecutor = new SpawnExecutor();
 const telemetryService = new TelemetryService();
 const constructionSiteExecutor = new ConstructionSiteExecutor();
+const linkExecutor = new LinkExecutor();
 const layoutCaches = new WeakMap<CacheManager, ReturnType<typeof registerLayoutCompiledCache>>();
 
 export interface TickInput {
@@ -176,6 +184,7 @@ export interface TickOutcome {
   /** Runtime-owned data-only local path capability. */
   readonly localPathPlanning: LocalPathPlanningService;
   readonly layout: LayoutRuntimeResult;
+  readonly links: LinkRuntimeResult;
   readonly spawn: SpawnRuntimeResult;
   readonly stateCommit: MemoryCommitResult | null;
   /** Null only when the mandatory telemetry system itself faults; the kernel report still survives. */
@@ -196,6 +205,7 @@ interface TickRuntimeControl {
   publishMovement(result: MovementRuntimeResult): void;
   clearMovement(): void;
   publishLayout(result: LayoutRuntimeResult): void;
+  publishLinks(result: LinkRuntimeResult): void;
   publishSpawn(result: SpawnRuntimeResult): void;
   clearSpawn(): void;
   publishStateCommit(result: MemoryCommitResult): void;
@@ -304,6 +314,7 @@ export function runTick(input: TickInput): TickOutcome {
     movement: runtime.context.movement,
     localPathPlanning: runtime.context.localPathPlanning,
     layout: runtime.context.layout,
+    links: runtime.context.links,
     spawn: runtime.context.spawn,
     stateCommit: runtime.context.stateCommit,
     telemetry: runtime.context.telemetry,
@@ -342,6 +353,7 @@ interface LayoutTickDraft {
   owner: LayoutsOwnerV1 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   status: LayoutRuntimeResult["status"];
+  linkEvidence: readonly LinkRoomLayoutEvidence[];
 }
 
 /** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
@@ -362,6 +374,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     owner: null,
     planning: Object.freeze([]),
     status: "not-run",
+    linkEvidence: Object.freeze([]),
   };
   let leaseAgentPlan: LeaseAgentPlan = Object.freeze({
     actions: Object.freeze([]),
@@ -373,6 +386,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let growthCandidates: readonly GrowthCandidate[] = Object.freeze([]);
   let staticMiningPlan: StaticMiningPlan = emptyStaticMiningPlan();
   let logisticsRuntime = emptyLogisticsRuntimeProjection();
+  let linkDraft = emptyLinkRuntimeResult();
   let staticMiningCpuUsed = 0;
   let logisticsCpuUsed = 0;
   let collectedTelemetry: TickTelemetry | null = null;
@@ -533,6 +547,39 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     ),
     layoutPlanningSystem(input, layoutDraft),
+    {
+      descriptor: {
+        id: "links.plan",
+        phase: "plan",
+        criticality: "economic",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: false,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        linkDraft = isFeatureEnabled(context.config, "phase2.links")
+          ? planLinkRuntime({
+              growth: growthCandidates,
+              layouts: layoutDraft.linkEvidence,
+              logistics: logisticsRuntime,
+              mining: staticMiningPlan,
+              reservations: context.colony.reservations,
+              rooms: context.snapshot.rooms,
+              tick: context.tick,
+            })
+          : emptyLinkRuntimeResult("disabled");
+        return staged(
+          () => {
+            input.runtime.publishLinks(linkDraft);
+          },
+          () => {
+            linkDraft = emptyLinkRuntimeResult();
+            input.runtime.publishLinks(linkDraft);
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "mining.contracts",
@@ -907,6 +954,33 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     },
     {
       descriptor: {
+        id: "links.execute",
+        phase: "execute",
+        criticality: "mandatory",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: false,
+        mandatoryTail: true,
+      },
+      run: () => {
+        const decisions = linkDraft.rooms.flatMap(({ arbitration }) => arbitration.accepted);
+        const current = new Set(linkDraft.rooms.map(({ layoutRevision }) => layoutRevision));
+        const execution = linkExecutor.execute(
+          decisions,
+          {
+            isCurrentLayoutRevision: (revision) => current.has(revision),
+            resolveLink: (id) => resolveLiveObject(input.game, id) as StructureLink | null,
+          },
+          input.game.time,
+        );
+        linkDraft = Object.freeze({ ...linkDraft, execution: Object.freeze(execution) });
+        return staged(() => {
+          input.runtime.publishLinks(linkDraft);
+        });
+      },
+    },
+    {
+      descriptor: {
         id: "movement.arbitrate-execute",
         phase: "execute",
         criticality: "mandatory",
@@ -1152,6 +1226,7 @@ function layoutPlanningSystem(
       let owner = initialOwner;
       let changed = false;
       const planning: LayoutRuntimePlanRecord[] = [];
+      const linkEvidence: LinkRoomLayoutEvidence[] = [];
       const proposals = [] as ReturnType<typeof diffOwnedRoomLayout>["proposals"][number][];
       const authorizations: {
         authorized: boolean;
@@ -1235,6 +1310,27 @@ function layoutPlanningSystem(
           },
           () => result.placements,
         );
+        linkEvidence.push({
+          evidence: {
+            algorithmRevision: commitment.algorithmRevision,
+            controller: room.controller.pos,
+            fingerprint: commitment.fingerprint,
+            linkPlacements: placements
+              .filter(({ structureType }) => structureType === "link")
+              .map(({ pos }) => pos),
+            sourceServices: placements.flatMap((placement) =>
+              placement.service?.kind === "source-container"
+                ? [{ pos: placement.pos, sourceId: placement.service.sourceId }]
+                : [],
+            ),
+            storage:
+              room.storedStructures.find(
+                ({ ownership, structureType }) =>
+                  ownership === "owned" && structureType === "storage",
+              )?.pos ?? null,
+          },
+          roomName: room.name,
+        });
         proposals.push(
           ...diffOwnedRoomLayout({
             colonyId: colony.id,
@@ -1276,6 +1372,7 @@ function layoutPlanningSystem(
         draft.execution = Object.freeze([]);
         draft.owner = owner;
         draft.planning = Object.freeze(planning);
+        draft.linkEvidence = Object.freeze(linkEvidence);
         draft.status = "planned";
         input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
       });
@@ -2277,6 +2374,7 @@ function createTickRuntime(
   let execution: ArbitrationBatch | null = null;
   let movement: MovementRuntimeResult = emptyMovementRuntimeResult();
   let layout: LayoutRuntimeResult = emptyLayoutRuntimeResult();
+  let links: LinkRuntimeResult = emptyLinkRuntimeResult();
   let spawn: SpawnRuntimeResult = spawnRuntimeResult("not-run");
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
@@ -2308,6 +2406,9 @@ function createTickRuntime(
     },
     get layout(): LayoutRuntimeResult {
       return layout;
+    },
+    get links(): LinkRuntimeResult {
+      return links;
     },
     get spawn(): SpawnRuntimeResult {
       return spawn;
@@ -2348,6 +2449,9 @@ function createTickRuntime(
     },
     publishLayout(value: LayoutRuntimeResult): void {
       layout = value;
+    },
+    publishLinks(value: LinkRuntimeResult): void {
+      links = value;
     },
     publishSpawn(value: SpawnRuntimeResult): void {
       spawn = value;

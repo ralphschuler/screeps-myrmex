@@ -12,6 +12,7 @@ export interface LinkRoleAnchor {
   readonly layoutRevision: string;
   readonly pos: PositionSnapshot;
   readonly role: LinkRole;
+  readonly sourceId: string | null;
 }
 
 export interface LinkLayoutEvidence {
@@ -41,6 +42,7 @@ export interface ClassifiedLink extends ObservedLink {
   readonly anchorId: string;
   readonly layoutRevision: string;
   readonly role: LinkRole;
+  readonly sourceId: string | null;
 }
 
 export type LinkClassificationBlockerReason =
@@ -97,13 +99,58 @@ export type LinkTransferDeferralReason =
   | "zero-delivery";
 
 export interface LinkTransferDecision {
+  readonly budget: IntentBudget;
   readonly deliveredAmount: number;
   readonly flowId: string;
   readonly lostAmount: number;
+  readonly layoutRevision: string;
   readonly proposalId: string;
   readonly sentAmount: number;
   readonly sourceLinkId: string;
   readonly targetLinkId: string;
+}
+
+export type LinkTransferAttemptCode =
+  | "OK"
+  | "ERR_NOT_OWNER"
+  | "ERR_NOT_ENOUGH_RESOURCES"
+  | "ERR_INVALID_TARGET"
+  | "ERR_FULL"
+  | "ERR_NOT_IN_RANGE"
+  | "ERR_INVALID_ARGS"
+  | "ERR_TIRED"
+  | "ERR_RCL_NOT_ENOUGH"
+  | "DEFERRED_BACKOFF"
+  | "UNEXPECTED";
+
+export interface LinkTransferExecutionResult {
+  readonly actualDeliveredAmount: number;
+  readonly actualLostAmount: number;
+  readonly actualSentAmount: number;
+  readonly called: boolean;
+  readonly code: LinkTransferAttemptCode;
+  readonly decision: LinkTransferDecision;
+  readonly fault:
+    | "adapter-fault"
+    | "command-backoff"
+    | "duplicate-source"
+    | "source-unavailable"
+    | "stale-layout"
+    | "target-unavailable"
+    | null;
+}
+
+export interface LinkRoomRuntimeResult {
+  readonly arbitration: LinkArbitrationResult;
+  readonly classification: LinkClassificationResult;
+  readonly layoutRevision: string;
+  readonly roomName: string;
+}
+
+export interface LinkRuntimeResult {
+  readonly execution: readonly LinkTransferExecutionResult[];
+  readonly rooms: readonly LinkRoomRuntimeResult[];
+  readonly status: "disabled" | "not-run" | "planned";
 }
 
 export interface LinkTransferDeferral {
