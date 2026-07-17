@@ -655,6 +655,9 @@ function collectDetails(input: TelemetryServiceInput): TelemetryDetail[] {
   for (const release of input.contracts?.releases ?? []) {
     details.push(detail("contract", release.contractId, "released", release.reason));
   }
+  for (const deferral of input.contracts?.allocation.deferred ?? []) {
+    details.push(detail("contract", deferral.contractId, "deferred", deferral.reason));
+  }
   for (const decision of input.execution?.decisions ?? []) {
     if (decision.status !== "accepted") {
       details.push(detail("intent", decision.intent.id, decision.status, decision.reason));

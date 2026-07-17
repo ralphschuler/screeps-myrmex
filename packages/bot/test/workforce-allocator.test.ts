@@ -279,6 +279,61 @@ describe("WorkforceAllocator", () => {
         travelView(() => 2),
       ).assignments,
     ).toEqual([]);
+
+    const bootstrap = makeContract("contract:bootstrap-controller", {
+      deadline: 3_000,
+      estimatedWorkTicks: 1,
+      expiresAt: 3_001,
+      maxAssignmentCost: 1_500,
+    });
+    const viableBootstrapWorker = makeActor("actor:bootstrap", { ticksToLive: 2_000 });
+    expect(
+      allocate(
+        [viableBootstrapWorker],
+        [bootstrap],
+        travelView(() => 111),
+      ).assignments,
+    ).toEqual([
+      expect.objectContaining({
+        actorId: viableBootstrapWorker.id,
+        assignmentCost: 111,
+        travelTicks: 111,
+      }),
+    ]);
+    expect(
+      allocate(
+        [viableBootstrapWorker],
+        [bootstrap],
+        travelView(() => 1_501),
+      ).assignments,
+    ).toEqual([]);
+    expect(
+      allocate(
+        [viableBootstrapWorker],
+        [
+          makeContract("contract:ordinary-growth", {
+            deadline: 3_000,
+            expiresAt: 3_001,
+            maxAssignmentCost: 50,
+          }),
+        ],
+        travelView(() => 111),
+      ).assignments,
+    ).toEqual([]);
+    expect(
+      allocate(
+        [makeActor("actor:expiring-bootstrap", { ticksToLive: 113 })],
+        [bootstrap],
+        travelView(() => 111),
+      ).assignments,
+    ).toEqual([]);
+    expect(
+      allocate(
+        [viableBootstrapWorker],
+        [bootstrap],
+        travelView(() => null),
+      ).assignments,
+    ).toEqual([]);
   });
 
   it("emits a bounded data-only safe-idle disposition for unassigned actors", () => {

@@ -25,6 +25,8 @@ export interface GrowthPlan {
 
 const EXPIRY = 1_000_000_000;
 const MAX_GROWTH_CANDIDATES = 64;
+const RCL1_BOOTSTRAP_MAX_ASSIGNMENT_COST = 1_500;
+const GROWTH_MAX_ASSIGNMENT_COST = 50;
 
 /**
  * Produces only post-survival growth work. Controller risk is explicitly ranked above optional
@@ -278,7 +280,10 @@ function contractFor(candidate: GrowthCandidate): WorkContractRequest {
     issuerSequence: candidate.budgetRequest.revision,
     kind: controller ? "upgrade" : "build",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 1 },
-    maxAssignmentCost: 50,
+    maxAssignmentCost:
+      candidate.budgetRequest.category === "bootstrap-controller"
+        ? RCL1_BOOTSTRAP_MAX_ASSIGNMENT_COST
+        : GROWTH_MAX_ASSIGNMENT_COST,
     owner: { id: candidate.colonyId, kind: "colony" },
     preconditionKeys: ["visible-growth-target"],
     priority: {

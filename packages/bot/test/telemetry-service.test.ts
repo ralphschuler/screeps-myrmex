@@ -75,6 +75,42 @@ describe("TelemetryService", () => {
     expect(next.owner.droppedHistory).toBe(1);
   });
 
+  it("publishes a stable redacted reason for funded contracts without a viable actor", () => {
+    const outcome = runTick({ game: game(100), memory: {} as Memory });
+    if (outcome.telemetry === null || outcome.contracts === null)
+      throw new Error("expected telemetry and contract reconciliation");
+    const service = new TelemetryService();
+    const result = service.record(
+      {},
+      {
+        base: outcome.telemetry,
+        colony: outcome.colony,
+        contracts: {
+          ...outcome.contracts,
+          allocation: {
+            ...outcome.contracts.allocation,
+            deferred: [
+              { contractId: "secret-bootstrap-contract", reason: "no-viable-actor" as const },
+            ],
+          },
+        },
+        execution: outcome.execution,
+        growth: [],
+        maintenance: [],
+        movement: outcome.movement,
+        snapshot: outcome.snapshot,
+        spawn: outcome.spawn,
+        reporterSignals: [],
+      },
+    );
+    const deferred = result.telemetry.status.details.find(
+      ({ domain, status }) => domain === "contract" && status === "deferred",
+    );
+    expect(deferred).toMatchObject({ reason: "no-viable-actor" });
+    expect(deferred?.entityId).toMatch(/^contract:[0-9a-f]{8}$/);
+    expect(JSON.stringify(result.telemetry)).not.toContain("secret-bootstrap-contract");
+  });
+
   it("publishes bounded recovery transitions while Memory is ready without persisting a queue", () => {
     const outcome = runTick({ game: game(100), memory: {} as Memory });
     const telemetry = outcome.telemetry;
