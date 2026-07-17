@@ -172,6 +172,14 @@ Foundation references:
 4. The workflow performs a locked install and full repository gate.
 5. It rebuilds with `MYRMEX_BUILD_SHA` embedded in the bundle banner.
 6. It uploads `dist/main.js`, downloads the same branch, and requires an exact content match.
+7. It reads only the configured telemetry-owner path and requires its latest receipt tick to advance
+   within the bounded polling window.
+
+Live verification treats `last.tick` plus `last.hash` as the stable telemetry receipt. The owner
+must carry a positive safe-integer schema version, but additive owner-schema extensions do not
+invalidate that receipt. Missing, malformed, regressing, or non-advancing receipts still fail
+closed. This keeps deployment health independent of optional telemetry-owner fields without reading
+the full Memory root.
 
 The workflow never changes the active Screeps branch. Rollback is a deployment of a previously
 validated commit to the same branch or activation of a separately maintained last-known-good branch.
