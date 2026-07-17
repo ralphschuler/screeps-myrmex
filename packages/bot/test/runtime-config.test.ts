@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v21");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v22");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v21",
+      "runtime-config-source-v22",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("activates phase2.logistics only after mining and telemetry under policy v21", () => {
+  it("activates phase2 links only after layout, mining, logistics, and telemetry under policy v22", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v21");
+    expect(config.sourceRevision).toBe("runtime-config-source-v22");
     expect(config.policy.colony).toEqual({
       rclPolicyVersion: 1,
       populationPolicyVersion: 1,
@@ -713,6 +713,11 @@ describe("source feature gates", () => {
       enabled: true,
       reason: "enabled",
     });
+    expect(buildRuntimeConfig().features.gates["phase2.links"]).toEqual({
+      blockedBy: null,
+      enabled: true,
+      reason: "enabled",
+    });
     const phase2Disabled = buildRuntimeConfig({ features: { disabled: ["phase2.colony"] } });
     expect(phase2Disabled.features.gates["phase2.layout"]).toEqual({
       blockedBy: "phase2.colony",
@@ -728,6 +733,12 @@ describe("source feature gates", () => {
     const miningDisabled = buildRuntimeConfig({ features: { disabled: ["phase2.mining"] } });
     expect(miningDisabled.features.gates["phase2.logistics"]).toEqual({
       blockedBy: "phase2.mining",
+      enabled: false,
+      reason: "prerequisite-blocked",
+    });
+    const logisticsDisabled = buildRuntimeConfig({ features: { disabled: ["phase2.logistics"] } });
+    expect(logisticsDisabled.features.gates["phase2.links"]).toEqual({
+      blockedBy: "phase2.logistics",
       enabled: false,
       reason: "prerequisite-blocked",
     });

@@ -14,6 +14,7 @@ import type { StateView } from "../state/schema";
 import type { TickTelemetry } from "../telemetry/metrics";
 import type { WorldSnapshot } from "../world/snapshot";
 import type { LayoutRuntimeResult } from "../layout";
+import type { LinkRuntimeResult } from "../links";
 
 export interface RuntimeGame {
   readonly cpu: {
@@ -62,6 +63,8 @@ export interface TickContext {
   readonly localPathPlanning: LocalPathPlanningService;
   /** Tick-local layout planning, arbitration, execution, and durable reconciliation evidence. */
   readonly layout: LayoutRuntimeResult;
+  /** Tick-local link classification, arbitration, and command settlement evidence. */
+  readonly links: LinkRuntimeResult;
   /** Tick-local movement/action arbitration and command evidence. */
   readonly movement: MovementRuntimeResult;
   /** Tick-local spawn arbitration and command evidence. */

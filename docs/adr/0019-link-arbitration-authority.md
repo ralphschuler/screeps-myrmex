@@ -21,9 +21,18 @@ energy and loss-adjusted destination capacity, admits at most one outbound trans
 uses hard link and proposal caps. Results record predicted sent, delivered, and lost energy; every
 non-admission has a stable typed reason.
 
-PR B adds mining, controller, and logistics proposal production, the sole
-`StructureLink.transferEnergy` executor, and result reconciliation. No planner may bypass the
-arbiter, and telemetry remains observer-only.
+The runtime adapter consumes only active reservations already issued for static mining, controller
+growth, or logistics. It reconstructs roles from the current layout evidence every tick, submits
+funded proposals to `LinkArbiter`, and never creates or settles a parallel budget. The dedicated
+`LinkExecutor` is the sole caller of `StructureLink.transferEnergy`; it validates the current layout
+dependency, rejects duplicate source commands, normalizes expected Screeps return codes, and
+attributes sent, delivered, and lost energy only after `OK`. Expected failures enter a bounded,
+heap-only backoff keyed by layout dependency and endpoints; heap reset safely clears optimization
+state and rebuilds roles. A failed command leaves the existing reservation untouched for its owning
+planner to renew or retire.
+
+`phase2.links` activates this composition only after layout, mining, logistics, and telemetry are
+available. No planner may bypass the arbiter, and telemetry remains observer-only.
 
 ## Consequences
 
@@ -33,6 +42,8 @@ arbiter, and telemetry remains observer-only.
 - Layout revision changes invalidate roles instead of retaining stale operational identity.
 - Missing observation, cooldown, inactivity, wrong-room targets, and unavailable budgets fail closed
   without aborting logistics.
+- Structure addition, destruction, RCL downgrade, layout revision, and heap reset invalidate or
+  rebuild roles from current observation without persistent link authority.
 - Link repair remains #49; remote links and combat tricks remain out of scope.
 
 ## Mechanics sources consulted

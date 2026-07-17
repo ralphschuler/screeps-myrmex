@@ -100,18 +100,22 @@ describe("LinkArbiter", () => {
     });
     expect(result.accepted).toEqual([
       {
+        budget: { cost: 400, id: "links/survival" },
         deliveredAmount: 388,
         flowId: "flow-survival",
         lostAmount: 12,
+        layoutRevision: "layout-a",
         proposalId: "survival",
         sentAmount: 400,
         sourceLinkId: "source-b",
         targetLinkId: "hub",
       },
       {
+        budget: { cost: 800, id: "links/optional" },
         deliveredAmount: 412,
         flowId: "flow-optional",
         lostAmount: 13,
+        layoutRevision: "layout-a",
         proposalId: "optional",
         sentAmount: 425,
         sourceLinkId: "source-a",
@@ -178,7 +182,7 @@ describe("LinkArbiter", () => {
 });
 
 function anchor(id: string, x: number, y: number, role: ClassifiedLink["role"]) {
-  return { id, layoutRevision: "layout-a", pos: pos(x, y), role };
+  return { id, layoutRevision: "layout-a", pos: pos(x, y), role, sourceId: null };
 }
 
 function link(
@@ -200,6 +204,7 @@ function link(
     owned: true,
     pos: pos(x, y),
     role,
+    sourceId: role === "source" ? id : null,
     ...change,
   };
 }

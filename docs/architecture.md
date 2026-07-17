@@ -56,6 +56,10 @@ SpawnBroker, movement arbitration, and executors retain their existing authoriti
 `LinkArbiter` is the sole link-transfer admission authority. Mining, logistics, and controller
 policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
 Roles are ephemeral derivatives of owned-link observation and one versioned layout commitment.
+`links.plan` follows layout planning, consumes only active reservations owned by existing planners,
+and performs canonical classification and arbitration. `links.execute` revalidates the layout
+dependency, issues at most one command per source, and publishes typed command settlement with
+actual flow and loss attribution. Command errors never consume or release another owner's budget.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
