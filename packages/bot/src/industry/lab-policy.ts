@@ -24,6 +24,7 @@ export interface ReactionObjective {
   readonly amount: number;
   readonly colonyId: string;
   readonly deadline: number;
+  readonly direction?: "forward" | "reverse";
   readonly funded: boolean;
   readonly id: string;
   readonly industryBudgetId: string;
@@ -95,6 +96,7 @@ interface CommitmentBase {
 /** Persistable data only. Lab roles, stock observations, and logistics reservations are excluded. */
 export interface ReactionCommitment extends CommitmentBase {
   readonly batchAmount: number;
+  readonly direction?: "forward" | "reverse";
   readonly kind: "reaction";
   readonly product: string;
   readonly reagents: readonly [string, string];
@@ -428,16 +430,23 @@ function projectReaction(
   const existing = previous?.kind === "reaction" ? previous : undefined;
   if (existing !== undefined && existing.settledAmount >= existing.batchAmount)
     return { commitment: null, completed: true, demands: [], reason: null };
-  if (existing === undefined && (available.get(objective.product) ?? 0) >= objective.amount)
+  const direction = objective.direction ?? "forward";
+  if (
+    direction === "forward" &&
+    existing === undefined &&
+    (available.get(objective.product) ?? 0) >= objective.amount
+  )
     return { commitment: null, completed: true, demands: [], reason: null };
   const selected =
     existing === undefined
-      ? selectForwardReaction(
-          objective.product,
-          objective.amount - (available.get(objective.product) ?? 0),
-          room.catalog as ReactionCatalog,
-          available,
-        )
+      ? direction === "reverse"
+        ? selectReverseReaction(objective, room.catalog as ReactionCatalog, available)
+        : selectForwardReaction(
+            objective.product,
+            objective.amount - (available.get(objective.product) ?? 0),
+            room.catalog as ReactionCatalog,
+            available,
+          )
       : selectedFromCommitment(existing, room.catalog as ReactionCatalog);
   if (selected === null)
     return { commitment: null, completed: false, demands: [], reason: "no-reaction-path" };
@@ -448,6 +457,7 @@ function projectReaction(
     catalogFingerprint: (room.catalog as ReactionCatalog).fingerprint,
     colonyId: objective.colonyId,
     deadline: objective.deadline,
+    ...(direction === "reverse" ? { direction } : {}),
     kind: "reaction",
     objectiveFingerprint: objectiveFingerprint({ kind: "reaction", value: objective }),
     objectiveId: objective.id,
@@ -458,43 +468,94 @@ function projectReaction(
     settledAmount: existing?.settledAmount ?? 0,
     targetProduct: objective.product,
   });
+  const demands: LabResourceDemand[] =
+    direction === "reverse"
+      ? reverseDemands(objective, room, assignment, selected)
+      : [
+          makeDemand(
+            objective,
+            room,
+            "reagent-a",
+            assignment.reagentLabIds[0],
+            "fill",
+            selected.recipe.reagents[0],
+            selected.amount,
+          ),
+          makeDemand(
+            objective,
+            room,
+            "reagent-b",
+            assignment.reagentLabIds[1],
+            "fill",
+            selected.recipe.reagents[1],
+            selected.amount,
+          ),
+          ...assignment.productLabIds.flatMap((labId, index) => {
+            const lab = room.labs.find(({ id }) => id === labId);
+            return lab?.mineralType === null || lab === undefined || lab.mineralAmount === 0
+              ? []
+              : [
+                  makeDemand(
+                    objective,
+                    room,
+                    `product-${String(index)}`,
+                    labId,
+                    "drain",
+                    lab.mineralType,
+                    lab.mineralAmount,
+                  ),
+                ];
+          }),
+        ];
+  return { commitment, completed: false, demands: freeze(demands), reason: null };
+}
+
+function selectReverseReaction(
+  objective: ReactionObjective,
+  catalog: ReactionCatalog,
+  available: ReadonlyMap<string, number>,
+): SelectedReaction | null {
+  const recipe = catalog.recipes.find(({ product }) => product === objective.product);
+  const amount = Math.min(objective.amount, available.get(objective.product) ?? 0);
+  return recipe === undefined || amount < 5 ? null : { amount, recipe };
+}
+
+function reverseDemands(
+  objective: ReactionObjective,
+  room: LabPolicyRoomObservation,
+  assignment: LabClusterAssignment,
+  selected: SelectedReaction,
+): LabResourceDemand[] {
+  const sourceLabId = assignment.productLabIds[0];
+  if (sourceLabId === undefined) return [];
   const demands: LabResourceDemand[] = [
     makeDemand(
       objective,
       room,
-      "reagent-a",
-      assignment.reagentLabIds[0],
+      "reverse-source",
+      sourceLabId,
       "fill",
-      selected.recipe.reagents[0],
+      selected.recipe.product,
       selected.amount,
     ),
-    makeDemand(
-      objective,
-      room,
-      "reagent-b",
-      assignment.reagentLabIds[1],
-      "fill",
-      selected.recipe.reagents[1],
-      selected.amount,
-    ),
-    ...assignment.productLabIds.flatMap((labId, index) => {
-      const lab = room.labs.find(({ id }) => id === labId);
-      return lab?.mineralType === null || lab === undefined || lab.mineralAmount === 0
-        ? []
-        : [
-            makeDemand(
-              objective,
-              room,
-              `product-${String(index)}`,
-              labId,
-              "drain",
-              lab.mineralType,
-              lab.mineralAmount,
-            ),
-          ];
-    }),
   ];
-  return { commitment, completed: false, demands: freeze(demands), reason: null };
+  assignment.reagentLabIds.forEach((labId, index) => {
+    const lab = room.labs.find(({ id }) => id === labId);
+    const expected = selected.recipe.reagents[index];
+    if (lab !== undefined && lab.mineralType !== null && lab.mineralType !== expected)
+      demands.push(
+        makeDemand(
+          objective,
+          room,
+          `reverse-result-${String(index)}`,
+          labId,
+          "drain",
+          lab.mineralType,
+          lab.mineralAmount,
+        ),
+      );
+  });
+  return demands;
 }
 
 function selectedFromCommitment(
@@ -687,7 +748,10 @@ export function isLabPolicyCommitment(value: unknown): value is LabPolicyCommitm
       value.reagents.every((resource) => identity(resource, 64)) &&
       nonnegativeInteger(value.settledAmount) &&
       value.settledAmount <= value.batchAmount &&
-      identity(value.targetProduct, 64)
+      identity(value.targetProduct, 64) &&
+      (value.direction === undefined ||
+        value.direction === "forward" ||
+        value.direction === "reverse")
     );
   }
   return (
@@ -726,6 +790,7 @@ function objectiveFingerprint(candidate: Candidate): string {
           String(value.revision),
           value.colonyId,
           (value as ReactionObjective).product,
+          (value as ReactionObjective).direction ?? "forward",
           String((value as ReactionObjective).amount),
           String(value.deadline),
           String(value.priority),

@@ -19,6 +19,7 @@ export const FEATURE_GATE_IDS = [
   "phase2.links",
   "phase2.maintenance",
   "phase2.industry",
+  "phase2.labs",
 ] as const;
 
 export type FeatureGateId = (typeof FEATURE_GATE_IDS)[number];

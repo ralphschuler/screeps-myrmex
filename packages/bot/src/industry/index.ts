@@ -7,3 +7,4 @@ export * from "./lab-cluster";
 export * from "./lab-policy";
 export * from "./lab-runtime";
 export * from "./lab-executor";
+export * from "./lab-composition";
