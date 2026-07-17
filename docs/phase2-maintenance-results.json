@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 1,
+  "issue": 243,
+  "status": "complete",
+  "sustainedDecay": {
+    "ticks": 12,
+    "road": {
+      "floor": 2000,
+      "minimumObservedHits": 4525,
+      "finalHits": 4600
+    },
+    "container": {
+      "floor": 125000,
+      "minimumObservedHits": 149400,
+      "finalHits": 225400
+    },
+    "maximumCpuPerTick": 0.125,
+    "maximumRequestsPerTick": 2,
+    "maximumRequestedEnergyPerTick": 400,
+    "maximumFundedEnergyPerTick": 350,
+    "commandFailureCount": 1
+  },
+  "protectedPriorities": {
+    "grants": [
+      {
+        "category": "emergency-spawn",
+        "energy": 300,
+        "issuer": "survival/spawn",
+        "reasonCode": "granted",
+        "status": "granted"
+      },
+      {
+        "category": "defense",
+        "energy": 100,
+        "issuer": "survival/defense",
+        "reasonCode": "granted",
+        "status": "granted"
+      },
+      {
+        "category": "replacement",
+        "energy": 150,
+        "issuer": "survival/replacement",
+        "reasonCode": "granted",
+        "status": "granted"
+      },
+      {
+        "category": "harvesting-filling",
+        "energy": 50,
+        "issuer": "survival/harvest",
+        "reasonCode": "granted",
+        "status": "granted"
+      },
+      {
+        "category": "controller-risk",
+        "energy": 50,
+        "issuer": "survival/controller",
+        "reasonCode": "granted",
+        "status": "granted"
+      },
+      {
+        "category": "maintenance",
+        "energy": 222,
+        "issuer": "maintenance-v2/W1N1",
+        "reasonCode": "granted",
+        "status": "granted"
+      }
+    ],
+    "maintenanceEnergy": 222,
+    "protectedEnergy": 550,
+    "cpuCap": 1,
+    "requestCount": 6
+  },
+  "fortificationBands": [
+    {
+      "name": "rcl3-protected",
+      "targets": [],
+      "deferredProtected": 2,
+      "targetsHitsMax": false,
+      "towerEligible": false
+    },
+    {
+      "name": "rcl3-surplus",
+      "targets": [
+        {
+          "structureClass": "rampart",
+          "targetHits": 20000
+        },
+        {
+          "structureClass": "wall",
+          "targetHits": 20000
+        }
+      ],
+      "deferredProtected": 0,
+      "targetsHitsMax": false,
+      "towerEligible": true
+    },
+    {
+      "name": "rcl3-threat",
+      "targets": [
+        {
+          "structureClass": "rampart",
+          "targetHits": 40000
+        },
+        {
+          "structureClass": "wall",
+          "targetHits": 40000
+        }
+      ],
+      "deferredProtected": 0,
+      "targetsHitsMax": false,
+      "towerEligible": false
+    },
+    {
+      "name": "rcl6-surplus",
+      "targets": [
+        {
+          "structureClass": "rampart",
+          "targetHits": 200000
+        },
+        {
+          "structureClass": "wall",
+          "targetHits": 200000
+        }
+      ],
+      "deferredProtected": 0,
+      "targetsHitsMax": false,
+      "towerEligible": true
+    }
+  ],
+  "towerArbitration": {
+    "clear": [
+      {
+        "kind": "tower.repair",
+        "target": "road-critical"
+      }
+    ],
+    "heal": [
+      {
+        "kind": "tower.heal",
+        "target": "worker"
+      }
+    ],
+    "attack": [
+      {
+        "kind": "tower.attack",
+        "target": "hostile"
+      }
+    ],
+    "routineDuringHeal": 0,
+    "routineDuringAttack": 0,
+    "lowEnergyRoutine": 0,
+    "duplicateTargetsSuppressed": 1,
+    "creepTargets": ["container-source"],
+    "sustained": {
+      "healCommands": 1,
+      "attackCommands": 1,
+      "repairCommands": 8,
+      "duplicateTargetsSuppressed": 8
+    }
+  },
+  "reconciliation": {
+    "retirements": [
+      {
+        "contractId": "changed-band",
+        "reason": "maintenance-band-resolved",
+        "tick": 1012,
+        "to": "cancelled"
+      },
+      {
+        "contractId": "lost-target",
+        "reason": "maintenance-band-resolved",
+        "tick": 1012,
+        "to": "cancelled"
+      },
+      {
+        "contractId": "overshoot",
+        "reason": "maintenance-band-resolved",
+        "tick": 1012,
+        "to": "cancelled"
+      },
+      {
+        "contractId": "satisfied",
+        "reason": "maintenance-band-resolved",
+        "tick": 1012,
+        "to": "cancelled"
+      }
+    ],
+    "repeatedRetirements": 0,
+    "retirementCounts": [
+      {
+        "contractId": "changed-band",
+        "count": 1
+      },
+      {
+        "contractId": "lost-target",
+        "count": 1
+      },
+      {
+        "contractId": "overshoot",
+        "count": 1
+      },
+      {
+        "contractId": "satisfied",
+        "count": 1
+      }
+    ],
+    "workOutcomes": ["overshoot", "retired", "satisfied"],
+    "changedBandTarget": 200000
+  },
+  "telemetry": {
+    "planner": {
+      "scanned": 3,
+      "admitted": 1,
+      "deferred": 0,
+      "truncated": 0
+    },
+    "energy": {
+      "requestedCap": 400,
+      "fundedCap": 350
+    },
+    "towers": {
+      "scheduled": 7,
+      "rejected": 1,
+      "failed": 1,
+      "cpuUsed": 1,
+      "energyScheduled": 70,
+      "reasons": [
+        {
+          "reason": "adapter-fault",
+          "count": 1
+        },
+        {
+          "reason": "ok",
+          "count": 7
+        },
+        {
+          "reason": "safety-preempted",
+          "count": 1
+        }
+      ],
+      "droppedReasonBuckets": 0,
+      "truncatedObservations": 0
+    },
+    "emergencyReservePreserved": true,
+    "duplicateTargetsSuppressed": 8,
+    "work": {
+      "overshoot": 1,
+      "retired": 1,
+      "satisfied": 1
+    }
+  },
+  "equivalence": {
+    "contractsIdentical": true,
+    "retirementsIdentical": true,
+    "commandsIdentical": true,
+    "telemetryIdentical": true,
+    "semanticBytesIdentical": true,
+    "evidenceHashesIdentical": true,
+    "hashes": {
+      "warm": "fnv1a64-utf16:ef55a765ac314db6",
+      "heapReset": "fnv1a64-utf16:ef55a765ac314db6",
+      "reordered": "fnv1a64-utf16:ef55a765ac314db6"
+    }
+  },
+  "bounds": {
+    "ticks": 12,
+    "maximumCpuPerTick": 1,
+    "maximumMaintenanceRequestsPerTick": 2,
+    "maximumPlannerEnergyPerTick": 400,
+    "maximumTowerCommandsPerTick": 1
+  }
+}
