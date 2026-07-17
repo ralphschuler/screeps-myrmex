@@ -1,11 +1,13 @@
 import { isLabPolicyCommitment, type LabPolicyCommitment } from "./lab-policy";
 import { isPendingLabAttempt, type PendingLabAttempt } from "./lab-runtime";
+import { isPendingMatureAttempt, type PendingMatureAttempt } from "./mature-attempt";
 import type { IndustryCommandState } from "./telemetry";
 
-export const INDUSTRY_OWNER_SCHEMA_VERSION = 3 as const;
+export const INDUSTRY_OWNER_SCHEMA_VERSION = 4 as const;
 export const MAX_INDUSTRY_COMMAND_STATES = 128 as const;
 export const MAX_INDUSTRY_LAB_COMMITMENTS = 64 as const;
 export const MAX_INDUSTRY_LAB_ATTEMPTS = 64 as const;
+export const MAX_INDUSTRY_MATURE_ATTEMPTS = 64 as const;
 
 export interface IndustryOwnerV1 {
   readonly schemaVersion: 1;
@@ -18,11 +20,15 @@ export interface IndustryOwnerV2 extends Omit<IndustryOwnerV1, "schemaVersion"> 
   readonly labCommitments: readonly LabPolicyCommitment[];
 }
 export interface IndustryOwnerV3 extends Omit<IndustryOwnerV2, "schemaVersion"> {
-  readonly schemaVersion: typeof INDUSTRY_OWNER_SCHEMA_VERSION;
+  readonly schemaVersion: 3;
   readonly labAttempts: readonly PendingLabAttempt[];
 }
+export interface IndustryOwnerV4 extends Omit<IndustryOwnerV3, "schemaVersion"> {
+  readonly schemaVersion: typeof INDUSTRY_OWNER_SCHEMA_VERSION;
+  readonly matureAttempts: readonly PendingMatureAttempt[];
+}
 
-export function emptyIndustryOwner(): IndustryOwnerV3 {
+export function emptyIndustryOwner(): IndustryOwnerV4 {
   return freeze({
     schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
     revision: 0,
@@ -30,18 +36,155 @@ export function emptyIndustryOwner(): IndustryOwnerV3 {
     commands: [],
     labCommitments: [],
     labAttempts: [],
+    matureAttempts: [],
   });
 }
 
-export function parseIndustryOwner(value: unknown): IndustryOwnerV3 | null {
+export function parseIndustryOwner(value: unknown): IndustryOwnerV4 | null {
   if (
     !record(value) ||
     value.schemaVersion !== INDUSTRY_OWNER_SCHEMA_VERSION ||
     !ownerBaseValid(value) ||
     !validCommitments(value.labCommitments) ||
-    !Array.isArray(value.labAttempts) ||
-    value.labAttempts.length > MAX_INDUSTRY_LAB_ATTEMPTS ||
-    !value.labAttempts.every(isPendingLabAttempt)
+    !validLabAttempts(value.labAttempts) ||
+    !validMatureAttempts(value.matureAttempts)
+  )
+    return null;
+  const commands = canonicalCommands(value.commands);
+  const labCommitments = canonicalCommitments(value.labCommitments);
+  const labAttempts = canonicalAttempts(value.labAttempts);
+  const matureAttempts = canonicalMatureAttempts(value.matureAttempts);
+  if (
+    duplicateCommands(commands) ||
+    duplicateCommitments(labCommitments) ||
+    duplicateAttempts(labAttempts) ||
+    duplicateMatureAttempts(matureAttempts)
+  )
+    return null;
+  return freeze({
+    schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
+    revision: value.revision,
+    policySourceVersion: value.policySourceVersion,
+    commands,
+    labCommitments,
+    labAttempts,
+    matureAttempts,
+  });
+}
+
+/** Owner-local opaque migration. Root Memory schema and envelope remain unchanged. */
+export function migrateIndustryOwner(value: unknown): IndustryOwnerV4 | null {
+  const current = parseIndustryOwner(value);
+  if (current !== null) return current;
+  const v3 = parseIndustryOwnerV3(value);
+  if (v3 !== null)
+    return freeze({
+      ...v3,
+      schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
+      revision: v3.revision + 1,
+      matureAttempts: [],
+    });
+  const v2 = parseIndustryOwnerV2(value);
+  if (v2 !== null)
+    return freeze({
+      ...v2,
+      schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
+      revision: v2.revision + 1,
+      labAttempts: [],
+      matureAttempts: [],
+    });
+  const v1 = parseIndustryOwnerV1(value);
+  if (v1 === null) return null;
+  return freeze({
+    schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
+    revision: v1.revision + 1,
+    policySourceVersion: "industry-policy-v2",
+    commands: v1.commands,
+    labCommitments: [],
+    labAttempts: [],
+    matureAttempts: [],
+  });
+}
+
+export function persistIndustryOwner(
+  owner: IndustryOwnerV4,
+  policySourceVersion: string,
+  commands: readonly IndustryCommandState[],
+  labCommitments: readonly LabPolicyCommitment[],
+  labAttempts: readonly PendingLabAttempt[] = owner.labAttempts,
+  matureAttempts: readonly PendingMatureAttempt[] = owner.matureAttempts,
+): IndustryOwnerV4 {
+  if (!boundedString(policySourceVersion, 64, false))
+    throw new Error("industry policy source version must be a bounded non-empty string");
+  if (!commands.every(validCommand)) throw new Error("invalid industry command state");
+  if (!labCommitments.every(isLabPolicyCommitment))
+    throw new Error("invalid industry lab commitment");
+  if (!labAttempts.every(isPendingLabAttempt)) throw new Error("invalid industry lab attempt");
+  if (!matureAttempts.every(isPendingMatureAttempt))
+    throw new Error("invalid industry mature attempt");
+  const commandsValue = canonicalCommands(commands).slice(0, MAX_INDUSTRY_COMMAND_STATES);
+  const commitmentsValue = canonicalCommitments(labCommitments).slice(
+    0,
+    MAX_INDUSTRY_LAB_COMMITMENTS,
+  );
+  const attemptsValue = canonicalAttempts(labAttempts).slice(0, MAX_INDUSTRY_LAB_ATTEMPTS);
+  const matureAttemptsValue = canonicalMatureAttempts(matureAttempts).slice(
+    0,
+    MAX_INDUSTRY_MATURE_ATTEMPTS,
+  );
+  if (duplicateCommands(commandsValue)) throw new Error("duplicate industry command identity");
+  if (duplicateCommitments(commitmentsValue))
+    throw new Error("duplicate industry lab commitment identity");
+  if (duplicateAttempts(attemptsValue)) throw new Error("duplicate industry lab attempt identity");
+  if (duplicateMatureAttempts(matureAttemptsValue))
+    throw new Error("duplicate industry mature attempt identity");
+  const compatible =
+    owner.policySourceVersion === "" || owner.policySourceVersion === policySourceVersion;
+  const nextCommands = compatible ? commandsValue : [];
+  const nextCommitments = compatible ? commitmentsValue : [];
+  const nextAttempts = compatible ? attemptsValue : [];
+  const nextMatureAttempts = compatible ? matureAttemptsValue : [];
+  if (
+    owner.policySourceVersion === policySourceVersion &&
+    same(owner.commands, nextCommands) &&
+    same(owner.labCommitments, nextCommitments) &&
+    same(owner.labAttempts, nextAttempts) &&
+    same(owner.matureAttempts, nextMatureAttempts)
+  )
+    return owner;
+  return freeze({
+    schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
+    revision: owner.revision + 1,
+    policySourceVersion,
+    commands: nextCommands,
+    labCommitments: nextCommitments,
+    labAttempts: nextAttempts,
+    matureAttempts: nextMatureAttempts,
+  });
+}
+
+export function persistIndustryCommands(
+  owner: IndustryOwnerV4,
+  policySourceVersion: string,
+  commands: readonly IndustryCommandState[],
+): IndustryOwnerV4 {
+  return persistIndustryOwner(
+    owner,
+    policySourceVersion,
+    commands,
+    owner.labCommitments,
+    owner.labAttempts,
+    owner.matureAttempts,
+  );
+}
+
+function parseIndustryOwnerV3(value: unknown): IndustryOwnerV3 | null {
+  if (
+    !record(value) ||
+    value.schemaVersion !== 3 ||
+    !ownerBaseValid(value) ||
+    !validCommitments(value.labCommitments) ||
+    !validLabAttempts(value.labAttempts)
   )
     return null;
   const commands = canonicalCommands(value.commands);
@@ -54,96 +197,13 @@ export function parseIndustryOwner(value: unknown): IndustryOwnerV3 | null {
   )
     return null;
   return freeze({
-    schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
+    schemaVersion: 3,
     revision: value.revision,
     policySourceVersion: value.policySourceVersion,
     commands,
     labCommitments,
     labAttempts,
   });
-}
-
-/** Owner-local opaque migration. Root Memory schema and envelope remain unchanged. */
-export function migrateIndustryOwner(value: unknown): IndustryOwnerV3 | null {
-  const current = parseIndustryOwner(value);
-  if (current !== null) return current;
-  const v2 = parseIndustryOwnerV2(value);
-  if (v2 !== null)
-    return freeze({
-      ...v2,
-      schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
-      revision: v2.revision + 1,
-      labAttempts: [],
-    });
-  const v1 = parseIndustryOwnerV1(value);
-  if (v1 === null) return null;
-  return freeze({
-    schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
-    revision: v1.revision + 1,
-    policySourceVersion: "industry-policy-v2",
-    commands: v1.commands,
-    labCommitments: [],
-    labAttempts: [],
-  });
-}
-
-export function persistIndustryOwner(
-  owner: IndustryOwnerV3,
-  policySourceVersion: string,
-  commands: readonly IndustryCommandState[],
-  labCommitments: readonly LabPolicyCommitment[],
-  labAttempts: readonly PendingLabAttempt[] = owner.labAttempts,
-): IndustryOwnerV3 {
-  if (!boundedString(policySourceVersion, 64, false))
-    throw new Error("industry policy source version must be a bounded non-empty string");
-  if (!commands.every(validCommand)) throw new Error("invalid industry command state");
-  if (!labCommitments.every(isLabPolicyCommitment))
-    throw new Error("invalid industry lab commitment");
-  if (!labAttempts.every(isPendingLabAttempt)) throw new Error("invalid industry lab attempt");
-  const commandsValue = canonicalCommands(commands).slice(0, MAX_INDUSTRY_COMMAND_STATES);
-  const commitmentsValue = canonicalCommitments(labCommitments).slice(
-    0,
-    MAX_INDUSTRY_LAB_COMMITMENTS,
-  );
-  const attemptsValue = canonicalAttempts(labAttempts).slice(0, MAX_INDUSTRY_LAB_ATTEMPTS);
-  if (duplicateCommands(commandsValue)) throw new Error("duplicate industry command identity");
-  if (duplicateCommitments(commitmentsValue))
-    throw new Error("duplicate industry lab commitment identity");
-  if (duplicateAttempts(attemptsValue)) throw new Error("duplicate industry lab attempt identity");
-  const compatible =
-    owner.policySourceVersion === "" || owner.policySourceVersion === policySourceVersion;
-  const nextCommands = compatible ? commandsValue : [];
-  const nextCommitments = compatible ? commitmentsValue : [];
-  const nextAttempts = compatible ? attemptsValue : [];
-  if (
-    owner.policySourceVersion === policySourceVersion &&
-    same(owner.commands, nextCommands) &&
-    same(owner.labCommitments, nextCommitments) &&
-    same(owner.labAttempts, nextAttempts)
-  )
-    return owner;
-  return freeze({
-    schemaVersion: INDUSTRY_OWNER_SCHEMA_VERSION,
-    revision: owner.revision + 1,
-    policySourceVersion,
-    commands: nextCommands,
-    labCommitments: nextCommitments,
-    labAttempts: nextAttempts,
-  });
-}
-
-export function persistIndustryCommands(
-  owner: IndustryOwnerV3,
-  policySourceVersion: string,
-  commands: readonly IndustryCommandState[],
-): IndustryOwnerV3 {
-  return persistIndustryOwner(
-    owner,
-    policySourceVersion,
-    commands,
-    owner.labCommitments,
-    owner.labAttempts,
-  );
 }
 
 function parseIndustryOwnerV2(value: unknown): IndustryOwnerV2 | null {
@@ -196,6 +256,20 @@ function validCommitments(value: unknown): value is readonly LabPolicyCommitment
     value.every(isLabPolicyCommitment)
   );
 }
+function validLabAttempts(value: unknown): value is readonly PendingLabAttempt[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_INDUSTRY_LAB_ATTEMPTS &&
+    value.every(isPendingLabAttempt)
+  );
+}
+function validMatureAttempts(value: unknown): value is readonly PendingMatureAttempt[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_INDUSTRY_MATURE_ATTEMPTS &&
+    value.every(isPendingMatureAttempt)
+  );
+}
 function canonicalCommands(values: readonly IndustryCommandState[]): IndustryCommandState[] {
   return [...values]
     .sort((a, b) => a.identity.localeCompare(b.identity))
@@ -229,6 +303,21 @@ function canonicalAttempts(values: readonly PendingLabAttempt[]): PendingLabAtte
         : freeze({ ...value }),
     );
 }
+function canonicalMatureAttempts(values: readonly PendingMatureAttempt[]): PendingMatureAttempt[] {
+  return [...values]
+    .sort((a, b) => a.attemptId.localeCompare(b.attemptId))
+    .map((value) =>
+      value.kind === "factory"
+        ? freeze({
+            ...value,
+            components: freeze(value.components.map((component) => freeze({ ...component }))),
+            resourcesBefore: freeze(
+              value.resourcesBefore.map((resource) => freeze({ ...resource })),
+            ),
+          })
+        : freeze({ ...value }),
+    );
+}
 function duplicateCommands(values: readonly IndustryCommandState[]): boolean {
   return new Set(values.map(({ identity }) => identity)).size !== values.length;
 }
@@ -243,6 +332,9 @@ function duplicateCommitments(values: readonly LabPolicyCommitment[]): boolean {
   );
 }
 function duplicateAttempts(values: readonly PendingLabAttempt[]): boolean {
+  return new Set(values.map(({ attemptId }) => attemptId)).size !== values.length;
+}
+function duplicateMatureAttempts(values: readonly PendingMatureAttempt[]): boolean {
   return new Set(values.map(({ attemptId }) => attemptId)).size !== values.length;
 }
 function same(left: unknown, right: unknown): boolean {

@@ -182,7 +182,7 @@ import {
   projectTerminalSendIntents,
   reconcileIndustryCommands,
   type IndustryCommandState,
-  type IndustryOwnerV3,
+  type IndustryOwnerV4,
   type IndustryPlan,
   type IndustryRoomState,
   type IndustryTelemetry,
@@ -411,7 +411,7 @@ interface IndustryTickDraft {
   execution: readonly CommandExecutionResult<TerminalSendCommand>[];
   labExecution: readonly CommandExecutionResult<LabCommand>[];
   labs: LabCompositionProjection;
-  owner: IndustryOwnerV3;
+  owner: IndustryOwnerV4;
   ownerNeedsPersistence: boolean;
   plan: IndustryPlan;
   rooms: readonly IndustryRoomState[];
@@ -2325,7 +2325,7 @@ function industryRoomStock(room: IndustryRoomState, resourceType: string): numbe
 function industryOwnerForPolicy(
   value: unknown,
   policySourceVersion: string,
-): { readonly needsPersistence: boolean; readonly owner: IndustryOwnerV3 } {
+): { readonly needsPersistence: boolean; readonly owner: IndustryOwnerV4 } {
   const parsed = parseIndustryOwner(value);
   if (parsed !== null && parsed.policySourceVersion === policySourceVersion)
     return Object.freeze({ needsPersistence: false, owner: parsed });

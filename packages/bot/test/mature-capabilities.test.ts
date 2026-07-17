@@ -21,6 +21,8 @@ const constants = {
   observerRange: 10,
   operateFactoryPower: 19,
   operateObserverPower: 7,
+  operatePowerEffects: [1, 2, 3, 4, 5],
+  operatePowerPower: 16,
   powerSpawnEnergyCapacity: 5_000,
   powerSpawnEnergyPerPower: 50,
   powerSpawnPowerCapacity: 100,

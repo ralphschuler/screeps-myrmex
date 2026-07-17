@@ -135,6 +135,12 @@ Commitments survive reset but remain bound to current cluster and catalog finger
 staging completion yields `ready`, not a command. Active reaction completion requires later executor
 evidence and re-observation rather than an unrelated increase in aggregate stock.
 
+Factory and power processing follow the same funded-readiness rule. One factory call produces one
+complete recipe batch; operated power processing is admitted only for the complete effect-adjusted
+amount and its 50-energy-per-power cost. `OK` remains pending until the next exact store and factory
+cooldown observation. Missing funding, mechanics drift, conflicting deltas, or exhausted retries
+cannot claim production. Observer commands and nuke launch remain outside this policy.
+
 ## Military Operations
 
 Every operation declares an objective, owner, target, intelligence freshness requirement, body and
