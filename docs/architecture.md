@@ -268,6 +268,10 @@ codes for telemetry.
 - normalizes source-controlled commodity and mature-structure constants through a bounded pure
   catalog before deriving reset-stable capability fingerprints; malformed mechanics suppress the
   affected capability and authorize no command;
+- projects only funded, current mature-structure objectives into the sole logistics graph: factory
+  component fills and product/contamination drains, power-spawn energy/power fills, and capped
+  one-way nuker fills share the physical store's aggregate capacity key and never republish observed
+  stock as a second source;
 - never makes strategic decisions; and
 - never mutates persistent state.
 

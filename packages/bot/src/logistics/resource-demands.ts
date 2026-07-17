@@ -72,6 +72,15 @@ export interface LabResourceDemandProjection {
   readonly nodes: readonly LogisticsNode[];
 }
 
+/** Graph-only extension point consumed by the sole logistics runtime. */
+export interface LogisticsResourceDemandProjection {
+  readonly blockers?: readonly unknown[];
+  readonly dispositions?: readonly unknown[];
+  readonly edges: readonly LogisticsEdge[];
+  readonly endpoints: readonly LogisticsContractEndpoint[];
+  readonly nodes: readonly LogisticsNode[];
+}
+
 export interface ProjectLabResourceDemandsInput {
   readonly assignment: LabClusterAssignment;
   readonly demands: readonly LabResourceDemand[];
