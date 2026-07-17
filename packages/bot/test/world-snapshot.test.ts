@@ -44,8 +44,11 @@ describe("WorldSnapshot", () => {
     expect(forward.rooms[0]?.storedStructures.map((structure) => structure.id)).toEqual([
       "container-a",
       "extension-a",
+      "factory-i",
       "lab-h",
       "link-d",
+      "nuker-l",
+      "power-spawn-j",
       "spawn-b",
       "storage-e",
       "terminal-f",
@@ -92,10 +95,29 @@ describe("WorldSnapshot", () => {
       mineralCapacity: 3_000,
       mineralType: "UH",
     });
+    expect(forward.rooms[0]?.ownedFactories?.[0]).toMatchObject({
+      active: true,
+      cooldown: 12,
+      id: "factory-i",
+      level: 2,
+    });
+    expect(forward.rooms[0]?.ownedPowerSpawns?.[0]).toMatchObject({
+      active: true,
+      id: "power-spawn-j",
+    });
+    expect(forward.rooms[0]?.ownedObservers?.[0]).toMatchObject({
+      active: true,
+      id: "observer-k",
+    });
+    expect(forward.rooms[0]?.ownedNukers?.[0]).toMatchObject({
+      active: true,
+      cooldown: 45,
+      id: "nuker-l",
+    });
     expect(forward.rooms[0]?.hostileCreeps[0]?.boosts).toEqual([
       { bodyPart: "attack", compound: "UH", count: 2 },
     ]);
-    expect(forward.stats.entities.total).toBe(18);
+    expect(forward.stats.entities.total).toBe(21);
 
     const payload = {
       observation: forward.observation,
@@ -489,6 +511,56 @@ function makeOwnedRoom(
       pos: new LivePosition(22, 24, "W1N1"),
       store: makeStore({ energy: 1_200, UH: 500 }, 5_000, { energy: 2_000, H: 3_000, UH: 3_000 }),
       structureType: "lab",
+    },
+    {
+      cooldown: 12,
+      effects: [{ effect: 19, level: 2, ticksRemaining: 80 }],
+      hits: 1_000,
+      hitsMax: 1_000,
+      id: "factory-i",
+      isActive: () => true,
+      level: 2,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(18, 25, "W1N1"),
+      store: makeStore({ energy: 2_000, wire: 50 }, 50_000),
+      structureType: "factory",
+    },
+    {
+      effects: [],
+      hits: 5_000,
+      hitsMax: 5_000,
+      id: "power-spawn-j",
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(19, 25, "W1N1"),
+      store: makeStore({ energy: 5_000, power: 100 }, 5_100),
+      structureType: "powerSpawn",
+    },
+    {
+      effects: [{ effect: 7, level: 1, ticksRemaining: 30 }],
+      hits: 500,
+      hitsMax: 500,
+      id: "observer-k",
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(17, 25, "W1N1"),
+      structureType: "observer",
+    },
+    {
+      cooldown: 45,
+      effects: [],
+      hits: 1_000,
+      hitsMax: 1_000,
+      id: "nuker-l",
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: new LivePosition(16, 25, "W1N1"),
+      store: makeStore({ energy: 300_000, G: 5_000 }, 305_000),
+      structureType: "nuker",
     },
   ];
   const hostileBody = Array.from({ length: hostileBodySize }, (_, index) => ({

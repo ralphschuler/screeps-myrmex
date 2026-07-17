@@ -262,6 +262,12 @@ codes for telemetry.
   entries;
 - projects owned spawn activity, including `isActive()` and the full nullable `spawning` record, so
   arbitration never reads `Game.spawns`;
+- projects factories, power spawns, observers, and nukers as sorted detached current-tick facts,
+  including activation, stores, cooldowns, levels, and bounded effects where applicable; mature
+  planners never retain live structure objects;
+- normalizes source-controlled commodity and mature-structure constants through a bounded pure
+  catalog before deriving reset-stable capability fingerprints; malformed mechanics suppress the
+  affected capability and authorize no command;
 - never makes strategic decisions; and
 - never mutates persistent state.
 

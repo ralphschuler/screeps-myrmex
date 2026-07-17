@@ -142,6 +142,54 @@ export interface OwnedLabSnapshot {
   readonly store: StoreSnapshot;
 }
 
+export interface StructureEffectSnapshot {
+  readonly effect: number;
+  readonly level: number | null;
+  readonly ticksRemaining: number;
+}
+
+export interface OwnedFactorySnapshot {
+  readonly active: boolean;
+  readonly cooldown: number;
+  readonly effects: readonly StructureEffectSnapshot[];
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly level: number | null;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
+export interface OwnedPowerSpawnSnapshot {
+  readonly active: boolean;
+  readonly effects: readonly StructureEffectSnapshot[];
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
+export interface OwnedObserverSnapshot {
+  readonly active: boolean;
+  readonly effects: readonly StructureEffectSnapshot[];
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+}
+
+export interface OwnedNukerSnapshot {
+  readonly active: boolean;
+  readonly cooldown: number;
+  readonly effects: readonly StructureEffectSnapshot[];
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot;
+}
+
 export interface StoredStructureSnapshot {
   readonly hits: number;
   readonly hitsMax: number;
@@ -286,9 +334,17 @@ export interface RoomSnapshot {
   readonly ownedExtractors?: readonly OwnedExtractorSnapshot[];
   readonly ownedExtensions: readonly OwnedExtensionSnapshot[];
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedFactories?: readonly OwnedFactorySnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
   readonly ownedLabs?: readonly OwnedLabSnapshot[];
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
   readonly ownedLinks?: readonly OwnedLinkSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedNukers?: readonly OwnedNukerSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedObservers?: readonly OwnedObserverSnapshot[];
+  /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
+  readonly ownedPowerSpawns?: readonly OwnedPowerSpawnSnapshot[];
   readonly ownedSpawns: readonly OwnedSpawnSnapshot[];
   /** Absent only for legacy fixtures; runtime observations always provide a sorted array. */
   readonly ownedStorages?: readonly OwnedStorageSnapshot[];
