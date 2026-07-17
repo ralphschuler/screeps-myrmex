@@ -162,6 +162,23 @@ export function projectLogisticsContracts(
     const cycleAmount = lostDelivery ? state.reservedAmount - deliveredAmount : state.cycleAmount;
     state = { ...state, cycle, cycleAmount, deliveredAmount, stage: nextStage, stageStartedAt };
     const reason = blocker(state, flow, source, sink, observed, input.tick);
+    if (
+      old !== undefined &&
+      !stageChanged &&
+      [
+        "planner-not-admitted",
+        "resource-mismatch",
+        "sink-full",
+        "sink-vanished",
+        "source-empty",
+        "source-vanished",
+      ].includes(reason)
+    ) {
+      const completed = reason === "source-empty" || reason === "sink-full";
+      retirements.push(
+        retirement(old, input.tick, `logistics-${reason}`, completed ? "completed" : "failed"),
+      );
+    }
     commitments.push({
       ...state,
       reason,

@@ -151,11 +151,18 @@ describe("logistics contract projection", () => {
       },
       "resource-mismatch",
     ],
-  ] as const)("suspends when %s", (_label, change, reason) => {
-    expect(projectLogisticsContracts(base(change)).commitments[0]).toMatchObject({
+  ] as const)("retires terminal acquire blocker when %s", (_label, change, reason) => {
+    const result = projectLogisticsContracts(
+      base({
+        ...change,
+        previous: projectLogisticsContracts(base()).commitments.map(durableState),
+      }),
+    );
+    expect(result.commitments[0]).toMatchObject({
       reason,
       request: null,
     });
+    expect(result.retirements).toHaveLength(1);
   });
 
   it("suspends full or vanished delivery targets without ghost cargo", () => {
@@ -176,6 +183,7 @@ describe("logistics contract projection", () => {
         }),
       );
       expect(result.commitments[0]?.request).toBeNull();
+      expect(result.retirements).toHaveLength(1);
     }
   });
 

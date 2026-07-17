@@ -50,6 +50,51 @@ export function observeLogisticsGraph(
   const endpoints: LogisticsContractEndpoint[] = [];
   for (const room of [...snapshot.rooms].sort((a, b) => a.name.localeCompare(b.name))) {
     if (room.controller?.ownership !== "owned") continue;
+    const hasDedicatedHauler = room.ownedCreeps.some(
+      ({ body }) => body.work.active === 0 && body.carry.active > 0 && body.move.active > 0,
+    );
+    if (hasDedicatedHauler) {
+      for (const resource of [...(room.droppedResources ?? [])].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      )) {
+        addEndpoint(nodes, endpoints, {
+          acquireAction: "pickup",
+          amount: resource.amount,
+          colonyId: room.name,
+          freeCapacity: 0,
+          id: `drop:${resource.id}:source:${resource.resourceType}`,
+          kind: "source",
+          mandatory: true,
+          observedAt: room.observedAt,
+          position: resource.pos,
+          resourceType: resource.resourceType,
+          targetId: resource.id,
+        });
+      }
+      for (const [kind, stores] of [
+        ["ruin", room.ruins ?? []],
+        ["tombstone", room.tombstones ?? []],
+      ] as const) {
+        for (const looseStore of [...stores].sort((a, b) => a.id.localeCompare(b.id))) {
+          for (const resource of looseStore.store.resources) {
+            if (resource.amount <= 0) continue;
+            addEndpoint(nodes, endpoints, {
+              acquireAction: "withdraw",
+              amount: resource.amount,
+              colonyId: room.name,
+              freeCapacity: 0,
+              id: `${kind}:${looseStore.id}:source:${resource.resourceType}`,
+              kind: "source",
+              mandatory: true,
+              observedAt: room.observedAt,
+              position: looseStore.pos,
+              resourceType: resource.resourceType,
+              targetId: looseStore.id,
+            });
+          }
+        }
+      }
+    }
     for (const structure of [...room.storedStructures].sort((a, b) => a.id.localeCompare(b.id))) {
       if (structure.ownership === "foreign" || !LOGISTICS_STORE_TYPES.has(structure.structureType))
         continue;

@@ -27,6 +27,7 @@ describe("ReporterStatus", () => {
       "phase2.colony",
       "phase2.layout",
       "phase2.mining",
+      "phase2.logistics",
     ]);
   });
 

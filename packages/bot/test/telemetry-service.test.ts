@@ -71,7 +71,7 @@ describe("TelemetryService", () => {
       ...input,
       base: { ...input.base, tick: 101 },
     });
-    expect(next.owner).toMatchObject({ schemaVersion: 3, history: [{ tick: 101 }] });
+    expect(next.owner).toMatchObject({ schemaVersion: 4, history: [{ tick: 101 }] });
     expect(next.owner.droppedHistory).toBe(1);
   });
 
@@ -453,7 +453,7 @@ describe("TelemetryService", () => {
       },
       { ...fixture.input, staticMining: { cpuUsed: 2, observations } },
     );
-    expect(first.owner).toMatchObject({ schemaVersion: 3, staticMining: { schemaVersion: 1 } });
+    expect(first.owner).toMatchObject({ schemaVersion: 4, staticMining: { schemaVersion: 1 } });
     expect(first.telemetry.staticMining).toMatchObject({
       observedSources: 64,
       droppedSources: 2,
