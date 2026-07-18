@@ -53,7 +53,9 @@ underlying work.
 
 ## Rolling window and bounds
 
-Telemetry owner schema V5 contains an owner-local Phase 2 schema-V1 ring. Each fixed sample retains
+Telemetry owner schema V5 now contains owner-local Phase 2 schema V2. It preserves the V1 fixed
+sample ring and adds the bounded RCL timing state documented in
+[`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md). Each fixed sample retains
 only tick, harvested energy, logistics/link delivery, settled industry output, authority failures,
 reserve violations, and measured domain milli-CPU.
 
@@ -64,7 +66,8 @@ reserve violations, and measured domain milli-CPU.
 - accounting identities: exactly 3;
 - dynamic Phase 2 labels: zero;
 - malformed state: discarded as observer history only;
-- byte pressure: old Phase 2 samples are evicted and counted before reporter health evidence.
+- byte pressure: old Phase 2 samples, RCL baselines, and completed timing aggregates are evicted and
+  counted before reporter health evidence.
 
 The measured CPU input currently includes mining, logistics, tower-maintenance, and spawn command
 receipts that expose CPU directly. It is a lower-bound domain measurement, not total tick CPU; the
@@ -90,8 +93,9 @@ npx vitest run packages/scenario-kit/test/phase2-telemetry-gate.test.ts
 npm run check
 ```
 
-The scenario proves the telemetry contract; issue #54 still owns full RCL2–RCL8 progression and
-steady-state soaks and must set pass/fail thresholds before running them.
+The scenario proves the direct-outcome telemetry contract. Issue #277 separately proves bounded
+reset-safe RCL transition duration. Issue #54 still owns full RCL2–RCL8 progression and steady-state
+soaks and must set pass/fail thresholds before running them.
 
 ## Research receipt
 
