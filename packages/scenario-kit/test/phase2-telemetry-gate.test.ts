@@ -126,6 +126,7 @@ function stateBeforeLast(): Phase2TelemetryState {
 function observation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
+    attrition: { colonies: [], assets: [], droppedObservations: 0 },
     controllerLevels: [],
     droppedControllerLevels: 0,
     controllers: 2,

@@ -47,7 +47,15 @@ import {
   type Phase2RclTransitionDuration,
   type Phase2TelemetryState,
   type Phase2TelemetryStateInput,
+  type Phase2TelemetryStateV2,
 } from "./phase2";
+import {
+  emptyPhase2AttritionState,
+  hasPhase2AttritionEvidence,
+  projectPhase2AttritionTelemetry,
+  type Phase2AttritionRow,
+  type Phase2AttritionState,
+} from "./phase2-attrition";
 
 type TickTelemetryBase = Omit<
   TickTelemetry,
@@ -200,17 +208,33 @@ function projectFittedPhase2Telemetry(
 ): TickTelemetry["phase2"] {
   const phase2Owner = (owner as Record<string, unknown>).phase2;
   const fitted = readPhase2State(phase2Owner);
-  const fittedRcl = fitted?.schemaVersion === 2 ? projectPhase2RclTelemetry(fitted) : undefined;
+  const fittedRcl =
+    fitted?.schemaVersion === 2 || fitted?.schemaVersion === 3
+      ? projectPhase2RclTelemetry(fitted)
+      : undefined;
   const fittedWindow =
-    fitted?.schemaVersion === 2 ? projectPhase2TelemetryWindow(fitted) : telemetry.window;
+    fitted?.schemaVersion === 2 || fitted?.schemaVersion === 3
+      ? projectPhase2TelemetryWindow(fitted)
+      : telemetry.window;
+  const projectedAttrition =
+    fitted?.schemaVersion === 3
+      ? projectPhase2AttritionTelemetry(fitted.attrition)
+      : telemetry.attrition;
+  const fittedAttrition =
+    projectedAttrition !== undefined && hasPhase2AttritionEvidence(projectedAttrition)
+      ? projectedAttrition
+      : undefined;
   const { rcl: _previousRcl, ...progression } = telemetry.progression;
+  const { attrition: _previousAttrition, ...telemetryWithoutAttrition } = telemetry;
   void _previousRcl;
+  void _previousAttrition;
   return deepFreeze({
-    ...telemetry,
+    ...telemetryWithoutAttrition,
     progression: {
       ...progression,
       ...(fittedRcl === undefined ? {} : { rcl: fittedRcl }),
     },
+    ...(fittedAttrition === undefined ? {} : { attrition: fittedAttrition }),
     window: fittedWindow,
   });
 }
@@ -378,19 +402,34 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
   const row = value as Record<string, unknown>;
   if (!Array.isArray(row.samples)) return null;
   if (row.schemaVersion === 1) return value as Phase2TelemetryStateInput;
-  if (row.schemaVersion !== 2) return null;
-  const invalidTiming = (): Phase2TelemetryState =>
-    ({
-      schemaVersion: 2,
-      droppedSamples: row.droppedSamples,
-      samples: row.samples,
-      rclTimingSchemaVersion: 0,
+  if (row.schemaVersion !== 2 && row.schemaVersion !== 3) return null;
+  const attrition = row.schemaVersion === 3 ? readAttritionField(row) : undefined;
+  const build = (timing: {
+    readonly rclTimingSchemaVersion: 1;
+    readonly interruptedRclTracks: number;
+    readonly droppedRclObservations: number;
+    readonly droppedRclTransitions: number;
+    readonly rclTracks: Phase2TelemetryState["rclTracks"];
+    readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
+  }): Phase2TelemetryState | Phase2TelemetryStateV2 => {
+    const common = {
+      droppedSamples: row.droppedSamples as number,
+      samples: row.samples as Phase2TelemetryState["samples"],
+      ...timing,
+    };
+    return row.schemaVersion === 3
+      ? { schemaVersion: 3, ...common, attrition: attrition ?? emptyPhase2AttritionState() }
+      : { schemaVersion: 2, ...common };
+  };
+  const invalidTiming = () =>
+    build({
+      rclTimingSchemaVersion: 0 as unknown as 1,
       interruptedRclTracks: 0,
       droppedRclObservations: 0,
       droppedRclTransitions: 0,
       rclTracks: [],
       rclTransitionDurations: [],
-    }) as unknown as Phase2TelemetryState;
+    });
   try {
     if (!Array.isArray(row.rcl) || row.rcl.length !== 6) return invalidTiming();
     const [timingSchema, interrupted, droppedObservations, droppedTransitions, tracks, entries] =
@@ -420,19 +459,54 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
       seen.add(index);
       durations[index] = duration as unknown as Phase2RclTransitionDuration;
     }
-    return {
-      schemaVersion: 2,
-      droppedSamples: row.droppedSamples as number,
-      samples: row.samples as unknown as Phase2TelemetryState["samples"],
+    return build({
       rclTimingSchemaVersion: timingSchema as 1,
       interruptedRclTracks: interrupted as number,
       droppedRclObservations: droppedObservations as number,
       droppedRclTransitions: droppedTransitions as number,
       rclTracks: tracks as Phase2TelemetryState["rclTracks"],
       rclTransitionDurations: durations,
-    };
+    });
   } catch {
     return invalidTiming();
+  }
+}
+
+function readAttritionField(row: Record<string, unknown>): Phase2AttritionState {
+  try {
+    return readCompactAttritionState(row.attrition);
+  } catch {
+    return emptyPhase2AttritionState();
+  }
+}
+
+function readCompactAttritionState(value: unknown): Phase2AttritionState {
+  try {
+    if (!Array.isArray(value) || value.length !== 8) return emptyPhase2AttritionState();
+    const [
+      schemaVersion,
+      lastTick,
+      interruptedAssets,
+      droppedObservations,
+      droppedRows,
+      colonies,
+      tracks,
+      rows,
+    ] = value as unknown[];
+    if (!Array.isArray(colonies) || !Array.isArray(tracks) || !Array.isArray(rows))
+      return emptyPhase2AttritionState();
+    return {
+      schemaVersion: schemaVersion as 1,
+      lastTick: lastTick as number | null,
+      interruptedAssets: interruptedAssets as number,
+      droppedObservations: droppedObservations as number,
+      droppedRows: droppedRows as number,
+      colonies: colonies as string[],
+      tracks: tracks as Phase2AttritionState["tracks"],
+      rows: rows as unknown as [Phase2AttritionRow, Phase2AttritionRow],
+    };
+  } catch {
+    return emptyPhase2AttritionState();
   }
 }
 
@@ -536,7 +610,7 @@ interface MutableTelemetryOwner {
     flows: LogisticsTelemetryState["flows"][number][];
   };
   phase2: {
-    schemaVersion: 2;
+    schemaVersion: 3;
     droppedSamples: number;
     samples: Phase2TelemetryState["samples"][number][];
     rcl: [
@@ -546,6 +620,16 @@ interface MutableTelemetryOwner {
       droppedTransitions: number,
       tracks: Phase2TelemetryState["rclTracks"][number][],
       durations: [destinationIndex: number, ...duration: Phase2RclTransitionDuration][],
+    ];
+    attrition?: [
+      schemaVersion: 1,
+      lastTick: number | null,
+      interruptedAssets: number,
+      droppedObservations: number,
+      droppedRows: number,
+      colonies: string[],
+      tracks: Phase2AttritionState["tracks"][number][],
+      rows: [Phase2AttritionRow, Phase2AttritionRow],
     ];
   };
 }
@@ -593,6 +677,29 @@ function fitOwnerToByteBudget(
     );
     if (!sameTickReplay) owner.phase2.rcl[3] = saturatingAdd(owner.phase2.rcl[3], dropped);
     owner.phase2.rcl[5] = [];
+  }
+  const attrition = owner.phase2.attrition;
+  if (
+    attrition !== undefined &&
+    exceedsBudget() &&
+    (attrition[1] !== null || attrition[5].length > 0 || attrition[6].length > 0)
+  ) {
+    if (!sameTickReplay) attrition[2] = saturatingAdd(attrition[2], attrition[6].length);
+    attrition[1] = null;
+    attrition[5] = [];
+    attrition[6] = [];
+  }
+  if (
+    attrition !== undefined &&
+    exceedsBudget() &&
+    attrition[7].some((row) => row.some((value) => value > 0))
+  ) {
+    const droppedRows = attrition[7].filter((row) => row.some((value) => value > 0)).length;
+    if (!sameTickReplay) attrition[4] = saturatingAdd(attrition[4], droppedRows);
+    attrition[7] = [
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+    ];
   }
   const entries = generatedReporterEntries(owner.reporter.entries);
   while (exceedsBudget() && entries.length > 0) {
@@ -742,6 +849,18 @@ function safelyResolveReporterSections(value: unknown): {
   }
 }
 
+function shouldPersistPhase2Attrition(state: Phase2AttritionState): boolean {
+  return (
+    state.lastTick !== null ||
+    state.colonies.length > 0 ||
+    state.tracks.length > 0 ||
+    state.interruptedAssets > 0 ||
+    state.droppedObservations > 0 ||
+    state.droppedRows > 0 ||
+    state.rows.some((row) => row.some((value) => value > 0))
+  );
+}
+
 function writeOwner(
   owner: ParsedOwner,
   telemetry: Omit<TickTelemetry, "recoveryProgress" | "reporterTransitions">,
@@ -827,6 +946,23 @@ function writeOwner(
             duration[0] === 0 ? [] : [[index, ...duration]],
           ),
         ],
+        ...(shouldPersistPhase2Attrition(phase2.attrition)
+          ? {
+              attrition: [
+                phase2.attrition.schemaVersion,
+                phase2.attrition.lastTick,
+                phase2.attrition.interruptedAssets,
+                phase2.attrition.droppedObservations,
+                phase2.attrition.droppedRows,
+                [...phase2.attrition.colonies],
+                phase2.attrition.tracks.map((track) => [...track]),
+                phase2.attrition.rows.map((row) => [...row]) as unknown as [
+                  Phase2AttritionRow,
+                  Phase2AttritionRow,
+                ],
+              ] as NonNullable<MutableTelemetryOwner["phase2"]["attrition"]>,
+            }
+          : {}),
       },
     };
     const generatedEntries = generatedReporterEntries(result.reporter.entries).length;

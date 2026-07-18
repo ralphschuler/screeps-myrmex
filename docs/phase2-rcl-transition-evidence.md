@@ -45,8 +45,9 @@ latest value, removing input-order dependence.
 
 ## Persistence and bounds
 
-Phase 2 owner-local schema V2 preserves the existing bounded sample ring and adds RCL timing schema
-V1:
+Phase 2 owner-local schema V3 preserves the bounded sample ring and the V2 RCL timing schema V1,
+then adds the independent attrition state documented in
+[`phase2-attrition-evidence.md`](phase2-attrition-evidence.md):
 
 - active RCL tracks: at most 64;
 - normalized duration aggregates: exactly 7; the owner stores only nonempty rows with fixed
@@ -54,12 +55,12 @@ V1:
 - interrupted-track, dropped-observation, and dropped-transition counters: saturating safe integers;
 - whole telemetry-owner ceiling: 8,192 UTF-8 bytes.
 
-V1 Phase 2 state upgrades on the next successful telemetry commit without losing valid samples.
-Malformed timing state becomes empty timing evidence while valid sample history remains. Under byte
-pressure, telemetry drops ordinary hash/sample history, then active timing baselines, then completed
-duration aggregates; it never changes gameplay state. Returned timing and the telemetry hash are
-reprojected from the fitted owner in the same tick, so evicted evidence is never reported as
-retained.
+V1/V2 Phase 2 state upgrades on the next successful telemetry commit without losing valid samples or
+RCL timing. Malformed timing state becomes empty timing evidence while valid sample history remains.
+Under byte pressure, telemetry drops ordinary hash/sample history, then active timing baselines,
+then completed duration aggregates; it never changes gameplay state. Returned timing and the
+telemetry hash are reprojected from the fitted owner in the same tick, so evicted evidence is never
+reported as retained.
 
 ## Deterministic evidence
 
@@ -70,7 +71,7 @@ retained.
 - one exact RCL2→RCL3 duration;
 - same-tick completion replay without duplication;
 - interrupted visibility and a 65-room runtime batch producing no transition;
-- V1→V2 baseline-only migration;
+- V1→V3 baseline-only migration while preserving the V2 timing contract;
 - compact owner encode/decode through a Memory reset with no duplicate duration;
 - a measured 1,575-byte complete telemetry owner under the 8,192-byte ceiling; and
 - architecture checks proving zero telemetry gameplay readers.

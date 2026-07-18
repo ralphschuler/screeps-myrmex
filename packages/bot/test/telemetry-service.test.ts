@@ -86,7 +86,7 @@ describe("TelemetryService", () => {
     expect(next.owner.droppedHistory).toBe(1);
   });
 
-  it("migrates a V4 owner to the bounded Phase 2 sample ring and RCL timing state", () => {
+  it("migrates a V4 owner to bounded Phase 2 samples, RCL timing, and attrition state", () => {
     const fixture = serviceFixture(100);
     const result = new TelemetryService().record(
       {
@@ -107,16 +107,17 @@ describe("TelemetryService", () => {
     expect(result.owner).toMatchObject({
       schemaVersion: 5,
       phase2: {
-        schemaVersion: 2,
+        schemaVersion: 3,
         droppedSamples: 0,
         samples: [{ tick: 100 }],
         rcl: [1, 0, 0, 0, [], []],
       },
     });
+    expect((result.owner.phase2 as { attrition?: unknown }).attrition).toBeUndefined();
     expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
   });
 
-  it("upgrades Phase 2 V1 samples to V2 timing state without losing history", () => {
+  it("upgrades Phase 2 V1 samples to V3 timing and attrition state without losing history", () => {
     const fixture = serviceFixture(100);
     const result = new TelemetryService().record(
       {
@@ -153,12 +154,137 @@ describe("TelemetryService", () => {
     expect(result.owner).toMatchObject({
       schemaVersion: 5,
       phase2: {
-        schemaVersion: 2,
+        schemaVersion: 3,
         samples: [{ tick: 99 }, { tick: 100 }],
         rcl: [1, 0, 0, 0, [], []],
       },
     });
+    expect((result.owner.phase2 as { attrition?: unknown }).attrition).toBeUndefined();
     expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
+  });
+
+  it("upgrades Phase 2 V2 timing state to V3 without losing RCL aggregates", () => {
+    const fixture = serviceFixture(100);
+    const result = new TelemetryService().record(
+      {
+        schemaVersion: 5,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: null,
+        },
+        staticMining: { schemaVersion: 1, sources: [] },
+        logistics: { schemaVersion: 1, flows: [] },
+        phase2: {
+          schemaVersion: 2,
+          droppedSamples: 0,
+          samples: [],
+          rcl: [1, 2, 3, 4, [], [[0, 1, 10, 10, 10, 10, 99]]],
+        },
+      },
+      fixture.input,
+    );
+
+    expect(result.owner.phase2).toMatchObject({
+      schemaVersion: 3,
+      rcl: [1, 2, 3, 4, [], [[0, 1, 10, 10, 10, 10, 99]]],
+    });
+    expect((result.owner.phase2 as { attrition?: unknown }).attrition).toBeUndefined();
+  });
+
+  it("isolates malformed compact attrition without discarding valid Phase 2 history", () => {
+    const fixture = serviceFixture(100);
+    const attrition = new Array(8) as unknown[];
+    Object.defineProperty(attrition, 0, {
+      get: () => {
+        throw new Error("malformed compact attrition");
+      },
+    });
+    const result = new TelemetryService().record(
+      {
+        schemaVersion: 5,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: null,
+        },
+        staticMining: { schemaVersion: 1, sources: [] },
+        logistics: { schemaVersion: 1, flows: [] },
+        phase2: {
+          schemaVersion: 3,
+          droppedSamples: 0,
+          samples: [
+            {
+              tick: 99,
+              harvestedEnergy: 1,
+              logisticsDelivered: 2,
+              linkDelivered: 3,
+              industryOutput: 4,
+              authorityFailures: 0,
+              reserveViolations: 0,
+              measuredCpuMilli: 5,
+            },
+          ],
+          rcl: [1, 0, 0, 0, [], []],
+          attrition,
+        },
+      },
+      fixture.input,
+    );
+
+    expect(result.owner.phase2).toMatchObject({
+      schemaVersion: 3,
+      samples: [{ tick: 99 }, { tick: 100 }],
+      rcl: [1, 0, 0, 0, [], []],
+    });
+    expect((result.owner.phase2 as { attrition?: unknown }).attrition).toBeUndefined();
+
+    const phase2 = {
+      schemaVersion: 3,
+      droppedSamples: 0,
+      samples: [
+        {
+          tick: 99,
+          harvestedEnergy: 1,
+          logisticsDelivered: 2,
+          linkDelivered: 3,
+          industryOutput: 4,
+          authorityFailures: 0,
+          reserveViolations: 0,
+          measuredCpuMilli: 5,
+        },
+      ],
+      rcl: [1, 0, 0, 0, [], []],
+    };
+    Object.defineProperty(phase2, "attrition", {
+      get: () => {
+        throw new Error("malformed compact attrition property");
+      },
+    });
+    const propertyResult = new TelemetryService().record(
+      {
+        schemaVersion: 5,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: null,
+        },
+        staticMining: { schemaVersion: 1, sources: [] },
+        logistics: { schemaVersion: 1, flows: [] },
+        phase2,
+      },
+      fixture.input,
+    );
+    expect(propertyResult.owner.phase2).toMatchObject({
+      samples: [{ tick: 99 }, { tick: 100 }],
+      rcl: [1, 0, 0, 0, [], []],
+    });
   });
 
   it("fits the maximum rolling window under the whole-owner byte ceiling", () => {
@@ -183,6 +309,70 @@ describe("TelemetryService", () => {
     expect(phase2.samples.length).toBeLessThanOrEqual(64);
     expect(phase2.droppedSamples).toBeGreaterThan(0);
     expect(ownerBytes(owner)).toBeLessThanOrEqual(8_192);
+  });
+
+  it("evicts one complete attrition baseline without fabricating structure loss", () => {
+    const outcome = runTick({ game: establishedRcl2World().game(100), memory: {} as Memory });
+    const telemetry = outcome.telemetry;
+    const room = outcome.snapshot.ownedRooms[0];
+    if (telemetry === null || room === undefined) throw new Error("expected complete fixture");
+    const roadCount = 128 - room.storedStructures.length;
+    const roads = Array.from({ length: roadCount }, (_, index) => ({
+      id: `road-${String(index)}`,
+      hits: 5_000,
+      hitsMax: 5_000,
+      pos: { roomName: room.name, x: index % 50, y: Math.floor(index / 50) },
+      ticksToDecay: 1_000,
+    }));
+    const observedRoom = { ...room, roads };
+    const snapshot = {
+      ...outcome.snapshot,
+      ownedRooms: [observedRoom],
+      rooms: [observedRoom],
+    };
+    const {
+      activity: _activity,
+      recoveryProgress: _recoveryProgress,
+      reporterTransitions: _reporterTransitions,
+      status: _status,
+      ...base
+    } = telemetry;
+    void _activity;
+    void _recoveryProgress;
+    void _reporterTransitions;
+    void _status;
+    const input = {
+      base: {
+        ...base,
+        telemetryPolicy: { ...base.telemetryPolicy, maximumHistoryBytes: 512 },
+      },
+      colony: outcome.colony,
+      contracts: outcome.contracts,
+      execution: outcome.execution,
+      growth: [],
+      maintenance: [],
+      movement: outcome.movement,
+      snapshot,
+      spawn: outcome.spawn,
+      reporterSignals: [],
+    } as const;
+    const service = new TelemetryService();
+    const first = service.record({}, input);
+    const replay = service.record(first.owner, input);
+    const attrition = (first.owner.phase2 as { attrition: unknown[] }).attrition;
+
+    expect(attrition.slice(0, 7)).toEqual([1, null, roadCount, 0, 0, [], []]);
+    expect(first.telemetry.phase2.attrition).toMatchObject({
+      rows: [
+        [0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0],
+      ],
+      interruptedAssets: roadCount,
+      droppedRows: 0,
+    });
+    expect(replay.owner.phase2).toEqual(first.owner.phase2);
+    expect(replay.telemetry.phase2.attrition).toEqual(first.telemetry.phase2.attrition);
+    expect(ownerBytes(first.owner)).toBeLessThanOrEqual(512);
   });
 
   it("drops completed RCL aggregates before reporter evidence under byte pressure", () => {
@@ -240,7 +430,7 @@ describe("TelemetryService", () => {
     expect(ownerBytes(result.owner)).toBeLessThanOrEqual(512);
   });
 
-  it("keeps fitted baseline eviction idempotent on same-tick replay", () => {
+  it("keeps fitted Phase 2 evidence idempotent on same-tick replay", () => {
     const outcome = runTick({ game: establishedRcl2World().game(100), memory: {} as Memory });
     const telemetry = outcome.telemetry;
     if (telemetry === null) throw new Error("expected telemetry");
@@ -274,7 +464,7 @@ describe("TelemetryService", () => {
     const first = service.record({}, input);
     const replay = service.record(first.owner, input);
 
-    expect((first.owner.phase2 as { rcl: unknown[] }).rcl[1]).toBe(1);
+    expect(ownerBytes(first.owner)).toBeLessThanOrEqual(512);
     expect(replay.owner.phase2).toEqual(first.owner.phase2);
     expect(replay.telemetry.phase2).toEqual(first.telemetry.phase2);
     expect(replay.telemetry.status.hash).toBe(first.telemetry.status.hash);

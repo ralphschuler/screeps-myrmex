@@ -132,8 +132,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md). Issue #277 adds reset-safe
   adjacent RCL transition durations with bounded opaque baselines and fixed RCL2–RCL8 aggregates;
   checked evidence is in [`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md).
-  Broader attrition, recipe-input, cooldown-window, and soak-threshold accounting remains in issue
-  #53.
+  Issue #279 adds bounded adjacent-snapshot road/container net attrition with opaque baselines,
+  fixed rows, and fail-closed gap/cardinality/byte behavior; checked evidence is in
+  [`phase2-attrition-evidence.md`](phase2-attrition-evidence.md). Exact recipe-input accounting,
+  cooldown-utilization windows, and soak thresholds remain in issue #53.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

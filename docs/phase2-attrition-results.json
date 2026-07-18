@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "deterministic": {
+    "resetAndReorderEquivalent": true,
+    "sameTickReplayEquivalent": true
+  },
+  "outcomes": [
+    {
+      "assetType": "road",
+      "assetTicks": 1,
+      "capacityHitTicks": 5000,
+      "hitsLost": 3100,
+      "hitsRestored": 0,
+      "structuresLost": 1,
+      "structuresAdded": 1
+    },
+    {
+      "assetType": "container",
+      "assetTicks": 1,
+      "capacityHitTicks": 250000,
+      "hitsLost": 0,
+      "hitsRestored": 5000,
+      "structuresLost": 0,
+      "structuresAdded": 0
+    }
+  ],
+  "safety": {
+    "gapPreservedRows": true,
+    "interruptedAssets": 3,
+    "droppedObservations": 0,
+    "overCapDroppedObservations": 130,
+    "overCapReportedLoss": false,
+    "persistedRoomNames": 0,
+    "causalLabels": 0
+  },
+  "migration": {
+    "fromSchemaVersion": 2,
+    "toSchemaVersion": 3,
+    "samplesPreserved": true,
+    "attritionOmittedWhileEmpty": true
+  },
+  "persistence": {
+    "ownerSchemaVersion": 3,
+    "attritionSchemaVersion": 1,
+    "resetRoadRow": [1, 5000, 100, 0, 0, 0],
+    "resetContainerRow": [1, 250000, 0, 5000, 0, 0],
+    "statusHashMatches": true,
+    "persistedRoomNames": 0,
+    "causalLabels": 0,
+    "ownerBytes": 1338
+  },
+  "bounds": {
+    "assetTypes": 2,
+    "maximumAssets": 128,
+    "maximumColonies": 64,
+    "telemetryOwnerBytes": 8192
+  }
+}

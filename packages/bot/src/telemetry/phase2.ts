@@ -7,9 +7,18 @@ import { opaqueId } from "../security";
 import type { SpawnRuntimeResult } from "../spawn";
 import type { WorldSnapshot } from "../world/snapshot";
 import type { LogisticsTelemetry } from "./logistics";
+import {
+  emptyPhase2AttritionState,
+  hasPhase2AttritionEvidence,
+  observePhase2Attrition,
+  reducePhase2Attrition,
+  type Phase2AttritionObservation,
+  type Phase2AttritionState,
+  type Phase2AttritionTelemetry,
+} from "./phase2-attrition";
 import type { StaticMiningTelemetry } from "./static-mining";
 
-export const PHASE2_TELEMETRY_SCHEMA_VERSION = 2 as const;
+export const PHASE2_TELEMETRY_SCHEMA_VERSION = 3 as const;
 export const MAX_PHASE2_TELEMETRY_SAMPLES = 64 as const;
 export const MAX_PHASE2_CONTROLLER_TRACKERS = 64 as const;
 export const PHASE2_RCL_TIMING_SCHEMA_VERSION = 1 as const;
@@ -60,6 +69,8 @@ export interface Phase2ControllerObservation {
 
 export interface Phase2TelemetryObservation {
   readonly tick: number;
+  /** Complete bounded road/container facts used only for adjacent-snapshot net attrition. */
+  readonly attrition: Phase2AttritionObservation;
   /** Bounded opaque owned-controller identities used only for continuous transition timing. */
   readonly controllerLevels: readonly Phase2ControllerObservation[];
   /** Whole timing batch is invalid when positive; value counts all omitted controller facts. */
@@ -187,8 +198,8 @@ export interface Phase2TelemetryStateV1 {
   readonly samples: readonly Phase2TelemetrySample[];
 }
 
-export interface Phase2TelemetryState {
-  readonly schemaVersion: typeof PHASE2_TELEMETRY_SCHEMA_VERSION;
+export interface Phase2TelemetryStateV2 {
+  readonly schemaVersion: 2;
   readonly droppedSamples: number;
   readonly samples: readonly Phase2TelemetrySample[];
   readonly rclTimingSchemaVersion: typeof PHASE2_RCL_TIMING_SCHEMA_VERSION;
@@ -199,7 +210,21 @@ export interface Phase2TelemetryState {
   readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
 }
 
-export type Phase2TelemetryStateInput = Phase2TelemetryState | Phase2TelemetryStateV1;
+export interface Phase2TelemetryState {
+  readonly schemaVersion: typeof PHASE2_TELEMETRY_SCHEMA_VERSION;
+  readonly droppedSamples: number;
+  readonly samples: readonly Phase2TelemetrySample[];
+  readonly rclTimingSchemaVersion: typeof PHASE2_RCL_TIMING_SCHEMA_VERSION;
+  readonly interruptedRclTracks: number;
+  readonly droppedRclObservations: number;
+  readonly droppedRclTransitions: number;
+  readonly rclTracks: readonly Phase2RclTrack[];
+  readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
+  readonly attrition: Phase2AttritionState;
+}
+
+export type Phase2TelemetryStateInput =
+  Phase2TelemetryState | Phase2TelemetryStateV2 | Phase2TelemetryStateV1;
 
 /** One row aligned with PHASE2_AUTHORITY_IDS; tuple fields keep the tick summary byte-bounded. */
 export type Phase2AuthorityTelemetry = readonly [
@@ -290,6 +315,8 @@ export interface Phase2Telemetry {
   };
   readonly authorities: readonly Phase2AuthorityTelemetry[];
   readonly identities: readonly Phase2FlowIdentityTelemetry[];
+  /** Omitted while only a baseline exists and no attrition/loss counter has evidence. */
+  readonly attrition?: Phase2AttritionTelemetry;
   readonly window: Phase2TelemetryWindow;
   readonly droppedInputs: number;
 }
@@ -348,6 +375,7 @@ export function observePhase2Telemetry(input: {
     input.spawn.execution.reduce((sum, result) => sum + Math.max(0, result.cpuUsed), 0);
   return normalizeObservation({
     tick: input.tick,
+    attrition: observePhase2Attrition(input.snapshot),
     controllerLevels: rooms.slice(0, MAX_PHASE2_CONTROLLER_TRACKERS).map((room) => ({
       colonyRef: opaqueId("colony", room.name),
       level: room.controller.level,
@@ -475,6 +503,7 @@ export function observePhase2Telemetry(input: {
 export function emptyPhase2TelemetryObservation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
+    attrition: { colonies: [], assets: [], droppedObservations: 0 },
     controllerLevels: [],
     droppedControllerLevels: 0,
     controllers: 0,
@@ -599,11 +628,18 @@ export function reducePhase2Telemetry(input: {
     observation.droppedControllerLevels,
     sameTickReplay,
   );
+  const attrition = reducePhase2Attrition({
+    tick: observation.tick,
+    observation: observation.attrition,
+    previous: previous.attrition,
+    sameTickReplay,
+  });
   const state: Phase2TelemetryState = {
     schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
     droppedSamples,
     samples,
     ...rcl,
+    attrition: attrition.state,
   };
   const identities = flowIdentities(observation);
   const busy = Math.min(observation.activeSpawns, observation.busySpawns);
@@ -670,6 +706,7 @@ export function reducePhase2Telemetry(input: {
     },
     authorities,
     identities,
+    ...(hasPhase2AttritionEvidence(attrition.telemetry) ? { attrition: attrition.telemetry } : {}),
     window: rollingWindow(samples, droppedSamples),
     droppedInputs: observation.droppedInputs,
   };
@@ -845,13 +882,14 @@ function rollingWindow(
 function normalizeObservation(value: Phase2TelemetryObservation): Phase2TelemetryObservation {
   const result = { ...value } as Record<string, unknown>;
   for (const [key, entry] of Object.entries(result)) {
-    if (key === "controllerLevels") continue;
+    if (key === "controllerLevels" || key === "attrition") continue;
     if (key === "minimumDowngradeTicks" && entry === null) continue;
     result[key] = nonnegativeSafeInteger(entry);
   }
   const normalized = result as unknown as Phase2TelemetryObservation;
   return {
     ...normalized,
+    attrition: value.attrition,
     controllerLevels: value.controllerLevels,
     rcl8Controllers: Math.min(normalized.controllers, normalized.rcl8Controllers),
     sustainingColonies: Math.min(normalized.controllers, normalized.sustainingColonies),
@@ -865,7 +903,10 @@ function normalizePrevious(
 ): Phase2TelemetryState {
   const empty = emptyPhase2State();
   const rawSamples: unknown = value?.samples;
-  if ((value?.schemaVersion !== 1 && value?.schemaVersion !== 2) || !Array.isArray(rawSamples))
+  if (
+    (value?.schemaVersion !== 1 && value?.schemaVersion !== 2 && value?.schemaVersion !== 3) ||
+    !Array.isArray(rawSamples)
+  )
     return empty;
   const droppedSamples = nonnegativeSafeInteger(value.droppedSamples);
   let samples: Phase2TelemetrySample[];
@@ -888,8 +929,16 @@ function normalizePrevious(
     droppedSamples: normalizedDroppedSamples,
     samples,
   } as const;
-  if (value.schemaVersion === 1) return { ...sampleState, ...emptyRclState() };
-  return { ...sampleState, ...normalizePersistedRclState(value) };
+  if (value.schemaVersion === 1)
+    return { ...sampleState, ...emptyRclState(), attrition: emptyPhase2AttritionState() };
+  return {
+    ...sampleState,
+    ...normalizePersistedRclState(value),
+    attrition:
+      value.schemaVersion === PHASE2_TELEMETRY_SCHEMA_VERSION
+        ? value.attrition
+        : emptyPhase2AttritionState(),
+  };
 }
 
 function normalizeSample(sample: unknown): Phase2TelemetrySample {
@@ -914,6 +963,7 @@ function emptyPhase2State(): Phase2TelemetryState {
     droppedSamples: 0,
     samples: [],
     ...emptyRclState(),
+    attrition: emptyPhase2AttritionState(),
   };
 }
 
@@ -942,7 +992,9 @@ function emptyRclTransitionDurations(): Phase2RclTransitionDuration[] {
   return PHASE2_RCL_DESTINATIONS.map(() => [0, 0, null, null, null, null]);
 }
 
-function normalizePersistedRclState(value: Phase2TelemetryState): RclState {
+function normalizePersistedRclState(
+  value: Phase2TelemetryState | Phase2TelemetryStateV2,
+): RclState {
   try {
     const timingSchema: unknown = (value as unknown as Record<string, unknown>)
       .rclTimingSchemaVersion;
@@ -1081,7 +1133,8 @@ function advanceRclTransitions(
     seen.add(controller.colonyRef);
     const track = prior.get(controller.colonyRef);
     if (track === undefined) {
-      if (controller.level < 8) tracks.push([controller.colonyRef, controller.level, tick, tick]);
+      if (!sameTickReplay && controller.level < 8)
+        tracks.push([controller.colonyRef, controller.level, tick, tick]);
       continue;
     }
     const [, previousLevel, enteredAtTick, lastObservedTick] = track;
