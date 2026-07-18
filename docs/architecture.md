@@ -70,7 +70,9 @@ planned tower; issue #286 permits one empty obsolete extension only after curren
 an exact completed committed replacement are observed. Issue #288 lets the same policy persist one
 bounded stocked-extension evacuation, while `LogisticsPlanner` alone routes its exact energy to the
 replacement and suppresses refill competition. Removal still requires fresh delivered/empty
-observation and no active evacuation flow. `StructureRemovalArbiter` alone authorizes removal and
+observation and no active evacuation flow. Issue #290 permits one empty, unselected source-adjacent
+container only while a different exact committed container remains the reachable semantic service
+for the same source. `StructureRemovalArbiter` alone authorizes removal and
 `StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
@@ -1418,8 +1420,20 @@ during acquisition, and keeps the empty source suppressed through delivery. Exis
 and lease agents issue the only withdraw/transfer actions. Removal requires an empty target,
 observed replacement gain, no active flow, and unexpired terms. Threat, reserve/RCL/layout drift,
 malformed Store evidence, missing prerequisites, timeout, or CPU pressure authorizes no destruction.
-Other structure stock evacuation, defensive migration, general multi-step migration, and creep
-dismantling remain issue #99 and fail closed.
+
+Issue #290 adds one container-to-container convergence step without changing the selected source
+service. `ConstructionPlanner` may classify only an empty, unshared, unselected container adjacent
+to exactly one visible source when a different current `exact` semantic container remains selected
+for that source. The complete source-service projection already proves bounded reachability; the
+target is walkable before and after removal. The existing removal arbiter keeps its 128-input
+fail-closed and one-command ceilings, while the executor rechecks owned-room control, hostile
+absence, exact target/position/empty Store, and exact active same-room replacement. No persistent
+state or mining-contract revision is added; next observation proves disappearance and static mining
+retains its issuer and work position.
+
+Other structure stock evacuation, selected/stocked or general container migration, defensive
+migration, source-service switching, general multi-step migration, and creep dismantling remain
+issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -1980,6 +1994,9 @@ Required architecture assertions include:
 - a stocked obsolete extension persists at most one bounded layout-owned evacuation, uses the sole
   funded logistics/lease path, suppresses ordinary target refill, and cannot authorize removal
   before fresh delivered/empty evidence and flow retirement;
+- redundant source-container removal requires a different exact committed service for the same
+  source, an empty unshared target, unchanged static-mining identity/work position, current safety,
+  and the existing one-command ceiling;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

@@ -6,8 +6,10 @@ layout-to-construction authority chain. Issue
 removal path. Issue [#286](https://github.com/ralphschuler/screeps-myrmex/issues/286) adds one empty
 extension-only replacement-first path. Issue
 [#288](https://github.com/ralphschuler/screeps-myrmex/issues/288) adds one stocked-extension
-energy-evacuation continuation; parent issue #99 still owns other structure migration, general stock
-evacuation, and dismantling.
+energy-evacuation continuation. Issue
+[#290](https://github.com/ralphschuler/screeps-myrmex/issues/290) adds one empty redundant
+source-container removal while preserving the exact selected service; parent issue #99 still owns
+other structure migration, general stock evacuation, and dismantling.
 
 ## Runtime order
 
@@ -17,21 +19,25 @@ evacuation, and dismantling.
    pure projection restores committed geometry only for compatible external extensions, allowing the
    ordinary diff/site chain to spend spare extension allowance without changing current layout
    usability. `ConstructionPlanner` may then project the temporary-road case, one active empty
-   external extension after exact current replacement evidence, or one compact stocked-extension
-   evacuation commitment.
+   external extension after exact current replacement evidence, one compact stocked-extension
+   evacuation commitment, or one empty unselected source container with a different exact selected
+   service for the same source.
 4. On the following tick, runtime composition validates that commitment from fresh observation,
    requests one `optional-growth` reservation, and injects one exact source/replacement projection
    into `LogisticsPlanner`. Both ordinary refill sinks are suppressed during acquisition; the empty
    source remains suppressed through delivery. Existing V3 haul contracts and lease agents perform
    only the funded withdraw/transfer path.
 5. `StructureRemovalArbiter` requires one exact current planner authorization and accepts at most
-   one deterministic road or extension removal after proving current global/room site headroom. A
-   stocked target additionally requires fresh empty-source, delivered-replacement, unexpired, and
-   retired-flow evidence; the following observation re-enters ordinary site arbitration.
+   one deterministic road, container, or extension removal after proving current global/room site
+   headroom. A stocked extension additionally requires fresh empty-source, delivered-replacement,
+   unexpired, and retired-flow evidence; the following observation re-enters ordinary site
+   arbitration.
 6. `layout.execute` alone resolves live rooms and targets. `ConstructionSiteExecutor` calls
    `Room.createConstructionSite`; `StructureDestroyExecutor` calls `Structure.destroy` after fresh
    ownership, threat, commitment, ID, type, room, and position checks. Extension removal also
-   rechecks the target's empty owned Store and exact owned replacement in the room.
+   rechecks the target's empty owned Store and exact owned replacement in the room. Container
+   removal rechecks the target's empty Store and exact active same-room semantic-service
+   replacement; room control supplies destruction authority because containers are neutral.
 7. `layout.reconcile` converts site results to bounded fingerprinted receipts and stages `layouts`.
 8. `state.reconcile` atomically commits layouts with the other staged owners. Removal adds no
    persistent state; only the following observation proves that the target disappeared.
@@ -50,8 +56,8 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - two accepted globally and one per room per tick;
 - 64 inspected proposals and ten active sites per room;
 - 32 receipts per room;
-- at most 128 road/extension-removal candidates and authorizations; over-cap batches fail before
-  traversal;
+- at most 128 road/container/extension-removal candidates and authorizations; over-cap batches fail
+  before traversal;
 - one accepted removal globally per tick;
 - at most one compact extension evacuation per room across 64 records;
 - at most 64 evacuation edges and 128 nodes within existing logistics limits;
@@ -70,9 +76,12 @@ one empty obsolete target; stocked/shared targets remain; executor replacement/S
 closed; the next observation exposes only committed capacity and the final desired site. The stocked
 continuation proves one exact persisted amount, reset/reorder identity, obsolete-target refill
 suppression, externally funded acquire/deliver terms, active-flow removal blocking, observed
-replacement gain, and final one-command removal. Existing mandatory runtime-tail and mature-build
-tests remain green. `npm run check` supplies repository-wide format, lint, type, test,
-documentation, bundle, and package evidence.
+replacement gain, and final one-command removal. The container continuation proves one exact
+selected source service survives removal of one empty unshared adjacent container, static-mining
+identity/work position remain unchanged, reordered/reset input is byte-identical, unsafe or stocked
+variants fail closed, and next observation emits no repeated removal. Existing mandatory
+runtime-tail and mature-build tests remain green. `npm run check` supplies repository-wide format,
+lint, type, test, documentation, bundle, and package evidence.
 
 ## Mechanics sources
 
@@ -85,6 +94,10 @@ documentation, bundle, and package evidence.
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results.
 - Official [`StructureExtension`](https://docs.screeps.com/api/#StructureExtension) defines spawn
   energy storage, the 3,000 build-energy cost, and RCL extension counts/capacities.
+- Official [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) defines the
+  walkable 2,000-capacity source-service structure and same-tile drop collection.
+- Official [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest) requires source adjacency
+  and drops harvest when no carry capacity is available.
 - Official [`Store`](https://docs.screeps.com/api/#Store) defines the current used/free-capacity
   checks.
 - Official [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw) and
@@ -98,3 +111,5 @@ documentation, bundle, and package evidence.
   structures originate as construction sites and complete through creep build work.
 - Screeps Wiki [Energy](https://wiki.screepspl.us/Energy/) supplies hauling and extension-filling
   terminology only.
+- Screeps Wiki [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/) supplies stationary
+  miner/source-container terminology only.

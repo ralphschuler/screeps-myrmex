@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
+import { planStaticMining } from "../src/economy";
 import { ConstructionPlanner } from "../src/maintenance";
+import type { WorldSnapshot } from "../src/world/snapshot";
 import {
   CONSTRUCTION_SITE_LIMITS,
   STRUCTURE_REMOVAL_LIMITS,
@@ -420,6 +422,177 @@ describe("composed layout runtime", () => {
     expect(following.proposals).toEqual([
       expect.objectContaining({ pos: pos(19, 20), structureType: "extension" }),
     ]);
+  });
+
+  it("removes one empty redundant source container without changing static mining", () => {
+    const source = {
+      energy: 3_000,
+      energyCapacity: 3_000,
+      id: "source-a",
+      pos: pos(10, 10),
+      ticksToRegeneration: null,
+    };
+    const container = (id: string, x: number, y: number, usedCapacity: number) => ({
+      hits: 250_000,
+      hitsMax: 250_000,
+      id,
+      ownerUsername: null,
+      ownership: "unowned" as const,
+      pos: pos(x, y),
+      store: {
+        capacity: 2_000,
+        freeCapacity: 2_000 - usedCapacity,
+        resources: usedCapacity === 0 ? [] : [{ amount: usedCapacity, resourceType: "energy" }],
+        usedCapacity,
+      },
+      structureType: "container",
+      ticksToDecay: 500,
+    });
+    const replacement = container("container-service", 11, 10, 500);
+    const redundant = container("container-redundant", 10, 11, 0);
+    const planned = planOwnedRoomLayout({
+      ...planningInput,
+      structures: [...structures, redundant, replacement],
+    });
+    if (planned.status !== "complete") throw new Error("expected source-service layout");
+    const sourceService = planned.placements.find(
+      (placement) => placement.service?.sourceId === source.id,
+    );
+    if (sourceService === undefined) throw new Error("source service missing");
+    const commitment = planned.commitment;
+    const room = {
+      constructionSites: [],
+      controller: { level: 3, ownership: "owned" as const },
+      energyAvailable: 800,
+      energyCapacityAvailable: 800,
+      hostileCreeps: [],
+      name: roomName,
+      observedAt: 100,
+      ownedCreeps: [],
+      ownedExtensions: [],
+      ownedSpawns: [],
+      ownedTowers: [],
+      roads: [],
+      sources: [source],
+      storedStructures: [redundant, replacement],
+      structures: [...structures, redundant, replacement],
+    } as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: policy,
+      roomName,
+      state: "developing",
+      visibility: "visible",
+    } as ColonyView;
+    expect(sourceService).toMatchObject({ adoption: "exact", pos: replacement.pos });
+    const layouts = new Map([[roomName, [sourceService]]]);
+    const staticBefore = planStaticMining({
+      layouts,
+      snapshot: {
+        observation: { age: 0, shard: "shard0", status: "observed", tick: 100 },
+        rooms: [room],
+      } as unknown as WorldSnapshot,
+      tick: 100,
+    });
+    const migration = new ConstructionPlanner().planMigration({
+      colony,
+      commitment,
+      globalOwnedSiteCount: 0,
+      observationFingerprint: "obs-container",
+      placements: [sourceService],
+      policyFingerprint: "policy-a",
+      room,
+    });
+    if (migration.authorization === null) throw new Error("expected migration authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [migration.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: migration.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveContainer = (value: ReturnType<typeof container>, destroyCommand = vi.fn(() => 0)) =>
+      ({
+        destroy: destroyCommand,
+        id: value.id,
+        isActive: () => true,
+        pos: value.pos,
+        room: liveRoom,
+        store: { getUsedCapacity: () => value.store.usedCapacity },
+        structureType: "container",
+      }) as unknown as Structure;
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) =>
+        id === redundant.id
+          ? liveContainer(redundant, destroy)
+          : id === replacement.id
+            ? liveContainer(replacement)
+            : null,
+    });
+
+    expect(staticBefore.projections).toEqual([
+      expect.objectContaining({
+        identity: "mining/W1N1/source-a",
+        workPosition: replacement.pos,
+      }),
+    ]);
+    expect(staticBefore.requests).toHaveLength(1);
+    expect(arbitration.intents).toEqual([
+      expect.objectContaining({
+        replacementId: replacement.id,
+        targetId: redundant.id,
+        targetStructureType: "container",
+      }),
+    ]);
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    const followingRoom = {
+      ...room,
+      observedAt: 101,
+      storedStructures: [replacement],
+      structures: [...structures, replacement],
+    };
+    const followingLayout = planOwnedRoomLayout({
+      ...planningInput,
+      priorCommitment: commitment,
+      structures: [...structures, replacement],
+      tick: 101,
+    });
+    if (followingLayout.status !== "complete") throw new Error("expected following layout");
+    const followingSourceService = followingLayout.placements.find(
+      (placement) => placement.service?.sourceId === source.id,
+    );
+    if (followingSourceService === undefined) throw new Error("following source service missing");
+    const followingMigration = new ConstructionPlanner().planMigration({
+      colony,
+      commitment,
+      globalOwnedSiteCount: 0,
+      observationFingerprint: "obs-container-cleared",
+      placements: [followingSourceService],
+      policyFingerprint: "policy-a",
+      room: followingRoom,
+    });
+    const staticAfter = planStaticMining({
+      layouts: new Map([[roomName, [followingSourceService]]]),
+      snapshot: {
+        observation: { age: 0, shard: "shard0", status: "observed", tick: 101 },
+        rooms: [followingRoom],
+      } as unknown as WorldSnapshot,
+      tick: 101,
+    });
+    expect(followingMigration.proposals).toEqual([]);
+    expect(staticAfter.requests).toHaveLength(1);
+    expect(staticAfter.projections[0]).toMatchObject({
+      identity: staticBefore.projections[0]?.identity,
+      workPosition: staticBefore.projections[0]?.workPosition,
+    });
   });
 
   it("removes one temporary road then makes the planned tower eligible next observation", () => {

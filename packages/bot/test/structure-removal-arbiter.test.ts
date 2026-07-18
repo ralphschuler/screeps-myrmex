@@ -18,6 +18,19 @@ const proposal = (id: string, roomName = "W1N1"): LayoutMigrationProposal => ({
   targetRequiresEmptyStore: false,
   targetStructureType: "road",
 });
+const containerProposal = (): LayoutMigrationProposal => ({
+  colonyId: "W1N1",
+  layoutFingerprint: "layout-a",
+  observationFingerprint: "observation-a",
+  policyFingerprint: "policy-a",
+  pos: { roomName: "W1N1", x: 10, y: 11 },
+  replacementId: "container-service",
+  replacementStructureType: "container",
+  stableId: "remove-container/container-redundant",
+  targetId: "container-redundant",
+  targetRequiresEmptyStore: true,
+  targetStructureType: "container",
+});
 const authorization = (value: LayoutMigrationProposal) => ({
   colonyId: value.colonyId,
   layoutFingerprint: value.layoutFingerprint,
@@ -65,6 +78,35 @@ describe("StructureRemovalArbiter", () => {
       "duplicate-target",
       "duplicate-target",
     ]);
+  });
+
+  it("accepts only matching container-to-container replacement terms", () => {
+    const candidate = containerProposal();
+    const accepted = arbitrateStructureRemovals({
+      authorizations: [authorization(candidate)],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: [candidate],
+    });
+    expect(accepted.intents).toEqual([
+      expect.objectContaining({
+        replacementId: "container-service",
+        replacementStructureType: "container",
+        targetId: "container-redundant",
+        targetStructureType: "container",
+      }),
+    ]);
+
+    const mismatched = {
+      ...candidate,
+      replacementStructureType: "extension",
+    } as unknown as LayoutMigrationProposal;
+    expect(
+      arbitrateStructureRemovals({
+        authorizations: [authorization(mismatched)],
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals: [mismatched],
+      }).rejected[0]?.reason,
+    ).toBe("invalid-proposal");
   });
 
   it("rejects a proposal without one exact current authorization", () => {

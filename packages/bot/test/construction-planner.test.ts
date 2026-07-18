@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
 import type { LayoutCommitment, LayoutPlacement } from "../src/layout";
-import type { RoomSnapshot, WorldSnapshot } from "../src/world/snapshot";
+import type { RoomSnapshot, StructureSnapshot, WorldSnapshot } from "../src/world/snapshot";
 
 describe("ConstructionPlanner", () => {
   it("prioritizes critical layout flows before ordinary damage deterministically", () => {
@@ -197,6 +197,120 @@ describe("ConstructionPlanner", () => {
       }).proposals,
     ).toEqual([]);
   });
+
+  it("preserves the exact source service while proposing one empty redundant container", () => {
+    const { placements, room } = sourceContainerMigrationFixture();
+    const first = planMigration({ placements, room });
+    const reordered = planMigration({
+      placements: [...placements].reverse(),
+      room: {
+        ...room,
+        sources: [...room.sources].reverse(),
+        storedStructures: [...room.storedStructures].reverse(),
+        structures: [...(room.structures ?? [])].reverse(),
+      },
+    });
+    const reset = planMigration(
+      JSON.parse(JSON.stringify({ placements, room })) as Pick<
+        Parameters<ConstructionPlanner["planMigration"]>[0],
+        "placements" | "room"
+      >,
+    );
+
+    expect(first.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "container-service",
+        replacementStructureType: "container",
+        targetId: "container-redundant",
+        targetRequiresEmptyStore: true,
+        targetStructureType: "container",
+      }),
+    ]);
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(first));
+    expect(JSON.stringify(reset)).toBe(JSON.stringify(first));
+  });
+
+  it("keeps unsafe, stocked, selected, shared, and replacementless containers", () => {
+    const fixture = sourceContainerMigrationFixture();
+    const target = fixture.room.storedStructures.find(({ id }) => id === "container-redundant");
+    if (target === undefined) throw new Error("target missing");
+    const replacement = fixture.room.storedStructures.find(({ id }) => id === "container-service");
+    if (replacement === undefined) throw new Error("replacement missing");
+    const cases: Partial<Parameters<ConstructionPlanner["planMigration"]>[0]>[] = [
+      {
+        room: {
+          ...fixture.room,
+          controller: { ...fixture.room.controller, ownership: "foreign" },
+        } as RoomSnapshot,
+      },
+      {
+        room: {
+          ...fixture.room,
+          storedStructures: [
+            sourceContainer(target.id, target.pos.x, target.pos.y, 1),
+            replacement,
+          ],
+        },
+      },
+      {
+        placements: [
+          {
+            ...fixture.placements[0],
+            pos: target.pos,
+          } as LayoutPlacement,
+        ],
+      },
+      {
+        room: {
+          ...fixture.room,
+          structures: [
+            ...(fixture.room.structures ?? []),
+            structure(
+              "rampart-shared",
+              "rampart",
+              5_000,
+              5_000,
+              target.pos.x,
+              target.pos.y,
+            ) as StructureSnapshot,
+          ],
+        },
+      },
+      {
+        room: {
+          ...fixture.room,
+          constructionSites: [
+            {
+              id: "site-shared",
+              ownerUsername: "me",
+              ownership: "owned",
+              pos: target.pos,
+              progress: 0,
+              progressTotal: 5_000,
+              structureType: "container",
+            },
+          ],
+        },
+      },
+      {
+        placements: fixture.placements.map((placement) => ({
+          ...placement,
+          adoption: "planned" as const,
+        })),
+      },
+      {
+        room: {
+          ...fixture.room,
+          storedStructures: [target],
+          structures: [target],
+        },
+      },
+    ];
+    for (const value of cases)
+      expect(
+        planMigration({ placements: fixture.placements, room: fixture.room, ...value }).proposals,
+      ).toEqual([]);
+  });
 });
 
 function plan(snapshot: WorldSnapshot, state: "protected" | "surplus" = "surplus") {
@@ -280,6 +394,52 @@ function structure(
     pos: { roomName: "W1N1", x, y },
     structureType,
     ticksToDecay,
+  };
+}
+function sourceContainer(id: string, x: number, y: number, usedCapacity: number) {
+  return {
+    ...structure(id, "container", 250_000, 250_000, x, y, 500),
+    ownerUsername: null,
+    ownership: "unowned" as const,
+    store: {
+      capacity: 2_000,
+      freeCapacity: 2_000 - usedCapacity,
+      resources: usedCapacity === 0 ? [] : [{ amount: usedCapacity, resourceType: "energy" }],
+      usedCapacity,
+    },
+  };
+}
+function sourceContainerMigrationFixture(): {
+  readonly placements: readonly LayoutPlacement[];
+  readonly room: RoomSnapshot;
+} {
+  const replacement = sourceContainer("container-service", 11, 10, 500);
+  const target = sourceContainer("container-redundant", 10, 11, 0);
+  return {
+    placements: [
+      {
+        adoption: "exact",
+        layer: "primary",
+        minimumRcl: 2,
+        pos: replacement.pos,
+        service: { kind: "source-container", sourceId: "source-a" },
+        structureType: "container",
+      },
+    ],
+    room: {
+      ...migrationRoom(),
+      sources: [
+        {
+          energy: 3_000,
+          energyCapacity: 3_000,
+          id: "source-a",
+          pos: { roomName: "W1N1", x: 10, y: 10 },
+          ticksToRegeneration: null,
+        },
+      ],
+      storedStructures: [target, replacement],
+      structures: [target, replacement],
+    },
   };
 }
 
