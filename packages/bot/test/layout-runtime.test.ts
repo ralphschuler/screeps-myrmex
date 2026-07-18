@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import { projectColonyRclPolicy } from "../src/colony";
+import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
+import { ConstructionPlanner } from "../src/maintenance";
 import {
   CONSTRUCTION_SITE_LIMITS,
+  STRUCTURE_REMOVAL_LIMITS,
   ConstructionSiteExecutor,
+  StructureDestroyExecutor,
   arbitrateConstructionSites,
+  arbitrateStructureRemovals,
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
   persistLayoutCommitment,
   planOwnedRoomLayout,
   reconcileConstructionSiteExecution,
+  type LayoutPlacement,
 } from "../src/layout";
 
 const roomName = "W1N1",
@@ -158,5 +163,94 @@ describe("composed layout runtime", () => {
         planOwnedRoomLayout({ ...planningInput, structures: [...structures].reverse() }),
       ),
     ).toBe(JSON.stringify(planOwnedRoomLayout(planningInput)));
+  });
+
+  it("removes one temporary road then makes the planned tower eligible next observation", () => {
+    const tower = {
+      adoption: "planned",
+      layer: "primary",
+      minimumRcl: 3,
+      pos: pos(15, 15),
+      structureType: "tower",
+    } as const satisfies LayoutPlacement;
+    const road = {
+      hits: 5_000,
+      hitsMax: 5_000,
+      id: "road-blocker",
+      ownerUsername: null,
+      ownership: "unowned" as const,
+      pos: pos(15, 15),
+      structureType: "road",
+      ticksToDecay: 1_000,
+    };
+    const commitment = { ...complete().commitment, fingerprint: "layout-migration-a" };
+    const room = {
+      constructionSites: [],
+      controller: { level: 3, ownership: "owned" as const },
+      hostileCreeps: [],
+      name: roomName,
+      observedAt: 100,
+      ownedCreeps: [],
+      ownedExtensions: [],
+      ownedSpawns: [],
+      ownedTowers: [],
+      roads: [road],
+      sources: [],
+      storedStructures: [],
+      structures: [road],
+    } as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: policy,
+      roomName,
+      state: "developing",
+      visibility: "visible",
+    } as ColonyView;
+    const planning = new ConstructionPlanner().planMigration({
+      colony,
+      commitment,
+      globalOwnedSiteCount: 0,
+      observationFingerprint: "obs-road",
+      placements: [tower],
+      policyFingerprint: "policy-a",
+      room,
+    });
+    if (planning.authorization === null) throw new Error("expected migration authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [planning.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: planning.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => ({ controller: { my: true }, name: roomName }) as unknown as Room,
+      resolveStructure: () =>
+        ({ ...road, destroy, room: { name: roomName } }) as unknown as Structure,
+    });
+
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+    const following = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-cleared",
+      placements: [tower],
+      policy,
+      policyEnabled: true,
+      policyFingerprint: "policy-a",
+      roomName,
+      roomStatus: "owned",
+      structures: [],
+    });
+    expect(following.proposals).toEqual([
+      expect.objectContaining({ structureType: "tower", pos: pos(15, 15) }),
+    ]);
   });
 });

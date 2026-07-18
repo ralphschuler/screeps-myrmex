@@ -48,6 +48,13 @@ to recovery while an incomplete room remains developing; telemetry never authori
 Recovery may rebuild committed owned sites through the existing layout, budget, contract, and
 executor chain, but it cannot reopen controller upgrading or unrelated optional growth.
 
+Layout convergence is destructive only under explicit narrow authority. During Phase 2, MYRMEX may
+remove one road that solely blocks an unlocked planned tower when current colony, threat,
+controller, reserve, workforce, layout, allowance, and construction-slot evidence is safe. The
+current site headroom is required, only fresh observation proves removal, and no stored, defensive,
+critical, foreign, or multiply occupied structure enters this path. General migration remains
+fail-closed.
+
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;

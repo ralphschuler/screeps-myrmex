@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { arbitrateStructureRemovals, STRUCTURE_REMOVAL_LIMITS } from "../src/layout";
 import { runTick } from "../src/runtime/tick";
 import { establishedRcl2World } from "./support/established-rcl2-fixture";
 import {
@@ -336,6 +337,77 @@ describe("Phase 2 telemetry reducer", () => {
       factoryOutput: 20,
       powerOutput: 3,
     });
+  });
+
+  it("counts temporary-road arbitration and exact destroy results in the fixed layout row", () => {
+    const outcome = runTick({
+      game: establishedRcl2World().game(100),
+      memory: {} as Memory,
+    });
+    const telemetry = outcome.telemetry;
+    if (telemetry === null || telemetry.logistics === undefined)
+      throw new Error("expected complete runtime telemetry fixture");
+    const logistics = telemetry.logistics;
+    const proposal = {
+      colonyId: "W1N1",
+      layoutFingerprint: "layout-a",
+      observationFingerprint: "observation-a",
+      policyFingerprint: "policy-a",
+      pos: { roomName: "W1N1", x: 10, y: 11 },
+      replacementStructureType: "tower" as const,
+      stableId: "remove-road/road-a",
+      targetId: "road-a",
+      targetStructureType: "road" as const,
+    };
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [
+        {
+          colonyId: proposal.colonyId,
+          layoutFingerprint: proposal.layoutFingerprint,
+          observationFingerprint: proposal.observationFingerprint,
+          policyFingerprint: proposal.policyFingerprint,
+          roomName: proposal.pos.roomName,
+        },
+      ],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: [proposal],
+    });
+    const intent = arbitration.intents[0];
+    if (intent === undefined) throw new Error("expected accepted removal intent");
+    const observe = (layout: typeof outcome.layout) =>
+      observePhase2Telemetry({
+        tick: 101,
+        snapshot: outcome.snapshot,
+        colony: outcome.colony,
+        spawn: outcome.spawn,
+        layout,
+        staticMining: telemetry.staticMining,
+        logistics,
+        maintenance: telemetry.maintenanceV2,
+        industry: telemetry.industry,
+      });
+    const baseline = observe(outcome.layout);
+    const migrated = observe({
+      ...outcome.layout,
+      migration: {
+        arbitration,
+        blockers: [],
+        execution: [
+          {
+            called: true,
+            code: "OK",
+            fault: null,
+            intent,
+          },
+        ],
+        proposals: [proposal],
+        scannedCandidates: 1,
+        truncatedCandidates: 0,
+      },
+    });
+
+    expect(migrated.layoutAccepted).toBe(baseline.layoutAccepted + 1);
+    expect(migrated.layoutExecuted).toBe(baseline.layoutExecuted + 1);
   });
 
   it("observes bounded active cooldown slots and rejects over-cap assets before traversal", () => {

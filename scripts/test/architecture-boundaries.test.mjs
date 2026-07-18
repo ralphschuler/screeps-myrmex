@@ -607,6 +607,29 @@ describe("runtime architecture boundaries", () => {
     }
   });
 
+  it("allows owned-structure destroy only in the exact StructureDestroyExecutor", () => {
+    expect(
+      findArchitectureViolations([
+        {
+          path: "layout/structure-destroy-executor.ts",
+          contents:
+            "export class StructureDestroyExecutor { run(target) { return target.destroy(); } }",
+        },
+      ]),
+    ).toEqual([]);
+
+    for (const path of [
+      "layout/structure-removal-arbiter.ts",
+      "layout/fake-executor.ts",
+      "execution/structure-destroy-executor.ts",
+    ]) {
+      expect(findArchitectureViolations([{ path, contents: "target.destroy();" }])).toContainEqual({
+        path,
+        rule: "structure-destroy-outside-structure-destroy-executor",
+      });
+    }
+  });
+
   it("allows factory and power processing only in the exact mature executor", () => {
     expect(
       findArchitectureViolations([

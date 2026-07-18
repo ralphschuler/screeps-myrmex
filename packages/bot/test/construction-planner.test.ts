@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
-import type { LayoutPlacement } from "../src/layout";
-import type { WorldSnapshot } from "../src/world/snapshot";
+import type { LayoutCommitment, LayoutPlacement } from "../src/layout";
+import type { RoomSnapshot, WorldSnapshot } from "../src/world/snapshot";
 
 describe("ConstructionPlanner", () => {
   it("prioritizes critical layout flows before ordinary damage deterministically", () => {
@@ -87,6 +88,114 @@ describe("ConstructionPlanner", () => {
     expect(original.proposals.some(({ targetId }) => targetId === "spawn-a")).toBe(true);
     expect(reset.proposals.some(({ targetId }) => targetId === "spawn-a")).toBe(false);
     expect(reset.proposals.some(({ structureClass }) => structureClass === "road")).toBe(false);
+  });
+
+  it("proposes only the road solely blocking an unlocked planned tower", () => {
+    const first = planMigration();
+    const reordered = planMigration({
+      placements: [...migrationPlacements()].reverse(),
+      room: {
+        ...migrationRoom(),
+        structures: [...(migrationRoom().structures ?? [])].reverse(),
+      },
+    });
+
+    expect(first.authorization).toMatchObject({
+      colonyId: "W1N1",
+      layoutFingerprint: "layout-migration-a",
+      observationFingerprint: "observation-a",
+      policyFingerprint: "policy-a",
+      roomName: "W1N1",
+    });
+    expect(first.proposals).toEqual([
+      expect.objectContaining({
+        replacementStructureType: "tower",
+        targetId: "road-blocker",
+        targetStructureType: "road",
+      }),
+    ]);
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(first));
+  });
+
+  it("fails temporary-road migration closed under colony, threat, reserve, and site pressure", () => {
+    const unsafeColonies: ColonyView[] = [
+      migrationColony({ state: "recovering" }),
+      migrationColony({ activeThreat: true }),
+      migrationColony({ controllerRisk: true }),
+      migrationColony({ legalWorkforce: false }),
+      migrationColony({ visibility: "unknown" }),
+      migrationColony({ reserveState: "unrestored" }),
+    ];
+    for (const colony of unsafeColonies) {
+      const result = planMigration({ colony });
+      expect(result.authorization, colony.state).toBeNull();
+      expect(result.proposals, colony.state).toEqual([]);
+    }
+    expect(
+      planMigration({
+        room: { ...migrationRoom(), hostileCreeps: [{}] } as unknown as RoomSnapshot,
+      }).proposals,
+    ).toEqual([]);
+    expect(planMigration({ globalOwnedSiteCount: 95 }).proposals).toEqual([]);
+    expect(
+      planMigration({
+        room: {
+          ...migrationRoom(),
+          constructionSites: Array.from({ length: 10 }, (_, index) => ({
+            id: `site-${String(index)}`,
+            ownerUsername: "me",
+            ownership: "owned" as const,
+            pos: { roomName: "W1N1", x: index, y: 1 },
+            progress: 0,
+            progressTotal: 100,
+            structureType: "road",
+          })),
+        },
+      }).proposals,
+    ).toEqual([]);
+  });
+
+  it("never proposes non-road, multiply occupied, site-conflicted, or over-allowance removal", () => {
+    const base = migrationRoom();
+    for (const structures of [
+      [structure("spawn-blocker", "spawn", 5_000, 5_000, 15, 15)],
+      [
+        structure("road-blocker", "road", 5_000, 5_000, 15, 15),
+        structure("rampart-blocker", "rampart", 5_000, 5_000, 15, 15),
+      ],
+    ])
+      expect(planMigration({ room: { ...base, structures } as RoomSnapshot }).proposals).toEqual(
+        [],
+      );
+    expect(
+      planMigration({
+        room: {
+          ...base,
+          constructionSites: [
+            {
+              id: "site-blocker",
+              ownerUsername: "me",
+              ownership: "owned",
+              pos: { roomName: "W1N1", x: 15, y: 15 },
+              progress: 0,
+              progressTotal: 100,
+              structureType: "road",
+            },
+          ],
+        },
+      }).proposals,
+    ).toEqual([]);
+    expect(
+      planMigration({
+        room: {
+          ...base,
+          structures: [
+            ...(base.structures ?? []),
+            structure("tower-existing", "tower", 3_000, 3_000, 1, 2),
+          ],
+        } as RoomSnapshot,
+      }).proposals,
+    ).toEqual([]);
   });
 });
 
@@ -190,4 +299,82 @@ function placement(structureType: string, x: number, y: number): LayoutPlacement
     pos: { roomName: "W1N1", x, y },
     structureType,
   };
+}
+
+const migrationCommitment: LayoutCommitment = {
+  algorithmRevision: "owned-room-layout-v2-source-services",
+  anchor: { roomName: "W1N1", x: 25, y: 25 },
+  blockers: [],
+  committedAt: 1,
+  fingerprint: "layout-migration-a",
+  transform: 0,
+};
+function migrationPlacements(): readonly LayoutPlacement[] {
+  return [placement("road", 14, 15), placement("tower", 15, 15)];
+}
+function migrationRoom(): RoomSnapshot {
+  return {
+    constructionSites: [],
+    controller: { level: 3, ownership: "owned" },
+    hostileCreeps: [],
+    name: "W1N1",
+    observedAt: 100,
+    ownedCreeps: [],
+    ownedExtensions: [],
+    ownedSpawns: [],
+    ownedTowers: [],
+    roads: [],
+    sources: [],
+    storedStructures: [],
+    structures: [
+      structure("road-blocker", "road", 5_000, 5_000, 15, 15),
+      ...Array.from({ length: 10 }, (_, index) =>
+        structure(`extension-${String(index)}`, "extension", 1_000, 1_000, index, 2),
+      ),
+    ],
+  } as unknown as RoomSnapshot;
+}
+function migrationColony(
+  overrides: Partial<ColonyView> & { readonly reserveState?: "restored" | "unrestored" } = {},
+): ColonyView {
+  const reserveState = overrides.reserveState ?? "restored";
+  const rclPolicy = projectColonyRclPolicy({
+    activeThreat: overrides.activeThreat ?? false,
+    controllerLevel: 3,
+    controllerRisk: overrides.controllerRisk ?? false,
+    cpuMode: "normal",
+    energyAvailable: reserveState === "restored" ? 800 : 0,
+    energyCapacityAvailable: 800,
+    protectedSpawnEnergy: 300,
+    rcl8Health: null,
+    state: overrides.state ?? "developing",
+    visibility: overrides.visibility ?? "visible",
+  });
+  const { reserveState: _reserveState, ...colonyOverrides } = overrides;
+  void _reserveState;
+  return {
+    activeThreat: false,
+    controllerRisk: false,
+    id: "W1N1",
+    legalWorkforce: true,
+    rclPolicy,
+    roomName: "W1N1",
+    state: "developing",
+    visibility: "visible",
+    ...colonyOverrides,
+  } as ColonyView;
+}
+function planMigration(
+  overrides: Partial<Parameters<ConstructionPlanner["planMigration"]>[0]> = {},
+) {
+  return new ConstructionPlanner().planMigration({
+    colony: migrationColony(),
+    commitment: migrationCommitment,
+    globalOwnedSiteCount: 0,
+    observationFingerprint: "observation-a",
+    placements: migrationPlacements(),
+    policyFingerprint: "policy-a",
+    room: migrationRoom(),
+    ...overrides,
+  });
 }

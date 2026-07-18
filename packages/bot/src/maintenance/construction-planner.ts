@@ -1,4 +1,14 @@
-import type { LayoutPlacement } from "../layout";
+import type { ColonyView } from "../colony";
+import {
+  CONSTRUCTION_SITE_LIMITS,
+  STRUCTURE_REMOVAL_LIMITS,
+  type LayoutCommitment,
+  type LayoutMigrationBlocker,
+  type LayoutMigrationBlockerRecord,
+  type LayoutMigrationPlanningResult,
+  type LayoutMigrationProposal,
+  type LayoutPlacement,
+} from "../layout";
 import type {
   PositionSnapshot,
   RoomSnapshot,
@@ -175,6 +185,183 @@ export class ConstructionPlanner {
       truncatedStructures,
     });
   }
+
+  /** Plans only the narrow no-store road-removal migration authorized by issue #284. */
+  planMigration(input: {
+    readonly colony: ColonyView;
+    readonly commitment: LayoutCommitment;
+    readonly globalOwnedSiteCount: number;
+    readonly observationFingerprint: string;
+    readonly placements: readonly LayoutPlacement[];
+    readonly policyFingerprint: string;
+    readonly room: RoomSnapshot;
+  }): LayoutMigrationPlanningResult {
+    const blockers: LayoutMigrationBlockerRecord[] = [];
+    const proposals: LayoutMigrationProposal[] = [];
+    const candidates = [...input.placements]
+      .filter(
+        (placement) =>
+          placement.adoption === "planned" &&
+          placement.layer === "primary" &&
+          placement.structureType === "tower",
+      )
+      .sort(
+        (a, b) =>
+          a.minimumRcl - b.minimumRcl ||
+          a.pos.y - b.pos.y ||
+          a.pos.x - b.pos.x ||
+          a.structureType.localeCompare(b.structureType),
+      );
+    const considered = candidates.slice(0, STRUCTURE_REMOVAL_LIMITS.inspectedCandidatesPerTick);
+    const truncatedCandidates = Math.max(0, candidates.length - considered.length);
+    if (truncatedCandidates > 0)
+      blockers.push({ reason: "candidate-cap", roomName: input.room.name, targetId: null });
+    const roadCandidates = considered.flatMap((placement) => {
+      const occupying = [...(input.room.structures ?? [])]
+        .filter(({ pos }) => samePosition(pos, placement.pos))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      const road = occupying[0];
+      return occupying.length === 1 &&
+        road?.structureType === "road" &&
+        road.ownership !== "foreign"
+        ? [{ placement, road }]
+        : [];
+    });
+    if (roadCandidates.length === 0)
+      return freeze({
+        authorization: null,
+        blockers,
+        proposals,
+        scannedCandidates: considered.length,
+        truncatedCandidates,
+      });
+
+    const globalBlocker = migrationGlobalBlocker(input);
+    if (globalBlocker !== null) {
+      pushMigrationBlocker(blockers, {
+        reason: globalBlocker,
+        roomName: input.room.name,
+        targetId: null,
+      });
+      return freeze({
+        authorization: null,
+        blockers,
+        proposals,
+        scannedCandidates: considered.length,
+        truncatedCandidates,
+      });
+    }
+    const authorization = {
+      colonyId: input.colony.id,
+      layoutFingerprint: input.commitment.fingerprint,
+      observationFingerprint: input.observationFingerprint,
+      policyFingerprint: input.policyFingerprint,
+      roomName: input.room.name,
+    } as const;
+    const towerCount = observedStructureCount(input.room, "tower");
+    const towerAllowance = input.colony.rclPolicy.unlocks?.towers ?? 0;
+    for (const { placement, road } of roadCandidates) {
+      const reason = migrationCandidateBlocker(input.room, placement, towerCount, towerAllowance);
+      if (reason !== null) {
+        pushMigrationBlocker(blockers, {
+          reason,
+          roomName: input.room.name,
+          targetId: road.id,
+        });
+        continue;
+      }
+      proposals.push({
+        colonyId: input.colony.id,
+        layoutFingerprint: input.commitment.fingerprint,
+        observationFingerprint: input.observationFingerprint,
+        policyFingerprint: input.policyFingerprint,
+        pos: placement.pos,
+        replacementStructureType: "tower",
+        stableId: [
+          "remove-road-v1",
+          input.colony.id,
+          input.commitment.fingerprint,
+          road.id,
+          placement.pos.y,
+          placement.pos.x,
+        ].join(":"),
+        targetId: road.id,
+        targetStructureType: "road",
+      });
+    }
+    return freeze({
+      authorization,
+      blockers,
+      proposals: proposals.sort((a, b) => a.stableId.localeCompare(b.stableId)),
+      scannedCandidates: considered.length,
+      truncatedCandidates,
+    });
+  }
+}
+
+function migrationGlobalBlocker(input: {
+  readonly colony: ColonyView;
+  readonly commitment: LayoutCommitment;
+  readonly globalOwnedSiteCount: number;
+  readonly room: RoomSnapshot;
+}): LayoutMigrationBlocker | null {
+  const { colony, commitment, globalOwnedSiteCount, room } = input;
+  if (
+    room.controller?.ownership !== "owned" ||
+    colony.visibility !== "visible" ||
+    !["developing", "mature"].includes(colony.state)
+  )
+    return "colony-unsafe";
+  if (colony.activeThreat !== false || room.hostileCreeps.length > 0) return "threat";
+  if (colony.controllerRisk !== false) return "controller-risk";
+  if (colony.legalWorkforce !== true) return "workforce-unavailable";
+  if (colony.rclPolicy.protectedSpawnReserve.state !== "restored") return "reserve-unrestored";
+  if (
+    !colony.rclPolicy.progression.authorized &&
+    colony.rclPolicy.progression.status !== "sustaining"
+  )
+    return "progression-blocked";
+  if (commitment.blockers.length > 0 || (commitment.serviceBlockers?.length ?? 0) > 0)
+    return "layout-blocked";
+  if (
+    globalOwnedSiteCount >=
+    CONSTRUCTION_SITE_LIMITS.officialHardCap - CONSTRUCTION_SITE_LIMITS.reservedGlobalHeadroom
+  )
+    return "global-site-headroom";
+  const activeSites = room.constructionSites.filter(
+    ({ ownership }) => ownership === "owned",
+  ).length;
+  if (activeSites >= CONSTRUCTION_SITE_LIMITS.activeSitesPerRoom) return "room-site-cap";
+  return null;
+}
+function migrationCandidateBlocker(
+  room: RoomSnapshot,
+  placement: LayoutPlacement,
+  towerCount: number,
+  towerAllowance: number,
+): LayoutMigrationBlocker | null {
+  if (room.constructionSites.some(({ pos }) => samePosition(pos, placement.pos)))
+    return "site-conflict";
+  if (placement.minimumRcl > (room.controller?.level ?? 0)) return "progression-blocked";
+  if (towerCount >= towerAllowance) return "allowance-full";
+  return null;
+}
+function observedStructureCount(room: RoomSnapshot, structureType: string): number {
+  const structures = new Set(
+    (room.structures ?? [])
+      .filter((structure) => structure.structureType === structureType)
+      .map(({ id }) => id),
+  );
+  for (const site of room.constructionSites)
+    if (site.ownership === "owned" && site.structureType === structureType)
+      structures.add(`site/${site.id}`);
+  return structures.size;
+}
+function pushMigrationBlocker(
+  blockers: LayoutMigrationBlockerRecord[],
+  blocker: LayoutMigrationBlockerRecord,
+): void {
+  if (blockers.length < 32) blockers.push(blocker);
 }
 
 function candidateFor(

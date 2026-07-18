@@ -479,6 +479,7 @@ export function observePhase2Telemetry(input: {
   const scheduled = input.spawn.execution.filter(({ status }) => status === "scheduled");
   const layout = input.layout;
   const arbitration = layout?.arbitration;
+  const migrationArbitration = layout?.migration.arbitration;
   const links = input.links;
   const linkRooms = links?.rooms ?? [];
   const linkExecution = links?.execution ?? [];
@@ -562,12 +563,22 @@ export function observePhase2Telemetry(input: {
     ),
     layoutComplete: layout?.planning.filter(({ status }) => status === "complete").length ?? 0,
     layoutDegraded: layout?.planning.filter(({ status }) => status === "degraded").length ?? 0,
-    layoutAccepted: arbitration?.accepted.length ?? 0,
-    layoutDeferred: arbitration?.deferred.length ?? 0,
-    layoutRejected: arbitration?.rejected.length ?? 0,
+    layoutAccepted:
+      (arbitration?.accepted.length ?? 0) + (migrationArbitration?.accepted.length ?? 0),
+    layoutDeferred:
+      (arbitration?.deferred.length ?? 0) +
+      (migrationArbitration?.deferred.length ?? 0) +
+      (migrationArbitration?.truncatedCandidates ?? 0),
+    layoutRejected:
+      (arbitration?.rejected.length ?? 0) + (migrationArbitration?.rejected.length ?? 0),
     layoutExecuted:
-      layout?.execution.filter(({ called, code }) => called && code === "OK").length ?? 0,
-    layoutFailed: layout?.execution.filter(({ code }) => code !== "OK").length ?? 0,
+      (layout?.execution.filter(({ called, code }) => called && code === "OK").length ?? 0) +
+      (layout?.migration.execution.filter(({ called, code }) => called && code === "OK").length ??
+        0),
+    layoutFailed:
+      (layout?.execution.filter(({ code }) => code !== "OK").length ?? 0) +
+      (layout?.migration.execution.filter(({ code }) => !["OK", "TARGET_ABSENT"].includes(code))
+        .length ?? 0),
     harvestedEnergy: input.staticMining.harvestedEnergy,
     wastedEnergy: input.staticMining.wastedEnergy,
     sourceUptimeTicks: input.staticMining.sourceUptimeTicks,
