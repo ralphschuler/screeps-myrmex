@@ -132,6 +132,7 @@ import {
   layoutCacheDependencies,
   parseLayoutsOwner,
   persistLayoutCommitment,
+  persistLayoutContainerMigration,
   persistLayoutExtensionEvacuation,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
@@ -170,6 +171,7 @@ import {
   renewLogisticsBudgets,
   type LogisticsRuntimeProjection,
 } from "../logistics/runtime";
+import { projectLayoutContainerMigrations } from "../logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../logistics/extension-evacuation";
 import type { LogisticsResourceDemandProjection } from "../logistics/resource-demands";
 import {
@@ -721,7 +723,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     ),
     industryPublicationSystem(input, industryDraft),
-    layoutPlanningSystem(input, layoutDraft),
+    layoutPlanningSystem(input, layoutDraft, () => logisticsRuntime),
     {
       descriptor: {
         id: "maintenance.routine-contracts",
@@ -1717,6 +1719,7 @@ function telemetryBase(
 function layoutPlanningSystem(
   input: CompositionInput,
   draft: LayoutTickDraft,
+  currentLogistics: () => LogisticsRuntimeProjection,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -1737,6 +1740,26 @@ function layoutPlanningSystem(
       }
       if (input.manager === null) return staged(() => undefined);
       const initialOwner = resolveLayoutsOwner(input.manager.ownerView("layouts"));
+      const activeLogisticsFlowIds = new Set(
+        context.contractPlanning.contracts.flatMap(({ execution, state }) =>
+          execution.version === 3 && (state === "assigned" || state === "active")
+            ? [execution.flowId]
+            : [],
+        ),
+      );
+      const activeLogisticsTargetIds = new Set(
+        context.contractPlanning.contracts.flatMap(({ execution, state, targetId }) =>
+          execution.version === 3 && (state === "assigned" || state === "active")
+            ? [targetId, execution.counterpartId]
+            : [],
+        ),
+      );
+      for (const commitment of currentLogistics().contracts.commitments) {
+        const request = commitment.request;
+        if (request?.execution?.version !== 3 || request.targetId === null) continue;
+        activeLogisticsTargetIds.add(request.targetId);
+        activeLogisticsTargetIds.add(request.execution.counterpartId);
+      }
       let owner = initialOwner;
       let changed = false;
       const planning: LayoutRuntimePlanRecord[] = [];
@@ -1861,30 +1884,38 @@ function layoutPlanningSystem(
                 current: placements,
                 roomName: room.name,
                 sourceCount: room.sources.length,
+                sources: room.sources.map(({ pos }) => pos),
                 unlocks: colony.rclPolicy.unlocks,
               });
         const migration = constructionPlanner.planMigration({
-          activeLogisticsFlowIds: new Set(
-            context.contractPlanning.contracts.flatMap(({ execution, state }) =>
-              execution.version === 3 && (state === "assigned" || state === "active")
-                ? [execution.flowId]
-                : [],
-            ),
-          ),
+          activeLogisticsFlowIds,
+          activeLogisticsTargetIds,
           colony,
           commitment,
+          containerMigration:
+            owner.records.find(({ roomName }) => roomName === room.name)?.containerMigration ??
+            null,
+          currentPlacements: placements,
           extensionEvacuation:
             owner.records.find(({ roomName }) => roomName === room.name)?.extensionEvacuation ??
             null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
+          logisticsEvidenceReady:
+            context.contractExecution.status === "ready" &&
+            context.contractPlanning.status === "ready",
           observationFingerprint,
           placements: convergencePlacements,
           policyFingerprint,
           room,
         });
         if (migration.authorization !== null) migrationAuthorizations.push(migration.authorization);
-        const migrationOwner = persistLayoutExtensionEvacuation(
+        let migrationOwner = persistLayoutContainerMigration(
           owner,
+          room.name,
+          migration.containerMigration,
+        );
+        migrationOwner = persistLayoutExtensionEvacuation(
+          migrationOwner,
           room.name,
           migration.extensionEvacuation,
         );
@@ -2138,15 +2169,21 @@ function colonyDirectorSystem(
       let logisticsCpuUsed = 0;
       let logisticsPlan = emptyLogisticsRuntimeProjection();
       const priorLedger = resolveColoniesOwner(owner).owner?.ledger ?? [];
+      const layoutRecords =
+        isFeatureEnabled(context.config, "phase2.layout") &&
+        isFeatureEnabled(context.config, "phase2.logistics") &&
+        context.contractExecution.status === "ready" &&
+        context.contractPlanning.status === "ready"
+          ? (parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null)?.records ?? [])
+          : [];
+      const layoutContainerMigrations = projectLayoutContainerMigrations({
+        records: layoutRecords,
+        snapshot: context.snapshot,
+        tick: context.tick,
+      });
       const layoutEvacuations = projectLayoutExtensionEvacuations({
         existingBudgets: priorLedger,
-        records:
-          isFeatureEnabled(context.config, "phase2.layout") &&
-          isFeatureEnabled(context.config, "phase2.logistics") &&
-          context.contractExecution.status === "ready" &&
-          context.contractPlanning.status === "ready"
-            ? (parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null)?.records ?? [])
-            : [],
+        records: layoutRecords,
         snapshot: context.snapshot,
         tick: context.tick,
       });
@@ -2208,6 +2245,7 @@ function colonyDirectorSystem(
           resourceDemands: mergeResourceDemands(
             labs.resourceDemands,
             mature.resourceDemands,
+            layoutContainerMigrations,
             layoutEvacuations.demands,
           ),
           snapshot: context.snapshot,

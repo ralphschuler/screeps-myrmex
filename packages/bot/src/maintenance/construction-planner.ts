@@ -1,11 +1,13 @@
 import type { ColonyView } from "../colony";
 import {
   CONSTRUCTION_SITE_LIMITS,
+  LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS,
   LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_EXTENSION_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
   layoutExtensionEvacuationFlowId,
   type LayoutCommitment,
+  type LayoutContainerMigration,
   type LayoutExtensionEvacuation,
   type LayoutMigrationBlocker,
   type LayoutMigrationBlockerRecord,
@@ -191,13 +193,17 @@ export class ConstructionPlanner {
     });
   }
 
-  /** Plans bounded road, redundant source-container, and extension convergence. */
+  /** Plans bounded road, container, and extension convergence. */
   planMigration(input: {
     readonly activeLogisticsFlowIds?: ReadonlySet<string>;
+    readonly activeLogisticsTargetIds?: ReadonlySet<string>;
     readonly colony: ColonyView;
     readonly commitment: LayoutCommitment;
+    readonly containerMigration?: LayoutContainerMigration | null;
+    readonly currentPlacements?: readonly LayoutPlacement[];
     readonly extensionEvacuation?: LayoutExtensionEvacuation | null;
     readonly globalOwnedSiteCount: number;
+    readonly logisticsEvidenceReady?: boolean;
     readonly observationFingerprint: string;
     readonly placements: readonly LayoutPlacement[];
     readonly policyFingerprint: string;
@@ -226,15 +232,40 @@ export class ConstructionPlanner {
       (placement) =>
         placement.service?.kind === "source-container" && placement.structureType === "container",
     );
-    const containerCandidates = input.room.storedStructures.filter(
+    const desiredGeneralContainers = input.placements.filter(
+      (placement) =>
+        placement.layer === "primary" &&
+        placement.service === undefined &&
+        placement.structureType === "container",
+    );
+    const sourceContainerCandidates = input.room.storedStructures.filter(
       (target) =>
         target.structureType === "container" &&
         !sourceServices.some(({ pos }) => samePosition(pos, target.pos)) &&
         input.room.sources.some(({ pos }) => inRangeOne(pos, target.pos)),
     );
+    const generalContainerCandidates = (input.currentPlacements ?? []).flatMap((placement) => {
+      if (
+        placement.adoption !== "compatible-external" ||
+        placement.service !== undefined ||
+        placement.structureType !== "container" ||
+        input.room.sources.some(({ pos }) => inRangeOne(pos, placement.pos))
+      )
+        return [];
+      return input.room.storedStructures.filter(
+        (target) => target.structureType === "container" && samePosition(target.pos, placement.pos),
+      );
+    });
     const candidates = [
       ...towerCandidates.map((placement) => ({ kind: "road" as const, placement })),
-      ...containerCandidates.map((target) => ({ kind: "container" as const, target })),
+      ...sourceContainerCandidates.map((target) => ({
+        kind: "source-container" as const,
+        target,
+      })),
+      ...generalContainerCandidates.map((target) => ({
+        kind: "general-container" as const,
+        target,
+      })),
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
     ].sort((left, right) => {
       const activeSourceId = input.extensionEvacuation?.sourceId;
@@ -242,6 +273,14 @@ export class ConstructionPlanner {
       const rightActive = right.kind === "extension" && right.target.id === activeSourceId;
       return Number(rightActive) - Number(leftActive) || compareMigrationCandidate(left, right);
     });
+    let containerMigration = input.containerMigration ?? null;
+    const priorContainerTargetId = containerMigration?.targetId ?? null;
+    if (
+      priorContainerTargetId !== null &&
+      (!input.room.storedStructures.some(({ id }) => id === priorContainerTargetId) ||
+        !generalContainerCandidates.some(({ id }) => id === priorContainerTargetId))
+    )
+      containerMigration = null;
     const considered = candidates.slice(0, STRUCTURE_REMOVAL_LIMITS.inspectedCandidatesPerTick);
     const truncatedCandidates = Math.max(0, candidates.length - considered.length);
     if (truncatedCandidates > 0)
@@ -250,6 +289,7 @@ export class ConstructionPlanner {
       return freeze({
         authorization: null,
         blockers,
+        containerMigration,
         extensionEvacuation: null,
         proposals,
         scannedCandidates: 0,
@@ -266,6 +306,7 @@ export class ConstructionPlanner {
       return freeze({
         authorization: null,
         blockers,
+        containerMigration,
         extensionEvacuation: input.extensionEvacuation ?? null,
         proposals,
         scannedCandidates: considered.length,
@@ -331,7 +372,7 @@ export class ConstructionPlanner {
         continue;
       }
 
-      if (candidate.kind === "container") {
+      if (candidate.kind === "source-container") {
         const evidence = sourceContainerMigrationEvidence(
           input.room,
           candidate.target,
@@ -366,6 +407,107 @@ export class ConstructionPlanner {
           targetStructureType: "container",
         });
         continue;
+      }
+
+      if (candidate.kind === "general-container") {
+        if (containerMigration !== null && containerMigration.targetId !== candidate.target.id)
+          continue;
+        const evidence = generalContainerMigrationEvidence(
+          input.room,
+          candidate.target,
+          sourceServices,
+          desiredGeneralContainers,
+          input.colony.rclPolicy.unlocks?.containers ?? 0,
+        );
+        if (evidence.replacement === null) {
+          if (containerMigration?.targetId === candidate.target.id) containerMigration = null;
+          pushMigrationBlocker(blockers, {
+            reason: evidence.reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          continue;
+        }
+        if (input.logisticsEvidenceReady !== true || input.activeLogisticsTargetIds === undefined) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-unavailable",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (containerMigration === null) {
+          containerMigration = {
+            expiresAt: input.room.observedAt + LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS,
+            replacementId: evidence.replacement.id,
+            startedAt: input.room.observedAt,
+            targetId: candidate.target.id,
+          };
+          pushMigrationBlocker(blockers, {
+            reason: "migration-pending",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (
+          containerMigration.expiresAt - containerMigration.startedAt !==
+            LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS ||
+          input.room.observedAt <= containerMigration.startedAt
+        ) {
+          pushMigrationBlocker(blockers, {
+            reason: "migration-pending",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (containerMigration.replacementId !== evidence.replacement.id) {
+          containerMigration = null;
+          pushMigrationBlocker(blockers, {
+            reason: "replacement-pending",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (input.room.observedAt >= containerMigration.expiresAt) {
+          containerMigration = null;
+          pushMigrationBlocker(blockers, {
+            reason: "migration-expired",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (input.activeLogisticsTargetIds.has(candidate.target.id)) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-active",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        proposals.push({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementId: evidence.replacement.id,
+          replacementStructureType: "container",
+          stableId: [
+            "remove-general-container-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            candidate.target.id,
+            evidence.replacement.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetStructureType: "container",
+        });
+        break;
       }
 
       const priorEvacuation = input.extensionEvacuation ?? null;
@@ -490,6 +632,7 @@ export class ConstructionPlanner {
     return freeze({
       authorization,
       blockers,
+      containerMigration,
       extensionEvacuation,
       proposals: proposals.sort((a, b) => a.stableId.localeCompare(b.stableId)),
       scannedCandidates: considered.length,
@@ -500,8 +643,75 @@ export class ConstructionPlanner {
 
 type MigrationCandidate =
   | { readonly kind: "road"; readonly placement: LayoutPlacement }
-  | { readonly kind: "container"; readonly target: StoredStructureSnapshot }
+  | { readonly kind: "source-container"; readonly target: StoredStructureSnapshot }
+  | { readonly kind: "general-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "extension"; readonly target: StructureSnapshot };
+
+function generalContainerMigrationEvidence(
+  room: RoomSnapshot,
+  target: StoredStructureSnapshot,
+  sourceServices: readonly LayoutPlacement[],
+  desiredGeneralContainers: readonly LayoutPlacement[],
+  allowance: number,
+):
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
+  | { readonly reason: null; readonly replacement: StoredStructureSnapshot } {
+  const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
+  if (
+    occupying.length !== 1 ||
+    occupying[0]?.id !== target.id ||
+    room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
+  )
+    return { reason: "target-shared", replacement: null };
+  if (
+    target.ownership === "foreign" ||
+    target.store.usedCapacity !== 0 ||
+    target.store.resources.some(({ amount }) => amount !== 0)
+  )
+    return {
+      reason: target.store.usedCapacity === 0 ? "target-unavailable" : "target-stocked",
+      replacement: null,
+    };
+  if (
+    room.sources.some(({ pos }) => inRangeOne(pos, target.pos)) ||
+    desiredGeneralContainers.some((placement) =>
+      room.sources.some(({ pos }) => inRangeOne(pos, placement.pos)),
+    )
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const committed = [...sourceServices, ...desiredGeneralContainers];
+  const uniquePositions = new Set(committed.map(({ pos }) => positionKey(pos)));
+  if (
+    allowance <= 0 ||
+    committed.length !== allowance ||
+    uniquePositions.size !== committed.length ||
+    committed.some(({ pos }) => samePosition(pos, target.pos)) ||
+    sourceServices.some(({ adoption }) => adoption !== "exact")
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const observedContainers = room.storedStructures.filter(
+    ({ ownership, structureType }) => structureType === "container" && ownership !== "foreign",
+  );
+  const exact = committed.flatMap((placement) => {
+    const matches = observedContainers.filter(({ pos }) => samePosition(pos, placement.pos));
+    return matches.length === 1 ? matches : [];
+  });
+  if (
+    observedContainers.length !== allowance ||
+    exact.length !== allowance - 1 ||
+    new Set(exact.map(({ id }) => id)).size !== exact.length
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const replacements = exact
+    .filter((structure) =>
+      desiredGeneralContainers.some(({ pos }) => samePosition(pos, structure.pos)),
+    )
+    .sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x || a.id.localeCompare(b.id));
+  const replacement = replacements[replacements.length - 1];
+  return replacement === undefined
+    ? { reason: "replacement-pending", replacement: null }
+    : { reason: null, replacement };
+}
 
 function sourceContainerMigrationEvidence(
   room: RoomSnapshot,
@@ -851,6 +1061,9 @@ function compareProposal(a: MaintenanceProposal, b: MaintenanceProposal): number
   return (
     b.priority - a.priority || a.targetId.localeCompare(b.targetId) || a.id.localeCompare(b.id)
   );
+}
+function positionKey(pos: PositionSnapshot): string {
+  return `${pos.roomName}:${String(pos.x)}:${String(pos.y)}`;
 }
 function samePosition(a: PositionSnapshot, b: PositionSnapshot): boolean {
   return a.roomName === b.roomName && a.x === b.x && a.y === b.y;

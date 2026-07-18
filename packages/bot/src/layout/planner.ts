@@ -124,15 +124,33 @@ export function projectLayoutConvergencePlacements(input: {
   readonly current: readonly LayoutPlacement[];
   readonly roomName: string;
   readonly sourceCount: number;
+  readonly sources: readonly PositionSnapshot[];
   readonly unlocks: ColonyRclUnlockAllowances;
 }): readonly LayoutPlacement[] {
   const ideal = reconstructCommittedLayout(input);
   if (ideal === null) return input.current;
+  const idealGeneralContainers = ideal.filter(
+    ({ layer, structureType }) => layer === "primary" && structureType === "container",
+  );
+  const containerConvergenceSafe =
+    input.sources.length === input.sourceCount &&
+    idealGeneralContainers.every((placement) =>
+      input.sources.every((source) => !inRangeOne(source, placement.pos)),
+    );
   return freeze(
     [
-      ...input.current.filter(({ structureType }) => structureType !== "extension"),
+      ...input.current.filter(
+        ({ adoption, service, structureType }) =>
+          structureType !== "extension" &&
+          (structureType !== "container" ||
+            service?.kind === "source-container" ||
+            (!containerConvergenceSafe && adoption !== "planned")),
+      ),
       ...ideal.filter(
-        ({ layer, structureType }) => layer === "primary" && structureType === "extension",
+        ({ layer, structureType }) =>
+          layer === "primary" &&
+          (structureType === "extension" ||
+            (structureType === "container" && containerConvergenceSafe)),
       ),
     ].sort(placementOrder),
   );
@@ -376,6 +394,12 @@ function walkable(i: LayoutPlanningInput, p: PositionSnapshot, b: Set<string>): 
 }
 function key(p: PositionSnapshot): string {
   return coordinateKey(p.x, p.y);
+}
+function inRangeOne(left: PositionSnapshot, right: PositionSnapshot): boolean {
+  return (
+    left.roomName === right.roomName &&
+    Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y)) <= 1
+  );
 }
 function coordinateKey(x: number, y: number): string {
   return `${String(x)},${String(y)}`;

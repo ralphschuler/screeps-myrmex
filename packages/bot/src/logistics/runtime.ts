@@ -13,6 +13,7 @@ import {
   type LogisticsEdge,
   type LogisticsNode,
   type LogisticsPlan,
+  type LogisticsProjection,
 } from "./planner";
 import type { LogisticsResourceDemandProjection } from "./resource-demands";
 
@@ -222,7 +223,7 @@ export function planLogisticsRuntime(input: {
     planningHorizon: LOGISTICS_PLANNING_HORIZON,
     tick: input.tick,
   });
-  const previous = previousCommitments(input, graph, plan);
+  const previous = previousCommitments(input, graph, plan, observed);
   const progress = flowProgress(input, previous);
   const contracts = projectLogisticsContracts({
     endpoints: graph.endpoints,
@@ -386,8 +387,11 @@ function previousCommitments(
   >,
   graph: LogisticsGraphObservation,
   plan: LogisticsPlan,
+  observed: LogisticsGraphObservation,
 ): readonly LogisticsCommitmentState[] {
   const projections = new Map(plan.projections.map((flow) => [flow.id, flow]));
+  const observedEdges = uniqueById(observed.edges);
+  const observedNodes = uniqueById(observed.nodes);
   const leases = new Map(
     input.execution.leases
       .filter(({ execution }) => execution.version === 3)
@@ -396,7 +400,9 @@ function previousCommitments(
   return input.planning.contracts.flatMap((contract): readonly LogisticsCommitmentState[] => {
     if (contract.execution.version !== 3 || !contract.issuer.startsWith("logistics/")) return [];
     const execution = contract.execution;
-    const flow = projections.get(execution.flowId);
+    const flow =
+      projections.get(execution.flowId) ??
+      observedFlowProjection(execution.flowId, observedEdges, observedNodes);
     if (flow === undefined || flow.colonyId === null || flow.resourceType === null) return [];
     const lease = leases.get(execution.flowId);
     const cargo =
@@ -433,6 +439,42 @@ function previousCommitments(
       },
     ];
   });
+}
+
+function observedFlowProjection(
+  flowId: string,
+  edges: ReadonlyMap<string, LogisticsEdge>,
+  nodes: ReadonlyMap<string, LogisticsNode>,
+): LogisticsProjection | undefined {
+  const edge = edges.get(flowId);
+  if (edge === undefined) return undefined;
+  const source = nodes.get(edge.sourceNodeId);
+  const sink = nodes.get(edge.sinkNodeId);
+  if (
+    source === undefined ||
+    sink === undefined ||
+    source.colonyId !== sink.colonyId ||
+    source.resourceType !== sink.resourceType
+  )
+    return undefined;
+  return {
+    admittedAmount: 0,
+    blocker: "vanished-node",
+    colonyId: source.colonyId,
+    id: edge.id,
+    resourceType: source.resourceType,
+    roundTripTicks: edge.roundTripTicks,
+    sinkNodeId: edge.sinkNodeId,
+    sourceNodeId: edge.sourceNodeId,
+  };
+}
+
+function uniqueById<Value extends { readonly id: string }>(
+  values: readonly Value[],
+): ReadonlyMap<string, Value> {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value.id, (counts.get(value.id) ?? 0) + 1);
+  return new Map(values.filter(({ id }) => counts.get(id) === 1).map((value) => [value.id, value]));
 }
 
 function mergeDemandGraph(
