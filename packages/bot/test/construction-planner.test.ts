@@ -14,6 +14,7 @@ describe("ConstructionPlanner", () => {
       "road-unused",
     ]);
     expect(reordered).toEqual(first);
+    expect(first.health).toEqual([{ colonyId: "W1N1", observedAt: 100, status: "healthy" }]);
     expect(first.proposals[0]).toMatchObject({
       layoutPlanned: true,
       reason: "critical-flow-decay",
@@ -64,6 +65,7 @@ describe("ConstructionPlanner", () => {
     expect(result.proposals).toHaveLength(1);
     expect(result.deferred).toHaveLength(1);
     expect(result.deferredCount).toBeGreaterThan(result.deferred.length);
+    expect(result.health).toEqual([{ colonyId: "W1N1", observedAt: 100, status: "failed" }]);
   });
 
   it("retires destroyed or satisfied targets by recomputing from current observation after reset", () => {

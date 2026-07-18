@@ -1103,17 +1103,26 @@ colony's reserve policy, RCL priorities, donor/receiver status, and which local 
 active.
 
 A legal recovery worker is one non-spawning owned creep with active `WORK`, `CARRY`, and `MOVE`.
-Mature evidence is an owned RCL8 controller, an owned spawn, a legal worker, no controller downgrade
-risk, and no active threat. Current unowned creeps become threat evidence only after configured
-self/ally/NAP exclusions are applied and active offensive parts meet policy. A bootstrapping or
-recovering colony with an owned spawn but no legal worker derives one deterministic
-restore-workforce objective; the ledger funds it only when its atomic minimum fits.
+Before RCL8, lifecycle evidence is an owned controller, an owned spawn, a legal worker, no
+controller downgrade risk, and no active threat. RCL8 maturity additionally requires one current
+canonical projection from the direct layout, mining, logistics, links, maintenance, resources, labs,
+and industry outputs. Missing, stale, failed, duplicate, malformed, or source-disabled domain
+evidence prevents maturity and returns an established mature room to recovery; an incomplete room
+remains developing. Runtime composition derives the fixed projection from immutable observation and
+domain outputs; it never reads telemetry or persists a copy. Current unowned creeps become threat
+evidence only after configured self/ally/NAP exclusions are applied and active offensive parts meet
+policy. A bootstrapping or recovering colony with an owned spawn but no legal worker derives one
+deterministic restore-workforce objective; the ledger funds it only when its atomic minimum fits.
 
 Threat clears into recovering for at least the transition tick. Recovery exits only after mandatory
 capability and the protected energy floor are restored. Optional growth is preempted during
-bootstrapping, threat, recovery, or brownout. A visible room with no owned controller becomes lost
-and releases active local reservations. A room absent from the current snapshot is unknown, never
-proof of loss, and authorizes no new live commitment.
+bootstrapping, threat, recovery, or brownout. The narrow RCL8 domain-recovery exception admits only
+owned construction-site build funding when current workforce, threat, controller, and protected
+reserve evidence is safe; controller upgrading and unrelated optional work remain blocked. Layout
+planning evaluates at most two colonies per tick through a deterministic rotating window so a later
+colony cannot be starved by stable room ordering. A visible room with no owned controller becomes
+lost and releases active local reservations. A room absent from the current snapshot is unknown,
+never proof of loss, and authorizes no new live commitment.
 
 A colony is a planning boundary, not a separate kernel. All colonies share the same global
 scheduler, caches, movement authority, diplomacy ledger, and executors.
@@ -1915,6 +1924,11 @@ The Phase 1 contract and workforce matrix is recorded in
 foundation only; the Phase 1 zero-creep recovery exit remains gated on the economy, agents,
 replacement, movement, and construction slices that consume it.
 
+The Phase 2 colony-health matrix is recorded in
+[`phase2-colony-health-evidence.md`](phase2-colony-health-evidence.md). It proves direct RCL8
+maturity, fixed domain-failure precedence, reserve and workforce recovery, reset/reorder
+equivalence, and one restored exit without persistent health state or duplicate domain commitments.
+
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,
 shared-energy arbitration, atomic colony-ledger settlement, and reset-safe recovery-order boundary.
@@ -1949,14 +1963,15 @@ roadmap gate remains the work selector.
 ### Phase 2 complete-colony policy projection
 
 `ColonyDirector` owns a versioned, read-only RCL2-RCL8 policy projection on each existing
-`ColonyView`. It is derived from immutable current-tick observation, CPU posture, and source policy;
-it is never persisted and emits no contracts, spawn demand, layouts, construction, domain work,
-telemetry, or commands. Unknown observation authorizes nothing. It publishes current-RCL unlock
-allowances, the complete spawn-pool target, protected reserve state, canonical capability postures,
-and one precedence-ordered progression decision. RCL8 remains blocked as
-`rcl8-health-evidence-unavailable`: [#44](https://github.com/ralphschuler/screeps-myrmex/issues/44)
-owns this seam, while [#225](https://github.com/ralphschuler/screeps-myrmex/issues/225) owns health
-reconciliation and final maturity. No authority or persistent schema is added.
+`ColonyView`. It is derived from immutable current-tick observation, CPU posture, source policy, and
+at RCL8 the fixed direct domain-health projection; it is never persisted and emits no contracts,
+spawn demand, layouts, construction, domain work, telemetry, or commands. Unknown observation
+authorizes nothing. It publishes current-RCL unlock allowances, the complete spawn-pool target,
+protected reserve state, canonical capability postures, and one precedence-ordered progression
+decision. [#44](https://github.com/ralphschuler/screeps-myrmex/issues/44) owns the policy seam;
+[#225](https://github.com/ralphschuler/screeps-myrmex/issues/225) makes `sustaining` reachable only
+with current bounded layout, mining, logistics, links, maintenance, resource, lab, and mature
+industry evidence. No new authority or persistent schema is added.
 
 Sources consulted: the official [control guide](https://docs.screeps.com/control.html) (last updated
 May 29, 2026), [`StructureController`](https://docs.screeps.com/api/#StructureController),

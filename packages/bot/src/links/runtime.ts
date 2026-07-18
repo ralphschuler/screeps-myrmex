@@ -1,4 +1,4 @@
-import type { BudgetRequest, LedgerEntry } from "../colony";
+import type { BudgetRequest, ColonyDomainHealthStatus, LedgerEntry } from "../colony";
 import type { StaticMiningPlan } from "../economy";
 import type { GrowthCandidate } from "../growth";
 import type { LogisticsRuntimeProjection } from "../logistics/runtime";
@@ -6,6 +6,7 @@ import type { RoomSnapshot } from "../world/snapshot";
 import { arbitrateLinkTransfers, classifyLinks, deriveLinkRoleAnchors } from "./arbiter";
 import type {
   ClassifiedLink,
+  LinkClassificationResult,
   LinkLayoutEvidence,
   LinkRoomRuntimeResult,
   LinkRuntimeResult,
@@ -37,24 +38,7 @@ export function planLinkRuntime(input: {
   for (const layout of [...input.layouts].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
     const room = input.rooms.find(({ name }) => name === layout.roomName);
     if (room?.controller?.ownership !== "owned") continue;
-    const layoutRevision = `${layout.evidence.algorithmRevision}:${layout.evidence.fingerprint}`;
-    const anchors = deriveLinkRoleAnchors(layout.evidence);
-    const classification = classifyLinks({
-      anchors,
-      layoutRevision,
-      links: (room.ownedLinks ?? []).map((link) => ({
-        active: link.active,
-        cooldown: link.cooldown,
-        energy:
-          link.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0,
-        freeCapacity: link.store.freeCapacity ?? 0,
-        id: link.id,
-        observedAt: room.observedAt,
-        owned: true,
-        pos: link.pos,
-      })),
-      tick: input.tick,
-    });
+    const { classification, layoutRevision } = classifyRoomLinks(layout.evidence, room, input.tick);
     const proposals = proposalsForRoom({
       ...input,
       links: classification.links,
@@ -74,6 +58,72 @@ export function planLinkRuntime(input: {
     });
   }
   return freeze({ execution: [], rooms, status: "planned" });
+}
+
+export function projectLinkDomainHealth(input: {
+  readonly layouts: readonly LinkRoomLayoutEvidence[];
+  readonly rooms: readonly RoomSnapshot[];
+  readonly tick: number;
+}): readonly ColonyDomainHealthStatus[] {
+  const statuses: ColonyDomainHealthStatus[] = [];
+  for (const room of [...input.rooms]
+    .filter(({ controller }) => controller?.ownership === "owned" && controller.level === 8)
+    .sort((left, right) => left.name.localeCompare(right.name))) {
+    const layouts = input.layouts.filter(({ roomName }) => roomName === room.name);
+    const layout = layouts[0];
+    const healthy =
+      layouts.length === 1 &&
+      layout !== undefined &&
+      linkClassificationHealthy(
+        classifyRoomLinks(layout.evidence, room, input.tick).classification,
+        layout.evidence.linkPlacements.length,
+      );
+    statuses.push({
+      colonyId: room.name,
+      domain: "links",
+      observedAt: room.observedAt,
+      status: healthy ? "healthy" : "failed",
+    });
+  }
+  return freeze(statuses);
+}
+
+function classifyRoomLinks(
+  evidence: LinkLayoutEvidence,
+  room: RoomSnapshot,
+  tick: number,
+): { readonly classification: LinkClassificationResult; readonly layoutRevision: string } {
+  const layoutRevision = `${evidence.algorithmRevision}:${evidence.fingerprint}`;
+  const anchors = deriveLinkRoleAnchors(evidence);
+  const classification = classifyLinks({
+    anchors,
+    layoutRevision,
+    links: (room.ownedLinks ?? []).map((link) => ({
+      active: link.active,
+      cooldown: link.cooldown,
+      energy:
+        link.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0,
+      freeCapacity: link.store.freeCapacity ?? 0,
+      id: link.id,
+      observedAt: room.observedAt,
+      owned: true,
+      pos: link.pos,
+    })),
+    tick,
+  });
+  return { classification, layoutRevision };
+}
+
+function linkClassificationHealthy(
+  classification: LinkClassificationResult,
+  expectedLinks: number,
+): boolean {
+  return (
+    expectedLinks > 0 &&
+    classification.blockers.length === 0 &&
+    classification.truncatedLinks === 0 &&
+    classification.links.length === expectedLinks
+  );
 }
 
 function proposalsForRoom(input: {

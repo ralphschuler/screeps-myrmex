@@ -84,9 +84,16 @@ export interface MaintenanceDeferral {
   readonly targetId: string;
 }
 
+export interface MaintenanceDomainHealth {
+  readonly colonyId: string;
+  readonly observedAt: number;
+  readonly status: "healthy" | "failed";
+}
+
 export interface ConstructionPlanningResult {
   readonly deferred: readonly MaintenanceDeferral[];
   readonly deferredCount: number;
+  readonly health: readonly MaintenanceDomainHealth[];
   readonly proposals: readonly MaintenanceProposal[];
   readonly scannedStructures: number;
   readonly truncatedStructures: number;
@@ -104,6 +111,7 @@ export class ConstructionPlanner {
     const policy = input.policy ?? DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY;
     const proposals: MaintenanceProposal[] = [];
     const deferred: MaintenanceDeferral[] = [];
+    const health: MaintenanceDomainHealth[] = [];
     let deferredCount = 0;
     let scannedStructures = 0;
     let truncatedStructures = 0;
@@ -111,10 +119,13 @@ export class ConstructionPlanner {
       if (room.controller?.ownership !== "owned") continue;
       const structures = repairableStructures(room);
       const considered = structures.slice(0, policy.maximumScannedStructuresPerRoom);
+      let roomHealth: MaintenanceDomainHealth["status"] = "healthy";
       scannedStructures += considered.length;
       truncatedStructures += Math.max(0, structures.length - considered.length);
-      if (structures.length > considered.length)
+      if (structures.length > considered.length) {
+        roomHealth = "failed";
         pushDeferral(deferred, policy, { reason: "scan-cap", targetId: room.name });
+      }
       const reserve =
         input.reserves.find(({ roomName }) => roomName === room.name)?.state ?? "protected";
       const layout = input.layouts.get(room.name) ?? [];
@@ -135,6 +146,7 @@ export class ConstructionPlanner {
           proposals.filter(({ roomName }) => roomName === room.name).length >=
           policy.maximumProposalsPerRoom
         ) {
+          roomHealth = "failed";
           deferredCount += 1;
           pushDeferral(deferred, policy, { reason: "proposal-cap", targetId: proposal.targetId });
           continue;
@@ -147,9 +159,21 @@ export class ConstructionPlanner {
         energy += proposal.energyCost;
         proposals.push(proposal);
       }
+      health.push({
+        colonyId: room.name,
+        observedAt: room.observedAt,
+        status: roomHealth,
+      });
     }
     deferredCount += truncatedStructures;
-    return freeze({ deferred, deferredCount, proposals, scannedStructures, truncatedStructures });
+    return freeze({
+      deferred,
+      deferredCount,
+      health,
+      proposals,
+      scannedStructures,
+      truncatedStructures,
+    });
   }
 }
 

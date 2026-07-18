@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   COLONY_CAPABILITY_DOMAINS,
+  COLONY_DOMAIN_HEALTH_DOMAINS,
   COLONY_RCL_POLICY_TABLE,
+  isInfrastructureRecoveryAuthorized,
+  projectColonyDomainHealth,
   projectColonyRclPolicy,
   type ColonyRclPolicyObservation,
 } from "../src/colony";
@@ -15,6 +18,7 @@ const BASE: ColonyRclPolicyObservation = Object.freeze({
   controllerRisk: false,
   cpuMode: "normal",
   protectedSpawnEnergy: 300,
+  rcl8Health: null,
 });
 describe("complete-colony RCL policy projection", () => {
   it("publishes the exact table and bounded canonical domain order", () => {
@@ -83,7 +87,35 @@ describe("complete-colony RCL policy projection", () => {
         reasonCode,
       });
   });
-  it("authorizes RCL2-RCL7 transitions but not RCL8 maturity", () => {
+  it("authorizes bounded infrastructure rebuilding without reopening optional progression", () => {
+    const rclPolicy = projectColonyRclPolicy({ ...BASE, controllerLevel: 8 });
+    const domainHealth = projectColonyDomainHealth({
+      colonyId: "W1N1",
+      statuses: [],
+      tick: 100,
+    });
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      domainHealth,
+      legalWorkforce: true,
+      rclPolicy,
+      state: "recovering" as const,
+      visibility: "visible" as const,
+    };
+
+    expect(rclPolicy.progression.authorized).toBe(false);
+    expect(isInfrastructureRecoveryAuthorized(colony)).toBe(true);
+    expect(isInfrastructureRecoveryAuthorized({ ...colony, activeThreat: true })).toBe(false);
+    expect(
+      isInfrastructureRecoveryAuthorized({
+        ...colony,
+        rclPolicy: projectColonyRclPolicy({ ...BASE, controllerLevel: 8, energyAvailable: 299 }),
+      }),
+    ).toBe(false);
+  });
+
+  it("authorizes RCL2-RCL7 transitions and sustains RCL8 only with direct health", () => {
     for (const policyRow of COLONY_RCL_POLICY_TABLE.slice(0, -1))
       expect(
         projectColonyRclPolicy({
@@ -97,5 +129,19 @@ describe("complete-colony RCL policy projection", () => {
       authorized: false,
       reasonCode: "rcl8-health-evidence-unavailable",
     });
+
+    const rcl8Health = projectColonyDomainHealth({
+      colonyId: "W1N1",
+      statuses: COLONY_DOMAIN_HEALTH_DOMAINS.map((domain) => ({
+        colonyId: "W1N1",
+        domain,
+        observedAt: 100,
+        status: "healthy" as const,
+      })),
+      tick: 100,
+    });
+    expect(projectColonyRclPolicy({ ...BASE, controllerLevel: 8, rcl8Health }).progression).toEqual(
+      { status: "sustaining", authorized: true, reasonCode: "sustaining" },
+    );
   });
 });

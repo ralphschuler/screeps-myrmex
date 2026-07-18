@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { BudgetLedger, ColonyDirector, recoverySpawnDemandBinding } from "../src/colony";
+import {
+  BudgetLedger,
+  COLONY_DOMAIN_HEALTH_DOMAINS,
+  ColonyDirector,
+  recoverySpawnDemandBinding,
+  type ColonyDomainHealthStatus,
+} from "../src/colony";
 import {
   MAX_COLONIES,
   MAX_BUDGET_REQUESTS_PER_TICK,
@@ -580,6 +586,7 @@ describe("ColonyDirector owner boundary", () => {
         owner: {},
         cpuMode: "normal",
         cpuBudget: CPU_BUDGET,
+        domainHealth: healthyDomainHealth(tick),
       });
 
     expect(
@@ -588,6 +595,7 @@ describe("ColonyDirector owner boundary", () => {
         bootstrapSnapshot(20, 300, "W1N1", {
           legalWorker: true,
           controllerLevel: 8,
+          energyCapacity: 12_900,
         }),
       ).colonies[0],
     ).toMatchObject({ state: "mature", reasonCode: "maturity-evidence-met" });
@@ -627,6 +635,131 @@ describe("ColonyDirector owner boundary", () => {
       activeThreat: true,
       reasonCode: "local-threat-observed",
     });
+  });
+
+  it("enters one bounded RCL8 recovery and exits after direct health is restored", () => {
+    const director = new ColonyDirector();
+    const config = buildRuntimeConfig();
+    const input = (
+      tick: number,
+      energy: number,
+      domainHealth: readonly ColonyDomainHealthStatus[],
+    ) => ({
+      tick,
+      snapshot: bootstrapSnapshot(tick, energy, "W1N1", {
+        controllerLevel: 8,
+        energyCapacity: 12_900,
+        legalWorker: true,
+      }),
+      config,
+      cpuMode: "normal" as const,
+      cpuBudget: CPU_BUDGET,
+      domainHealth,
+    });
+
+    const nominal = director.plan({ ...input(30, 300, healthyDomainHealth(30)), owner: {} });
+    expect(nominal.colonies[0]).toMatchObject({
+      state: "mature",
+      domainHealth: { status: "healthy", blocker: null },
+      rclPolicy: { progression: { reasonCode: "sustaining", status: "sustaining" } },
+    });
+    if (nominal.replacementOwner === null) throw new Error("nominal owner was not persisted");
+
+    const reserveLoss = director.plan({
+      ...input(31, 299, healthyDomainHealth(31)),
+      owner: nominal.replacementOwner,
+    });
+    expect(reserveLoss.colonies[0]).toMatchObject({
+      state: "recovering",
+      reasonCode: "mandatory-floor-unrestored",
+    });
+    if (reserveLoss.replacementOwner === null) throw new Error("recovery was not persisted");
+
+    const linkLossStatuses = healthyDomainHealth(32).map((status) =>
+      status.domain === "links" ? { ...status, status: "failed" as const } : status,
+    );
+    const domainLoss = director.plan({
+      ...input(32, 300, linkLossStatuses),
+      owner: reserveLoss.replacementOwner,
+    });
+    expect(domainLoss.colonies[0]).toMatchObject({
+      state: "recovering",
+      domainHealth: { blocker: { domain: "links", reasonCode: "failed" } },
+    });
+    expect(domainLoss.objectives).toEqual([]);
+    expect(domainLoss.replacementOwner).toBeNull();
+
+    const restored = director.plan({
+      ...input(33, 300, healthyDomainHealth(33)),
+      owner: reserveLoss.replacementOwner,
+    });
+    expect(restored.colonies[0]).toMatchObject({
+      state: "mature",
+      reasonCode: "maturity-evidence-met",
+      domainHealth: { status: "healthy" },
+    });
+    expect(restored.objectives).toEqual([]);
+  });
+
+  it("funds only owned-site rebuilding while direct infrastructure health is recovering", () => {
+    const director = new ColonyDirector();
+    const config = buildRuntimeConfig();
+    const nominal = director.plan({
+      tick: 40,
+      snapshot: bootstrapSnapshot(40, 400, "W1N1", {
+        controllerLevel: 8,
+        energyCapacity: 12_900,
+        legalWorker: true,
+      }),
+      config,
+      owner: {},
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+      domainHealth: healthyDomainHealth(40),
+    });
+    if (nominal.replacementOwner === null) throw new Error("nominal owner was not persisted");
+    const failedHealth = healthyDomainHealth(41).map((status) =>
+      status.domain === "layout" ? { ...status, status: "failed" as const } : status,
+    );
+    const buildRequest: BudgetRequest = {
+      colonyId: "W1N1",
+      category: "optional-growth",
+      issuer: "growth/W1N1/build/site-a",
+      revision: 1,
+      expiresAt: 50,
+      energy: { minimum: 1, desired: 1 },
+      cpu: { minimum: 1, desired: 1 },
+      spawn: null,
+    };
+    const result = director.plan({
+      tick: 41,
+      snapshot: bootstrapSnapshot(41, 400, "W1N1", {
+        controllerLevel: 8,
+        energyCapacity: 12_900,
+        legalWorker: true,
+      }),
+      config,
+      owner: nominal.replacementOwner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+      domainHealth: failedHealth,
+      requests: [
+        buildRequest,
+        { ...buildRequest, issuer: "growth/W1N1/upgrade-controller/controller" },
+      ],
+    });
+
+    expect(result.colonies[0]).toMatchObject({ state: "recovering" });
+    expect(result.decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ issuer: buildRequest.issuer, status: "granted" }),
+        expect.objectContaining({
+          issuer: "growth/W1N1/upgrade-controller/controller",
+          reasonCode: "posture-preempted",
+          status: "denied",
+        }),
+      ]),
+    );
   });
 
   it("fails closed before overflowing accepted persistent revisions", () => {
@@ -686,6 +819,7 @@ interface SnapshotOptions {
   readonly legalWorker?: boolean;
   readonly workerTicksToLive?: number;
   readonly controllerLevel?: number;
+  readonly energyCapacity?: number;
   readonly ticksToDowngrade?: number;
   readonly hostiles?: readonly {
     readonly username: string;
@@ -717,7 +851,7 @@ function bootstrapSnapshot(
     name: roomName,
     observedAt: tick,
     energyAvailable: energy,
-    energyCapacityAvailable: 550,
+    energyCapacityAvailable: options.energyCapacity ?? 550,
     controller: {
       id: "controller-1",
       level: options.controllerLevel ?? 3,
@@ -794,6 +928,15 @@ function bootstrapSnapshot(
       estimatedPayloadBytes: 0,
     },
   });
+}
+
+function healthyDomainHealth(tick: number): readonly ColonyDomainHealthStatus[] {
+  return COLONY_DOMAIN_HEALTH_DOMAINS.map((domain) => ({
+    colonyId: "W1N1",
+    domain,
+    observedAt: tick,
+    status: "healthy",
+  }));
 }
 
 function testCreep(

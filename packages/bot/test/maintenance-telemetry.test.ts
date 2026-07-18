@@ -61,6 +61,7 @@ function fixture(): MaintenanceTelemetryInput {
       proposals: [{}, {}] as unknown as ConstructionPlanningResult["proposals"],
       deferred: [],
       deferredCount: 3,
+      health: [],
       truncatedStructures: 1,
     },
     requestedEnergyCaps: [20, 10],

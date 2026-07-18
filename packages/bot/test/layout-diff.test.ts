@@ -23,6 +23,7 @@ const policy = projectColonyRclPolicy({
   energyAvailable: 800,
   energyCapacityAvailable: 800,
   protectedSpawnEnergy: 300,
+  rcl8Health: null,
   state: "developing",
   visibility: "visible",
 });

@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "nominal": {
+    "lifecycle": "mature",
+    "policy": {
+      "status": "sustaining",
+      "authorized": true,
+      "reasonCode": "sustaining"
+    },
+    "domainStatus": "healthy",
+    "persistedDomainHealth": false
+  },
+  "deterministic": {
+    "resetAndReorderEquivalent": true,
+    "canonicalDomainOrder": [
+      "layout",
+      "mining",
+      "logistics",
+      "links",
+      "maintenance",
+      "resources",
+      "labs",
+      "industry"
+    ]
+  },
+  "failures": {
+    "domains": {
+      "layout": {
+        "blocker": {
+          "domain": "layout",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      },
+      "mining": {
+        "blocker": {
+          "domain": "mining",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      },
+      "logistics": {
+        "blocker": {
+          "domain": "logistics",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      },
+      "links": {
+        "blocker": {
+          "domain": "links",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      },
+      "maintenance": {
+        "blocker": {
+          "domain": "maintenance",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      },
+      "resources": {
+        "blocker": {
+          "domain": "resources",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      },
+      "labs": {
+        "blocker": {
+          "domain": "labs",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      },
+      "industry": {
+        "blocker": {
+          "domain": "industry",
+          "reasonCode": "failed"
+        },
+        "objectiveCount": 0,
+        "state": "recovering"
+      }
+    },
+    "jointBlocker": {
+      "domain": "layout",
+      "reasonCode": "failed"
+    },
+    "reserve": {
+      "reason": "mandatory-floor-unrestored",
+      "state": "recovering"
+    },
+    "stale": {
+      "domain": "logistics",
+      "reasonCode": "stale"
+    },
+    "workforce": {
+      "objectiveCount": 1,
+      "state": "recovering"
+    }
+  },
+  "recovery": {
+    "exitState": "mature",
+    "objectiveCount": 0,
+    "ownerRevision": 3,
+    "repairBuildStatus": "granted",
+    "repairUpgradeReason": "posture-preempted",
+    "reservationCount": 0
+  },
+  "bounds": {
+    "domainCount": 8,
+    "layoutWindowCoverage": ["W1N1", "W2N2", "W3N3"],
+    "persistentBytesAdded": 0,
+    "telemetryDecisionInputs": 0
+  }
+}
