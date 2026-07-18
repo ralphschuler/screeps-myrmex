@@ -135,9 +135,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   Issue #279 adds bounded adjacent-snapshot road/container net attrition with opaque baselines,
   fixed rows, and fail-closed gap/cardinality/byte behavior; checked evidence is in
   [`phase2-attrition-evidence.md`](phase2-attrition-evidence.md). Exact next-observation lab,
-  factory, and power input/output accounting is now fixed and label-free under nested telemetry
-  schema V4; checked evidence is in [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md).
-  Cooldown-utilization windows and soak thresholds remain in issue #53.
+  factory, and power input/output accounting is fixed and label-free. Nested telemetry schema V5
+  adds fixed extractor, link, terminal, lab, and factory current/rolling cooldown-utilization rows
+  with explicit continuity and bounded cap behavior; checked evidence is in
+  [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md). Final soak thresholds remain in
+  issue #53.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

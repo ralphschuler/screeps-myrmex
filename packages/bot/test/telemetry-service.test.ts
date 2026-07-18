@@ -87,7 +87,7 @@ describe("TelemetryService", () => {
     expect(next.owner.droppedHistory).toBe(1);
   });
 
-  it("migrates a V4 owner to bounded Phase 2 samples, RCL timing, and attrition state", () => {
+  it("migrates a V4 owner to bounded Phase 2 V5 samples, RCL timing, and attrition state", () => {
     const fixture = serviceFixture(100);
     const result = new TelemetryService().record(
       {
@@ -108,9 +108,9 @@ describe("TelemetryService", () => {
     expect(result.owner).toMatchObject({
       schemaVersion: 5,
       phase2: {
-        schemaVersion: 4,
+        schemaVersion: 5,
         droppedSamples: 0,
-        samples: [[100, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+        samples: [compactEmptyPhase2Sample(100)],
         rcl: [1, 0, 0, 0, [], []],
       },
     });
@@ -155,9 +155,9 @@ describe("TelemetryService", () => {
     expect(result.owner).toMatchObject({
       schemaVersion: 5,
       phase2: {
-        schemaVersion: 4,
+        schemaVersion: 5,
         droppedSamples: 1,
-        samples: [[100, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+        samples: [compactEmptyPhase2Sample(100)],
         rcl: [1, 0, 0, 0, [], []],
       },
     });
@@ -196,13 +196,13 @@ describe("TelemetryService", () => {
     );
 
     expect(result.owner.phase2).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       droppedSamples: 65,
-      samples: [[100, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+      samples: [compactEmptyPhase2Sample(100)],
     });
   });
 
-  it("upgrades Phase 2 V2 timing state to V4 without losing RCL aggregates", () => {
+  it("upgrades Phase 2 V2 timing state to V5 without losing RCL aggregates", () => {
     const fixture = serviceFixture(100);
     const result = new TelemetryService().record(
       {
@@ -227,7 +227,7 @@ describe("TelemetryService", () => {
     );
 
     expect(result.owner.phase2).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       rcl: [1, 2, 3, 4, [], [[0, 1, 10, 10, 10, 10, 99]]],
     });
     expect((result.owner.phase2 as { attrition?: unknown }).attrition).toBeUndefined();
@@ -254,9 +254,9 @@ describe("TelemetryService", () => {
         staticMining: { schemaVersion: 1, sources: [] },
         logistics: { schemaVersion: 1, flows: [] },
         phase2: {
-          schemaVersion: 4,
+          schemaVersion: 5,
           droppedSamples: 0,
-          samples: [[99, 1, 2, 3, 6, 7, 4, 0, 0, 5]],
+          samples: [[99, 1, 2, 3, 6, 7, 4, 0, 0, 5, emptyCooldownRows()]],
           rcl: [1, 0, 0, 0, [], []],
           attrition,
         },
@@ -265,19 +265,16 @@ describe("TelemetryService", () => {
     );
 
     expect(result.owner.phase2).toMatchObject({
-      schemaVersion: 4,
-      samples: [
-        [99, 1, 2, 3, 6, 7, 4, 0, 0, 5],
-        [100, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      ],
+      schemaVersion: 5,
+      samples: [[99, 1, 2, 3, 6, 7, 4, 0, 0, 5], compactEmptyPhase2Sample(100)],
       rcl: [1, 0, 0, 0, [], []],
     });
     expect((result.owner.phase2 as { attrition?: unknown }).attrition).toBeUndefined();
 
     const phase2 = {
-      schemaVersion: 4,
+      schemaVersion: 5,
       droppedSamples: 0,
-      samples: [[99, 1, 2, 3, 6, 7, 4, 0, 0, 5]],
+      samples: [[99, 1, 2, 3, 6, 7, 4, 0, 0, 5, emptyCooldownRows()]],
       rcl: [1, 0, 0, 0, [], []],
     };
     Object.defineProperty(phase2, "attrition", {
@@ -302,10 +299,7 @@ describe("TelemetryService", () => {
       fixture.input,
     );
     expect(propertyResult.owner.phase2).toMatchObject({
-      samples: [
-        [99, 1, 2, 3, 6, 7, 4, 0, 0, 5],
-        [100, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      ],
+      samples: [[99, 1, 2, 3, 6, 7, 4, 0, 0, 5], compactEmptyPhase2Sample(100)],
       rcl: [1, 0, 0, 0, [], []],
     });
   });
@@ -334,10 +328,15 @@ describe("TelemetryService", () => {
     expect(ownerBytes(owner)).toBeLessThanOrEqual(8_192);
   });
 
-  it("keeps populated settled industry accounting inside the tick telemetry byte gate", () => {
+  it("keeps populated settled industry and cooldown accounting inside the tick telemetry byte gate", () => {
     const outcome = runTick({ game: establishedRcl2World().game(100), memory: {} as Memory });
     const telemetry = outcome.telemetry;
-    if (telemetry === null) throw new Error("expected complete fixture");
+    const room = outcome.snapshot.ownedRooms[0];
+    if (telemetry === null || room === undefined) throw new Error("expected complete fixture");
+    const cooldownRoom = {
+      ...room,
+      ownedLinks: [{ active: true, cooldown: 1 }],
+    } as unknown as typeof room;
     const {
       activity: _activity,
       recoveryProgress: _recoveryProgress,
@@ -381,7 +380,11 @@ describe("TelemetryService", () => {
         maintenance: [],
         movement: outcome.movement,
         reporterSignals: [],
-        snapshot: outcome.snapshot,
+        snapshot: {
+          ...outcome.snapshot,
+          ownedRooms: [cooldownRoom],
+          rooms: [cooldownRoom],
+        },
         spawn: outcome.spawn,
       },
     );
@@ -391,6 +394,17 @@ describe("TelemetryService", () => {
       factory: [40, 100, 20],
       powerProcessing: [150, 3, 3],
     });
+    expect(result.telemetry.phase2.cooldowns?.current[1]).toEqual([1, 1, 10_000]);
+    expect(
+      (result.owner.phase2 as unknown as { samples: readonly (readonly unknown[])[] })
+        .samples[0]?.[10],
+    ).toEqual([
+      [0, 0],
+      [1, 1],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ]);
     expect(utf8Bytes(result.telemetry)).toBeLessThanOrEqual(8_192);
   });
 
@@ -1094,6 +1108,20 @@ function serviceFixture(time: number) {
 function reporterEntries(owner: Record<string, unknown>): readonly unknown[] {
   const reporter = owner.reporter as { entries?: { entries?: readonly unknown[] } } | undefined;
   return reporter?.entries?.entries ?? [];
+}
+
+function emptyCooldownRows() {
+  return [
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [0, 0],
+  ];
+}
+
+function compactEmptyPhase2Sample(tick: number) {
+  return [tick, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 }
 
 function ownerBytes(owner: unknown): number {

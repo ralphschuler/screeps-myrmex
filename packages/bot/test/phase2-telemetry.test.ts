@@ -4,6 +4,8 @@ import { establishedRcl2World } from "./support/established-rcl2-fixture";
 import {
   MAX_PHASE2_CONTROLLER_TRACKERS,
   PHASE2_AUTHORITY_IDS,
+  PHASE2_COOLDOWN_IDS,
+  PHASE2_COOLDOWN_LIMITS,
   PHASE2_RCL_DESTINATIONS,
   observePhase2Telemetry,
   reducePhase2Telemetry,
@@ -48,6 +50,72 @@ describe("Phase 2 telemetry reducer", () => {
     expect(Object.isFrozen(result.telemetry.authorities)).toBe(true);
   });
 
+  it("reports fixed current and rolling cooldown utilization without hiding tick gaps", () => {
+    const first = reducePhase2Telemetry({
+      observation: {
+        ...observation(100),
+        cooldownSlots: [
+          [2, 1],
+          [3, 2],
+          [0, 0],
+          [4, 1],
+          [1, 0],
+        ],
+        droppedCooldownInputs: 0,
+      },
+      previous: null,
+    });
+    const second = reducePhase2Telemetry({
+      observation: {
+        ...observation(101),
+        cooldownSlots: [
+          [2, 0],
+          [3, 1],
+          [1, 1],
+          [4, 2],
+          [1, 1],
+        ],
+        droppedCooldownInputs: 0,
+      },
+      previous: JSON.parse(JSON.stringify(first.state)) as Phase2TelemetryState,
+    });
+
+    expect(PHASE2_COOLDOWN_IDS).toEqual(["extractor", "link", "terminal", "lab", "factory"]);
+    expect(second.telemetry.cooldowns).toEqual({
+      continuous: true,
+      current: [
+        [2, 0, 0],
+        [3, 1, 3_333],
+        [1, 1, 10_000],
+        [4, 2, 5_000],
+        [1, 1, 10_000],
+      ],
+      window: [
+        [4, 1, 2_500],
+        [6, 3, 5_000],
+        [1, 1, 10_000],
+        [8, 3, 3_750],
+        [2, 1, 5_000],
+      ],
+    });
+
+    const gap = reducePhase2Telemetry({
+      observation: {
+        ...observation(103),
+        cooldownSlots: [
+          [2, 0],
+          [3, 0],
+          [1, 0],
+          [4, 0],
+          [1, 0],
+        ],
+        droppedCooldownInputs: 0,
+      },
+      previous: second.state,
+    });
+    expect(gap.telemetry.cooldowns?.continuous).toBe(false);
+  });
+
   it("composes reset-safe road/container attrition into the Phase 2 owner", () => {
     const baseline = reducePhase2Telemetry({
       observation: {
@@ -78,7 +146,7 @@ describe("Phase 2 telemetry reducer", () => {
       previous: JSON.parse(JSON.stringify(baseline.state)) as Phase2TelemetryState,
     });
 
-    expect(changed.state.schemaVersion).toBe(4);
+    expect(changed.state.schemaVersion).toBe(5);
     expect(changed.telemetry.attrition?.rows).toEqual([
       [1, 5_000, 100, 0, 0, 0],
       [1, 250_000, 0, 5_000, 0, 0],
@@ -117,12 +185,49 @@ describe("Phase 2 telemetry reducer", () => {
       previous: JSON.parse(JSON.stringify(legacy)) as Phase2TelemetryState,
     });
 
-    expect(result.state.schemaVersion).toBe(4);
+    expect(result.state.schemaVersion).toBe(5);
     expect(result.state.samples.map(({ tick }) => tick)).toEqual([101]);
     expect(result.state.droppedSamples).toBe(1);
     expect(result.state.rclTracks).toEqual([["colony:00000001", 2, 100, 101]]);
     expect(result.state.attrition.tracks).toHaveLength(0);
     expect(result.state.attrition.interruptedAssets).toBe(1);
+  });
+
+  it("drops V4 samples with unknowable cooldowns while preserving timing and attrition", () => {
+    const baseline = reducePhase2Telemetry({
+      observation: {
+        ...observation(100),
+        controllerLevels: [{ colonyRef: "colony:00000001", level: 2 }],
+        attrition: {
+          colonies: ["colony:00000001"],
+          assets: [["road:00000001", "colony:00000001", 4_000, 5_000]],
+          droppedObservations: 0,
+        },
+      },
+      previous: null,
+    });
+    const legacy = {
+      ...baseline.state,
+      schemaVersion: 4,
+      samples: baseline.state.samples.map((sample) => {
+        const row = { ...sample } as Record<string, unknown>;
+        delete row.cooldownSlots;
+        return row;
+      }),
+    } as unknown as Phase2TelemetryState;
+    const migrated = reducePhase2Telemetry({
+      observation: {
+        ...observation(101),
+        controllerLevels: [{ colonyRef: "colony:00000001", level: 2 }],
+      },
+      previous: JSON.parse(JSON.stringify(legacy)) as Phase2TelemetryState,
+    });
+
+    expect(migrated.state.schemaVersion).toBe(5);
+    expect(migrated.state.samples.map(({ tick }) => tick)).toEqual([101]);
+    expect(migrated.state.droppedSamples).toBe(1);
+    expect(migrated.state.rclTracks).toEqual([["colony:00000001", 2, 100, 101]]);
+    expect(migrated.state.attrition.interruptedAssets).toBe(1);
   });
 
   it("keeps a deterministic bounded rolling window across JSON reset", () => {
@@ -233,6 +338,88 @@ describe("Phase 2 telemetry reducer", () => {
     });
   });
 
+  it("observes bounded active cooldown slots and rejects over-cap assets before traversal", () => {
+    const outcome = runTick({
+      game: establishedRcl2World().game(100),
+      memory: {} as Memory,
+    });
+    const telemetry = outcome.telemetry;
+    const room = outcome.snapshot.ownedRooms[0];
+    if (telemetry === null || telemetry.logistics === undefined || room === undefined)
+      throw new Error("expected complete runtime telemetry fixture");
+    const withCooldowns = {
+      ...room,
+      ownedExtractors: [
+        { active: true, cooldown: 4 },
+        { active: false, cooldown: 4 },
+      ],
+      ownedLinks: [
+        { active: true, cooldown: 0 },
+        { active: true, cooldown: 2 },
+      ],
+      ownedTerminals: [{ active: true, cooldown: 0, store: { resources: [] } }],
+      ownedLabs: [
+        { active: true, cooldown: 5 },
+        { active: true, cooldown: 0 },
+      ],
+      ownedFactories: [{ active: true, cooldown: 7 }],
+    } as unknown as typeof room;
+    const observed = observePhase2Telemetry({
+      tick: 101,
+      snapshot: { ...outcome.snapshot, ownedRooms: [withCooldowns], rooms: [withCooldowns] },
+      colony: outcome.colony,
+      spawn: outcome.spawn,
+      staticMining: telemetry.staticMining,
+      logistics: telemetry.logistics,
+      maintenance: telemetry.maintenanceV2,
+      industry: telemetry.industry,
+    });
+    expect(observed.cooldownSlots).toEqual([
+      [1, 1],
+      [2, 1],
+      [1, 0],
+      [2, 1],
+      [1, 1],
+    ]);
+
+    const oversizedLabs = new Array(PHASE2_COOLDOWN_LIMITS[3] + 1) as unknown[];
+    Object.defineProperty(oversizedLabs, 0, {
+      get: () => {
+        throw new Error("over-cap cooldown assets must not be traversed");
+      },
+    });
+    const overCapRoom = { ...room, ownedLabs: oversizedLabs } as unknown as typeof room;
+    const overCap = observePhase2Telemetry({
+      tick: 101,
+      snapshot: { ...outcome.snapshot, ownedRooms: [overCapRoom], rooms: [overCapRoom] },
+      colony: outcome.colony,
+      spawn: outcome.spawn,
+      staticMining: telemetry.staticMining,
+      logistics: telemetry.logistics,
+      maintenance: telemetry.maintenanceV2,
+      industry: telemetry.industry,
+    });
+    expect(overCap.cooldownSlots).toEqual(PHASE2_COOLDOWN_IDS.map(() => [0, 0]));
+    expect(overCap.droppedCooldownInputs).toBeGreaterThan(PHASE2_COOLDOWN_LIMITS[3]);
+
+    const malformedRoom = {
+      ...room,
+      ownedLinks: [{ active: true, cooldown: -1 }],
+    } as unknown as typeof room;
+    const malformed = observePhase2Telemetry({
+      tick: 101,
+      snapshot: { ...outcome.snapshot, ownedRooms: [malformedRoom], rooms: [malformedRoom] },
+      colony: outcome.colony,
+      spawn: outcome.spawn,
+      staticMining: telemetry.staticMining,
+      logistics: telemetry.logistics,
+      maintenance: telemetry.maintenanceV2,
+      industry: telemetry.industry,
+    });
+    expect(malformed.cooldownSlots).toEqual(PHASE2_COOLDOWN_IDS.map(() => [0, 0]));
+    expect(malformed.droppedCooldownInputs).toBeGreaterThan(0);
+  });
+
   it("fails the whole RCL timing batch closed when runtime observation exceeds 64 rooms", () => {
     const outcome = runTick({
       game: establishedRcl2World().game(100),
@@ -294,11 +481,12 @@ describe("Phase 2 telemetry reducer", () => {
       throw new Error("expected telemetry");
 
     expect(first.telemetry.phase2.window.slice(0, 3)).toEqual([1, 100, 100]);
+    expect(first.telemetry.phase2.cooldowns).toBeUndefined();
     expect(second.telemetry.phase2.window.slice(0, 3)).toEqual([2, 100, 101]);
     expect(memory.myrmex?.telemetry).toMatchObject({
       schemaVersion: 5,
       phase2: {
-        schemaVersion: 4,
+        schemaVersion: 5,
         samples: [
           [100, 0, 0, 0, 0, 0, 0, 0, 0, 0],
           [101, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -437,7 +625,7 @@ describe("Phase 2 telemetry reducer", () => {
       },
     });
 
-    expect(result.state.schemaVersion).toBe(4);
+    expect(result.state.schemaVersion).toBe(5);
     expect(result.state.samples.map(({ tick }) => tick)).toEqual([101]);
     expect(result.state.droppedSamples).toBe(1);
     expect(result.state.rclTracks).toHaveLength(0);
@@ -650,6 +838,21 @@ describe("Phase 2 telemetry reducer", () => {
         previous: null,
       }),
     ).toThrow(/nonnegative safe integer/u);
+    expect(() =>
+      reducePhase2Telemetry({
+        observation: {
+          ...observation(100),
+          cooldownSlots: [
+            [1, 2],
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0],
+          ],
+        },
+        previous: null,
+      }),
+    ).toThrow(/exceeds active slots/u);
     const current = reducePhase2Telemetry({ observation: observation(100), previous: null }).state;
     expect(() =>
       reducePhase2Telemetry({
@@ -666,6 +869,14 @@ function observation(tick: number): Phase2TelemetryObservation {
     attrition: { colonies: [], assets: [], droppedObservations: 0 },
     controllerLevels: [],
     droppedControllerLevels: 0,
+    cooldownSlots: [
+      [2, 1],
+      [3, 2],
+      [1, 0],
+      [4, 1],
+      [1, 0],
+    ],
+    droppedCooldownInputs: 0,
     controllers: 2,
     rcl8Controllers: 1,
     sustainingColonies: 1,
@@ -765,5 +976,12 @@ function sample(tick: number) {
     authorityFailures: 0,
     reserveViolations: 0,
     measuredCpuMilli: 0,
+    cooldownSlots: [
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ],
   };
 }

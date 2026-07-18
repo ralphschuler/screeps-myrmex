@@ -18,12 +18,26 @@ import {
 } from "./phase2-attrition";
 import type { StaticMiningTelemetry } from "./static-mining";
 
-export const PHASE2_TELEMETRY_SCHEMA_VERSION = 4 as const;
+export const PHASE2_TELEMETRY_SCHEMA_VERSION = 5 as const;
 export const MAX_PHASE2_TELEMETRY_SAMPLES = 64 as const;
 export const MAX_PHASE2_CONTROLLER_TRACKERS = 64 as const;
 export const PHASE2_RCL_TIMING_SCHEMA_VERSION = 1 as const;
 
 export const PHASE2_RCL_DESTINATIONS = Object.freeze([2, 3, 4, 5, 6, 7, 8] as const);
+
+/** Fixed observer-only rows; power spawns and observers expose no numeric cooldown. */
+export const PHASE2_COOLDOWN_IDS = Object.freeze([
+  "extractor",
+  "link",
+  "terminal",
+  "lab",
+  "factory",
+] as const);
+
+export type Phase2CooldownId = (typeof PHASE2_COOLDOWN_IDS)[number];
+
+/** Official maximum structures across the bounded 64-owned-room observation batch. */
+export const PHASE2_COOLDOWN_LIMITS = Object.freeze([64, 384, 64, 640, 64] as const);
 
 export const PHASE2_AUTHORITY_IDS = Object.freeze([
   "colony",
@@ -58,6 +72,7 @@ export const PHASE2_SAMPLE_FIELDS = Object.freeze([
   "authorityFailures",
   "reserveViolations",
   "measuredCpuMilli",
+  "cooldownSlots",
 ] as const);
 
 export const PHASE2_WINDOW_FIELDS = Object.freeze([
@@ -82,6 +97,9 @@ export interface Phase2ControllerObservation {
   readonly level: number;
 }
 
+/** One current-tick row: active structure-slots, then slots with positive cooldown. */
+export type Phase2CooldownObservation = readonly [activeSlots: number, coolingSlots: number];
+
 export interface Phase2TelemetryObservation {
   readonly tick: number;
   /** Complete bounded road/container facts used only for adjacent-snapshot net attrition. */
@@ -90,6 +108,10 @@ export interface Phase2TelemetryObservation {
   readonly controllerLevels: readonly Phase2ControllerObservation[];
   /** Whole timing batch is invalid when positive; value counts all omitted controller facts. */
   readonly droppedControllerLevels: number;
+  /** Fixed rows aligned with PHASE2_COOLDOWN_IDS: active slots, positive-cooldown slots. */
+  readonly cooldownSlots: readonly Phase2CooldownObservation[];
+  /** Whole cooldown batch is invalid when positive; value counts omitted candidate facts. */
+  readonly droppedCooldownInputs: number;
   readonly controllers: number;
   readonly rcl8Controllers: number;
   readonly sustainingColonies: number;
@@ -177,10 +199,11 @@ export interface Phase2TelemetrySample {
   readonly authorityFailures: number;
   readonly reserveViolations: number;
   readonly measuredCpuMilli: number;
+  readonly cooldownSlots: readonly Phase2CooldownObservation[];
 }
 
-/** Compact persistent row aligned with PHASE2_SAMPLE_FIELDS. */
-export type Phase2TelemetrySampleRow = readonly [
+/** Compact persistent row aligned with PHASE2_SAMPLE_FIELDS; empty cooldown rows are omitted. */
+type Phase2TelemetrySampleBaseRow = readonly [
   tick: number,
   harvestedEnergy: number,
   logisticsDelivered: number,
@@ -193,10 +216,14 @@ export type Phase2TelemetrySampleRow = readonly [
   measuredCpuMilli: number,
 ];
 
+export type Phase2TelemetrySampleRow =
+  | Phase2TelemetrySampleBaseRow
+  | readonly [...Phase2TelemetrySampleBaseRow, cooldownSlots: readonly Phase2CooldownObservation[]];
+
 export function compactPhase2TelemetrySample(
   value: Phase2TelemetrySample,
 ): Phase2TelemetrySampleRow {
-  return [
+  const base: Phase2TelemetrySampleBaseRow = [
     value.tick,
     value.harvestedEnergy,
     value.logisticsDelivered,
@@ -208,6 +235,7 @@ export function compactPhase2TelemetrySample(
     value.reserveViolations,
     value.measuredCpuMilli,
   ];
+  return hasObservedCooldownSlots(value.cooldownSlots) ? [...base, value.cooldownSlots] : base;
 }
 
 export function expandPhase2TelemetrySampleRow(value: readonly unknown[]): Phase2TelemetrySample {
@@ -222,6 +250,10 @@ export function expandPhase2TelemetrySampleRow(value: readonly unknown[]): Phase
     authorityFailures: value[7] as number,
     reserveViolations: value[8] as number,
     measuredCpuMilli: value[9] as number,
+    cooldownSlots:
+      value.length === 10
+        ? PHASE2_COOLDOWN_IDS.map(() => [0, 0] as const)
+        : (value[10] as readonly Phase2CooldownObservation[]),
   };
 }
 
@@ -259,8 +291,9 @@ export type Phase2RclTelemetry = readonly [
 
 export type Phase2TelemetrySampleV1 = Omit<
   Phase2TelemetrySample,
-  "industryEnergyInput" | "industryResourceInput"
+  "industryEnergyInput" | "industryResourceInput" | "cooldownSlots"
 >;
+export type Phase2TelemetrySampleV4 = Omit<Phase2TelemetrySample, "cooldownSlots">;
 
 export interface Phase2TelemetryStateV1 {
   readonly schemaVersion: 1;
@@ -285,21 +318,28 @@ export interface Phase2TelemetryStateV3 extends Omit<Phase2TelemetryStateV2, "sc
   readonly attrition: Phase2AttritionState;
 }
 
-export interface Phase2TelemetryState {
+export interface Phase2TelemetryStateV4 extends Omit<
+  Phase2TelemetryStateV3,
+  "schemaVersion" | "samples"
+> {
+  readonly schemaVersion: 4;
+  readonly samples: readonly Phase2TelemetrySampleV4[];
+}
+
+export interface Phase2TelemetryState extends Omit<
+  Phase2TelemetryStateV4,
+  "schemaVersion" | "samples"
+> {
   readonly schemaVersion: typeof PHASE2_TELEMETRY_SCHEMA_VERSION;
-  readonly droppedSamples: number;
   readonly samples: readonly Phase2TelemetrySample[];
-  readonly rclTimingSchemaVersion: typeof PHASE2_RCL_TIMING_SCHEMA_VERSION;
-  readonly interruptedRclTracks: number;
-  readonly droppedRclObservations: number;
-  readonly droppedRclTransitions: number;
-  readonly rclTracks: readonly Phase2RclTrack[];
-  readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
-  readonly attrition: Phase2AttritionState;
 }
 
 export type Phase2TelemetryStateInput =
-  Phase2TelemetryState | Phase2TelemetryStateV3 | Phase2TelemetryStateV2 | Phase2TelemetryStateV1;
+  | Phase2TelemetryState
+  | Phase2TelemetryStateV4
+  | Phase2TelemetryStateV3
+  | Phase2TelemetryStateV2
+  | Phase2TelemetryStateV1;
 
 /** One row aligned with PHASE2_AUTHORITY_IDS; tuple fields keep the tick summary byte-bounded. */
 export type Phase2AuthorityTelemetry = readonly [
@@ -314,6 +354,20 @@ export type Phase2AuthorityTelemetry = readonly [
 
 /** One row aligned with PHASE2_FLOW_IDENTITY_IDS. */
 export type Phase2FlowIdentityTelemetry = readonly [balanced: boolean, residual: number];
+
+/** Current or rolling row: active structure-ticks, cooling structure-ticks, utilization. */
+export type Phase2CooldownTelemetryRow = readonly [
+  activeSlots: number,
+  coolingSlots: number,
+  utilizationBasisPoints: number | null,
+];
+
+export interface Phase2CooldownTelemetry {
+  /** False when retained sample ticks are not one consecutive interval. */
+  readonly continuous: boolean;
+  readonly current: readonly Phase2CooldownTelemetryRow[];
+  readonly window: readonly Phase2CooldownTelemetryRow[];
+}
 
 /** Aggregate row aligned with PHASE2_WINDOW_FIELDS. */
 export type Phase2TelemetryWindow = readonly [
@@ -391,6 +445,8 @@ export interface Phase2Telemetry {
   readonly identities: readonly Phase2FlowIdentityTelemetry[];
   /** Omitted while only a baseline exists and no attrition/loss counter has evidence. */
   readonly attrition?: Phase2AttritionTelemetry;
+  /** Fixed rows aligned with PHASE2_COOLDOWN_IDS; omitted while no slot evidence exists. */
+  readonly cooldowns?: Phase2CooldownTelemetry;
   readonly window: Phase2TelemetryWindow;
   readonly droppedInputs: number;
 }
@@ -419,6 +475,7 @@ export function observePhase2Telemetry(input: {
     ticksToDowngrade === null ? [] : [ticksToDowngrade],
   );
   const spawns = rooms.flatMap(({ ownedSpawns }) => ownedSpawns).filter(({ active }) => active);
+  const cooldowns = observeCooldownSlots(rooms);
   const scheduled = input.spawn.execution.filter(({ status }) => status === "scheduled");
   const layout = input.layout;
   const arbitration = layout?.arbitration;
@@ -458,6 +515,8 @@ export function observePhase2Telemetry(input: {
       level: room.controller.level,
     })),
     droppedControllerLevels: rooms.length > MAX_PHASE2_CONTROLLER_TRACKERS ? rooms.length : 0,
+    cooldownSlots: cooldowns.slots,
+    droppedCooldownInputs: cooldowns.droppedInputs,
     controllers: controllers.length,
     rcl8Controllers: controllers.filter(({ level }) => level === 8).length,
     sustainingColonies: input.colony.colonies.filter(
@@ -587,12 +646,53 @@ export function observePhase2Telemetry(input: {
   });
 }
 
+function observeCooldownSlots(rooms: WorldSnapshot["ownedRooms"]): {
+  readonly slots: readonly Phase2CooldownObservation[];
+  readonly droppedInputs: number;
+} {
+  const empty = () => PHASE2_COOLDOWN_IDS.map(() => [0, 0] as const);
+  if (rooms.length > MAX_PHASE2_CONTROLLER_TRACKERS)
+    return { slots: empty(), droppedInputs: rooms.length };
+  const groups = [
+    rooms.map((room) => room.ownedExtractors ?? []),
+    rooms.map((room) => room.ownedLinks ?? []),
+    rooms.map((room) => room.ownedTerminals ?? []),
+    rooms.map((room) => room.ownedLabs ?? []),
+    rooms.map((room) => room.ownedFactories ?? []),
+  ] as const;
+  const candidateCounts = groups.map((group) => total(group.map((items) => items.length)));
+  if (candidateCounts.some((count, index) => count > (PHASE2_COOLDOWN_LIMITS[index] ?? 0)))
+    return { slots: empty(), droppedInputs: total(candidateCounts) };
+  const slots: Phase2CooldownObservation[] = [];
+  for (const group of groups) {
+    let activeSlots = 0;
+    let coolingSlots = 0;
+    for (const items of group) {
+      for (const item of items) {
+        if (
+          typeof item.active !== "boolean" ||
+          !Number.isSafeInteger(item.cooldown) ||
+          item.cooldown < 0
+        )
+          return { slots: empty(), droppedInputs: Math.max(1, total(candidateCounts)) };
+        if (!item.active) continue;
+        activeSlots = saturatingAdd(activeSlots, 1);
+        if (item.cooldown > 0) coolingSlots = saturatingAdd(coolingSlots, 1);
+      }
+    }
+    slots.push([activeSlots, coolingSlots]);
+  }
+  return { slots, droppedInputs: 0 };
+}
+
 export function emptyPhase2TelemetryObservation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
     attrition: { colonies: [], assets: [], droppedObservations: 0 },
     controllerLevels: [],
     droppedControllerLevels: 0,
+    cooldownSlots: PHASE2_COOLDOWN_IDS.map(() => [0, 0] as const),
+    droppedCooldownInputs: 0,
     controllers: 0,
     rcl8Controllers: 0,
     sustainingColonies: 0,
@@ -735,6 +835,7 @@ export function reducePhase2Telemetry(input: {
   const identities = flowIdentities(observation);
   const busy = Math.min(observation.activeSpawns, observation.busySpawns);
   const rclTelemetry = projectPhase2RclTelemetry(rcl);
+  const cooldowns = projectPhase2CooldownTelemetry(observation.cooldownSlots, samples);
   const telemetry: Phase2Telemetry = {
     schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
     progression: {
@@ -795,6 +896,7 @@ export function reducePhase2Telemetry(input: {
     authorities,
     identities,
     ...(hasPhase2AttritionEvidence(attrition.telemetry) ? { attrition: attrition.telemetry } : {}),
+    ...(hasPhase2CooldownEvidence(cooldowns) ? { cooldowns } : {}),
     window: rollingWindow(samples, droppedSamples),
     droppedInputs: observation.droppedInputs,
   };
@@ -941,7 +1043,47 @@ function sampleFrom(
     authorityFailures,
     reserveViolations: value.reserveViolations,
     measuredCpuMilli: value.measuredCpuMilli,
+    cooldownSlots: value.cooldownSlots,
   };
+}
+
+export function projectPhase2CooldownTelemetry(
+  current: readonly Phase2CooldownObservation[],
+  samples: readonly Phase2TelemetrySample[],
+): Phase2CooldownTelemetry {
+  const firstTick = samples[0]?.tick ?? null;
+  const lastTick = samples[samples.length - 1]?.tick ?? null;
+  return deepFreeze({
+    continuous:
+      firstTick !== null && lastTick !== null && lastTick - firstTick + 1 === samples.length,
+    current: current.map(projectCooldownRow),
+    window: PHASE2_COOLDOWN_IDS.map((_, index) =>
+      projectCooldownRow([
+        total(samples.map((sample) => sample.cooldownSlots[index]?.[0] ?? 0)),
+        total(samples.map((sample) => sample.cooldownSlots[index]?.[1] ?? 0)),
+      ]),
+    ),
+  });
+}
+
+export function hasPhase2CooldownEvidence(value: Phase2CooldownTelemetry): boolean {
+  return (
+    value.current.some(([activeSlots, coolingSlots]) => activeSlots > 0 || coolingSlots > 0) ||
+    value.window.some(([activeSlots, coolingSlots]) => activeSlots > 0 || coolingSlots > 0)
+  );
+}
+
+function hasObservedCooldownSlots(value: readonly Phase2CooldownObservation[]): boolean {
+  return value.some(([activeSlots, coolingSlots]) => activeSlots > 0 || coolingSlots > 0);
+}
+
+function projectCooldownRow(value: Phase2CooldownObservation): Phase2CooldownTelemetryRow {
+  const [activeSlots, coolingSlots] = value;
+  return [
+    activeSlots,
+    coolingSlots,
+    activeSlots === 0 ? null : Math.floor((coolingSlots / activeSlots) * 10_000),
+  ];
 }
 
 export function projectPhase2TelemetryWindow(
@@ -974,7 +1116,7 @@ function rollingWindow(
 function normalizeObservation(value: Phase2TelemetryObservation): Phase2TelemetryObservation {
   const result = { ...value } as Record<string, unknown>;
   for (const [key, entry] of Object.entries(result)) {
-    if (key === "controllerLevels" || key === "attrition") continue;
+    if (key === "controllerLevels" || key === "cooldownSlots" || key === "attrition") continue;
     if (key === "minimumDowngradeTicks" && entry === null) continue;
     result[key] = nonnegativeSafeInteger(entry);
   }
@@ -983,11 +1125,30 @@ function normalizeObservation(value: Phase2TelemetryObservation): Phase2Telemetr
     ...normalized,
     attrition: value.attrition,
     controllerLevels: value.controllerLevels,
+    cooldownSlots:
+      normalized.droppedCooldownInputs > 0
+        ? PHASE2_COOLDOWN_IDS.map(() => [0, 0] as const)
+        : normalizeCooldownSlots(value.cooldownSlots),
     rcl8Controllers: Math.min(normalized.controllers, normalized.rcl8Controllers),
     sustainingColonies: Math.min(normalized.controllers, normalized.sustainingColonies),
     energyAvailable: Math.min(normalized.energyCapacity, normalized.energyAvailable),
     busySpawns: Math.min(normalized.activeSpawns, normalized.busySpawns),
+    droppedInputs: saturatingAdd(normalized.droppedInputs, normalized.droppedCooldownInputs),
   };
+}
+
+function normalizeCooldownSlots(value: unknown): readonly Phase2CooldownObservation[] {
+  if (!Array.isArray(value) || value.length !== PHASE2_COOLDOWN_IDS.length)
+    throw new TypeError("phase 2 cooldown observation is invalid");
+  return value.map((entry: unknown): Phase2CooldownObservation => {
+    if (!Array.isArray(entry) || entry.length !== 2)
+      throw new TypeError("phase 2 cooldown observation row is invalid");
+    const activeSlots = nonnegativeSafeInteger(entry[0]);
+    const coolingSlots = nonnegativeSafeInteger(entry[1]);
+    if (coolingSlots > activeSlots)
+      throw new RangeError("phase 2 cooldown observation exceeds active slots");
+    return [activeSlots, coolingSlots];
+  });
 }
 
 function normalizePrevious(
@@ -999,6 +1160,7 @@ function normalizePrevious(
     (value?.schemaVersion !== 1 &&
       value?.schemaVersion !== 2 &&
       value?.schemaVersion !== 3 &&
+      value?.schemaVersion !== 4 &&
       value?.schemaVersion !== PHASE2_TELEMETRY_SCHEMA_VERSION) ||
     !Array.isArray(rawSamples)
   )
@@ -1033,7 +1195,9 @@ function normalizePrevious(
     ...sampleState,
     ...normalizePersistedRclState(value),
     attrition:
-      value.schemaVersion === 3 || value.schemaVersion === PHASE2_TELEMETRY_SCHEMA_VERSION
+      value.schemaVersion === 3 ||
+      value.schemaVersion === 4 ||
+      value.schemaVersion === PHASE2_TELEMETRY_SCHEMA_VERSION
         ? value.attrition
         : emptyPhase2AttritionState(),
   };
@@ -1054,6 +1218,7 @@ function normalizeSample(sample: unknown): Phase2TelemetrySample {
     authorityFailures: nonnegativeSafeInteger(row.authorityFailures),
     reserveViolations: nonnegativeSafeInteger(row.reserveViolations),
     measuredCpuMilli: nonnegativeSafeInteger(row.measuredCpuMilli),
+    cooldownSlots: normalizeCooldownSlots(row.cooldownSlots),
   };
 }
 
@@ -1093,7 +1258,8 @@ function emptyRclTransitionDurations(): Phase2RclTransitionDuration[] {
 }
 
 function normalizePersistedRclState(
-  value: Phase2TelemetryState | Phase2TelemetryStateV3 | Phase2TelemetryStateV2,
+  value:
+    Phase2TelemetryState | Phase2TelemetryStateV4 | Phase2TelemetryStateV3 | Phase2TelemetryStateV2,
 ): RclState {
   try {
     const timingSchema: unknown = (value as unknown as Record<string, unknown>)

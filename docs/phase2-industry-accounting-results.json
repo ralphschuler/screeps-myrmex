@@ -19,7 +19,7 @@
   },
   "migration": {
     "fromSchemaVersion": 3,
-    "toSchemaVersion": 4,
+    "toSchemaVersion": 5,
     "legacySamplesDropped": 1,
     "currentSamples": 1
   },

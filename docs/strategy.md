@@ -98,10 +98,14 @@ valid owner state establishes a new baseline instead of claiming progression. Co
 aggregate into seven fixed RCL2–RCL8 rows from opaque colony references. Consecutive complete
 owned-room observations similarly report only bounded road/container net hit loss/restoration and
 visible disappearance/addition; gaps, ownership loss, over-cap input, and byte eviction establish a
-new baseline, and no snapshot delta is labeled as decay, damage, repair, or replacement. Modeled
-stages remain distinct: a funded repair cap is not settled hit progress, planned terminal
-transaction energy is not observed destination stock, and lab/factory/power output requires exact
-next-observation settlement. Missing history reduces evidence and can never authorize work or RCL8
+new baseline, and no snapshot delta is labeled as decay, damage, repair, or replacement. Fixed
+extractor, link, terminal, lab, and factory rows separately measure visible active structure-ticks
+and positive-cooldown structure-ticks. A tick gap makes the retained utilization window explicitly
+non-continuous; power-spawn and observer slots remain authority outcomes, and forbidden Phase 2
+nuker launches do not dilute economy utilization. Modeled stages remain distinct: a funded repair
+cap is not settled hit progress, planned terminal transaction energy is not observed destination
+stock, cooldown is not proof of useful output, and lab/factory/power output requires exact next-
+observation settlement. Missing history reduces evidence and can never authorize work or RCL8
 maturity.
 
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn

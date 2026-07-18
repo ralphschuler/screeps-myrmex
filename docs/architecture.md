@@ -393,21 +393,32 @@ Malformed or future reporter state is rebuilt safely. First occurrence, bounded-
 single resolution, and stuck-recovery transitions leave the service only as capped tick-local
 records; the durable owner is not a replay queue.
 
-Telemetry owner schema V5 contains Phase 2 owner-local schema V4. Current settled colony, spawn,
+Telemetry owner schema V5 contains Phase 2 owner-local schema V5. Current settled colony, spawn,
 layout, mining, logistics, link, maintenance, resource, lab, mature-infrastructure, and observer
 receipts produce exactly eleven authority rows, three modeled flow identities, fixed progression,
 reserve, utilization, construction, and industry-accounting values, and one capped aggregate sample.
+V5 also reports fixed extractor, link, terminal, lab, and factory cooldown rows. Each row contains
+visible owned active structure-ticks, positive-cooldown structure-ticks, and floored utilization
+basis points; the rolling projection explicitly reports whether every retained tick is consecutive.
+The tick projection and compact sample field are omitted while all five current and retained rows
+are zero; nested schema V5 distinguishes that canonical zero from absent legacy evidence.
+Power-spawn and observer command slots remain separate authority outcomes, while the Phase
+2-forbidden nuker launch is absent from the economy denominator. The complete cooldown batch admits
+at most 64 owned rooms and official maxima of 64 extractors, 384 links, 64 terminals, 640 labs, and
+64 factories; over-cap input fails closed before asset traversal.
+
 The hard ring bound is 64 and the configured history and whole-owner byte ceilings may reduce it
 further. Persistent samples are compact tuples aligned with the exported fixed sample-field order.
-V4 records exact settled industry energy input, non-energy resource input, and output units in
-compact tuples aligned with one exported fixed field order; pending, retry, cancelled, failed, or
-conflicting attempts contribute zero, empty aggregate rows are omitted, and boost progress is not
-reaction output. V1–V3 samples are dropped and counted during migration because their missing inputs
-cannot be reconstructed. V4 also preserves at most 64 opaque controller baselines and exactly seven
-destination-RCL duration rows. Only a continuously observed adjacent increase records elapsed ticks;
-missing continuity, ownership loss, downgrade, multi-level jump, duplicate identity, or malformed
-state resets evidence without success. Tick telemetry omits baseline-only timing and otherwise
-publishes one compact latest-row tuple plus loss counters; the owner retains all seven aggregates.
+V4 introduced exact settled industry energy input, non-energy resource input, and output units;
+pending, retry, cancelled, failed, or conflicting attempts contribute zero, empty aggregate rows are
+omitted, and boost progress is not reaction output. V1–V3 samples are dropped and counted during V4
+migration because their missing inputs cannot be reconstructed. V5 similarly drops V4 samples
+because absent cooldown observations cannot become zero. RCL timing and attrition evidence survive
+both migrations. V5 preserves at most 64 opaque controller baselines and exactly seven destination-
+RCL duration rows. Only a continuously observed adjacent increase records elapsed ticks; missing
+continuity, ownership loss, downgrade, multi-level jump, duplicate identity, or malformed state
+resets evidence without success. Tick telemetry omits baseline-only timing and otherwise publishes
+one compact latest-row tuple plus loss counters; the owner retains all seven aggregates.
 
 V3 adds one attrition schema with at most 64 opaque visible-owned-colony references, 128 opaque
 road/container baselines, and exactly two cumulative rows; its compact owner field is absent while
@@ -1737,8 +1748,8 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrices
 - contract counts, age, completion, failure, and lease churn;
 - energy/source/logistics outcome metrics;
 - fixed Phase 2 controller progress, reset-safe adjacent-RCL durations, bounded road/container net
-  attrition, reserves, spawn utilization, construction backlog, authority outcomes, modeled flow
-  residuals, and a bounded aggregate window;
+  attrition, reserves, spawn and cooldown utilization, construction backlog, authority outcomes,
+  modeled flow residuals, and a bounded aggregate window;
 - remote full-cost profit and suspension reason;
 - threat, defense response, and safe-mode decisions;
 - operation budget, losses, state, and exit reason;

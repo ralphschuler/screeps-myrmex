@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "deterministic": {
+    "reorderedEquivalent": true,
+    "resetEquivalent": true,
+    "sameTickReplayEquivalent": true
+  },
+  "rows": [
+    { "id": "extractor", "current": [2, 0, 0], "window": [4, 1, 2500] },
+    { "id": "link", "current": [3, 1, 3333], "window": [6, 3, 5000] },
+    { "id": "terminal", "current": [1, 1, 10000], "window": [1, 1, 10000] },
+    { "id": "lab", "current": [4, 2, 5000], "window": [8, 3, 3750] },
+    { "id": "factory", "current": [1, 1, 10000], "window": [2, 1, 5000] }
+  ],
+  "continuity": {
+    "consecutive": true,
+    "gap": false,
+    "gapSamples": 3,
+    "gapFirstTick": 100,
+    "gapLastTick": 103
+  },
+  "migration": {
+    "fromSchemaVersion": 4,
+    "toSchemaVersion": 5,
+    "unknowableSamplesDropped": 2,
+    "currentSamples": 1
+  },
+  "bounds": {
+    "ids": ["extractor", "link", "terminal", "lab", "factory"],
+    "perKindCandidates": [64, 384, 64, 640, 64],
+    "productionMaximumSamples": 64,
+    "telemetryOwnerBytes": 8192,
+    "dynamicLabels": 0,
+    "telemetryDecisionInputs": 0
+  }
+}
