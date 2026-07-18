@@ -233,7 +233,7 @@ export function planLogisticsRuntime(input: {
     tick: input.tick,
   });
   const budgets = contracts.commitments.flatMap((commitment) => {
-    if (commitment.budgetBinding?.category === "industry") return [];
+    if (commitment.budgetBinding !== undefined) return [];
     const { request, priorityClass } = commitment;
     const persisted = input.planning.contracts.find(
       ({ execution }) =>
@@ -420,10 +420,12 @@ function previousCommitments(
         sourceNodeId: flow.sourceNodeId,
         stage: execution.stage,
         stageStartedAt: input.tick,
-        ...(contract.budgetBinding.category === "industry"
+        ...(contract.budgetBinding.category === "industry" ||
+        (contract.budgetBinding.category === "optional-growth" &&
+          contract.budgetBinding.issuer.startsWith("layout-migration/"))
           ? {
               budgetBinding: {
-                category: "industry" as const,
+                category: contract.budgetBinding.category,
                 issuer: contract.budgetBinding.issuer,
               },
             }
@@ -438,10 +440,34 @@ function mergeDemandGraph(
   demands: LogisticsResourceDemandProjection | undefined,
 ): LogisticsGraphObservation {
   if (demands === undefined) return observed;
+  const requestedSuppressions = demands.suppressedSinkTargetIds ?? [];
+  const validSuppressions =
+    requestedSuppressions.length <= 128 &&
+    requestedSuppressions.every((id) => id.length > 0 && id.length <= 128) &&
+    new Set(requestedSuppressions).size === requestedSuppressions.length;
+  const suppressedTargets = new Set(validSuppressions ? requestedSuppressions : []);
+  const suppressedNodeIds = new Set(
+    observed.endpoints.flatMap((endpoint) =>
+      endpoint.targetId !== null && suppressedTargets.has(endpoint.targetId)
+        ? observed.nodes.some(({ id, kind }) => id === endpoint.nodeId && kind === "sink")
+          ? [endpoint.nodeId]
+          : []
+        : [],
+    ),
+  );
   return freeze({
-    edges: [...observed.edges, ...demands.edges],
-    endpoints: [...observed.endpoints, ...demands.endpoints],
-    nodes: [...observed.nodes, ...demands.nodes],
+    edges: [
+      ...observed.edges.filter(
+        ({ sinkNodeId, sourceNodeId }) =>
+          !suppressedNodeIds.has(sinkNodeId) && !suppressedNodeIds.has(sourceNodeId),
+      ),
+      ...demands.edges,
+    ],
+    endpoints: [
+      ...observed.endpoints.filter(({ nodeId }) => !suppressedNodeIds.has(nodeId)),
+      ...demands.endpoints,
+    ],
+    nodes: [...observed.nodes.filter(({ id }) => !suppressedNodeIds.has(id)), ...demands.nodes],
   });
 }
 

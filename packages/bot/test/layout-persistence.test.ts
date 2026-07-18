@@ -6,6 +6,7 @@ import {
   parseLayoutsOwner,
   persistConstructionSiteReceipt,
   persistLayoutCommitment,
+  persistLayoutExtensionEvacuation,
   reconcileOwnedLayouts,
   registerLayoutCompiledCache,
 } from "../src/layout";
@@ -36,6 +37,42 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(stale)).toMatchObject({ records: [], revision: owner.revision + 1 });
   });
+  it("persists one bounded extension evacuation and drops it on layout revision", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    const evacuation = {
+      amount: 50,
+      expiresAt: 160,
+      replacementId: "extension-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "extension-obsolete",
+      startedAt: 10,
+    } as const;
+    owner = persistLayoutExtensionEvacuation(owner, "W1N1", evacuation);
+
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(
+      persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.extensionEvacuation,
+    ).toEqual(evacuation);
+    expect(
+      persistLayoutCommitment(owner, "W1N1", { ...commitment, fingerprint: "layout-v2:b" })
+        .records[0]?.extensionEvacuation,
+    ).toBeUndefined();
+    expect(
+      persistLayoutExtensionEvacuation(owner, "W1N1", null).records[0]?.extensionEvacuation,
+    ).toBeUndefined();
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [
+          {
+            ...owner.records[0],
+            extensionEvacuation: { ...evacuation, amount: 0 },
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
   it("persists 32 canonical receipts and drops them on layout revision", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
     for (let index = 0; index < 40; index += 1)

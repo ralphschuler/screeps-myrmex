@@ -16,6 +16,8 @@ export const MAX_LAYOUT_FLOOD_CELLS = 2_500 as const;
 export const MAX_LAYOUT_RECORDS = 64 as const;
 export const MAX_LAYOUT_BLOCKERS = 8 as const;
 export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
+export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
+export const LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
   officialHardCap: 100,
   reservedGlobalHeadroom: 5,
@@ -70,10 +72,40 @@ export interface LayoutCommitment {
   readonly serviceBlockers?: readonly SourceServiceBlocker[];
   readonly transform: LayoutTransform;
 }
+export interface LayoutExtensionEvacuation {
+  readonly amount: number;
+  readonly expiresAt: number;
+  readonly replacementId: string;
+  readonly replacementInitialEnergy: number;
+  readonly sourceId: string;
+  readonly startedAt: number;
+}
+
 export interface LayoutRecord extends LayoutCommitment {
+  readonly extensionEvacuation?: LayoutExtensionEvacuation;
   readonly roomName: string;
   readonly sourceServices?: readonly LayoutPlacement[];
   readonly siteReceipts?: readonly ConstructionSiteAttemptReceipt[];
+}
+
+export function layoutExtensionEvacuationFlowId(
+  roomName: string,
+  evacuation: Pick<LayoutExtensionEvacuation, "replacementId" | "sourceId">,
+): string {
+  return `layout-extension-evacuation:${roomName}:${evacuation.sourceId}:${evacuation.replacementId}`;
+}
+
+export function layoutExtensionEvacuationBudgetIssuer(
+  roomName: string,
+  evacuation: Pick<LayoutExtensionEvacuation, "replacementId" | "sourceId">,
+): string | null {
+  const issuer = [
+    "layout-migration",
+    `${String(roomName.length)}:${roomName}`,
+    `${String(evacuation.sourceId.length)}:${evacuation.sourceId}`,
+    `${String(evacuation.replacementId.length)}:${evacuation.replacementId}`,
+  ].join("/");
+  return issuer.length <= 128 ? issuer : null;
 }
 
 export type LayoutDiffRejectionReason =
@@ -229,6 +261,10 @@ export type LayoutMigrationBlocker =
   | "colony-unsafe"
   | "controller-risk"
   | "global-site-headroom"
+  | "evacuation-capacity"
+  | "evacuation-expired"
+  | "evacuation-incomplete"
+  | "evacuation-pending"
   | "layout-blocked"
   | "progression-blocked"
   | "replacement-pending"
@@ -277,6 +313,7 @@ export interface LayoutMigrationAuthorization {
 export interface LayoutMigrationPlanningResult {
   readonly authorization: LayoutMigrationAuthorization | null;
   readonly blockers: readonly LayoutMigrationBlockerRecord[];
+  readonly extensionEvacuation: LayoutExtensionEvacuation | null;
   readonly proposals: readonly LayoutMigrationProposal[];
   readonly scannedCandidates: number;
   readonly truncatedCandidates: number;

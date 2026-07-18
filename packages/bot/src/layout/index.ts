@@ -25,6 +25,7 @@ export {
   emptyLayoutsOwner,
   parseLayoutsOwner,
   persistLayoutCommitment,
+  persistLayoutExtensionEvacuation,
   freshSourceServicePlacements,
   persistConstructionSiteReceipt,
   reconcileOwnedLayouts,

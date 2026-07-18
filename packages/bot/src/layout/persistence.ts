@@ -1,10 +1,13 @@
 import {
   LAYOUT_ALGORITHM_REVISION,
+  LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_OWNER_SCHEMA_VERSION,
   MAX_LAYOUT_BLOCKERS,
+  MAX_LAYOUT_EXTENSION_ENERGY,
   MAX_LAYOUT_RECORDS,
   type ConstructionSiteAttemptReceipt,
   type LayoutCommitment,
+  type LayoutExtensionEvacuation,
   type LayoutRecord,
   type LayoutPlacement,
   type LayoutsOwnerV1,
@@ -47,14 +50,26 @@ export function persistLayoutCommitment(
   commitment: LayoutCommitment,
   placements: readonly LayoutPlacement[] = [],
 ): LayoutsOwnerV1 {
+  const prior = owner.records.find((record) => record.roomName === roomName);
   const records = owner.records.filter((r) => r.roomName !== roomName);
   const sourceServices = placements.filter(
     (placement) => placement.service?.kind === "source-container",
   );
+  const sameCommitment = prior?.fingerprint === commitment.fingerprint;
   records.push({
     roomName,
     ...commitment,
-    ...(sourceServices.length === 0 ? {} : { sourceServices }),
+    ...(sameCommitment && prior.extensionEvacuation !== undefined
+      ? { extensionEvacuation: prior.extensionEvacuation }
+      : {}),
+    ...(sourceServices.length === 0
+      ? sameCommitment && prior.sourceServices !== undefined
+        ? { sourceServices: prior.sourceServices }
+        : {}
+      : { sourceServices }),
+    ...(sameCommitment && prior.siteReceipts !== undefined
+      ? { siteReceipts: prior.siteReceipts }
+      : {}),
   });
   records.sort((a, b) => compare(a.roomName, b.roomName));
   return freeze({
@@ -63,6 +78,30 @@ export function persistLayoutCommitment(
     records: records.slice(0, MAX_LAYOUT_RECORDS),
   });
 }
+export function persistLayoutExtensionEvacuation(
+  owner: LayoutsOwnerV1,
+  roomName: string,
+  evacuation: LayoutExtensionEvacuation | null,
+): LayoutsOwnerV1 {
+  const prior = owner.records.find((record) => record.roomName === roomName);
+  if (prior === undefined) return owner;
+  if (
+    (evacuation === null && prior.extensionEvacuation === undefined) ||
+    (evacuation !== null &&
+      JSON.stringify(evacuation) === JSON.stringify(prior.extensionEvacuation))
+  )
+    return owner;
+  const records = owner.records.map((record) => {
+    if (record.roomName !== roomName) return record;
+    if (evacuation === null) {
+      const { extensionEvacuation, ...retained } = record;
+      return extensionEvacuation === undefined ? record : retained;
+    }
+    return { ...record, extensionEvacuation: evacuation };
+  });
+  return freeze({ ...owner, records, revision: owner.revision + 1 });
+}
+
 export function freshSourceServicePlacements(
   owner: LayoutsOwnerV1,
   roomName: string,
@@ -126,9 +165,25 @@ function validRecord(v: unknown): v is LayoutRecord {
     Array.isArray(v.blockers) &&
     v.blockers.length <= MAX_LAYOUT_BLOCKERS &&
     v.blockers.every((b) => typeof b === "string" && b.length <= 32) &&
+    (v.extensionEvacuation === undefined || validExtensionEvacuation(v.extensionEvacuation)) &&
     (v.serviceBlockers === undefined || validServiceBlockers(v.serviceBlockers, v.roomName)) &&
     (v.sourceServices === undefined || validSourceServices(v.sourceServices, v.roomName)) &&
     (v.siteReceipts === undefined || validReceipts(v.siteReceipts, v.roomName))
+  );
+}
+function validExtensionEvacuation(value: unknown): value is LayoutExtensionEvacuation {
+  return (
+    record(value) &&
+    positiveInteger(value.amount) &&
+    value.amount <= MAX_LAYOUT_EXTENSION_ENERGY &&
+    integer(value.startedAt) &&
+    integer(value.expiresAt) &&
+    value.expiresAt - value.startedAt === LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS &&
+    integer(value.replacementInitialEnergy) &&
+    value.replacementInitialEnergy + value.amount <= MAX_LAYOUT_EXTENSION_ENERGY &&
+    identity(value.sourceId, 128) &&
+    identity(value.replacementId, 128) &&
+    value.sourceId !== value.replacementId
   );
 }
 function validSourceServices(value: unknown, roomName: unknown): boolean {
@@ -235,6 +290,12 @@ function record(v: unknown): v is Record<string, unknown> {
 }
 function integer(v: unknown): v is number {
   return typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+}
+function positiveInteger(v: unknown): v is number {
+  return integer(v) && v > 0;
+}
+function identity(v: unknown, maximumLength: number): v is string {
+  return typeof v === "string" && v.length > 0 && v.length <= maximumLength;
 }
 function coordinate(v: unknown): v is number {
   return integer(v) && v < 50;
