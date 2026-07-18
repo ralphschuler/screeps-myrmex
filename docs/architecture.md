@@ -61,10 +61,13 @@ and performs canonical classification and arbitration. `links.execute` revalidat
 dependency, issues at most one command per source, and publishes typed command settlement with
 actual flow and loss attribution. Command errors never consume or release another owner's budget.
 
-`ConstructionPlanner` is the sole mature-colony maintenance-demand policy owner. It derives bounded
-road, container, ordinary-structure, wall, and rampart targets from current observation, layout,
-traffic consequence, reserve posture, RCL, and threat presence. It emits data only; ContractLedger
-owns funded creep work, while defense arbitration exclusively owns tower attack, heal, and repair.
+`ConstructionPlanner` is the sole mature-colony maintenance-demand and layout-migration priority
+policy owner. It derives bounded road, container, ordinary-structure, wall, and rampart targets from
+current observation, layout, traffic consequence, reserve posture, RCL, and threat presence. It
+emits data only; ContractLedger owns funded creep work, while defense arbitration exclusively owns
+tower attack, heal, and repair. During issue #284 it may additionally propose only a road that
+solely blocks a planned tower and emit its exact current authorization; `StructureRemovalArbiter`
+alone authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1104,31 +1107,33 @@ facts—not a successful command return—prove target completion. ADR 0008 reco
 
 The following table is the canonical ownership map.
 
-| System                   | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                          |
-| ------------------------ | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | ----------------------------------- |
-| `RuntimeConfigAuthority` | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners    |
-| `EmpireDirector`         | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands      |
-| `ColonyDirector`         | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache        |
-| `BudgetLedger`           | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend      |
-| `ContractLedger`         | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands      |
-| `EconomyPlanner`         | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps              |
-| `SpawnBroker`            | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger |
-| `SpawnExecutor`          | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy   |
-| `WorkforceAllocator`     | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands  |
-| `LogisticsPlanner`       | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly           |
-| `MovementArbiter`        | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels          |
-| `LayoutPlanner`          | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites           |
-| `ConstructionPlanner`    | build/repair/dismantle priorities              | layout, structures, reserves              | construction and work intents            | modify layout ownership             |
-| `DefenseDirector`        | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war             |
-| `DiplomacyLedger`        | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions        |
-| `RemotePortfolio`        | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly          |
-| `ExpansionDirector`      | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets         |
-| `IndustryDirector`       | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls   |
-| `MarketPlanner`          | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly        |
-| `OperationsController`   | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies            |
-| `ExecutorRegistry`       | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices              |
-| `Reconciler`             | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                 |
-| `TelemetryService`       | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store         |
+| System                     | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                          |
+| -------------------------- | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | ----------------------------------- |
+| `RuntimeConfigAuthority`   | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners    |
+| `EmpireDirector`           | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands      |
+| `ColonyDirector`           | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache        |
+| `BudgetLedger`             | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend      |
+| `ContractLedger`           | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands      |
+| `EconomyPlanner`           | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps              |
+| `SpawnBroker`              | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger |
+| `SpawnExecutor`            | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy   |
+| `WorkforceAllocator`       | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands  |
+| `LogisticsPlanner`         | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly           |
+| `MovementArbiter`          | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels          |
+| `LayoutPlanner`            | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites           |
+| `ConstructionPlanner`      | build/repair/migration priorities              | layout, structures, reserves              | construction, work, removal proposals    | issue commands                      |
+| `StructureRemovalArbiter`  | owned-structure removal authorization          | typed proposals, current safety evidence  | at most one accepted removal intent      | call the game API                   |
+| `StructureDestroyExecutor` | direct owned-structure destroy command         | one accepted intent, narrow live adapter  | typed destroy result                     | select migration policy             |
+| `DefenseDirector`          | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war             |
+| `DiplomacyLedger`          | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions        |
+| `RemotePortfolio`          | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly          |
+| `ExpansionDirector`        | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets         |
+| `IndustryDirector`         | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls   |
+| `MarketPlanner`            | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly        |
+| `OperationsController`     | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies            |
+| `ExecutorRegistry`         | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices              |
+| `Reconciler`               | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                 |
+| `TelemetryService`         | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store         |
 
 ### 12.1 ColonyDirector
 
@@ -1369,6 +1374,17 @@ commitments and bounded receipts stage through the schema-4 layouts owner; degra
 stale, denied, or CPU-skipped work preserves prior commitments and authorizes no command. Every
 observed owned layout site enters the existing funded survival-growth build flow, while controller
 risk, recovery, maintenance, and protected reserves retain precedence.
+
+Issue #284 adds one narrow convergence exception without changing the layout owner schema.
+`ConstructionPlanner` may propose only a road that solely occupies an unlocked, below-allowance
+planned tower tile while the complete current layout, safe colony posture, workforce, reserve, and
+current construction-site headroom all pass. `StructureRemovalArbiter` requires one exact current
+colony/room/layout/observation/policy authorization, rejects over-cap batches before traversal, and
+accepts at most one globally. `StructureDestroyExecutor` revalidates current commitment, owned room,
+no hostiles, and exact road identity/position before the sole `Structure.destroy` call. The next
+observation proves disappearance; no migration queue, receipt, or success state is persisted.
+Non-road, stocked, defensive, replacement-first, and creep-dismantle paths remain issue #99 and fail
+closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -1628,6 +1644,7 @@ policy module are forbidden.
 | factory action          | `MatureStructureArbiter`  | `MatureStructureExecutor`  |
 | power-spawn action      | `MatureStructureArbiter`  | `MatureStructureExecutor`  |
 | construction-site slot  | `ConstructionSiteArbiter` | `ConstructionSiteExecutor` |
+| owned structure removal | `StructureRemovalArbiter` | `StructureDestroyExecutor` |
 | observer action         | `ObserverArbiter`         | `ObserverExecutor`         |
 | market mutation         | `MarketArbiter`           | `MarketExecutor`           |
 | safe mode               | `SafeModeArbiter`         | `ControllerExecutor`       |
@@ -1919,6 +1936,9 @@ Required architecture assertions include:
 - `SpawnBroker` and `SpawnExecutor` each have one declaration at their canonical `spawn/` path;
 - direct or aliased `spawnCreep` calls occur only in `SpawnExecutor`;
 - direct or aliased `observeRoom` calls occur only in `ObserverExecutor`;
+- direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
+- temporary road removal requires exact current authorization, bounded input, and current site
+  headroom before accepting at most one road;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

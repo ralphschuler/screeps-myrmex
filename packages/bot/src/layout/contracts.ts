@@ -24,6 +24,10 @@ export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
   inspectedProposalsPerRoom: 64,
   activeSitesPerRoom: 10,
 } as const);
+export const STRUCTURE_REMOVAL_LIMITS = Object.freeze({
+  acceptedGloballyPerTick: 1,
+  inspectedCandidatesPerTick: 128,
+} as const);
 
 export type LayoutTransform = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type LayoutLayer = "primary" | "road" | "rampart";
@@ -218,9 +222,119 @@ export interface LayoutRuntimePlanRecord {
   readonly roomName: string;
   readonly status: "complete" | "degraded";
 }
+
+export type LayoutMigrationBlocker =
+  | "allowance-full"
+  | "candidate-cap"
+  | "colony-unsafe"
+  | "controller-risk"
+  | "global-site-headroom"
+  | "layout-blocked"
+  | "progression-blocked"
+  | "reserve-unrestored"
+  | "room-site-cap"
+  | "site-conflict"
+  | "threat"
+  | "workforce-unavailable";
+export interface LayoutMigrationProposal {
+  readonly colonyId: string;
+  readonly layoutFingerprint: string;
+  readonly observationFingerprint: string;
+  readonly policyFingerprint: string;
+  readonly pos: PositionSnapshot;
+  readonly replacementStructureType: "tower";
+  readonly stableId: string;
+  readonly targetId: string;
+  readonly targetStructureType: "road";
+}
+export interface LayoutMigrationBlockerRecord {
+  readonly reason: LayoutMigrationBlocker;
+  readonly roomName: string;
+  readonly targetId: string | null;
+}
+export interface LayoutMigrationAuthorization {
+  readonly colonyId: string;
+  readonly layoutFingerprint: string;
+  readonly observationFingerprint: string;
+  readonly policyFingerprint: string;
+  readonly roomName: string;
+}
+export interface LayoutMigrationPlanningResult {
+  readonly authorization: LayoutMigrationAuthorization | null;
+  readonly blockers: readonly LayoutMigrationBlockerRecord[];
+  readonly proposals: readonly LayoutMigrationProposal[];
+  readonly scannedCandidates: number;
+  readonly truncatedCandidates: number;
+}
+export interface StructureRemovalLimits {
+  readonly acceptedGloballyPerTick: number;
+  readonly inspectedCandidatesPerTick: number;
+}
+export type StructureRemovalArbitrationReason =
+  | "authorization-missing"
+  | "duplicate-proposal"
+  | "duplicate-target"
+  | "global-tick-limit"
+  | "invalid-proposal";
+export interface StructureRemovalArbitrationRecord {
+  readonly proposal: LayoutMigrationProposal;
+  readonly reason?: StructureRemovalArbitrationReason;
+  readonly status: "accepted" | "deferred" | "rejected";
+}
+export interface DestroyOwnedStructureIntent {
+  readonly colonyId: string;
+  readonly kind: "destroy-owned-structure";
+  readonly layoutFingerprint: string;
+  readonly observationFingerprint: string;
+  readonly policyFingerprint: string;
+  readonly replacementStructureType: "tower";
+  readonly roomName: string;
+  readonly stableId: string;
+  readonly targetId: string;
+  readonly targetStructureType: "road";
+  readonly x: number;
+  readonly y: number;
+}
+export interface StructureRemovalArbitrationInput {
+  readonly authorizations: readonly LayoutMigrationAuthorization[];
+  readonly limits: StructureRemovalLimits;
+  readonly proposals: readonly LayoutMigrationProposal[];
+}
+export interface StructureRemovalArbitrationResult {
+  readonly accepted: readonly StructureRemovalArbitrationRecord[];
+  readonly deferred: readonly StructureRemovalArbitrationRecord[];
+  readonly intents: readonly DestroyOwnedStructureIntent[];
+  readonly rejected: readonly StructureRemovalArbitrationRecord[];
+  readonly truncatedCandidates: number;
+}
+export type StructureDestroyExecutionCode =
+  "OK" | "ERR_NOT_OWNER" | "ERR_BUSY" | "TARGET_ABSENT" | "ERR_INVALID_TARGET" | "UNEXPECTED";
+export interface StructureDestroyExecutionResult {
+  readonly called: boolean;
+  readonly code: StructureDestroyExecutionCode;
+  readonly fault:
+    | "adapter-fault"
+    | "hostiles-present"
+    | "room-not-owned"
+    | "room-unavailable"
+    | "stale-commitment"
+    | "target-absent"
+    | "target-mismatch"
+    | null;
+  readonly intent: DestroyOwnedStructureIntent;
+}
+export interface LayoutMigrationRuntimeResult {
+  readonly arbitration: StructureRemovalArbitrationResult | null;
+  readonly blockers: readonly LayoutMigrationBlockerRecord[];
+  readonly execution: readonly StructureDestroyExecutionResult[];
+  readonly proposals: readonly LayoutMigrationProposal[];
+  readonly scannedCandidates: number;
+  readonly truncatedCandidates: number;
+}
 export interface LayoutRuntimeResult {
   readonly arbitration: ConstructionSiteArbitrationResult | null;
   readonly execution: readonly ConstructionSiteExecutionResult[];
+  readonly migration: LayoutMigrationRuntimeResult;
   readonly planning: readonly LayoutRuntimePlanRecord[];
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";

@@ -14,6 +14,11 @@ export {
   normalizeConstructionSiteReceipts,
 } from "./construction-site-arbiter";
 export { ConstructionSiteExecutor } from "./construction-site-executor";
+export { arbitrateStructureRemovals } from "./structure-removal-arbiter";
+export {
+  StructureDestroyExecutor,
+  type StructureDestroyExecutionAdapter,
+} from "./structure-destroy-executor";
 export { reconcileConstructionSiteExecution } from "./reconciliation";
 export {
   emptyLayoutsOwner,

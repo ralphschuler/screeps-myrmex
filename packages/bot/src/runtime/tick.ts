@@ -121,8 +121,11 @@ import { emptyWorldSnapshot, type WorldSnapshot } from "../world/snapshot";
 import type { RuntimeGame, TickContext } from "./context";
 import {
   CONSTRUCTION_SITE_LIMITS,
+  STRUCTURE_REMOVAL_LIMITS,
   ConstructionSiteExecutor,
+  StructureDestroyExecutor,
   arbitrateConstructionSites,
+  arbitrateStructureRemovals,
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
   freshSourceServicePlacements,
@@ -137,10 +140,15 @@ import {
   type ConstructionSiteArbitrationResult,
   type ConstructionSiteExecutionResult,
   type LayoutCommitment,
+  type LayoutMigrationAuthorization,
+  type LayoutMigrationBlockerRecord,
+  type LayoutMigrationProposal,
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
   type LayoutsOwnerV1,
+  type StructureDestroyExecutionResult,
+  type StructureRemovalArbitrationResult,
 } from "../layout";
 import {
   CPU_MODES,
@@ -226,6 +234,7 @@ const spawnBroker = new SpawnBroker();
 const spawnExecutor = new SpawnExecutor();
 const telemetryService = new TelemetryService();
 const constructionSiteExecutor = new ConstructionSiteExecutor();
+const structureDestroyExecutor = new StructureDestroyExecutor();
 const linkExecutor = new LinkExecutor();
 const constructionPlanner = new ConstructionPlanner();
 const industryDirector = new IndustryDirector();
@@ -423,6 +432,12 @@ interface LayoutTickDraft {
   arbitration: ConstructionSiteArbitrationResult | null;
   changed: boolean;
   execution: readonly ConstructionSiteExecutionResult[];
+  migrationArbitration: StructureRemovalArbitrationResult | null;
+  migrationBlockers: readonly LayoutMigrationBlockerRecord[];
+  migrationExecution: readonly StructureDestroyExecutionResult[];
+  migrationProposals: readonly LayoutMigrationProposal[];
+  migrationScannedCandidates: number;
+  migrationTruncatedCandidates: number;
   owner: LayoutsOwnerV1 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   status: LayoutRuntimeResult["status"];
@@ -464,6 +479,12 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     arbitration: null,
     changed: false,
     execution: Object.freeze([]),
+    migrationArbitration: null,
+    migrationBlockers: Object.freeze([]),
+    migrationExecution: Object.freeze([]),
+    migrationProposals: Object.freeze([]),
+    migrationScannedCandidates: 0,
+    migrationTruncatedCandidates: 0,
     owner: null,
     planning: Object.freeze([]),
     status: "not-run",
@@ -1232,20 +1253,33 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         phase: "execute",
         criticality: "mandatory",
         cadence: 1,
-        estimate: 0.25,
+        estimate: 0.5,
         admitInRecovery: false,
         mandatoryTail: true,
       },
       run: () => {
         const owner = layoutDraft.owner;
+        const isCurrentCommitment = (roomName: string, fingerprint: string) =>
+          owner?.records.some(
+            (record) => record.roomName === roomName && record.fingerprint === fingerprint,
+          ) === true;
         const execution = constructionSiteExecutor.execute(layoutDraft.arbitration?.intents ?? [], {
-          isCurrentCommitment: (roomName, fingerprint) =>
-            owner?.records.some(
-              (record) => record.roomName === roomName && record.fingerprint === fingerprint,
-            ) === true,
+          isCurrentCommitment,
           resolveRoom: (roomName) => input.game.rooms[roomName] ?? null,
         });
+        const migrationExecution = structureDestroyExecutor.execute(
+          layoutDraft.migrationArbitration?.intents ?? [],
+          {
+            hasCurrentHostiles: (roomName) =>
+              (input.game.rooms[roomName]?.find(FIND_HOSTILE_CREEPS) ?? []).length > 0,
+            isCurrentCommitment,
+            resolveRoom: (roomName) => input.game.rooms[roomName] ?? null,
+            resolveStructure: (structureId) =>
+              resolveLiveObject(input.game, structureId) as Structure | null,
+          },
+        );
         layoutDraft.execution = execution;
+        layoutDraft.migrationExecution = migrationExecution;
         return staged(() => {
           input.runtime.publishLayout(layoutRuntimeResult(layoutDraft, 0));
         });
@@ -1705,6 +1739,11 @@ function layoutPlanningSystem(
       const planning: LayoutRuntimePlanRecord[] = [];
       const linkEvidence: LinkRoomLayoutEvidence[] = [];
       const maintenanceLayouts: { placements: readonly LayoutPlacement[]; roomName: string }[] = [];
+      const migrationAuthorizations: LayoutMigrationAuthorization[] = [];
+      const migrationBlockers: LayoutMigrationBlockerRecord[] = [];
+      const migrationProposals: LayoutMigrationProposal[] = [];
+      let migrationScannedCandidates = 0;
+      let migrationTruncatedCandidates = 0;
       const proposals = [] as ReturnType<typeof diffOwnedRoomLayout>["proposals"][number][];
       const authorizations: {
         authorized: boolean;
@@ -1811,6 +1850,20 @@ function layoutPlanningSystem(
           roomName: room.name,
         });
         maintenanceLayouts.push({ placements, roomName: room.name });
+        const migration = constructionPlanner.planMigration({
+          colony,
+          commitment,
+          globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
+          observationFingerprint,
+          placements,
+          policyFingerprint,
+          room,
+        });
+        if (migration.authorization !== null) migrationAuthorizations.push(migration.authorization);
+        migrationBlockers.push(...migration.blockers);
+        migrationProposals.push(...migration.proposals);
+        migrationScannedCandidates += migration.scannedCandidates;
+        migrationTruncatedCandidates += migration.truncatedCandidates;
         proposals.push(
           ...diffOwnedRoomLayout({
             colonyId: colony.id,
@@ -1834,6 +1887,11 @@ function layoutPlanningSystem(
           status: "complete",
         });
       }
+      const migrationArbitration = arbitrateStructureRemovals({
+        authorizations: migrationAuthorizations,
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals: migrationProposals,
+      });
       const arbitration = arbitrateConstructionSites({
         globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
         limits: CONSTRUCTION_SITE_LIMITS,
@@ -1850,6 +1908,12 @@ function layoutPlanningSystem(
         draft.arbitration = arbitration;
         draft.changed = changed;
         draft.execution = Object.freeze([]);
+        draft.migrationArbitration = migrationArbitration;
+        draft.migrationBlockers = Object.freeze(migrationBlockers);
+        draft.migrationExecution = Object.freeze([]);
+        draft.migrationProposals = Object.freeze(migrationProposals);
+        draft.migrationScannedCandidates = migrationScannedCandidates;
+        draft.migrationTruncatedCandidates = migrationTruncatedCandidates;
         draft.owner = owner;
         draft.planning = Object.freeze(planning);
         draft.linkEvidence = Object.freeze(linkEvidence);
@@ -1875,6 +1939,7 @@ function commitmentFromRecord(record: LayoutsOwnerV1["records"][number]): Layout
     blockers: record.blockers,
     committedAt: record.committedAt,
     fingerprint: record.fingerprint,
+    ...(record.serviceBlockers === undefined ? {} : { serviceBlockers: record.serviceBlockers }),
     transform: record.transform,
   };
 }
@@ -1912,6 +1977,14 @@ function layoutRuntimeResult(draft: LayoutTickDraft, receiptsWritten: number): L
   return Object.freeze({
     arbitration: draft.arbitration,
     execution: draft.execution,
+    migration: Object.freeze({
+      arbitration: draft.migrationArbitration,
+      blockers: draft.migrationBlockers,
+      execution: draft.migrationExecution,
+      proposals: draft.migrationProposals,
+      scannedCandidates: draft.migrationScannedCandidates,
+      truncatedCandidates: draft.migrationTruncatedCandidates,
+    }),
     planning: draft.planning,
     receiptsWritten,
     status: draft.status,
@@ -1921,6 +1994,14 @@ function emptyLayoutRuntimeResult(): LayoutRuntimeResult {
   return Object.freeze({
     arbitration: null,
     execution: Object.freeze([]),
+    migration: Object.freeze({
+      arbitration: null,
+      blockers: Object.freeze([]),
+      execution: Object.freeze([]),
+      proposals: Object.freeze([]),
+      scannedCandidates: 0,
+      truncatedCandidates: 0,
+    }),
     planning: Object.freeze([]),
     receiptsWritten: 0,
     status: "not-run",

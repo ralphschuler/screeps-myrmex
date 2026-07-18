@@ -99,6 +99,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
 - Extend the existing colony authority from the survival lifecycle to complete RCL policy; do not
   create a second per-room kernel or state machine.
 - Static mining, logistics contracts, links, storage, terminal, and layouts.
+- Issue #284 adds one deterministic, road-only layout convergence step: under fresh safe colony,
+  layout, RCL, allowance, and site-headroom evidence, the sole removal arbiter/executor may destroy
+  one road that solely blocks a planned tower. It adds no Memory state. General build-before-remove
+  migration, stocked evacuation, and non-road dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
