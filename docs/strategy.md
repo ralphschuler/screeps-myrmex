@@ -50,10 +50,13 @@ executor chain, but it cannot reopen controller upgrading or unrelated optional 
 
 Layout convergence is destructive only under explicit narrow authority. During Phase 2, MYRMEX may
 remove one road that solely blocks an unlocked planned tower when current colony, threat,
-controller, reserve, workforce, layout, allowance, and construction-slot evidence is safe. The
-current site headroom is required, only fresh observation proves removal, and no stored, defensive,
-critical, foreign, or multiply occupied structure enters this path. General migration remains
-fail-closed.
+controller, reserve, workforce, layout, allowance, and construction-slot evidence is safe. It may
+also use spare extension allowance to build committed capacity, then remove one active empty
+obsolete extension only after the room reaches full allowance with exactly allowance minus one
+active extensions on committed geometry and an exact owned replacement remains. Current site
+headroom is required; the executor rechecks target stock and replacement identity; only fresh
+observation proves removal. Stored, defensive, critical, foreign, unknown, and multiply occupied
+structures remain excluded. General migration remains fail-closed.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

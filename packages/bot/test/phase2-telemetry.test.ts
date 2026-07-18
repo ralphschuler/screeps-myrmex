@@ -354,9 +354,11 @@ describe("Phase 2 telemetry reducer", () => {
       observationFingerprint: "observation-a",
       policyFingerprint: "policy-a",
       pos: { roomName: "W1N1", x: 10, y: 11 },
+      replacementId: null,
       replacementStructureType: "tower" as const,
       stableId: "remove-road/road-a",
       targetId: "road-a",
+      targetRequiresEmptyStore: false as const,
       targetStructureType: "road" as const,
     };
     const arbitration = arbitrateStructureRemovals({

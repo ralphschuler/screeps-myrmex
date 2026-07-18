@@ -73,31 +73,62 @@ export function arbitrateStructureRemovals(
 }
 
 function validProposal(proposal: LayoutMigrationProposal): boolean {
+  const terms: {
+    readonly replacementId: string | null;
+    readonly replacementStructureType: string;
+    readonly targetRequiresEmptyStore: boolean;
+    readonly targetStructureType: string;
+  } = proposal;
+  const validMigrationTerms =
+    (terms.targetStructureType === "road" &&
+      terms.replacementStructureType === "tower" &&
+      terms.replacementId === null &&
+      !terms.targetRequiresEmptyStore) ||
+    (terms.targetStructureType === "extension" &&
+      terms.replacementStructureType === "extension" &&
+      typeof terms.replacementId === "string" &&
+      terms.replacementId.length > 0 &&
+      terms.targetRequiresEmptyStore);
   return (
+    validMigrationTerms &&
     proposal.pos.roomName.length > 0 &&
     proposal.pos.x >= 0 &&
     proposal.pos.x < 50 &&
     proposal.pos.y >= 0 &&
     proposal.pos.y < 50 &&
     proposal.stableId.length > 0 &&
-    proposal.targetId.length > 0
+    proposal.targetId.length > 0 &&
+    proposal.targetId !== proposal.replacementId
   );
 }
 function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent {
-  return {
+  const envelope = {
     colonyId: proposal.colonyId,
-    kind: "destroy-owned-structure",
+    kind: "destroy-owned-structure" as const,
     layoutFingerprint: proposal.layoutFingerprint,
     observationFingerprint: proposal.observationFingerprint,
     policyFingerprint: proposal.policyFingerprint,
-    replacementStructureType: proposal.replacementStructureType,
     roomName: proposal.pos.roomName,
     stableId: proposal.stableId,
     targetId: proposal.targetId,
-    targetStructureType: proposal.targetStructureType,
     x: proposal.pos.x,
     y: proposal.pos.y,
   };
+  return proposal.targetStructureType === "road"
+    ? {
+        ...envelope,
+        replacementId: null,
+        replacementStructureType: "tower",
+        targetRequiresEmptyStore: false,
+        targetStructureType: "road",
+      }
+    : {
+        ...envelope,
+        replacementId: proposal.replacementId,
+        replacementStructureType: "extension",
+        targetRequiresEmptyStore: true,
+        targetStructureType: "extension",
+      };
 }
 function record(
   proposal: LayoutMigrationProposal,

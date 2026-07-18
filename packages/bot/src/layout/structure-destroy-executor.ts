@@ -39,6 +39,15 @@ export class StructureDestroyExecutor {
       target = resolved;
       if (!matches(intent, target))
         return result(intent, false, "ERR_INVALID_TARGET", "target-mismatch");
+      if (intent.targetRequiresEmptyStore && !hasEmptyOwnedStore(target))
+        return result(intent, false, "ERR_INVALID_TARGET", "target-not-empty");
+      if (intent.replacementId !== null) {
+        const replacement = adapter.resolveStructure(intent.replacementId);
+        if (replacement === null)
+          return result(intent, false, "ERR_INVALID_TARGET", "replacement-absent");
+        if (!matchesReplacement(intent, replacement))
+          return result(intent, false, "ERR_INVALID_TARGET", "replacement-mismatch");
+      }
     } catch {
       return result(intent, false, "UNEXPECTED", "adapter-fault");
     }
@@ -64,6 +73,26 @@ function matches(intent: DestroyOwnedStructureIntent, target: Structure): boolea
     target.pos.x === intent.x &&
     target.pos.y === intent.y &&
     target.room.name === intent.roomName
+  );
+}
+function hasEmptyOwnedStore(target: Structure): boolean {
+  const candidate = target as Structure & {
+    readonly my?: boolean;
+    readonly store?: { getUsedCapacity(): number | null };
+  };
+  const used = candidate.store?.getUsedCapacity();
+  return candidate.my === true && candidate.isActive() && used === 0;
+}
+function matchesReplacement(intent: DestroyOwnedStructureIntent, replacement: Structure): boolean {
+  const candidate = replacement as Structure & { readonly my?: boolean };
+  return (
+    intent.replacementId !== null &&
+    String(candidate.id) === intent.replacementId &&
+    candidate.structureType === intent.replacementStructureType &&
+    candidate.my === true &&
+    candidate.isActive() &&
+    candidate.room.name === intent.roomName &&
+    candidate.pos.roomName === intent.roomName
   );
 }
 function normalizeReturnCode(code: number): StructureDestroyExecutionCode {

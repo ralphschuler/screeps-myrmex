@@ -119,6 +119,25 @@ export function reconstructCommittedLayout(input: {
   );
 }
 
+export function projectLayoutConvergencePlacements(input: {
+  readonly commitment: LayoutCommitment;
+  readonly current: readonly LayoutPlacement[];
+  readonly roomName: string;
+  readonly sourceCount: number;
+  readonly unlocks: ColonyRclUnlockAllowances;
+}): readonly LayoutPlacement[] {
+  const ideal = reconstructCommittedLayout(input);
+  if (ideal === null) return input.current;
+  return freeze(
+    [
+      ...input.current.filter(({ structureType }) => structureType !== "extension"),
+      ...ideal.filter(
+        ({ layer, structureType }) => layer === "primary" && structureType === "extension",
+      ),
+    ].sort(placementOrder),
+  );
+}
+
 export function selectLayoutPlanningWindow<Value extends { readonly roomName: string }>(
   values: readonly Value[],
   tick: number,

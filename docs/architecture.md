@@ -65,9 +65,11 @@ actual flow and loss attribution. Command errors never consume or release anothe
 policy owner. It derives bounded road, container, ordinary-structure, wall, and rampart targets from
 current observation, layout, traffic consequence, reserve posture, RCL, and threat presence. It
 emits data only; ContractLedger owns funded creep work, while defense arbitration exclusively owns
-tower attack, heal, and repair. During issue #284 it may additionally propose only a road that
-solely blocks a planned tower and emit its exact current authorization; `StructureRemovalArbiter`
-alone authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
+tower attack, heal, and repair. Issue #284 additionally permits one road that solely blocks a
+planned tower; issue #286 permits one empty obsolete extension only after current full allowance and
+an exact completed committed replacement are observed. Both emit exact current authorization;
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1383,8 +1385,19 @@ colony/room/layout/observation/policy authorization, rejects over-cap batches be
 accepts at most one globally. `StructureDestroyExecutor` revalidates current commitment, owned room,
 no hostiles, and exact road identity/position before the sole `Structure.destroy` call. The next
 observation proves disappearance; no migration queue, receipt, or success state is persisted.
-Non-road, stocked, defensive, replacement-first, and creep-dismantle paths remain issue #99 and fail
-closed.
+
+Issue #286 adds one extension-only replacement-first step. Compatible external extensions remain in
+the current usable layout, while a pure convergence projection gives only primary extensions their
+committed geometry for ordinary site diffing. Spare controller allowance therefore builds the first
+canonical missing desired extension through the existing site, funding, contract, and executor
+chain. Only after current owned extension count equals allowance, exactly allowance minus one active
+extensions occupy committed geometry, and one active empty unshared external extension remains may
+`ConstructionPlanner` propose that target with an exact completed replacement ID. The same removal
+arbiter retains its 128-candidate and one-command ceilings. The destroy executor additionally
+revalidates the target's owned empty Store and the exact owned replacement in the current room. No
+Memory field is added; next observation proves removal and ordinary site diffing can fill the final
+position. Stock evacuation, other non-road structures, defensive migration, persistent multi-step
+migration, and creep dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -1939,6 +1952,9 @@ Required architecture assertions include:
 - direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
 - temporary road removal requires exact current authorization, bounded input, and current site
   headroom before accepting at most one road;
+- empty obsolete-extension removal requires current full allowance, allowance-minus-one active
+  committed extensions, an exact owned replacement, an empty unshared target, and the same global
+  one-command ceiling;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

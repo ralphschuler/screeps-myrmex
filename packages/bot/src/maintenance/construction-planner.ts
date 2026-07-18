@@ -186,7 +186,7 @@ export class ConstructionPlanner {
     });
   }
 
-  /** Plans only the narrow no-store road-removal migration authorized by issue #284. */
+  /** Plans bounded no-store road removal and replacement-first empty-extension convergence. */
   planMigration(input: {
     readonly colony: ColonyView;
     readonly commitment: LayoutCommitment;
@@ -198,41 +198,37 @@ export class ConstructionPlanner {
   }): LayoutMigrationPlanningResult {
     const blockers: LayoutMigrationBlockerRecord[] = [];
     const proposals: LayoutMigrationProposal[] = [];
-    const candidates = [...input.placements]
+    const towerCandidates = input.placements.filter(
+      (placement) =>
+        placement.adoption === "planned" &&
+        placement.layer === "primary" &&
+        placement.structureType === "tower",
+    );
+    const desiredExtensions = input.placements
       .filter(
-        (placement) =>
-          placement.adoption === "planned" &&
-          placement.layer === "primary" &&
-          placement.structureType === "tower",
+        (placement) => placement.layer === "primary" && placement.structureType === "extension",
       )
-      .sort(
-        (a, b) =>
-          a.minimumRcl - b.minimumRcl ||
-          a.pos.y - b.pos.y ||
-          a.pos.x - b.pos.x ||
-          a.structureType.localeCompare(b.structureType),
-      );
+      .sort(comparePlacement);
+    const extensionCandidates = (input.room.structures ?? []).filter(
+      (structure) =>
+        structure.ownership === "owned" &&
+        structure.structureType === "extension" &&
+        !desiredExtensions.some(({ pos }) => samePosition(pos, structure.pos)),
+    );
+    const candidates = [
+      ...towerCandidates.map((placement) => ({ kind: "road" as const, placement })),
+      ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
+    ].sort(compareMigrationCandidate);
     const considered = candidates.slice(0, STRUCTURE_REMOVAL_LIMITS.inspectedCandidatesPerTick);
     const truncatedCandidates = Math.max(0, candidates.length - considered.length);
     if (truncatedCandidates > 0)
       blockers.push({ reason: "candidate-cap", roomName: input.room.name, targetId: null });
-    const roadCandidates = considered.flatMap((placement) => {
-      const occupying = [...(input.room.structures ?? [])]
-        .filter(({ pos }) => samePosition(pos, placement.pos))
-        .sort((a, b) => a.id.localeCompare(b.id));
-      const road = occupying[0];
-      return occupying.length === 1 &&
-        road?.structureType === "road" &&
-        road.ownership !== "foreign"
-        ? [{ placement, road }]
-        : [];
-    });
-    if (roadCandidates.length === 0)
+    if (considered.length === 0)
       return freeze({
         authorization: null,
         blockers,
         proposals,
-        scannedCandidates: considered.length,
+        scannedCandidates: 0,
         truncatedCandidates,
       });
 
@@ -260,13 +256,66 @@ export class ConstructionPlanner {
     } as const;
     const towerCount = observedStructureCount(input.room, "tower");
     const towerAllowance = input.colony.rclPolicy.unlocks?.towers ?? 0;
-    for (const { placement, road } of roadCandidates) {
-      const reason = migrationCandidateBlocker(input.room, placement, towerCount, towerAllowance);
-      if (reason !== null) {
-        pushMigrationBlocker(blockers, {
-          reason,
-          roomName: input.room.name,
+    for (const candidate of considered) {
+      if (candidate.kind === "road") {
+        const occupying = [...(input.room.structures ?? [])]
+          .filter(({ pos }) => samePosition(pos, candidate.placement.pos))
+          .sort((a, b) => a.id.localeCompare(b.id));
+        const road = occupying[0];
+        if (
+          occupying.length !== 1 ||
+          road?.structureType !== "road" ||
+          road.ownership === "foreign"
+        )
+          continue;
+        const reason = migrationCandidateBlocker(
+          input.room,
+          candidate.placement,
+          towerCount,
+          towerAllowance,
+        );
+        if (reason !== null) {
+          pushMigrationBlocker(blockers, {
+            reason,
+            roomName: input.room.name,
+            targetId: road.id,
+          });
+          continue;
+        }
+        proposals.push({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.placement.pos,
+          replacementId: null,
+          replacementStructureType: "tower",
+          stableId: [
+            "remove-road-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            road.id,
+            candidate.placement.pos.y,
+            candidate.placement.pos.x,
+          ].join(":"),
           targetId: road.id,
+          targetRequiresEmptyStore: false,
+          targetStructureType: "road",
+        });
+        continue;
+      }
+
+      const extension = extensionMigrationEvidence(
+        input.room,
+        candidate.target,
+        desiredExtensions,
+        input.colony.rclPolicy.unlocks?.extensions ?? 0,
+      );
+      if (extension.replacement === null) {
+        pushMigrationBlocker(blockers, {
+          reason: extension.reason,
+          roomName: input.room.name,
+          targetId: candidate.target.id,
         });
         continue;
       }
@@ -275,18 +324,19 @@ export class ConstructionPlanner {
         layoutFingerprint: input.commitment.fingerprint,
         observationFingerprint: input.observationFingerprint,
         policyFingerprint: input.policyFingerprint,
-        pos: placement.pos,
-        replacementStructureType: "tower",
+        pos: candidate.target.pos,
+        replacementId: extension.replacement.id,
+        replacementStructureType: "extension",
         stableId: [
-          "remove-road-v1",
+          "remove-extension-v1",
           input.colony.id,
           input.commitment.fingerprint,
-          road.id,
-          placement.pos.y,
-          placement.pos.x,
+          candidate.target.id,
+          extension.replacement.id,
         ].join(":"),
-        targetId: road.id,
-        targetStructureType: "road",
+        targetId: candidate.target.id,
+        targetRequiresEmptyStore: true,
+        targetStructureType: "extension",
       });
     }
     return freeze({
@@ -297,6 +347,70 @@ export class ConstructionPlanner {
       truncatedCandidates,
     });
   }
+}
+
+type MigrationCandidate =
+  | { readonly kind: "road"; readonly placement: LayoutPlacement }
+  | { readonly kind: "extension"; readonly target: StructureSnapshot };
+
+function extensionMigrationEvidence(
+  room: RoomSnapshot,
+  target: StructureSnapshot,
+  desiredExtensions: readonly LayoutPlacement[],
+  allowance: number,
+):
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
+  | {
+      readonly reason: null;
+      readonly replacement: RoomSnapshot["ownedExtensions"][number];
+    } {
+  const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
+  if (
+    occupying.length !== 1 ||
+    room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
+  )
+    return { reason: "target-shared", replacement: null };
+  const observedTarget = room.ownedExtensions.find(({ id }) => id === target.id);
+  if (observedTarget === undefined || !observedTarget.active)
+    return { reason: "target-unavailable", replacement: null };
+  if (observedTarget.store.usedCapacity !== 0)
+    return { reason: "target-stocked", replacement: null };
+  const exact = room.ownedExtensions
+    .filter(
+      (extension) =>
+        extension.active &&
+        extension.id !== target.id &&
+        desiredExtensions.some(({ pos }) => samePosition(pos, extension.pos)),
+    )
+    .sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x || a.id.localeCompare(b.id));
+  if (
+    allowance <= 0 ||
+    room.ownedExtensions.length !== allowance ||
+    exact.length !== allowance - 1 ||
+    desiredExtensions.length < allowance
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const replacement = exact[exact.length - 1];
+  return replacement === undefined
+    ? { reason: "replacement-pending", replacement: null }
+    : { reason: null, replacement };
+}
+function compareMigrationCandidate(a: MigrationCandidate, b: MigrationCandidate): number {
+  const aPos = a.kind === "road" ? a.placement.pos : a.target.pos;
+  const bPos = b.kind === "road" ? b.placement.pos : b.target.pos;
+  const aId = a.kind === "road" ? a.placement.structureType : a.target.id;
+  const bId = b.kind === "road" ? b.placement.structureType : b.target.id;
+  return (
+    aPos.y - bPos.y || aPos.x - bPos.x || a.kind.localeCompare(b.kind) || aId.localeCompare(bId)
+  );
+}
+function comparePlacement(a: LayoutPlacement, b: LayoutPlacement): number {
+  return (
+    a.minimumRcl - b.minimumRcl ||
+    a.pos.y - b.pos.y ||
+    a.pos.x - b.pos.x ||
+    a.structureType.localeCompare(b.structureType)
+  );
 }
 
 function migrationGlobalBlocker(input: {

@@ -11,9 +11,11 @@ const proposal = (id: string, roomName = "W1N1"): LayoutMigrationProposal => ({
   observationFingerprint: "observation-a",
   policyFingerprint: "policy-a",
   pos: { roomName, x: 10, y: 11 },
+  replacementId: null,
   replacementStructureType: "tower",
   stableId: `remove-road/${id}`,
   targetId: id,
+  targetRequiresEmptyStore: false,
   targetStructureType: "road",
 });
 const authorization = (value: LayoutMigrationProposal) => ({

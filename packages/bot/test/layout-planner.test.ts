@@ -3,6 +3,7 @@ import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
+  projectLayoutConvergencePlacements,
   selectLayoutPlanningWindow,
   type LayoutPlanningInput,
 } from "../src/layout";
@@ -79,6 +80,43 @@ describe("owned-room-layout-v1", () => {
           pos: manual.pos,
         }),
       );
+  });
+
+  it("uses committed extension geometry only for replacement-first convergence", () => {
+    const input = fixture(3);
+    const external = structure("extension", 35, 35, "owned");
+    const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
+    expect(planned.status).toBe("complete");
+    if (planned.status !== "complete") return;
+    const unlocks = input.policy.unlocks;
+    if (unlocks === null) throw new Error("expected RCL unlocks");
+    const convergent = projectLayoutConvergencePlacements({
+      commitment: planned.commitment,
+      current: planned.placements,
+      roomName: input.roomName,
+      sourceCount: input.sources.length,
+      unlocks,
+    });
+
+    expect(planned.placements).toContainEqual(
+      expect.objectContaining({
+        adoption: "compatible-external",
+        pos: external.pos,
+        structureType: "extension",
+      }),
+    );
+    expect(convergent.filter(({ structureType }) => structureType === "extension")).toHaveLength(
+      10,
+    );
+    expect(
+      convergent.some(
+        ({ pos, structureType }) =>
+          structureType === "extension" && pos.x === external.pos.x && pos.y === external.pos.y,
+      ),
+    ).toBe(false);
+    expect(convergent.filter(({ structureType }) => structureType !== "extension")).toEqual(
+      planned.placements.filter(({ structureType }) => structureType !== "extension"),
+    );
   });
 });
 
