@@ -87,7 +87,10 @@ describe("mature infrastructure static tick composition", () => {
       matureAttempts: [],
     });
     expect(settled.telemetry?.industry.mature).toMatchObject({
-      settlements: { settledFactoryAmount: 20, settledPower: 1 },
+      accounting: {
+        factory: [40, 100, 20],
+        powerProcessing: [50, 1, 1],
+      },
     });
   });
 

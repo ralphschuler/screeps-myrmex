@@ -24,13 +24,7 @@
     "mature": {
       "commands": { "executed": 0, "failed": 0, "rejected": 0 },
       "intents": { "factory": 1, "powerProcessing": 1, "total": 2 },
-      "settlements": {
-        "cancelled": 0,
-        "pending": 0,
-        "retries": 0,
-        "settledFactoryAmount": 0,
-        "settledPower": 0
-      },
+      "settlements": { "cancelled": 0, "pending": 0, "retries": 0 },
       "truncated": false
     },
     "observer": {

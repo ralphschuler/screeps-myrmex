@@ -33,6 +33,8 @@
     "harvestedEnergy": 20,
     "logisticsDelivered": 50,
     "linkDelivered": 38,
+    "industryEnergyInput": 190,
+    "industryResourceInput": 113,
     "industryOutput": 18
   },
   "window": {
@@ -42,6 +44,8 @@
     "harvestedEnergy": 94,
     "logisticsDelivered": 200,
     "linkDelivered": 152,
+    "industryEnergyInput": 760,
+    "industryResourceInput": 452,
     "industryOutput": 72,
     "authorityFailures": 40,
     "reserveViolations": 4,

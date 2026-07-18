@@ -18,9 +18,9 @@
       "measurements": {
         "ticks": 33,
         "modeledCpu": 0,
-        "persistentBytes": 28216,
-        "persistentGrowth": 3274,
-        "telemetryBytes": 8179,
+        "persistentBytes": 26072,
+        "persistentGrowth": 3140,
+        "telemetryBytes": 8135,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 200,
@@ -46,9 +46,9 @@
       "measurements": {
         "ticks": 1401,
         "modeledCpu": 0.1230000000000001,
-        "persistentBytes": 32318,
-        "persistentGrowth": 5384,
-        "telemetryBytes": 7868,
+        "persistentBytes": 30174,
+        "persistentGrowth": 5250,
+        "telemetryBytes": 7824,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 1.28,
         "energyFlow": 250,
@@ -74,9 +74,9 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 2,
-        "persistentBytes": 7518,
-        "persistentGrowth": 976,
-        "telemetryBytes": 7597,
+        "persistentBytes": 6044,
+        "persistentGrowth": 842,
+        "telemetryBytes": 7553,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 25,
         "energyFlow": 200,
@@ -102,9 +102,9 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 11284,
-        "persistentGrowth": 310,
-        "telemetryBytes": 7565,
+        "persistentBytes": 9140,
+        "persistentGrowth": 176,
+        "telemetryBytes": 7521,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -130,9 +130,9 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 11477,
+        "persistentBytes": 9333,
         "persistentGrowth": 151,
-        "telemetryBytes": 7357,
+        "telemetryBytes": 7313,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -158,9 +158,9 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 5,
-        "persistentBytes": 11679,
+        "persistentBytes": 9535,
         "persistentGrowth": 202,
-        "telemetryBytes": 7368,
+        "telemetryBytes": 7324,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
@@ -186,9 +186,9 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 32318,
-        "persistentGrowth": 5384,
-        "telemetryBytes": 8179,
+        "persistentBytes": 30174,
+        "persistentGrowth": 5250,
+        "telemetryBytes": 8135,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -214,9 +214,9 @@
       "measurements": {
         "ticks": 1448,
         "modeledCpu": 5,
-        "persistentBytes": 32318,
-        "persistentGrowth": 5384,
-        "telemetryBytes": 8179,
+        "persistentBytes": 30174,
+        "persistentGrowth": 5250,
+        "telemetryBytes": 8135,
         "telemetryCardinality": 30,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
@@ -238,8 +238,8 @@
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 1072202,
-    "inputCount": 138,
-    "sha256": "sha256:905f122583ec124158a058fd1ccbd812b65a68ea2d7e95d16a358f4c59b625f1"
+    "bytes": 1078327,
+    "inputCount": 139,
+    "sha256": "sha256:eab85fef1bf9c9f290701b66c29e8fb8b5741c06adf9ba31f20de5f5923c93cb"
   }
 }

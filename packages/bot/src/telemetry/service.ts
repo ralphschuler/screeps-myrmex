@@ -38,7 +38,10 @@ import {
   type LogisticsTelemetryState,
 } from "./logistics";
 import {
+  compactPhase2TelemetrySample,
   emptyPhase2TelemetryObservation,
+  expandPhase2TelemetrySampleRow,
+  MAX_PHASE2_TELEMETRY_SAMPLES,
   PHASE2_RCL_DESTINATIONS,
   observePhase2Telemetry,
   projectPhase2RclTelemetry,
@@ -48,6 +51,8 @@ import {
   type Phase2TelemetryState,
   type Phase2TelemetryStateInput,
   type Phase2TelemetryStateV2,
+  type Phase2TelemetrySampleRow,
+  type Phase2TelemetryStateV3,
 } from "./phase2";
 import {
   emptyPhase2AttritionState,
@@ -209,15 +214,13 @@ function projectFittedPhase2Telemetry(
   const phase2Owner = (owner as Record<string, unknown>).phase2;
   const fitted = readPhase2State(phase2Owner);
   const fittedRcl =
-    fitted?.schemaVersion === 2 || fitted?.schemaVersion === 3
+    fitted?.schemaVersion === 2 || fitted?.schemaVersion === 3 || fitted?.schemaVersion === 4
       ? projectPhase2RclTelemetry(fitted)
       : undefined;
   const fittedWindow =
-    fitted?.schemaVersion === 2 || fitted?.schemaVersion === 3
-      ? projectPhase2TelemetryWindow(fitted)
-      : telemetry.window;
+    fitted?.schemaVersion === 4 ? projectPhase2TelemetryWindow(fitted) : telemetry.window;
   const projectedAttrition =
-    fitted?.schemaVersion === 3
+    fitted?.schemaVersion === 3 || fitted?.schemaVersion === 4
       ? projectPhase2AttritionTelemetry(fitted.attrition)
       : telemetry.attrition;
   const fittedAttrition =
@@ -402,8 +405,8 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
   const row = value as Record<string, unknown>;
   if (!Array.isArray(row.samples)) return null;
   if (row.schemaVersion === 1) return value as Phase2TelemetryStateInput;
-  if (row.schemaVersion !== 2 && row.schemaVersion !== 3) return null;
-  const attrition = row.schemaVersion === 3 ? readAttritionField(row) : undefined;
+  if (row.schemaVersion !== 2 && row.schemaVersion !== 3 && row.schemaVersion !== 4) return null;
+  const attrition = row.schemaVersion >= 3 ? readAttritionField(row) : undefined;
   const build = (timing: {
     readonly rclTimingSchemaVersion: 1;
     readonly interruptedRclTracks: number;
@@ -411,15 +414,20 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
     readonly droppedRclTransitions: number;
     readonly rclTracks: Phase2TelemetryState["rclTracks"];
     readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
-  }): Phase2TelemetryState | Phase2TelemetryStateV2 => {
+  }): Phase2TelemetryState | Phase2TelemetryStateV3 | Phase2TelemetryStateV2 => {
     const common = {
       droppedSamples: row.droppedSamples as number,
-      samples: row.samples as Phase2TelemetryState["samples"],
+      samples:
+        row.schemaVersion === 4
+          ? expandCompactPhase2Samples(row.samples as unknown[])
+          : (row.samples as Phase2TelemetryState["samples"]),
       ...timing,
     };
-    return row.schemaVersion === 3
-      ? { schemaVersion: 3, ...common, attrition: attrition ?? emptyPhase2AttritionState() }
-      : { schemaVersion: 2, ...common };
+    return row.schemaVersion === 4
+      ? { schemaVersion: 4, ...common, attrition: attrition ?? emptyPhase2AttritionState() }
+      : row.schemaVersion === 3
+        ? { schemaVersion: 3, ...common, attrition: attrition ?? emptyPhase2AttritionState() }
+        : { schemaVersion: 2, ...common };
   };
   const invalidTiming = () =>
     build({
@@ -470,6 +478,15 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
   } catch {
     return invalidTiming();
   }
+}
+
+function expandCompactPhase2Samples(samples: readonly unknown[]): Phase2TelemetryState["samples"] {
+  if (samples.length > MAX_PHASE2_TELEMETRY_SAMPLES)
+    return samples as Phase2TelemetryState["samples"];
+  const expanded = samples.map((sample) =>
+    Array.isArray(sample) && sample.length === 10 ? expandPhase2TelemetrySampleRow(sample) : sample,
+  );
+  return expanded as Phase2TelemetryState["samples"];
 }
 
 function readAttritionField(row: Record<string, unknown>): Phase2AttritionState {
@@ -569,11 +586,16 @@ function safelyReducePhase2(
       sameTickReplay,
     });
   } catch {
-    return reducePhase2Telemetry({
+    const fallback = {
       observation: { ...emptyPhase2TelemetryObservation(input.base.tick), droppedInputs: 1 },
-      previous: null,
       maximumSamples: input.base.telemetryPolicy.maximumHistoryEntries,
-    });
+      sameTickReplay,
+    } as const;
+    try {
+      return reducePhase2Telemetry({ ...fallback, previous });
+    } catch {
+      return reducePhase2Telemetry({ ...fallback, previous: null });
+    }
   }
 }
 
@@ -610,9 +632,9 @@ interface MutableTelemetryOwner {
     flows: LogisticsTelemetryState["flows"][number][];
   };
   phase2: {
-    schemaVersion: 3;
+    schemaVersion: 4;
     droppedSamples: number;
-    samples: Phase2TelemetryState["samples"][number][];
+    samples: Phase2TelemetrySampleRow[];
     rcl: [
       timingSchemaVersion: 1,
       interruptedTracks: number,
@@ -935,7 +957,7 @@ function writeOwner(
       phase2: {
         schemaVersion: phase2.schemaVersion,
         droppedSamples: phase2.droppedSamples,
-        samples: phase2.samples.map((sample) => ({ ...sample })),
+        samples: phase2.samples.map(compactPhase2TelemetrySample),
         rcl: [
           phase2.rclTimingSchemaVersion,
           phase2.interruptedRclTracks,

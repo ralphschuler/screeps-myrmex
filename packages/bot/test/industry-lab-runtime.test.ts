@@ -97,7 +97,12 @@ describe("next-observation lab settlement", () => {
       }),
     });
     expect(result).toEqual([
-      expect.objectContaining({ reason: "exact-effect", settledAmount: 5, status: "settled" }),
+      expect.objectContaining({
+        accounting: { energyInput: 0, resourceInput: 10, resourceOutput: 5 },
+        reason: "exact-effect",
+        settledAmount: 5,
+        status: "settled",
+      }),
     ]);
   });
 
@@ -120,7 +125,12 @@ describe("next-observation lab settlement", () => {
       pendingAttempts: [pending],
       snapshot: snapshot({ tick: 101, boostCount: 1, boostLabMineral: 60, boostLabEnergy: 40 }),
     });
-    expect(exact[0]).toMatchObject({ reason: "exact-effect", settledAmount: 1, status: "settled" });
+    expect(exact[0]).toMatchObject({
+      accounting: { energyInput: 20, resourceInput: 30, resourceOutput: 0 },
+      reason: "exact-effect",
+      settledAmount: 1,
+      status: "settled",
+    });
 
     const exhausted = reconcilePendingLabAttempts({
       assignments: [assignment],
@@ -129,7 +139,11 @@ describe("next-observation lab settlement", () => {
       pendingAttempts: [required(createPendingLabAttempt(intent, "OK", 2))],
       snapshot: snapshot({ tick: 101 }),
     });
-    expect(exhausted[0]).toMatchObject({ reason: "retry-cap", status: "cancelled" });
+    expect(exhausted[0]).toMatchObject({
+      accounting: { energyInput: 0, resourceInput: 0, resourceOutput: 0 },
+      reason: "retry-cap",
+      status: "cancelled",
+    });
   });
 
   it("fails closed for conflict and fingerprint drift while surviving reset-shaped replay", () => {

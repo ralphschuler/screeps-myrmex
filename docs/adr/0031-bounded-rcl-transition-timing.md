@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted. ADR 0032 later advances the nested Phase 2 observer state from V2 to V3 while preserving
-this RCL timing contract.
+Accepted. ADRs 0032 and 0033 later advance the nested Phase 2 observer state to V3 and V4 while
+preserving this RCL timing contract.
 
 ## Context
 

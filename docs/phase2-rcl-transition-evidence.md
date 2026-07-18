@@ -45,9 +45,9 @@ latest value, removing input-order dependence.
 
 ## Persistence and bounds
 
-Phase 2 owner-local schema V3 preserves the bounded sample ring and the V2 RCL timing schema V1,
-then adds the independent attrition state documented in
-[`phase2-attrition-evidence.md`](phase2-attrition-evidence.md):
+Phase 2 owner-local schema V4 preserves the V2 RCL timing schema V1 and the independent V3 attrition
+state documented in [`phase2-attrition-evidence.md`](phase2-attrition-evidence.md), then adds exact
+industry-accounting sample fields:
 
 - active RCL tracks: at most 64;
 - normalized duration aggregates: exactly 7; the owner stores only nonempty rows with fixed
@@ -55,12 +55,13 @@ then adds the independent attrition state documented in
 - interrupted-track, dropped-observation, and dropped-transition counters: saturating safe integers;
 - whole telemetry-owner ceiling: 8,192 UTF-8 bytes.
 
-V1/V2 Phase 2 state upgrades on the next successful telemetry commit without losing valid samples or
-RCL timing. Malformed timing state becomes empty timing evidence while valid sample history remains.
-Under byte pressure, telemetry drops ordinary hash/sample history, then active timing baselines,
-then completed duration aggregates; it never changes gameplay state. Returned timing and the
-telemetry hash are reprojected from the fitted owner in the same tick, so evicted evidence is never
-reported as retained.
+V1–V3 Phase 2 state upgrades on the next successful telemetry commit without losing valid RCL
+timing. Legacy sample rows are dropped and counted because they lack the exact recipe-input fields
+required by V4. Malformed timing state becomes empty timing evidence while valid V4 sample history
+remains. Under byte pressure, telemetry drops ordinary hash/sample history, then active timing
+baselines, then completed duration aggregates; it never changes gameplay state. Returned timing and
+the telemetry hash are reprojected from the fitted owner in the same tick, so evicted evidence is
+never reported as retained.
 
 ## Deterministic evidence
 
@@ -71,9 +72,10 @@ reported as retained.
 - one exact RCL2→RCL3 duration;
 - same-tick completion replay without duplication;
 - interrupted visibility and a 65-room runtime batch producing no transition;
-- V1→V3 baseline-only migration while preserving the V2 timing contract;
+- V1→V4 baseline-only migration while preserving the V2 timing contract and conservatively dropping
+  legacy aggregate samples;
 - compact owner encode/decode through a Memory reset with no duplicate duration;
-- a measured 1,575-byte complete telemetry owner under the 8,192-byte ceiling; and
+- a measured 1,039-byte complete telemetry owner under the 8,192-byte ceiling; and
 - architecture checks proving zero telemetry gameplay readers.
 
 Executable checks:
@@ -85,8 +87,8 @@ npx vitest run packages/scenario-kit/test/phase2-rcl-transition-gate.test.ts
 npm run check
 ```
 
-Road/container attrition, exact recipe-input accounting, cooldown-utilization windows, numeric soak
-thresholds, and the complete Phase 2 gate remain in issues #53 and #54.
+Road/container attrition and exact recipe-input accounting are complete. Cooldown-utilization
+windows, numeric soak thresholds, and the complete Phase 2 gate remain in issues #53 and #54.
 
 ## Research receipt
 

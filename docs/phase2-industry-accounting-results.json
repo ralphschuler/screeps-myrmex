@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "deterministic": {
+    "reorderedEquivalent": true,
+    "resetEquivalent": true
+  },
+  "settlements": {
+    "labs": [20, 45, 15],
+    "factory": [40, 100, 20],
+    "powerProcessing": [150, 3, 3],
+    "nonSettledInputIncluded": 0,
+    "labObjectiveAmount": 11
+  },
+  "phase2": {
+    "energyInput": 210,
+    "resourceInput": 148,
+    "resourceOutput": 38,
+    "window": [1, 100, 100, 0, 0, 0, 210, 148, 38, 0, 0, 0, 0]
+  },
+  "migration": {
+    "fromSchemaVersion": 3,
+    "toSchemaVersion": 4,
+    "legacySamplesDropped": 1,
+    "currentSamples": 1
+  },
+  "bounds": {
+    "productionMaximumSamples": 64,
+    "telemetryOwnerBytes": 8192,
+    "dynamicResourceLabels": 0,
+    "telemetryDecisionInputs": 0
+  }
+}

@@ -18,7 +18,7 @@ import {
 } from "./phase2-attrition";
 import type { StaticMiningTelemetry } from "./static-mining";
 
-export const PHASE2_TELEMETRY_SCHEMA_VERSION = 3 as const;
+export const PHASE2_TELEMETRY_SCHEMA_VERSION = 4 as const;
 export const MAX_PHASE2_TELEMETRY_SAMPLES = 64 as const;
 export const MAX_PHASE2_CONTROLLER_TRACKERS = 64 as const;
 export const PHASE2_RCL_TIMING_SCHEMA_VERSION = 1 as const;
@@ -47,6 +47,19 @@ export const PHASE2_FLOW_IDENTITY_IDS = Object.freeze([
   "maintenance-budget",
 ] as const);
 
+export const PHASE2_SAMPLE_FIELDS = Object.freeze([
+  "tick",
+  "harvestedEnergy",
+  "logisticsDelivered",
+  "linkDelivered",
+  "industryEnergyInput",
+  "industryResourceInput",
+  "industryOutput",
+  "authorityFailures",
+  "reserveViolations",
+  "measuredCpuMilli",
+] as const);
+
 export const PHASE2_WINDOW_FIELDS = Object.freeze([
   "samples",
   "firstTick",
@@ -54,6 +67,8 @@ export const PHASE2_WINDOW_FIELDS = Object.freeze([
   "harvestedEnergy",
   "logisticsDelivered",
   "linkDelivered",
+  "industryEnergyInput",
+  "industryResourceInput",
   "industryOutput",
   "authorityFailures",
   "reserveViolations",
@@ -133,6 +148,8 @@ export interface Phase2TelemetryObservation {
   readonly industryFailed: number;
   readonly industryReserved: number;
   readonly terminalTransactionEnergyPlanned: number;
+  readonly industryEnergyInput: number;
+  readonly industryResourceInput: number;
   readonly labAdmitted: number;
   readonly labDeferred: number;
   readonly labFailed: number;
@@ -154,10 +171,58 @@ export interface Phase2TelemetrySample {
   readonly harvestedEnergy: number;
   readonly logisticsDelivered: number;
   readonly linkDelivered: number;
+  readonly industryEnergyInput: number;
+  readonly industryResourceInput: number;
   readonly industryOutput: number;
   readonly authorityFailures: number;
   readonly reserveViolations: number;
   readonly measuredCpuMilli: number;
+}
+
+/** Compact persistent row aligned with PHASE2_SAMPLE_FIELDS. */
+export type Phase2TelemetrySampleRow = readonly [
+  tick: number,
+  harvestedEnergy: number,
+  logisticsDelivered: number,
+  linkDelivered: number,
+  industryEnergyInput: number,
+  industryResourceInput: number,
+  industryOutput: number,
+  authorityFailures: number,
+  reserveViolations: number,
+  measuredCpuMilli: number,
+];
+
+export function compactPhase2TelemetrySample(
+  value: Phase2TelemetrySample,
+): Phase2TelemetrySampleRow {
+  return [
+    value.tick,
+    value.harvestedEnergy,
+    value.logisticsDelivered,
+    value.linkDelivered,
+    value.industryEnergyInput,
+    value.industryResourceInput,
+    value.industryOutput,
+    value.authorityFailures,
+    value.reserveViolations,
+    value.measuredCpuMilli,
+  ];
+}
+
+export function expandPhase2TelemetrySampleRow(value: readonly unknown[]): Phase2TelemetrySample {
+  return {
+    tick: value[0] as number,
+    harvestedEnergy: value[1] as number,
+    logisticsDelivered: value[2] as number,
+    linkDelivered: value[3] as number,
+    industryEnergyInput: value[4] as number,
+    industryResourceInput: value[5] as number,
+    industryOutput: value[6] as number,
+    authorityFailures: value[7] as number,
+    reserveViolations: value[8] as number,
+    measuredCpuMilli: value[9] as number,
+  };
 }
 
 /** Compact persistent active baseline: colony ref, level, entered tick, latest continuous tick. */
@@ -192,22 +257,32 @@ export type Phase2RclTelemetry = readonly [
   droppedTransitions: number,
 ];
 
+export type Phase2TelemetrySampleV1 = Omit<
+  Phase2TelemetrySample,
+  "industryEnergyInput" | "industryResourceInput"
+>;
+
 export interface Phase2TelemetryStateV1 {
   readonly schemaVersion: 1;
   readonly droppedSamples: number;
-  readonly samples: readonly Phase2TelemetrySample[];
+  readonly samples: readonly Phase2TelemetrySampleV1[];
 }
 
 export interface Phase2TelemetryStateV2 {
   readonly schemaVersion: 2;
   readonly droppedSamples: number;
-  readonly samples: readonly Phase2TelemetrySample[];
+  readonly samples: readonly Phase2TelemetrySampleV1[];
   readonly rclTimingSchemaVersion: typeof PHASE2_RCL_TIMING_SCHEMA_VERSION;
   readonly interruptedRclTracks: number;
   readonly droppedRclObservations: number;
   readonly droppedRclTransitions: number;
   readonly rclTracks: readonly Phase2RclTrack[];
   readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
+}
+
+export interface Phase2TelemetryStateV3 extends Omit<Phase2TelemetryStateV2, "schemaVersion"> {
+  readonly schemaVersion: 3;
+  readonly attrition: Phase2AttritionState;
 }
 
 export interface Phase2TelemetryState {
@@ -224,7 +299,7 @@ export interface Phase2TelemetryState {
 }
 
 export type Phase2TelemetryStateInput =
-  Phase2TelemetryState | Phase2TelemetryStateV2 | Phase2TelemetryStateV1;
+  Phase2TelemetryState | Phase2TelemetryStateV3 | Phase2TelemetryStateV2 | Phase2TelemetryStateV1;
 
 /** One row aligned with PHASE2_AUTHORITY_IDS; tuple fields keep the tick summary byte-bounded. */
 export type Phase2AuthorityTelemetry = readonly [
@@ -248,6 +323,8 @@ export type Phase2TelemetryWindow = readonly [
   harvestedEnergy: number,
   logisticsDelivered: number,
   linkDelivered: number,
+  industryEnergyInput: number,
+  industryResourceInput: number,
   industryOutput: number,
   authorityFailures: number,
   reserveViolations: number,
@@ -309,9 +386,6 @@ export interface Phase2Telemetry {
     };
     readonly maintenanceEnergy: number;
     readonly terminalTransactionEnergyPlanned: number;
-    readonly labOutput: number;
-    readonly factoryOutput: number;
-    readonly powerOutput: number;
   };
   readonly authorities: readonly Phase2AuthorityTelemetry[];
   readonly identities: readonly Phase2FlowIdentityTelemetry[];
@@ -368,6 +442,9 @@ export function observePhase2Telemetry(input: {
   );
   const linkLost = total(linkExecution.map(({ actualLostAmount }) => actualLostAmount));
   const matureSettlements = mature?.settlements;
+  const labAccounting = labs?.accounting;
+  const factoryAccounting = mature?.accounting?.factory;
+  const powerAccounting = mature?.accounting?.powerProcessing;
   const measuredCpu =
     input.staticMining.cpuUsed +
     input.logistics.cpuUsed +
@@ -467,15 +544,25 @@ export function observePhase2Telemetry(input: {
     industryFailed: saturatingAdd(industry.commands.failed, industry.commands.rejected),
     industryReserved: industry.accounting.reserved,
     terminalTransactionEnergyPlanned: industry.accounting.transactionEnergy,
+    industryEnergyInput: total([
+      labAccounting?.[0] ?? 0,
+      factoryAccounting?.[0] ?? 0,
+      powerAccounting?.[0] ?? 0,
+    ]),
+    industryResourceInput: total([
+      labAccounting?.[1] ?? 0,
+      factoryAccounting?.[1] ?? 0,
+      powerAccounting?.[1] ?? 0,
+    ]),
     labAdmitted: labs?.intents ?? 0,
     labDeferred: saturatingAdd(labs?.readinessBlockers ?? 0, labs?.retries ?? 0),
     labFailed: saturatingAdd(labs?.commands.failed ?? 0, labs?.commands.rejected ?? 0),
-    labOutput: labs?.settledAmount ?? 0,
+    labOutput: labAccounting?.[2] ?? 0,
     matureAdmitted: mature?.intents.total ?? 0,
     matureDeferred: saturatingAdd(matureSettlements?.pending ?? 0, matureSettlements?.retries ?? 0),
     matureFailed: saturatingAdd(mature?.commands.failed ?? 0, mature?.commands.rejected ?? 0),
-    factoryOutput: matureSettlements?.settledFactoryAmount ?? 0,
-    powerOutput: matureSettlements?.settledPower ?? 0,
+    factoryOutput: factoryAccounting?.[2] ?? 0,
+    powerOutput: powerAccounting?.[2] ?? 0,
     observerAdmitted: observer?.dispositions.accepted ?? 0,
     observerDeferred: total([
       observer?.dispositions.deferred ?? 0,
@@ -564,6 +651,8 @@ export function emptyPhase2TelemetryObservation(tick: number): Phase2TelemetryOb
     industryFailed: 0,
     industryReserved: 0,
     terminalTransactionEnergyPlanned: 0,
+    industryEnergyInput: 0,
+    industryResourceInput: 0,
     labAdmitted: 0,
     labDeferred: 0,
     labFailed: 0,
@@ -617,7 +706,9 @@ export function reducePhase2Telemetry(input: {
   const appended =
     last?.tick === observation.tick
       ? [...previous.samples.slice(0, -1), sample]
-      : [...previous.samples, sample];
+      : input.sameTickReplay === true
+        ? [...previous.samples]
+        : [...previous.samples, sample];
   const samples = limit === 0 ? [] : appended.slice(-limit);
   const newlyDropped = Math.max(0, appended.length - samples.length);
   const droppedSamples = saturatingAdd(previous.droppedSamples, newlyDropped);
@@ -700,9 +791,6 @@ export function reducePhase2Telemetry(input: {
       },
       maintenanceEnergy: observation.maintenanceEnergy,
       terminalTransactionEnergyPlanned: observation.terminalTransactionEnergyPlanned,
-      labOutput: observation.labOutput,
-      factoryOutput: observation.factoryOutput,
-      powerOutput: observation.powerOutput,
     },
     authorities,
     identities,
@@ -847,6 +935,8 @@ function sampleFrom(
     harvestedEnergy: value.harvestedEnergy,
     logisticsDelivered: value.logisticsDelivered,
     linkDelivered: value.linkDelivered,
+    industryEnergyInput: value.industryEnergyInput,
+    industryResourceInput: value.industryResourceInput,
     industryOutput: total([value.labOutput, value.factoryOutput, value.powerOutput]),
     authorityFailures,
     reserveViolations: value.reserveViolations,
@@ -871,6 +961,8 @@ function rollingWindow(
     total(samples.map(({ harvestedEnergy }) => harvestedEnergy)),
     total(samples.map(({ logisticsDelivered }) => logisticsDelivered)),
     total(samples.map(({ linkDelivered }) => linkDelivered)),
+    total(samples.map(({ industryEnergyInput }) => industryEnergyInput)),
+    total(samples.map(({ industryResourceInput }) => industryResourceInput)),
     total(samples.map(({ industryOutput }) => industryOutput)),
     total(samples.map(({ authorityFailures }) => authorityFailures)),
     total(samples.map(({ reserveViolations }) => reserveViolations)),
@@ -904,14 +996,20 @@ function normalizePrevious(
   const empty = emptyPhase2State();
   const rawSamples: unknown = value?.samples;
   if (
-    (value?.schemaVersion !== 1 && value?.schemaVersion !== 2 && value?.schemaVersion !== 3) ||
+    (value?.schemaVersion !== 1 &&
+      value?.schemaVersion !== 2 &&
+      value?.schemaVersion !== 3 &&
+      value?.schemaVersion !== PHASE2_TELEMETRY_SCHEMA_VERSION) ||
     !Array.isArray(rawSamples)
   )
     return empty;
   const droppedSamples = nonnegativeSafeInteger(value.droppedSamples);
   let samples: Phase2TelemetrySample[];
   let normalizedDroppedSamples = droppedSamples;
-  if (rawSamples.length > MAX_PHASE2_TELEMETRY_SAMPLES) {
+  if (value.schemaVersion < PHASE2_TELEMETRY_SCHEMA_VERSION) {
+    samples = [];
+    normalizedDroppedSamples = saturatingAdd(droppedSamples, rawSamples.length);
+  } else if (rawSamples.length > MAX_PHASE2_TELEMETRY_SAMPLES) {
     samples = [];
     normalizedDroppedSamples = saturatingAdd(droppedSamples, rawSamples.length);
   } else {
@@ -935,7 +1033,7 @@ function normalizePrevious(
     ...sampleState,
     ...normalizePersistedRclState(value),
     attrition:
-      value.schemaVersion === PHASE2_TELEMETRY_SCHEMA_VERSION
+      value.schemaVersion === 3 || value.schemaVersion === PHASE2_TELEMETRY_SCHEMA_VERSION
         ? value.attrition
         : emptyPhase2AttritionState(),
   };
@@ -950,6 +1048,8 @@ function normalizeSample(sample: unknown): Phase2TelemetrySample {
     harvestedEnergy: nonnegativeSafeInteger(row.harvestedEnergy),
     logisticsDelivered: nonnegativeSafeInteger(row.logisticsDelivered),
     linkDelivered: nonnegativeSafeInteger(row.linkDelivered),
+    industryEnergyInput: nonnegativeSafeInteger(row.industryEnergyInput),
+    industryResourceInput: nonnegativeSafeInteger(row.industryResourceInput),
     industryOutput: nonnegativeSafeInteger(row.industryOutput),
     authorityFailures: nonnegativeSafeInteger(row.authorityFailures),
     reserveViolations: nonnegativeSafeInteger(row.reserveViolations),
@@ -993,7 +1093,7 @@ function emptyRclTransitionDurations(): Phase2RclTransitionDuration[] {
 }
 
 function normalizePersistedRclState(
-  value: Phase2TelemetryState | Phase2TelemetryStateV2,
+  value: Phase2TelemetryState | Phase2TelemetryStateV3 | Phase2TelemetryStateV2,
 ): RclState {
   try {
     const timingSchema: unknown = (value as unknown as Record<string, unknown>)

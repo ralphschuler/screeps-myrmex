@@ -116,12 +116,14 @@ describe("pure mature command arbitration", () => {
 
     expect(result).toEqual([
       expect.objectContaining({
+        accounting: { energyInput: 40, resourceInput: 100, resourceOutput: 20 },
         kind: "factory",
         reason: "exact-effect",
         settledAmount: 20,
         status: "settled",
       }),
       expect.objectContaining({
+        accounting: { energyInput: 150, resourceInput: 3, resourceOutput: 3 },
         kind: "power-processing",
         reason: "exact-effect",
         settledAmount: 3,
@@ -159,7 +161,11 @@ describe("pure mature command arbitration", () => {
       }),
     });
     expect(contaminated).toEqual([
-      expect.objectContaining({ reason: "conflicting-effect", status: "cancelled" }),
+      expect.objectContaining({
+        accounting: { energyInput: 0, resourceInput: 0, resourceOutput: 0 },
+        reason: "conflicting-effect",
+        status: "cancelled",
+      }),
     ]);
 
     const late = reconcilePendingMatureAttempts({

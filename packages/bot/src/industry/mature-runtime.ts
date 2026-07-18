@@ -17,6 +17,11 @@ import {
   type PendingPowerAttempt,
 } from "./mature-attempt";
 import type { MatureMechanicsCatalog, MatureStructureCapability } from "./mature-capabilities";
+import {
+  EMPTY_INDUSTRY_SETTLEMENT_ACCOUNTING,
+  industrySettlementAccounting,
+  type IndustrySettlementAccounting,
+} from "./settlement-accounting";
 import type { MaturePolicyCommitment } from "./mature-policy";
 
 export {
@@ -380,6 +385,7 @@ export type MatureSettlementReason =
   | "retry-cap";
 
 export interface MatureAttemptSettlement {
+  readonly accounting: IndustrySettlementAccounting;
   readonly attemptId: string;
   readonly kind: PendingMatureAttempt["kind"];
   readonly objectiveId: string;
@@ -573,6 +579,7 @@ function settlement(
   settledAmount: number,
 ): MatureAttemptSettlement {
   return freeze({
+    accounting: matureSettlementAccounting(attempt, status, settledAmount),
     attemptId: attempt.attemptId,
     kind: attempt.kind,
     objectiveId: attempt.objectiveId,
@@ -582,6 +589,27 @@ function settlement(
     settledAmount,
     status,
   });
+}
+
+function matureSettlementAccounting(
+  attempt: PendingMatureAttempt,
+  status: MatureAttemptSettlement["status"],
+  settledAmount: number,
+): IndustrySettlementAccounting {
+  if (status !== "settled") return EMPTY_INDUSTRY_SETTLEMENT_ACCOUNTING;
+  if (attempt.kind === "power-processing")
+    return industrySettlementAccounting(
+      settledAmount * attempt.energyPerPower,
+      settledAmount,
+      settledAmount,
+    );
+  let energyInput = 0;
+  let resourceInput = 0;
+  for (const component of attempt.components) {
+    if (component.resourceType === "energy") energyInput += component.amount;
+    else resourceInput += component.amount;
+  }
+  return industrySettlementAccounting(energyInput, resourceInput, settledAmount);
 }
 
 function compareCommitments(left: MaturePolicyCommitment, right: MaturePolicyCommitment): number {

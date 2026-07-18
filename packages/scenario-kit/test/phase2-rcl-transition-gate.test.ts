@@ -253,6 +253,8 @@ function observation(
     industryFailed: 0,
     industryReserved: 0,
     terminalTransactionEnergyPlanned: 0,
+    industryEnergyInput: 0,
+    industryResourceInput: 0,
     labAdmitted: 0,
     labDeferred: 0,
     labFailed: 0,

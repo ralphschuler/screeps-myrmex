@@ -5,6 +5,7 @@ import {
   composeLabRuntime,
   createPendingLabAttempt,
   executeLabIntents,
+  projectLabTelemetry,
   settleLabComposition,
   type LabCommandIntent,
   type ReactionObjective,
@@ -44,10 +45,16 @@ describe("composed lab runtime", () => {
       projection: exactProjection,
     });
     expect(exactProjection.settlements).toEqual([
-      expect.objectContaining({ reason: "exact-effect", settledAmount: 5, status: "settled" }),
+      expect.objectContaining({
+        accounting: { energyInput: 0, resourceInput: 5, resourceOutput: 10 },
+        reason: "exact-effect",
+        settledAmount: 5,
+        status: "settled",
+      }),
     ]);
     expect(exact.commitments).toEqual([expect.objectContaining({ settledAmount: 5 })]);
     expect(exact.attempts).toEqual([]);
+    expect(projectLabTelemetry(exactProjection, []).accounting).toEqual([0, 5, 10]);
 
     const noEffectProjection = compose(
       world("reverse", 101),

@@ -47,9 +47,9 @@ and JSON/global-heap reconstruction remain byte-equivalent.
 
 ## Persistence and bounds
 
-Telemetry owner V5 now contains Phase 2 owner-local schema V3. V3 preserves the sample ring and RCL
-timing state and adds attrition schema V1, omitting its compact field while no baseline or evidence
-exists:
+Telemetry owner V5 now contains Phase 2 owner-local schema V4. V4 preserves the RCL timing state and
+attrition schema V1 from V3, omitting the compact attrition field while no baseline or evidence
+exists, and adds exact industry-accounting sample fields:
 
 - current observation cap: an upper bound of 128 road plus stored-structure candidates and 64
   colonies;
@@ -74,9 +74,10 @@ survive.
 - one container net restoration;
 - a visibility interruption that preserves aggregate rows and reports no fabricated loss;
 - over-cap rejection before element traversal;
-- V2-to-V3 owner migration with prior samples preserved and empty attrition omitted;
+- V2-to-V4 owner migration with empty attrition omitted and legacy samples conservatively dropped
+  because they lack exact recipe inputs;
 - a JSON Memory reset retaining exact runtime road/container rows, redacted identities, a matched
-  fitted status hash, and a measured 1,338-byte owner; and
+  fitted status hash, and a measured 1,070-byte owner; and
 - fixed cardinality and zero causal-label bounds.
 
 Repository architecture checks separately prove zero telemetry gameplay readers; this scenario does
