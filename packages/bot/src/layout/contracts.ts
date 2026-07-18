@@ -294,6 +294,12 @@ export type LayoutMigrationProposal =
     })
   | (LayoutMigrationProposalBase & {
       readonly replacementId: string;
+      readonly replacementStructureType: "container";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetStructureType: "container";
+    })
+  | (LayoutMigrationProposalBase & {
+      readonly replacementId: string;
       readonly replacementStructureType: "extension";
       readonly targetRequiresEmptyStore: true;
       readonly targetStructureType: "extension";
@@ -351,6 +357,12 @@ export type DestroyOwnedStructureIntent =
       readonly replacementStructureType: "tower";
       readonly targetRequiresEmptyStore: false;
       readonly targetStructureType: "road";
+    })
+  | (DestroyOwnedStructureIntentBase & {
+      readonly replacementId: string;
+      readonly replacementStructureType: "container";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetStructureType: "container";
     })
   | (DestroyOwnedStructureIntentBase & {
       readonly replacementId: string;

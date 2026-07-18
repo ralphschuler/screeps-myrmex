@@ -16,6 +16,7 @@ import {
 import type {
   PositionSnapshot,
   RoomSnapshot,
+  StoredStructureSnapshot,
   StructureSnapshot,
   WorldSnapshot,
 } from "../world/snapshot";
@@ -190,7 +191,7 @@ export class ConstructionPlanner {
     });
   }
 
-  /** Plans bounded road removal and replacement-first extension convergence with stock evacuation. */
+  /** Plans bounded road, redundant source-container, and extension convergence. */
   planMigration(input: {
     readonly activeLogisticsFlowIds?: ReadonlySet<string>;
     readonly colony: ColonyView;
@@ -221,8 +222,19 @@ export class ConstructionPlanner {
         structure.structureType === "extension" &&
         !desiredExtensions.some(({ pos }) => samePosition(pos, structure.pos)),
     );
+    const sourceServices = input.placements.filter(
+      (placement) =>
+        placement.service?.kind === "source-container" && placement.structureType === "container",
+    );
+    const containerCandidates = input.room.storedStructures.filter(
+      (target) =>
+        target.structureType === "container" &&
+        !sourceServices.some(({ pos }) => samePosition(pos, target.pos)) &&
+        input.room.sources.some(({ pos }) => inRangeOne(pos, target.pos)),
+    );
     const candidates = [
       ...towerCandidates.map((placement) => ({ kind: "road" as const, placement })),
+      ...containerCandidates.map((target) => ({ kind: "container" as const, target })),
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
     ].sort((left, right) => {
       const activeSourceId = input.extensionEvacuation?.sourceId;
@@ -315,6 +327,43 @@ export class ConstructionPlanner {
           targetId: road.id,
           targetRequiresEmptyStore: false,
           targetStructureType: "road",
+        });
+        continue;
+      }
+
+      if (candidate.kind === "container") {
+        const evidence = sourceContainerMigrationEvidence(
+          input.room,
+          candidate.target,
+          sourceServices,
+        );
+        if (evidence.replacement === null) {
+          pushMigrationBlocker(blockers, {
+            reason: evidence.reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          continue;
+        }
+        proposals.push({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementId: evidence.replacement.id,
+          replacementStructureType: "container",
+          stableId: [
+            "remove-source-container-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            evidence.sourceId,
+            candidate.target.id,
+            evidence.replacement.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetStructureType: "container",
         });
         continue;
       }
@@ -451,7 +500,63 @@ export class ConstructionPlanner {
 
 type MigrationCandidate =
   | { readonly kind: "road"; readonly placement: LayoutPlacement }
+  | { readonly kind: "container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "extension"; readonly target: StructureSnapshot };
+
+function sourceContainerMigrationEvidence(
+  room: RoomSnapshot,
+  target: StoredStructureSnapshot,
+  sourceServices: readonly LayoutPlacement[],
+):
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null; readonly sourceId: null }
+  | {
+      readonly reason: null;
+      readonly replacement: StoredStructureSnapshot;
+      readonly sourceId: string;
+    } {
+  const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
+  if (
+    occupying.length !== 1 ||
+    occupying[0]?.id !== target.id ||
+    room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
+  )
+    return { reason: "target-shared", replacement: null, sourceId: null };
+  if (
+    target.ownership === "foreign" ||
+    target.store.usedCapacity !== 0 ||
+    target.store.resources.some(({ amount }) => amount !== 0)
+  )
+    return {
+      reason: target.store.usedCapacity === 0 ? "target-unavailable" : "target-stocked",
+      replacement: null,
+      sourceId: null,
+    };
+  const adjacentSources = room.sources.filter(({ pos }) => inRangeOne(pos, target.pos));
+  if (adjacentSources.length !== 1)
+    return { reason: "replacement-pending", replacement: null, sourceId: null };
+  const source = adjacentSources[0];
+  if (source === undefined)
+    return { reason: "replacement-pending", replacement: null, sourceId: null };
+  const services = sourceServices.filter(
+    (placement) => placement.adoption === "exact" && placement.service?.sourceId === source.id,
+  );
+  if (services.length !== 1)
+    return { reason: "replacement-pending", replacement: null, sourceId: null };
+  const service = services[0];
+  if (service === undefined)
+    return { reason: "replacement-pending", replacement: null, sourceId: null };
+  const replacements = room.storedStructures.filter(
+    (structure) =>
+      structure.id !== target.id &&
+      structure.ownership !== "foreign" &&
+      structure.structureType === "container" &&
+      samePosition(structure.pos, service.pos),
+  );
+  const replacement = replacements.length === 1 ? replacements[0] : undefined;
+  return replacement === undefined
+    ? { reason: "replacement-pending", replacement: null, sourceId: null }
+    : { reason: null, replacement, sourceId: source.id };
+}
 
 function extensionMigrationEvidence(
   room: RoomSnapshot,
@@ -749,6 +854,9 @@ function compareProposal(a: MaintenanceProposal, b: MaintenanceProposal): number
 }
 function samePosition(a: PositionSnapshot, b: PositionSnapshot): boolean {
   return a.roomName === b.roomName && a.x === b.x && a.y === b.y;
+}
+function inRangeOne(a: PositionSnapshot, b: PositionSnapshot): boolean {
+  return a.roomName === b.roomName && Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 1;
 }
 function none() {
   return { proposal: null, deferral: null };

@@ -37,6 +37,22 @@ const extensionIntent: DestroyOwnedStructureIntent = {
   x: 10,
   y: 11,
 };
+const containerIntent: DestroyOwnedStructureIntent = {
+  colonyId: "W1N1",
+  kind: "destroy-owned-structure",
+  layoutFingerprint: "layout-a",
+  observationFingerprint: "observation-a",
+  policyFingerprint: "policy-a",
+  replacementId: "container-service",
+  replacementStructureType: "container",
+  roomName: "W1N1",
+  stableId: "remove-container/container-redundant",
+  targetId: "container-redundant",
+  targetRequiresEmptyStore: true,
+  targetStructureType: "container",
+  x: 10,
+  y: 11,
+};
 
 function fixture(code = 0) {
   const destroy = vi.fn(() => code);
@@ -183,6 +199,73 @@ describe("StructureDestroyExecutor", () => {
       ],
     ] as const)
       expect(new StructureDestroyExecutor().execute([extensionIntent], value)[0]).toMatchObject({
+        called: false,
+        fault,
+      });
+  });
+
+  it("revalidates an empty room container and its exact current service replacement", () => {
+    const room = { controller: { my: true }, name: "W1N1" } as unknown as Room;
+    const destroy = vi.fn(() => 0);
+    const container = (
+      id: string,
+      options: {
+        readonly active?: boolean;
+        readonly roomName?: string;
+        readonly structureType?: string;
+        readonly used?: number;
+      } = {},
+    ) =>
+      ({
+        destroy: id === containerIntent.targetId ? destroy : vi.fn(() => 0),
+        id,
+        isActive: () => options.active ?? true,
+        pos: {
+          roomName: options.roomName ?? "W1N1",
+          x: id === containerIntent.targetId ? 10 : 12,
+          y: 11,
+        },
+        room: { name: options.roomName ?? "W1N1" },
+        store: { getUsedCapacity: () => options.used ?? 0 },
+        structureType: options.structureType ?? "container",
+      }) as unknown as Structure;
+    const adapter = (
+      target = container("container-redundant"),
+      replacement: Structure | null = container("container-service"),
+    ) => ({
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => room,
+      resolveStructure: (id: string) =>
+        id === containerIntent.targetId
+          ? target
+          : id === containerIntent.replacementId
+            ? replacement
+            : null,
+    });
+
+    expect(new StructureDestroyExecutor().execute([containerIntent], adapter())[0]).toMatchObject({
+      called: true,
+      code: "OK",
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+    for (const [value, fault] of [
+      [adapter(container("container-redundant", { used: 1 })), "target-not-empty"],
+      [adapter(undefined, null), "replacement-absent"],
+      [
+        adapter(undefined, container("container-service", { active: false })),
+        "replacement-mismatch",
+      ],
+      [
+        adapter(undefined, container("container-service", { structureType: "extension" })),
+        "replacement-mismatch",
+      ],
+      [
+        adapter(undefined, container("container-service", { roomName: "W2N2" })),
+        "replacement-mismatch",
+      ],
+    ] as const)
+      expect(new StructureDestroyExecutor().execute([containerIntent], value)[0]).toMatchObject({
         called: false,
         fault,
       });

@@ -84,8 +84,8 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
       terms.replacementStructureType === "tower" &&
       terms.replacementId === null &&
       !terms.targetRequiresEmptyStore) ||
-    (terms.targetStructureType === "extension" &&
-      terms.replacementStructureType === "extension" &&
+    (["container", "extension"].includes(terms.targetStructureType) &&
+      terms.replacementStructureType === terms.targetStructureType &&
       typeof terms.replacementId === "string" &&
       terms.replacementId.length > 0 &&
       terms.targetRequiresEmptyStore);
@@ -114,21 +114,29 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
     x: proposal.pos.x,
     y: proposal.pos.y,
   };
-  return proposal.targetStructureType === "road"
-    ? {
-        ...envelope,
-        replacementId: null,
-        replacementStructureType: "tower",
-        targetRequiresEmptyStore: false,
-        targetStructureType: "road",
-      }
-    : {
-        ...envelope,
-        replacementId: proposal.replacementId,
-        replacementStructureType: "extension",
-        targetRequiresEmptyStore: true,
-        targetStructureType: "extension",
-      };
+  if (proposal.targetStructureType === "road")
+    return {
+      ...envelope,
+      replacementId: null,
+      replacementStructureType: "tower",
+      targetRequiresEmptyStore: false,
+      targetStructureType: "road",
+    };
+  if (proposal.targetStructureType === "container")
+    return {
+      ...envelope,
+      replacementId: proposal.replacementId,
+      replacementStructureType: "container",
+      targetRequiresEmptyStore: true,
+      targetStructureType: "container",
+    };
+  return {
+    ...envelope,
+    replacementId: proposal.replacementId,
+    replacementStructureType: "extension",
+    targetRequiresEmptyStore: true,
+    targetStructureType: "extension",
+  };
 }
 function record(
   proposal: LayoutMigrationProposal,

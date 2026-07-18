@@ -106,8 +106,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   empty, unshared, obsolete extension under exact current replacement evidence. Issue #288 persists
   at most one compact extension evacuation per room, routes its exact energy to that replacement
   through funded logistics, suppresses target refill, and keeps removal blocked until fresh
-  delivered/empty evidence. Other structure types, general multi-step migration, and creep
-  dismantling remain issue #99.
+  delivered/empty evidence. Issue #290 removes at most one empty, unshared source-adjacent container
+  only while a different exact committed container remains the selected reachable service for that
+  same source; mining identity and work position stay unchanged. Other structure types,
+  selected/stocked containers, general multi-step migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

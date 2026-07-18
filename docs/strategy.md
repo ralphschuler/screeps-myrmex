@@ -60,7 +60,10 @@ continues through delivery. Removal waits for fresh empty-source, delivered-repl
 retired-flow evidence. Current site headroom is required; the executor rechecks target stock and
 replacement identity; only fresh observation proves removal. Stored structures other than this one
 extension, defensive, critical, foreign, unknown, and multiply occupied structures remain excluded.
-General migration remains fail-closed.
+General migration remains fail-closed. One source-container exception additionally removes an empty,
+unshared container beside exactly one source only while a different exact committed source-container
+remains the selected reachable service for that source. The stationary mining identity and work
+position do not change; selected, sole, stocked, ambiguous, or replacementless containers remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
