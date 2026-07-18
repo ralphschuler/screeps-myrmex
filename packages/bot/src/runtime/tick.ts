@@ -132,6 +132,7 @@ import {
   layoutCacheDependencies,
   parseLayoutsOwner,
   persistLayoutCommitment,
+  persistLayoutExtensionEvacuation,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
@@ -169,6 +170,7 @@ import {
   renewLogisticsBudgets,
   type LogisticsRuntimeProjection,
 } from "../logistics/runtime";
+import { projectLayoutExtensionEvacuations } from "../logistics/extension-evacuation";
 import type { LogisticsResourceDemandProjection } from "../logistics/resource-demands";
 import {
   LinkExecutor,
@@ -1862,8 +1864,18 @@ function layoutPlanningSystem(
                 unlocks: colony.rclPolicy.unlocks,
               });
         const migration = constructionPlanner.planMigration({
+          activeLogisticsFlowIds: new Set(
+            context.contractPlanning.contracts.flatMap(({ execution, state }) =>
+              execution.version === 3 && (state === "assigned" || state === "active")
+                ? [execution.flowId]
+                : [],
+            ),
+          ),
           colony,
           commitment,
+          extensionEvacuation:
+            owner.records.find(({ roomName }) => roomName === room.name)?.extensionEvacuation ??
+            null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
           observationFingerprint,
           placements: convergencePlacements,
@@ -1871,6 +1883,15 @@ function layoutPlanningSystem(
           room,
         });
         if (migration.authorization !== null) migrationAuthorizations.push(migration.authorization);
+        const migrationOwner = persistLayoutExtensionEvacuation(
+          owner,
+          room.name,
+          migration.extensionEvacuation,
+        );
+        if (migrationOwner !== owner) {
+          owner = migrationOwner;
+          changed = true;
+        }
         migrationBlockers.push(...migration.blockers);
         migrationProposals.push(...migration.proposals);
         migrationScannedCandidates += migration.scannedCandidates;
@@ -2117,6 +2138,18 @@ function colonyDirectorSystem(
       let logisticsCpuUsed = 0;
       let logisticsPlan = emptyLogisticsRuntimeProjection();
       const priorLedger = resolveColoniesOwner(owner).owner?.ledger ?? [];
+      const layoutEvacuations = projectLayoutExtensionEvacuations({
+        existingBudgets: priorLedger,
+        records:
+          isFeatureEnabled(context.config, "phase2.layout") &&
+          isFeatureEnabled(context.config, "phase2.logistics") &&
+          context.contractExecution.status === "ready" &&
+          context.contractPlanning.status === "ready"
+            ? (parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null)?.records ?? [])
+            : [],
+        snapshot: context.snapshot,
+        tick: context.tick,
+      });
       const fundedIndustryBudgetIds = new Set(
         priorLedger
           .filter(
@@ -2172,7 +2205,11 @@ function colonyDirectorSystem(
           execution: context.contractExecution,
           includeOptional: mode === "normal" || mode === "surplus",
           planning: context.contractPlanning,
-          resourceDemands: mergeResourceDemands(labs.resourceDemands, mature.resourceDemands),
+          resourceDemands: mergeResourceDemands(
+            labs.resourceDemands,
+            mature.resourceDemands,
+            layoutEvacuations.demands,
+          ),
           snapshot: context.snapshot,
           tick: context.tick,
         });
@@ -2312,6 +2349,7 @@ function colonyDirectorSystem(
           budgetRequest === null ? [] : [budgetRequest],
         ),
         ...logistics.budgets,
+        ...layoutEvacuations.budgets,
         ...provisionalMaintenance.budgets,
         ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
         ...projectLabBudgetRequests(labs, context.tick),
@@ -2692,6 +2730,11 @@ function mergeResourceDemands(
       projections
         .flatMap(({ nodes }) => nodes)
         .sort((left, right) => left.id.localeCompare(right.id)),
+    ),
+    suppressedSinkTargetIds: Object.freeze(
+      projections
+        .flatMap(({ suppressedSinkTargetIds }) => suppressedSinkTargetIds ?? [])
+        .sort((left, right) => left.localeCompare(right)),
     ),
   });
 }

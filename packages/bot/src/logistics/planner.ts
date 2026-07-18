@@ -18,7 +18,7 @@ export interface LogisticsPriority {
 }
 
 export interface LogisticsBudgetBinding {
-  readonly category: "industry";
+  readonly category: "industry" | "optional-growth";
   readonly issuer: string;
 }
 

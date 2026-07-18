@@ -79,6 +79,8 @@ export interface LogisticsResourceDemandProjection {
   readonly edges: readonly LogisticsEdge[];
   readonly endpoints: readonly LogisticsContractEndpoint[];
   readonly nodes: readonly LogisticsNode[];
+  /** Removes ordinary sink projections for an exact target while a specialized flow owns it. */
+  readonly suppressedSinkTargetIds?: readonly string[];
 }
 
 export interface ProjectLabResourceDemandsInput {

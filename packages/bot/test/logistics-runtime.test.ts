@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { planLeaseAgents } from "../src/agents";
 import { emptyContractExecutionView, emptyContractPlanningView } from "../src/contracts";
+import { layoutExtensionEvacuationBudgetIssuer } from "../src/layout";
+import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
 import { observeLogisticsGraph, planLogisticsRuntime } from "../src/logistics/runtime";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
@@ -258,6 +260,142 @@ describe("logistics runtime adapter", () => {
       issuer: "industry/labs/U",
     });
     expect(result.budgets.some(({ category }) => category === "industry")).toBe(false);
+  });
+
+  it("routes one persisted obsolete-extension evacuation without refilling its source", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("extension evacuation fixture room missing");
+    const extension = (id: string, x: number, used: number) => ({
+      active: true,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      pos: position(x, 12),
+      store: {
+        capacity: 50,
+        freeCapacity: 50 - used,
+        resources: used === 0 ? [] : [{ amount: used, resourceType: "energy" }],
+        usedCapacity: used,
+      },
+    });
+    const evacuationWorld = {
+      ...snapshot,
+      rooms: [
+        {
+          ...room,
+          ownedExtensions: [
+            extension("extension-obsolete", 11, 40),
+            extension("extension-replacement", 12, 0),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const evacuationTerms = {
+      amount: 40,
+      expiresAt: 160,
+      replacementId: "extension-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "extension-obsolete",
+      startedAt: 10,
+    } as const;
+    const budgetIssuer = layoutExtensionEvacuationBudgetIssuer("W1N1", evacuationTerms);
+    if (budgetIssuer === null) throw new Error("extension evacuation budget issuer overflowed");
+    const evacuation = projectLayoutExtensionEvacuations({
+      existingBudgets: [],
+      records: [
+        {
+          algorithmRevision: "owned-room-layout-v2-source-services",
+          anchor: position(25, 25),
+          blockers: [],
+          committedAt: 1,
+          extensionEvacuation: evacuationTerms,
+          fingerprint: "layout-a",
+          roomName: "W1N1",
+          transform: 0,
+        },
+      ],
+      snapshot: evacuationWorld,
+      tick: 10,
+    });
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: false,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: evacuation.demands,
+      snapshot: evacuationWorld,
+      tick: 10,
+    });
+    const flow = result.contracts.commitments.find(({ flowId }) =>
+      flowId.startsWith("layout-extension-evacuation:"),
+    );
+
+    expect(evacuation.budgets).toEqual([
+      expect.objectContaining({
+        category: "optional-growth",
+        issuer: budgetIssuer,
+      }),
+    ]);
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: "store:extension-obsolete:sink:energy" }),
+    );
+    expect(flow?.request).toMatchObject({
+      budgetBinding: {
+        category: "optional-growth",
+        issuer: budgetIssuer,
+      },
+      execution: {
+        action: "withdraw",
+        counterpartId: "extension-replacement",
+      },
+      quantity: 40,
+      targetId: "extension-obsolete",
+    });
+    expect(result.budgets.some(({ issuer }) => issuer === budgetIssuer)).toBe(false);
+
+    const emptiedWorld = {
+      ...evacuationWorld,
+      rooms: [
+        {
+          ...room,
+          ownedExtensions: [
+            extension("extension-obsolete", 11, 0),
+            extension("extension-replacement", 12, 0),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const emptied = projectLayoutExtensionEvacuations({
+      existingBudgets: [],
+      records: [
+        {
+          algorithmRevision: "owned-room-layout-v2-source-services",
+          anchor: position(25, 25),
+          blockers: [],
+          committedAt: 1,
+          extensionEvacuation: evacuationTerms,
+          fingerprint: "layout-a",
+          roomName: "W1N1",
+          transform: 0,
+        },
+      ],
+      snapshot: emptiedWorld,
+      tick: 10,
+    });
+    const emptiedResult = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: false,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: emptied.demands,
+      snapshot: emptiedWorld,
+      tick: 10,
+    });
+    expect(emptiedResult.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: "store:extension-obsolete:sink:energy" }),
+    );
+    expect(emptiedResult.graph.nodes).toContainEqual(
+      expect.objectContaining({ id: "store:extension-replacement:sink:energy" }),
+    );
   });
 
   it("clamps V3 acquire and partial delivery to observed exact quantities", () => {

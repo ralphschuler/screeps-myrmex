@@ -1,8 +1,12 @@
 import type { ColonyView } from "../colony";
 import {
   CONSTRUCTION_SITE_LIMITS,
+  LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
+  MAX_LAYOUT_EXTENSION_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
+  layoutExtensionEvacuationFlowId,
   type LayoutCommitment,
+  type LayoutExtensionEvacuation,
   type LayoutMigrationBlocker,
   type LayoutMigrationBlockerRecord,
   type LayoutMigrationPlanningResult,
@@ -186,10 +190,12 @@ export class ConstructionPlanner {
     });
   }
 
-  /** Plans bounded no-store road removal and replacement-first empty-extension convergence. */
+  /** Plans bounded road removal and replacement-first extension convergence with stock evacuation. */
   planMigration(input: {
+    readonly activeLogisticsFlowIds?: ReadonlySet<string>;
     readonly colony: ColonyView;
     readonly commitment: LayoutCommitment;
+    readonly extensionEvacuation?: LayoutExtensionEvacuation | null;
     readonly globalOwnedSiteCount: number;
     readonly observationFingerprint: string;
     readonly placements: readonly LayoutPlacement[];
@@ -218,7 +224,12 @@ export class ConstructionPlanner {
     const candidates = [
       ...towerCandidates.map((placement) => ({ kind: "road" as const, placement })),
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
-    ].sort(compareMigrationCandidate);
+    ].sort((left, right) => {
+      const activeSourceId = input.extensionEvacuation?.sourceId;
+      const leftActive = left.kind === "extension" && left.target.id === activeSourceId;
+      const rightActive = right.kind === "extension" && right.target.id === activeSourceId;
+      return Number(rightActive) - Number(leftActive) || compareMigrationCandidate(left, right);
+    });
     const considered = candidates.slice(0, STRUCTURE_REMOVAL_LIMITS.inspectedCandidatesPerTick);
     const truncatedCandidates = Math.max(0, candidates.length - considered.length);
     if (truncatedCandidates > 0)
@@ -227,6 +238,7 @@ export class ConstructionPlanner {
       return freeze({
         authorization: null,
         blockers,
+        extensionEvacuation: null,
         proposals,
         scannedCandidates: 0,
         truncatedCandidates,
@@ -242,6 +254,7 @@ export class ConstructionPlanner {
       return freeze({
         authorization: null,
         blockers,
+        extensionEvacuation: input.extensionEvacuation ?? null,
         proposals,
         scannedCandidates: considered.length,
         truncatedCandidates,
@@ -256,6 +269,7 @@ export class ConstructionPlanner {
     } as const;
     const towerCount = observedStructureCount(input.room, "tower");
     const towerAllowance = input.colony.rclPolicy.unlocks?.towers ?? 0;
+    let extensionEvacuation: LayoutExtensionEvacuation | null = null;
     for (const candidate of considered) {
       if (candidate.kind === "road") {
         const occupying = [...(input.room.structures ?? [])]
@@ -305,6 +319,8 @@ export class ConstructionPlanner {
         continue;
       }
 
+      const priorEvacuation = input.extensionEvacuation ?? null;
+      if (priorEvacuation !== null && priorEvacuation.sourceId !== candidate.target.id) continue;
       const extension = extensionMigrationEvidence(
         input.room,
         candidate.target,
@@ -318,6 +334,88 @@ export class ConstructionPlanner {
           targetId: candidate.target.id,
         });
         continue;
+      }
+      if (priorEvacuation !== null && priorEvacuation.replacementId !== extension.replacement.id) {
+        pushMigrationBlocker(blockers, {
+          reason: "replacement-pending",
+          roomName: input.room.name,
+          targetId: candidate.target.id,
+        });
+        continue;
+      }
+      const targetEnergy = exactExtensionEnergy(extension.target);
+      const replacementEnergy = exactExtensionEnergy(extension.replacement);
+      if (targetEnergy === null || replacementEnergy === null) {
+        pushMigrationBlocker(blockers, {
+          reason: "target-unavailable",
+          roomName: input.room.name,
+          targetId: candidate.target.id,
+        });
+        continue;
+      }
+      if (priorEvacuation !== null && targetEnergy > priorEvacuation.amount) {
+        const flowId = layoutExtensionEvacuationFlowId(input.room.name, priorEvacuation);
+        if (
+          input.activeLogisticsFlowIds?.has(flowId) === true ||
+          replacementEnergy !== priorEvacuation.replacementInitialEnergy ||
+          replacementEnergy + targetEnergy > MAX_LAYOUT_EXTENSION_ENERGY ||
+          (extension.replacement.store.freeCapacity ?? 0) < targetEnergy
+        ) {
+          extensionEvacuation = priorEvacuation;
+          pushMigrationBlocker(blockers, {
+            reason: "evacuation-incomplete",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        extensionEvacuation = { ...priorEvacuation, amount: targetEnergy };
+      }
+      if (priorEvacuation === null && targetEnergy > 0) {
+        if (
+          replacementEnergy + targetEnergy > MAX_LAYOUT_EXTENSION_ENERGY ||
+          (extension.replacement.store.freeCapacity ?? 0) < targetEnergy
+        ) {
+          pushMigrationBlocker(blockers, {
+            reason: "evacuation-capacity",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          continue;
+        }
+        extensionEvacuation = {
+          amount: targetEnergy,
+          expiresAt: input.room.observedAt + LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
+          replacementId: extension.replacement.id,
+          replacementInitialEnergy: replacementEnergy,
+          sourceId: candidate.target.id,
+          startedAt: input.room.observedAt,
+        };
+      } else {
+        extensionEvacuation ??= priorEvacuation;
+      }
+      if (extensionEvacuation !== null) {
+        const flowId = layoutExtensionEvacuationFlowId(input.room.name, extensionEvacuation);
+        const targetEmpty = targetEnergy === 0;
+        const delivered =
+          replacementEnergy >=
+          extensionEvacuation.replacementInitialEnergy + extensionEvacuation.amount;
+        const flowActive = input.activeLogisticsFlowIds?.has(flowId) === true;
+        let reason: LayoutMigrationBlocker | null = null;
+        if (input.room.observedAt >= extensionEvacuation.expiresAt) {
+          reason = "evacuation-expired";
+          if (!targetEmpty && !flowActive) extensionEvacuation = null;
+        } else if (!targetEmpty) reason = "target-stocked";
+        else if (flowActive) reason = "evacuation-pending";
+        else if (!delivered) reason = "evacuation-incomplete";
+        if (reason !== null) {
+          pushMigrationBlocker(blockers, {
+            reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
       }
       proposals.push({
         colonyId: input.colony.id,
@@ -338,10 +436,12 @@ export class ConstructionPlanner {
         targetRequiresEmptyStore: true,
         targetStructureType: "extension",
       });
+      if (extensionEvacuation !== null) break;
     }
     return freeze({
       authorization,
       blockers,
+      extensionEvacuation,
       proposals: proposals.sort((a, b) => a.stableId.localeCompare(b.stableId)),
       scannedCandidates: considered.length,
       truncatedCandidates,
@@ -359,22 +459,21 @@ function extensionMigrationEvidence(
   desiredExtensions: readonly LayoutPlacement[],
   allowance: number,
 ):
-  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null; readonly target: null }
   | {
       readonly reason: null;
       readonly replacement: RoomSnapshot["ownedExtensions"][number];
+      readonly target: RoomSnapshot["ownedExtensions"][number];
     } {
   const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
   if (
     occupying.length !== 1 ||
     room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
   )
-    return { reason: "target-shared", replacement: null };
+    return { reason: "target-shared", replacement: null, target: null };
   const observedTarget = room.ownedExtensions.find(({ id }) => id === target.id);
   if (observedTarget === undefined || !observedTarget.active)
-    return { reason: "target-unavailable", replacement: null };
-  if (observedTarget.store.usedCapacity !== 0)
-    return { reason: "target-stocked", replacement: null };
+    return { reason: "target-unavailable", replacement: null, target: null };
   const exact = room.ownedExtensions
     .filter(
       (extension) =>
@@ -389,11 +488,23 @@ function extensionMigrationEvidence(
     exact.length !== allowance - 1 ||
     desiredExtensions.length < allowance
   )
-    return { reason: "replacement-pending", replacement: null };
+    return { reason: "replacement-pending", replacement: null, target: null };
   const replacement = exact[exact.length - 1];
   return replacement === undefined
-    ? { reason: "replacement-pending", replacement: null }
-    : { reason: null, replacement };
+    ? { reason: "replacement-pending", replacement: null, target: null }
+    : { reason: null, replacement, target: observedTarget };
+}
+
+function exactExtensionEnergy(extension: RoomSnapshot["ownedExtensions"][number]): number | null {
+  const energy = extension.store.resources
+    .filter(({ resourceType }) => resourceType === "energy")
+    .reduce((total, resource) => total + resource.amount, 0);
+  return energy === extension.store.usedCapacity &&
+    Number.isSafeInteger(energy) &&
+    energy >= 0 &&
+    energy <= MAX_LAYOUT_EXTENSION_ENERGY
+    ? energy
+    : null;
 }
 function compareMigrationCandidate(a: MigrationCandidate, b: MigrationCandidate): number {
   const aPos = a.kind === "road" ? a.placement.pos : a.target.pos;

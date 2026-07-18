@@ -103,8 +103,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   layout, RCL, allowance, and site-headroom evidence, the sole removal arbiter/executor may destroy
   one road that solely blocks a planned tower. Issue #286 adds one extension-only replacement-first
   step: spare allowance builds canonical committed capacity before the same authority may remove one
-  empty, unshared, obsolete extension under exact current replacement evidence. Both add no Memory
-  state. Stock evacuation, other structure types, persistent multi-step migration, and creep
+  empty, unshared, obsolete extension under exact current replacement evidence. Issue #288 persists
+  at most one compact extension evacuation per room, routes its exact energy to that replacement
+  through funded logistics, suppresses target refill, and keeps removal blocked until fresh
+  delivered/empty evidence. Other structure types, general multi-step migration, and creep
   dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).

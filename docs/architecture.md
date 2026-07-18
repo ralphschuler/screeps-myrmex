@@ -67,9 +67,11 @@ current observation, layout, traffic consequence, reserve posture, RCL, and thre
 emits data only; ContractLedger owns funded creep work, while defense arbitration exclusively owns
 tower attack, heal, and repair. Issue #284 additionally permits one road that solely blocks a
 planned tower; issue #286 permits one empty obsolete extension only after current full allowance and
-an exact completed committed replacement are observed. Both emit exact current authorization;
-`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
-`Structure.destroy`.
+an exact completed committed replacement are observed. Issue #288 lets the same policy persist one
+bounded stocked-extension evacuation, while `LogisticsPlanner` alone routes its exact energy to the
+replacement and suppresses refill competition. Removal still requires fresh delivered/empty
+observation and no active evacuation flow. `StructureRemovalArbiter` alone authorizes removal and
+`StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1273,6 +1275,15 @@ capacity exactly once; contamination drains preempt incompatible fills. Existing
 executors perform withdraw/transfer work, and later observation settles partial progress, loss, lab
 removal, or completion. No lab API command is introduced by this path.
 
+Extension migration uses the same authority. One layout-owned persisted evacuation projects at most
+one source and one exact replacement sink per room under a length-prefixed external
+`optional-growth` budget binding. It suppresses ordinary refill nodes for both physical targets
+during acquisition so the graph cannot reserve the same extension capacity twice. Once the source is
+empty, only source refill remains suppressed; ordinary replacement refill may restore completion
+evidence after spawn use. The fixed 64-record projection remains inside the existing node, edge,
+flow, and contract bounds. Logistics owns admission and execution terms; layout owns only the
+migration commitment and consumes only fresh completion evidence.
+
 ### 12.4 MovementArbiter
 
 Every creep movement request is a `MovementIntent` with actor ID, desired position/range, deadline,
@@ -1352,10 +1363,11 @@ projection, evaluates at most two rooms per tick, 256 anchors, eight transforms,
 cells per candidate, and publishes only complete `owned-room-layout-v1` plans.
 
 The distinct `layouts` persistent owner stores only algorithm revision, anchor/transform,
-fingerprint, and bounded blocker/commitment metadata; reconstructible placements remain heap data.
-`layout.compiled.v1` is a `CacheManager` namespace stamped by exact algorithm, terrain, policy, and
-normalized-facts revisions. Failed or exhausted planning preserves the prior commitment and emits no
-partial plan, command, construction-site intent, or dismantle suggestion.
+fingerprint, bounded blocker/commitment metadata, and at most one compact extension evacuation per
+room; reconstructible placements remain heap data. `layout.compiled.v1` is a `CacheManager`
+namespace stamped by exact algorithm, terrain, policy, and normalized-facts revisions. Failed or
+exhausted planning preserves the prior commitment and emits no partial plan, command,
+construction-site intent, or dismantle suggestion.
 
 PR B adds a pure layout diff and makes `ConstructionSiteArbiter` the sole site-slot authority.
 Exact/adopted structures and matching owned sites suppress duplicates; stale observation, lost
@@ -1396,8 +1408,18 @@ extensions occupy committed geometry, and one active empty unshared external ext
 arbiter retains its 128-candidate and one-command ceilings. The destroy executor additionally
 revalidates the target's owned empty Store and the exact owned replacement in the current room. No
 Memory field is added; next observation proves removal and ordinary site diffing can fill the final
-position. Stock evacuation, other non-road structures, defensive migration, persistent multi-step
-migration, and creep dismantling remain issue #99 and fail closed.
+position.
+
+Issue #288 extends only that extension path. A stocked target persists one compact source,
+replacement, amount/baseline, start, and expiry commitment in its existing layout record. On the
+following tick, runtime composition projects one externally funded `optional-growth` logistics flow;
+the sole logistics graph reserves exact target/replacement capacity, suppresses both refill sinks
+during acquisition, and keeps the empty source suppressed through delivery. Existing V3 contracts
+and lease agents issue the only withdraw/transfer actions. Removal requires an empty target,
+observed replacement gain, no active flow, and unexpired terms. Threat, reserve/RCL/layout drift,
+malformed Store evidence, missing prerequisites, timeout, or CPU pressure authorizes no destruction.
+Other structure stock evacuation, defensive migration, general multi-step migration, and creep
+dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -1952,9 +1974,12 @@ Required architecture assertions include:
 - direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
 - temporary road removal requires exact current authorization, bounded input, and current site
   headroom before accepting at most one road;
-- empty obsolete-extension removal requires current full allowance, allowance-minus-one active
-  committed extensions, an exact owned replacement, an empty unshared target, and the same global
-  one-command ceiling;
+- obsolete-extension removal requires current full allowance, allowance-minus-one active committed
+  extensions, an exact owned replacement, an empty unshared target, and the same global one-command
+  ceiling;
+- a stocked obsolete extension persists at most one bounded layout-owned evacuation, uses the sole
+  funded logistics/lease path, suppresses ordinary target refill, and cannot authorize removal
+  before fresh delivered/empty evidence and flow retirement;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

@@ -260,10 +260,18 @@ describe("composed layout runtime", () => {
 
     const replacement = extension("extension-replacement", 18, 20);
     const readyRoom = room([...exactBefore, replacement, obsolete]);
-    const planReady = (value: Parameters<ConstructionPlanner["planMigration"]>[0]["room"]) =>
+    const planReady = (
+      value: Parameters<ConstructionPlanner["planMigration"]>[0]["room"],
+      extensionEvacuation: Parameters<
+        ConstructionPlanner["planMigration"]
+      >[0]["extensionEvacuation"] = null,
+      activeLogisticsFlowIds: ReadonlySet<string> = new Set(),
+    ) =>
       new ConstructionPlanner().planMigration({
+        activeLogisticsFlowIds,
         colony,
         commitment,
+        extensionEvacuation,
         globalOwnedSiteCount: 0,
         observationFingerprint: "obs-ready",
         placements: idealExtensions,
@@ -279,7 +287,7 @@ describe("composed layout runtime", () => {
     const stockedRoom = room([
       ...exactBefore,
       replacement,
-      extension("extension-obsolete", 30, 30, 1),
+      extension("extension-obsolete", 30, 30, 50),
     ]);
     const sharedRoom = {
       ...readyRoom,
@@ -298,7 +306,60 @@ describe("composed layout runtime", () => {
     };
 
     expect(JSON.stringify(reorderedReady)).toBe(JSON.stringify(ready));
-    expect(planReady(stockedRoom).proposals).toEqual([]);
+    const evacuation = planReady(stockedRoom);
+    expect(
+      JSON.stringify(
+        planReady({
+          ...stockedRoom,
+          ownedExtensions: [...stockedRoom.ownedExtensions].reverse(),
+          structures: [...(stockedRoom.structures ?? [])].reverse(),
+        }),
+      ),
+    ).toBe(JSON.stringify(evacuation));
+    expect(evacuation.proposals).toEqual([]);
+    expect(evacuation.extensionEvacuation).toMatchObject({
+      amount: 50,
+      replacementId: "extension-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "extension-obsolete",
+    });
+    if (evacuation.extensionEvacuation === null)
+      throw new Error("expected extension evacuation commitment");
+    const pendingFlowId = `layout-extension-evacuation:${roomName}:extension-obsolete:extension-replacement`;
+    const emptiedRoom = room([
+      ...exactBefore,
+      replacement,
+      extension("extension-obsolete", 30, 30),
+    ]);
+    expect(
+      planReady(emptiedRoom, evacuation.extensionEvacuation, new Set([pendingFlowId])).proposals,
+    ).toEqual([]);
+    const expiredStocked = planReady(
+      { ...stockedRoom, observedAt: evacuation.extensionEvacuation.expiresAt },
+      evacuation.extensionEvacuation,
+    );
+    expect(expiredStocked).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-expired" })],
+      extensionEvacuation: null,
+      proposals: [],
+    });
+    const expiredIncomplete = planReady(
+      { ...emptiedRoom, observedAt: evacuation.extensionEvacuation.expiresAt },
+      evacuation.extensionEvacuation,
+    );
+    expect(expiredIncomplete.extensionEvacuation).toEqual(evacuation.extensionEvacuation);
+
+    const deliveredRoom = room([
+      ...exactBefore,
+      extension("extension-replacement", 18, 20, 50),
+      extension("extension-obsolete", 30, 30),
+    ]);
+    expect(planReady(deliveredRoom, evacuation.extensionEvacuation).proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "extension-replacement",
+        targetId: "extension-obsolete",
+      }),
+    ]);
     expect(planReady(sharedRoom).proposals).toEqual([]);
     if (ready.authorization === null) throw new Error("expected extension migration authorization");
     const arbitration = arbitrateStructureRemovals({
