@@ -55,12 +55,15 @@ import {
 import { createScreepsLocalPathSearch } from "./local-path-adapter";
 import {
   BUDGET_CATEGORIES,
+  COLONY_RCL_POLICY_TABLE,
   ColonyDirector,
   emptyColonyPlanningResult,
+  isInfrastructureRecoveryAuthorized,
   populationSpawnDemandBinding,
   recoverySpawnDemandBinding,
   resolveColoniesOwner,
   type ColonyDirectorSession,
+  type ColonyDomainHealthDomain,
   type ColonyPlanningResult,
   type ColonySpawnCommandSettlement,
   type BudgetRequest,
@@ -128,7 +131,9 @@ import {
   persistLayoutCommitment,
   planOwnedRoomLayout,
   reconcileConstructionSiteExecution,
+  reconstructCommittedLayout,
   registerLayoutCompiledCache,
+  selectLayoutPlanningWindow,
   type ConstructionSiteArbitrationResult,
   type ConstructionSiteExecutionResult,
   type LayoutCommitment,
@@ -147,6 +152,7 @@ import {
   type TickSystem,
 } from "./kernel";
 import type { TickPhase } from "./phases";
+import { deriveRuntimeColonyDomainHealth } from "./colony-domain-health";
 import { createLocalPathTravelEstimateView, localPathSearchAllowance } from "./local-path-travel";
 import {
   emptyLogisticsRuntimeProjection,
@@ -159,6 +165,7 @@ import {
   LinkExecutor,
   emptyLinkRuntimeResult,
   planLinkRuntime,
+  projectLinkDomainHealth,
   type LinkRoomLayoutEvidence,
   type LinkRuntimeResult,
 } from "../links";
@@ -504,6 +511,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     planning: Object.freeze({
       deferred: Object.freeze([]),
       deferredCount: 0,
+      health: Object.freeze([]),
       proposals: Object.freeze([]),
       scannedStructures: 0,
       truncatedStructures: 0,
@@ -1698,16 +1706,17 @@ function layoutPlanningSystem(
         colonyId: string;
         roomName: string;
       }[] = [];
-      const colonies = [...context.colony.colonies]
+      const eligibleColonies = [...context.colony.colonies]
         .filter(({ state, visibility }) => state !== "lost" && visibility === "visible")
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .slice(0, 2);
+        .sort((a, b) => a.id.localeCompare(b.id));
+      const colonies = selectLayoutPlanningWindow(eligibleColonies, context.tick);
       const cache = getLayoutCompiledCache(input.cacheManager);
       for (const colony of colonies) {
         const room = context.snapshot.rooms.find(({ name }) => name === colony.roomName);
         if (room?.controller?.ownership !== "owned") continue;
         authorizations.push({
-          authorized: colony.rclPolicy.progression.authorized,
+          authorized:
+            colony.rclPolicy.progression.authorized || isInfrastructureRecoveryAuthorized(colony),
           colonyId: colony.id,
           roomName: room.name,
         });
@@ -2109,6 +2118,7 @@ function colonyDirectorSystem(
           : Object.freeze({
               deferred: Object.freeze([]),
               deferredCount: 0,
+              health: Object.freeze([]),
               proposals: Object.freeze([]),
               scannedStructures: 0,
               truncatedStructures: 0,
@@ -2148,6 +2158,55 @@ function colonyDirectorSystem(
         logisticsCpuUsed,
         provisionalMaintenance,
       );
+      const enabledHealthDomains = new Set(
+        [
+          ["layout", "phase2.layout"],
+          ["mining", "phase2.mining"],
+          ["logistics", "phase2.logistics"],
+          ["links", "phase2.links"],
+          ["maintenance", "phase2.maintenance"],
+          ["resources", "phase2.industry"],
+          ["labs", "phase2.labs"],
+          ["industry", "phase2.mature"],
+        ].flatMap(([domain, gate]) =>
+          isFeatureEnabled(context.config, gate as Parameters<typeof isFeatureEnabled>[1])
+            ? [domain]
+            : [],
+        ),
+      ) as ReadonlySet<ColonyDomainHealthDomain>;
+      const domainHealth = deriveRuntimeColonyDomainHealth({
+        tick: context.tick,
+        enabledDomains: enabledHealthDomains,
+        rooms: context.snapshot.rooms,
+        layoutRecords:
+          parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null)?.records ?? [],
+        miningProjections: miningPlan.projections,
+        activeHarvestTargetIds: new Set(
+          context.contractExecution.leases
+            .filter(({ execution }) => execution.action === "harvest")
+            .map(({ targetId }) => targetId),
+        ),
+        logisticsHealth: logistics.health,
+        linkHealth: projectLinkDomainHealth({
+          layouts: directLinkHealthLayouts(context.snapshot, input.manager),
+          rooms: context.snapshot.rooms,
+          tick: context.tick,
+        }),
+        maintenanceHealth: provisionalMaintenance.planning.health,
+        resources: industryDraft.rooms.map((room) => ({
+          extractorActive: room.extractor?.active === true,
+          hasMineral: room.mineral !== null,
+          hasStorage: room.storage !== null,
+          hasTerminal: room.terminal !== null,
+          roomName: room.roomName,
+        })),
+        labAssignments: labs.assignments,
+        mature: {
+          catalogAvailable: mature.catalog !== null,
+          capabilities: mature.capabilities,
+          status: mature.status,
+        },
+      });
       const budgetRequests = [
         ...economyCandidates.map(({ budgetRequest }) => budgetRequest),
         ...maintenanceCandidates.map(({ budgetRequest }) => budgetRequest),
@@ -2170,6 +2229,7 @@ function colonyDirectorSystem(
         cpuBudget: budget,
         requests: budgetRequests,
         population: bindPopulationReservations(input.contractPopulation, owner),
+        domainHealth,
       });
       const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
       const brokerResult = spawnEnabled
@@ -2245,6 +2305,7 @@ function colonyDirectorSystem(
                 })),
               satisfiedRecoveryObjectiveIds: satisfiedObjectiveIds,
               population: bindPopulationReservations(input.contractPopulation, owner),
+              domainHealth,
             });
       const intents = authorizedSpawnIntents(session, selections, context.tick);
       spawnDraft.session = session;
@@ -2276,6 +2337,52 @@ function staticMiningLayouts(manager: MemoryManager | null) {
   return new Map(
     owner.records.map(({ roomName }) => [roomName, freshSourceServicePlacements(owner, roomName)]),
   );
+}
+
+function directLinkHealthLayouts(
+  snapshot: WorldSnapshot,
+  manager: MemoryManager | null,
+): readonly LinkRoomLayoutEvidence[] {
+  if (manager === null) return [];
+  const owner = parseLayoutsOwner(manager.ownerView("layouts"));
+  const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
+  if (owner === null || unlocks === undefined) return [];
+  return snapshot.rooms.flatMap((room): readonly LinkRoomLayoutEvidence[] => {
+    if (room.controller?.ownership !== "owned" || room.controller.level !== 8) return [];
+    const records = owner.records.filter(({ roomName }) => roomName === room.name);
+    const record = records[0];
+    if (records.length !== 1 || record === undefined) return [];
+    const placements = reconstructCommittedLayout({
+      commitment: commitmentFromRecord(record),
+      roomName: room.name,
+      sourceCount: room.sources.length,
+      unlocks,
+    });
+    if (placements === null) return [];
+    return [
+      {
+        evidence: {
+          algorithmRevision: record.algorithmRevision,
+          controller: room.controller.pos,
+          fingerprint: record.fingerprint,
+          linkPlacements: placements
+            .filter(({ structureType }) => structureType === "link")
+            .map(({ pos }) => pos),
+          sourceServices: freshSourceServicePlacements(owner, room.name).flatMap((placement) =>
+            placement.service?.kind === "source-container"
+              ? [{ pos: placement.pos, sourceId: placement.service.sourceId }]
+              : [],
+          ),
+          storage:
+            room.storedStructures.find(
+              ({ ownership, structureType }) =>
+                ownership === "owned" && structureType === "storage",
+            )?.pos ?? null,
+        },
+        roomName: room.name,
+      },
+    ];
+  });
 }
 
 function industryPublicationSystem(

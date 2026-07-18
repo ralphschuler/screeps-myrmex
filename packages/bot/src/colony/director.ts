@@ -17,6 +17,7 @@ import {
   type BudgetRequest,
   type ColoniesOwnerV1,
   type ColonyDirectorResult,
+  type ColonyDomainHealthProjection,
   type ColonyObjective,
   type ColonyPlanReason,
   type ColonyPlanStatus,
@@ -30,6 +31,7 @@ import {
 } from "./contracts";
 import { canonicalColoniesOwner, coloniesOwnerEquals, resolveColoniesOwner } from "./persistence";
 import { formatReservationId } from "./reservation-id";
+import { projectColonyDomainHealth } from "./domain-health";
 import { projectColonyRclPolicy } from "./rcl-policy";
 import { ColonyPopulationPolicy } from "./population-policy";
 
@@ -43,6 +45,8 @@ export interface ColonyDirectorInput {
   readonly requests?: readonly BudgetRequest[];
   readonly population?: ContractPopulationView;
   readonly committedPopulationDemandIds?: readonly string[];
+  /** Tick-local direct statuses from the fixed Phase 2 domain owners. */
+  readonly domainHealth?: readonly unknown[];
   /** Undefined requests a provisional energy/CPU view; an array requests exact spawn authorization. */
   readonly recoverySpawnSelections?: readonly RecoverySpawnSelection[];
   readonly populationSpawnSelections?: readonly RecoverySpawnSelection[];
@@ -92,6 +96,7 @@ interface ColonyEvidence {
   readonly legalWorkforce: boolean;
   readonly activeThreat: boolean;
   readonly controllerRisk: boolean;
+  readonly domainHealth: ColonyDomainHealthProjection;
   readonly mature: boolean;
   readonly recoveryFloorRestored: boolean;
 }
@@ -146,6 +151,9 @@ export class ColonyDirector {
         `raw colony requests exceed the bounded input cap of ${String(MAX_BUDGET_REQUESTS_PER_TICK * 2)}`,
       );
     }
+    if ((input.domainHealth?.length ?? 0) > MAX_COLONIES * 16) {
+      throw new RangeError("raw colony domain health exceeds the bounded empire cap");
+    }
     const exactRecoveryMode = input.recoverySpawnSelections !== undefined;
     const recoverySelections = normalizeRecoverySelections(
       input.recoverySpawnSelections ?? [],
@@ -189,7 +197,12 @@ export class ColonyDirector {
         continue;
       }
 
-      const facts = observeEvidence(room, input.config, input.tick);
+      const domainHealth = projectColonyDomainHealth({
+        colonyId: roomName,
+        statuses: domainHealthForColony(input.domainHealth ?? [], roomName),
+        tick: input.tick,
+      });
+      const facts = observeEvidence(room, input.config, input.tick, domainHealth);
       evidence.set(roomName, facts);
       const transition = transitionFor(previous, facts);
       const record = applyTransition(
@@ -617,6 +630,10 @@ function emptySession(result: ColonyDirectorResult, tick: number): ColonyDirecto
   return new ColonyDirectorSession(result, null, null, false, [], tick);
 }
 
+function domainHealthForColony(statuses: readonly unknown[], colonyId: string): readonly unknown[] {
+  return statuses.filter((status) => isRecord(status) && status["colonyId"] === colonyId);
+}
+
 function normalizeRecoverySelections(
   selections: readonly RecoverySpawnSelection[],
   input: ColonyDirectorInput,
@@ -787,7 +804,12 @@ function emptyResult(status: ColonyPlanStatus, reasonCode: ColonyPlanReason): Co
   });
 }
 
-function observeEvidence(room: RoomSnapshot, config: RuntimeConfig, tick: number): ColonyEvidence {
+function observeEvidence(
+  room: RoomSnapshot,
+  config: RuntimeConfig,
+  tick: number,
+  domainHealth: ColonyDomainHealthProjection,
+): ColonyEvidence {
   const controller = room.controller;
   const owned = controller?.ownership === "owned";
   const legalWorkforce = room.ownedCreeps.some((creep) => isLegalWorker(creep, config));
@@ -816,7 +838,8 @@ function observeEvidence(room: RoomSnapshot, config: RuntimeConfig, tick: number
     hasSpawn &&
     legalWorkforce &&
     !controllerRisk &&
-    !activeThreat;
+    !activeThreat &&
+    domainHealth.status === "healthy";
   const spendable = Math.min(room.energyAvailable, room.energyCapacityAvailable);
   const recoveryFloor = Math.min(
     config.policy.recovery.protectedSpawnEnergy,
@@ -829,6 +852,7 @@ function observeEvidence(room: RoomSnapshot, config: RuntimeConfig, tick: number
     legalWorkforce,
     activeThreat,
     controllerRisk,
+    domainHealth,
     mature,
     recoveryFloorRestored: spendable >= recoveryFloor,
   };
@@ -871,6 +895,9 @@ function transitionFor(previous: ColonyRecord | null, facts: ColonyEvidence): Tr
     if (!facts.recoveryFloorRestored) {
       return { state: "recovering", reasonCode: "mandatory-floor-unrestored" };
     }
+    if (facts.room.controller?.level === 8 && facts.domainHealth.status !== "healthy") {
+      return { state: "recovering", reasonCode: "survival-capability-lost" };
+    }
     return facts.mature
       ? { state: "mature", reasonCode: "maturity-evidence-met" }
       : { state: "developing", reasonCode: "survival-capability-restored" };
@@ -889,6 +916,14 @@ function transitionFor(previous: ColonyRecord | null, facts: ColonyEvidence): Tr
   }
   if (facts.controllerRisk) {
     return { state: "recovering", reasonCode: "controller-downgrade-risk" };
+  }
+  if (facts.room.controller?.level === 8 && !facts.recoveryFloorRestored) {
+    return { state: "recovering", reasonCode: "mandatory-floor-unrestored" };
+  }
+  if (facts.room.controller?.level === 8 && facts.domainHealth.status !== "healthy") {
+    return previous?.state === "mature"
+      ? { state: "recovering", reasonCode: "survival-capability-lost" }
+      : { state: "developing", reasonCode: "maturity-evidence-lost" };
   }
   if (facts.mature) {
     return { state: "mature", reasonCode: "maturity-evidence-met" };
@@ -941,6 +976,11 @@ function viewForUnknown(record: ColonyRecord, input: ColonyDirectorInput): Colon
     legalWorkforce: null,
     activeThreat: null,
     controllerRisk: null,
+    domainHealth: projectColonyDomainHealth({
+      colonyId: record.roomName,
+      statuses: [],
+      tick: input.tick,
+    }),
     rclPolicy: projectColonyRclPolicy({
       visibility: "unknown",
       state: record.state,
@@ -951,6 +991,7 @@ function viewForUnknown(record: ColonyRecord, input: ColonyDirectorInput): Colon
       controllerRisk: null,
       cpuMode: input.cpuMode,
       protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
+      rcl8Health: null,
     }),
     populationPolicy: populationPolicy.project({
       activeThreat: null,
@@ -987,6 +1028,7 @@ function viewForVisible(
     legalWorkforce: facts.owned ? facts.legalWorkforce : false,
     activeThreat: facts.activeThreat,
     controllerRisk: facts.owned ? facts.controllerRisk : null,
+    domainHealth: facts.domainHealth,
     rclPolicy: projectColonyRclPolicy({
       visibility: "visible",
       state: record.state,
@@ -997,6 +1039,7 @@ function viewForVisible(
       controllerRisk: facts.owned ? facts.controllerRisk : null,
       cpuMode: input.cpuMode,
       protectedSpawnEnergy: input.config.policy.recovery.protectedSpawnEnergy,
+      rcl8Health: facts.owned ? facts.domainHealth : null,
     }),
     populationPolicy: populationPolicy.project({
       activeThreat: facts.activeThreat,
@@ -1059,12 +1102,22 @@ function requestDenial(
   if (record === undefined || facts === undefined || !facts.owned) {
     return "observation-unknown";
   }
+  const infrastructureRecoveryBuild =
+    request.category === "optional-growth" &&
+    request.issuer.startsWith(`growth/${record.roomName}/build/`) &&
+    record.state === "recovering" &&
+    facts.domainHealth.status === "blocked" &&
+    facts.legalWorkforce &&
+    !facts.activeThreat &&
+    !facts.controllerRisk &&
+    facts.recoveryFloorRestored;
   if (
     (request.category === "bootstrap-controller" ||
       request.category === "maintenance" ||
       request.category === "optional-growth") &&
     record.state !== "developing" &&
-    record.state !== "mature"
+    record.state !== "mature" &&
+    !infrastructureRecoveryBuild
   ) {
     return "posture-preempted";
   }

@@ -207,6 +207,7 @@ function planning(proposals: readonly MaintenanceProposal[]): ConstructionPlanni
   return {
     deferred: [],
     deferredCount: 0,
+    health: [],
     proposals,
     scannedStructures: proposals.length,
     truncatedStructures: 0,

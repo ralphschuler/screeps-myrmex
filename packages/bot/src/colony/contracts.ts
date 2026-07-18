@@ -32,6 +32,42 @@ export const COLONY_TRANSITION_REASONS = [
 
 export type ColonyTransitionReason = (typeof COLONY_TRANSITION_REASONS)[number];
 
+export const COLONY_DOMAIN_HEALTH_DOMAINS = [
+  "layout",
+  "mining",
+  "logistics",
+  "links",
+  "maintenance",
+  "resources",
+  "labs",
+  "industry",
+] as const;
+
+export type ColonyDomainHealthDomain = (typeof COLONY_DOMAIN_HEALTH_DOMAINS)[number];
+export type ColonyDomainHealthInputStatus = "healthy" | "failed";
+export type ColonyDomainHealthReason = "healthy" | "missing" | "stale" | "failed" | "invalid";
+
+export interface ColonyDomainHealthStatus {
+  readonly colonyId: string;
+  readonly domain: ColonyDomainHealthDomain;
+  readonly observedAt: number;
+  readonly status: ColonyDomainHealthInputStatus;
+}
+
+export interface ColonyDomainHealthProjection {
+  readonly version: 1;
+  readonly status: "healthy" | "blocked";
+  readonly blocker: {
+    readonly domain: ColonyDomainHealthDomain;
+    readonly reasonCode: Exclude<ColonyDomainHealthReason, "healthy">;
+  } | null;
+  readonly domains: readonly {
+    readonly domain: ColonyDomainHealthDomain;
+    readonly reasonCode: ColonyDomainHealthReason;
+    readonly status: "healthy" | "blocked";
+  }[];
+}
+
 export const BUDGET_CATEGORIES = [
   "emergency-spawn",
   "defense",
@@ -282,6 +318,7 @@ export interface ColonyView {
   readonly legalWorkforce: boolean | null;
   readonly activeThreat: boolean | null;
   readonly controllerRisk: boolean | null;
+  readonly domainHealth: ColonyDomainHealthProjection;
   readonly rclPolicy: ColonyRclPolicyProjection;
   readonly populationPolicy: ColonyPopulationProjection;
 }

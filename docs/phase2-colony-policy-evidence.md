@@ -18,15 +18,19 @@ ordered: mining, logistics, construction, maintenance, defense, storage, termina
 
 Reason precedence is observation unknown, colony lost, outside RCL2-RCL8, threat, recovery,
 bootstrap, constrained CPU, downgrade risk, reserve unrestored, capacity below target, RCL8 health
-unavailable, active, then sustaining only with direct health evidence. This slice has no such
-producer; [#225](https://github.com/ralphschuler/screeps-myrmex/issues/225) owns it. The frozen
-projection is tick-local, reset/reordering deterministic, attached to `ColonyView`, and does not
-change `COLONY_OWNER_SCHEMA_VERSION`.
+unavailable, active, then sustaining. Issue
+[#225](https://github.com/ralphschuler/screeps-myrmex/issues/225) makes sustaining reachable only
+with its fixed direct domain-health projection. The frozen projection is tick-local,
+reset/reordering deterministic, attached to `ColonyView`, and does not change
+`COLONY_OWNER_SCHEMA_VERSION`. See
+[`phase2-colony-health-evidence.md`](phase2-colony-health-evidence.md).
 
 Sources consulted: [control guide](https://docs.screeps.com/control.html) (last updated May 29,
 2026), [StructureController](https://docs.screeps.com/api/#StructureController),
-[StructureSpawn](https://docs.screeps.com/api/#StructureSpawn), and
-[Room Control Level](https://wiki.screepspl.us/Room_Control_Level/).
+[StructureSpawn](https://docs.screeps.com/api/#StructureSpawn), and the Screeps Wiki
+[Room Control Level](https://wiki.screepspl.us/Room_Control_Level/),
+[Maturity Matrix](https://wiki.screepspl.us/Maturity_Matrix/), and
+[Vision](https://wiki.screepspl.us/Vision/) pages.
 
 Checks: focused
 `npm test -- --run packages/bot/test/colony-rcl-policy.test.ts packages/bot/test/colony-director.test.ts packages/bot/test/runtime-config.test.ts`;
@@ -41,5 +45,5 @@ ticks over 50, capped at eight. Evaluation is canonical and bounded to 64 object
 target parts, 150 travel ticks, and 9,000 basis-point spawn saturation. Visible non-spawning actors
 count only when TTL is known and strictly greater than replacement lead. Unknown ownership, lost
 colonies, unavailable funding, unaffordable bodies, protected-reserve violations, and existing
-commitment IDs authorize no demand. Domain behavior remains in #45-#52; #225 owns cross-domain
-recovery and RCL8 maturity.
+commitment IDs authorize no demand. Domain behavior remains in #45-#52; #225 consumes direct status
+for cross-domain recovery and RCL8 maturity without taking over those authorities.

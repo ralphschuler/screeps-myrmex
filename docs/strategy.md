@@ -39,11 +39,14 @@ exclusions.
 
 ## Economy
 
-Phase 2 begins with a read-only complete-colony policy projection. RCL2-RCL7 progression requires
-stable checks for threat, recovery, bootstrap, constrained CPU, controller risk, protected reserve,
-and complete spawn-pool capacity. Unknown vision authorizes nothing. RCL8 cannot claim maturity from
-level alone: #44 reports `rcl8-health-evidence-unavailable`, and #225 will reconcile direct domain
-health.
+Phase 2 uses a read-only complete-colony policy projection. RCL2-RCL7 progression requires stable
+checks for threat, recovery, bootstrap, constrained CPU, controller risk, protected reserve, and
+complete spawn-pool capacity. Unknown vision authorizes nothing. RCL8 cannot claim maturity from
+level alone: it requires current canonical layout, source, logistics, link, maintenance, resource,
+lab, and mature-industry health. Missing or stale direct evidence returns an established mature room
+to recovery while an incomplete room remains developing; telemetry never authorizes that transition.
+Recovery may rebuild committed owned sites through the existing layout, budget, contract, and
+executor chain, but it cannot reopen controller upgrading or unrelated optional growth.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
@@ -135,13 +138,15 @@ Commitments survive reset but remain bound to current cluster and catalog finger
 staging completion yields `ready`, not a command. Active reaction completion requires later executor
 evidence and re-observation rather than an unrelated increase in aggregate stock.
 
-Factory and power processing follow the same funded-readiness rule. One factory call produces one
-complete recipe batch; operated power processing is admitted only for the complete effect-adjusted
-amount and its 50-energy-per-power cost. `OK` remains pending until the next exact store and factory
-cooldown observation. Missing funding, mechanics drift, conflicting deltas, or exhausted retries
-cannot claim production. Source stock minima, terminal energy, and current lab fills remain
-protected before mature logistics can stage work. The shared observer authority is runtime-composed,
-but Phase 2 emits no target strategy; nuke launch remains forbidden.
+Factory and power processing follow the same funded-readiness rule. Their current capability status,
+together with observer and capped nuker capability, contributes direct RCL8 health without making
+industry the colony lifecycle owner. One factory call produces one complete recipe batch; operated
+power processing is admitted only for the complete effect-adjusted amount and its
+50-energy-per-power cost. `OK` remains pending until the next exact store and factory cooldown
+observation. Missing funding, mechanics drift, conflicting deltas, or exhausted retries cannot claim
+production. Source stock minima, terminal energy, and current lab fills remain protected before
+mature logistics can stage work. The shared observer authority is runtime-composed, but Phase 2
+emits no target strategy; nuke launch remains forbidden.
 
 ## Military Operations
 

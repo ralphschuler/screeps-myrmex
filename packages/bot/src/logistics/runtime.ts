@@ -26,18 +26,28 @@ export interface LogisticsGraphObservation {
   readonly nodes: readonly LogisticsNode[];
 }
 
+export interface LogisticsDomainHealth {
+  readonly colonyId: string;
+  readonly observedAt: number;
+  readonly status: "healthy" | "failed";
+}
+
 export interface LogisticsRuntimeProjection {
   readonly budgets: readonly BudgetRequest[];
   readonly contracts: LogisticsContractProjection;
   readonly graph: LogisticsGraphObservation;
+  readonly health: readonly LogisticsDomainHealth[];
   readonly plan: LogisticsPlan;
 }
 
-export function emptyLogisticsRuntimeProjection(): LogisticsRuntimeProjection {
+export function emptyLogisticsRuntimeProjection(
+  health: readonly LogisticsDomainHealth[] = [],
+): LogisticsRuntimeProjection {
   return freeze({
     budgets: [],
     contracts: { commitments: [], retirements: [] },
     graph: { edges: [], endpoints: [], nodes: [] },
+    health,
     plan: { blockers: [], projections: [], recommendations: [], reservations: [] },
   });
 }
@@ -200,8 +210,9 @@ export function planLogisticsRuntime(input: {
   readonly snapshot: WorldSnapshot;
   readonly tick: number;
 }): LogisticsRuntimeProjection {
-  if (input.execution.status !== "ready" || input.planning.status !== "ready")
-    return emptyLogisticsRuntimeProjection();
+  if (input.execution.status !== "ready" || input.planning.status !== "ready") {
+    return emptyLogisticsRuntimeProjection(logisticsHealth(input.snapshot, null, null));
+  }
   const observed = observeLogisticsGraph(input.snapshot, input.includeOptional);
   const graph = mergeDemandGraph(observed, input.resourceDemands);
   const plan = planLogistics({
@@ -254,7 +265,88 @@ export function planLogisticsRuntime(input: {
       } satisfies BudgetRequest,
     ];
   });
-  return freeze({ budgets, contracts, graph, plan });
+  return freeze({
+    budgets,
+    contracts,
+    graph,
+    health: logisticsHealth(input.snapshot, graph, plan),
+    plan,
+  });
+}
+
+const LOGISTICS_HEALTH_FAILURES = new Set([
+  "duplicate-id",
+  "edge-cap",
+  "flow-cap",
+  "invalid-edge",
+  "invalid-node",
+  "node-cap",
+  "resource-mismatch",
+  "stale-node",
+  "vanished-node",
+  "wrong-colony",
+]);
+
+function logisticsHealth(
+  snapshot: WorldSnapshot,
+  graph: LogisticsGraphObservation | null,
+  plan: LogisticsPlan | null,
+): readonly LogisticsDomainHealth[] {
+  const rooms = snapshot.rooms
+    .filter(({ controller }) => controller?.ownership === "owned")
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (graph === null || plan === null) {
+    return rooms.map(({ name, observedAt }) => ({
+      colonyId: name,
+      observedAt,
+      status: "failed" as const,
+    }));
+  }
+  const failed = new Set<string>();
+  for (const projection of plan.projections) {
+    if (
+      projection.colonyId !== null &&
+      projection.blocker !== null &&
+      LOGISTICS_HEALTH_FAILURES.has(projection.blocker)
+    ) {
+      failed.add(projection.colonyId);
+    }
+  }
+  for (const blocker of plan.blockers) {
+    if (!LOGISTICS_HEALTH_FAILURES.has(blocker.reason)) continue;
+    const colonies = blockerColonies(blocker.subject, blocker.id, graph);
+    if (colonies.length === 0) {
+      for (const room of rooms) failed.add(room.name);
+    } else {
+      for (const colonyId of colonies) failed.add(colonyId);
+    }
+  }
+  return rooms.map(({ name, observedAt }) => ({
+    colonyId: name,
+    observedAt,
+    status: failed.has(name) ? ("failed" as const) : ("healthy" as const),
+  }));
+}
+
+function blockerColonies(
+  subject: "edge" | "node",
+  id: string,
+  graph: LogisticsGraphObservation,
+): readonly string[] {
+  if (subject === "node") {
+    return [
+      ...new Set(graph.nodes.filter((node) => node.id === id).map(({ colonyId }) => colonyId)),
+    ];
+  }
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  return [
+    ...new Set(
+      graph.edges
+        .filter((edge) => edge.id === id)
+        .flatMap((edge) => [nodeById.get(edge.sourceNodeId), nodeById.get(edge.sinkNodeId)])
+        .flatMap((node) => (node === undefined ? [] : [node.colonyId])),
+    ),
+  ];
 }
 
 /** Renews terminal logistics authority without making the planner own ledger revisions. */

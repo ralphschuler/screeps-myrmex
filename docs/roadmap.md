@@ -121,6 +121,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   effects and observer receipts persist atomically in `IndustryOwnerV5`; checked evidence is in
   [`phase2-mature-evidence.md`](phase2-mature-evidence.md). Observer target strategy and nuke launch
   remain unavailable.
+- Issue #225 reconciles the fixed direct layout, mining, logistics, links, maintenance, resources,
+  labs, and industry status into the sole colony lifecycle. RCL8 becomes `sustaining` only with
+  complete current evidence; loss enters one bounded recovery without persisting health or reading
+  telemetry. Checked evidence is in
+  [`phase2-colony-health-evidence.md`](phase2-colony-health-evidence.md).
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

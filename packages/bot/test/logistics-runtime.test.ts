@@ -7,15 +7,15 @@ import type { WorldSnapshot } from "../src/world/snapshot";
 describe("logistics runtime adapter", () => {
   it("fails closed without contract prerequisites and suppresses optional sinks under pressure", () => {
     const snapshot = world();
-    expect(
-      planLogisticsRuntime({
-        execution: emptyContractExecutionView(),
-        includeOptional: true,
-        planning: emptyContractPlanningView(),
-        snapshot,
-        tick: 10,
-      }).contracts.commitments,
-    ).toEqual([]);
+    const unavailable = planLogisticsRuntime({
+      execution: emptyContractExecutionView(),
+      includeOptional: true,
+      planning: emptyContractPlanningView(),
+      snapshot,
+      tick: 10,
+    });
+    expect(unavailable.contracts.commitments).toEqual([]);
+    expect(unavailable.health).toEqual([{ colonyId: "W1N1", observedAt: 10, status: "failed" }]);
 
     const constrained = observeLogisticsGraph(snapshot, false);
     expect(constrained.nodes.some(({ id }) => id === "store:storage:sink:energy")).toBe(false);
@@ -127,6 +127,33 @@ describe("logistics runtime adapter", () => {
       }),
     ]);
     expect(new Set(active.map(({ flowId }) => flowId)).size).toBe(active.length);
+    expect(result.health).toEqual([{ colonyId: "W1N1", observedAt: 10, status: "healthy" }]);
+  });
+
+  it("reports duplicate or capped graph evidence through direct room health", () => {
+    const snapshot = world();
+    const observed = observeLogisticsGraph(snapshot, true);
+    const duplicate = observed.nodes[0];
+    if (duplicate === undefined) throw new Error("logistics health fixture node missing");
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: {
+        blockers: [],
+        dispositions: [],
+        edges: [],
+        endpoints: [],
+        nodes: [duplicate],
+      },
+      snapshot,
+      tick: 10,
+    });
+
+    expect(result.plan.blockers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ reason: "duplicate-id" })]),
+    );
+    expect(result.health).toEqual([{ colonyId: "W1N1", observedAt: 10, status: "failed" }]);
   });
 
   it("retains operational funding while constrained planning preempts optional reserve use", () => {

@@ -56,6 +56,10 @@ describe("mature infrastructure static tick composition", () => {
 
     const first = runTick({ game: world.game(100), memory });
     expect(first.config.features.gates["phase2.mature"]).toMatchObject({ enabled: true });
+    expect(first.colony.colonies[0]).toMatchObject({
+      state: "developing",
+      domainHealth: { blocker: { domain: "layout", reasonCode: "failed" } },
+    });
     expect(world.produce).not.toHaveBeenCalled();
     expect(world.processPower).not.toHaveBeenCalled();
 

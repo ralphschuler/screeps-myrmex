@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
-import { planOwnedRoomLayout, planOwnedRoomLayouts, type LayoutPlanningInput } from "../src/layout";
+import {
+  planOwnedRoomLayout,
+  planOwnedRoomLayouts,
+  selectLayoutPlanningWindow,
+  type LayoutPlanningInput,
+} from "../src/layout";
 
 describe("owned-room-layout-v1", () => {
   it("produces byte-equivalent complete placements across reordered facts and heap reconstruction", () => {
@@ -50,9 +55,15 @@ describe("owned-room-layout-v1", () => {
     expect(result.candidatesInspected).toBeLessThanOrEqual(256);
     expect(result.transformsInspected).toBeLessThanOrEqual(2048);
     expect(result.floodCellsInspected).toBeLessThanOrEqual(256 * 8 * 2500);
+    const rooms = [fixture(4, "W3N3"), fixture(4, "W1N1"), fixture(4, "W2N2")];
+    expect(planOwnedRoomLayouts(rooms)).toHaveLength(2);
     expect(
-      planOwnedRoomLayouts([fixture(4, "W3N3"), fixture(4, "W1N1"), fixture(4, "W2N2")]),
-    ).toHaveLength(2);
+      new Set(
+        [100, 101].flatMap((tick) =>
+          selectLayoutPlanningWindow(rooms, tick).map(({ roomName }) => roomName),
+        ),
+      ),
+    ).toEqual(new Set(["W1N1", "W2N2", "W3N3"]));
   });
 
   it("adopts compatible external structures without suggesting removal", () => {

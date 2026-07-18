@@ -1,3 +1,4 @@
+import type { ColonyRclUnlockAllowances } from "../colony";
 import type { PositionSnapshot, StructureSnapshot } from "../world/snapshot";
 import { compileOwnedRoomLayoutV1 } from "./layout-v1";
 import { selectSourceServices } from "./source-services";
@@ -95,13 +96,51 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
   );
 }
 
+export function reconstructCommittedLayout(input: {
+  readonly commitment: LayoutCommitment;
+  readonly roomName: string;
+  readonly sourceCount: number;
+  readonly unlocks: ColonyRclUnlockAllowances;
+}): readonly LayoutPlacement[] | null {
+  if (
+    input.commitment.algorithmRevision !== LAYOUT_ALGORITHM_REVISION ||
+    !Number.isSafeInteger(input.sourceCount) ||
+    input.sourceCount < 0
+  ) {
+    return null;
+  }
+  return freeze(
+    transformCells(
+      input.roomName,
+      input.commitment.anchor,
+      input.commitment.transform,
+      compileOwnedRoomLayoutV1(input.unlocks, input.sourceCount),
+    ),
+  );
+}
+
+export function selectLayoutPlanningWindow<Value extends { readonly roomName: string }>(
+  values: readonly Value[],
+  tick: number,
+): readonly Value[] {
+  const ordered = [...values].sort((left, right) => compare(left.roomName, right.roomName));
+  if (ordered.length <= MAX_LAYOUT_ROOMS_PER_TICK) return ordered;
+  const start = tick % ordered.length;
+  return Array.from({ length: MAX_LAYOUT_ROOMS_PER_TICK }, (_, offset) => {
+    const value = ordered[(start + offset) % ordered.length];
+    if (value === undefined) throw new Error("layout planning window index escaped its bound");
+    return value;
+  });
+}
+
 export function planOwnedRoomLayouts(
   inputs: readonly LayoutPlanningInput[],
 ): readonly LayoutPlanningResult[] {
-  return [...inputs]
-    .sort((a, b) => compare(a.roomName, b.roomName))
-    .slice(0, MAX_LAYOUT_ROOMS_PER_TICK)
-    .map(planOwnedRoomLayout);
+  const tick = inputs.reduce(
+    (minimum, input) => Math.min(minimum, input.tick),
+    Number.MAX_SAFE_INTEGER,
+  );
+  return selectLayoutPlanningWindow(inputs, tick).map(planOwnedRoomLayout);
 }
 function candidateAnchors(input: LayoutPlanningInput): PositionSnapshot[] {
   const spawns = input.structures

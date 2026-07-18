@@ -2,8 +2,10 @@ import type { CpuMode } from "../runtime/kernel";
 import {
   COLONY_CAPABILITY_DOMAINS,
   type ColonyCapabilityDomain,
+  type ColonyDomainHealthProjection,
   type ColonyRclPolicyProjection,
   type ColonyRclPolicyReason,
+  type ColonyView,
   type ColonyRclUnlockAllowances,
   type ColonyState,
 } from "./contracts";
@@ -18,6 +20,7 @@ export interface ColonyRclPolicyObservation {
   readonly controllerRisk: boolean | null;
   readonly cpuMode: CpuMode;
   readonly protectedSpawnEnergy: number;
+  readonly rcl8Health: ColonyDomainHealthProjection | null;
 }
 interface RclPolicyRow {
   readonly level: number;
@@ -44,6 +47,32 @@ const MINIMUM_RCL: Readonly<Record<ColonyCapabilityDomain, number>> = Object.fre
   terminal: 6,
   industry: 6,
 });
+
+export function isInfrastructureRecoveryAuthorized(
+  colony: Pick<
+    ColonyView,
+    | "activeThreat"
+    | "controllerRisk"
+    | "domainHealth"
+    | "legalWorkforce"
+    | "rclPolicy"
+    | "state"
+    | "visibility"
+  >,
+): boolean {
+  return (
+    colony.visibility === "visible" &&
+    (colony.state === "recovering" ||
+      (colony.state === "developing" &&
+        colony.rclPolicy.progression.reasonCode === "rcl8-health-evidence-unavailable")) &&
+    colony.domainHealth.status === "blocked" &&
+    colony.legalWorkforce === true &&
+    colony.activeThreat === false &&
+    colony.controllerRisk === false &&
+    colony.rclPolicy.level === 8 &&
+    colony.rclPolicy.protectedSpawnReserve.state === "restored"
+  );
+}
 
 export function projectColonyRclPolicy(
   observation: ColonyRclPolicyObservation,
@@ -108,7 +137,9 @@ function reason(
     o.energyCapacityAvailable < policyRow.spawnPoolCapacityTarget
   )
     return "spawn-pool-capacity-below-target";
-  if (policyRow.level === 8) return "rcl8-health-evidence-unavailable";
+  if (policyRow.level === 8) {
+    return o.rcl8Health?.status === "healthy" ? "sustaining" : "rcl8-health-evidence-unavailable";
+  }
   return "active";
 }
 function row(
