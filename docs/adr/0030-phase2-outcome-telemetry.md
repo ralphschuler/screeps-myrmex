@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. ADR 0031 later advances the nested Phase 2 observer state from V1 to V2 while preserving
+this sample-ring and direct-outcome contract.
 
 ## Context
 

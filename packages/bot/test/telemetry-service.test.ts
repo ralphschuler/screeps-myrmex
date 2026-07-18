@@ -75,7 +75,7 @@ describe("TelemetryService", () => {
     expect(next.owner.droppedHistory).toBe(1);
   });
 
-  it("migrates a V4 owner to the bounded Phase 2 sample ring", () => {
+  it("migrates a V4 owner to the bounded Phase 2 sample ring and RCL timing state", () => {
     const fixture = serviceFixture(100);
     const result = new TelemetryService().record(
       {
@@ -96,9 +96,55 @@ describe("TelemetryService", () => {
     expect(result.owner).toMatchObject({
       schemaVersion: 5,
       phase2: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         droppedSamples: 0,
         samples: [{ tick: 100 }],
+        rcl: [1, 0, 0, 0, [], []],
+      },
+    });
+    expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
+  });
+
+  it("upgrades Phase 2 V1 samples to V2 timing state without losing history", () => {
+    const fixture = serviceFixture(100);
+    const result = new TelemetryService().record(
+      {
+        schemaVersion: 5,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: null,
+        },
+        staticMining: { schemaVersion: 1, sources: [] },
+        logistics: { schemaVersion: 1, flows: [] },
+        phase2: {
+          schemaVersion: 1,
+          droppedSamples: 0,
+          samples: [
+            {
+              tick: 99,
+              harvestedEnergy: 1,
+              logisticsDelivered: 2,
+              linkDelivered: 3,
+              industryOutput: 4,
+              authorityFailures: 0,
+              reserveViolations: 0,
+              measuredCpuMilli: 5,
+            },
+          ],
+        },
+      },
+      fixture.input,
+    );
+
+    expect(result.owner).toMatchObject({
+      schemaVersion: 5,
+      phase2: {
+        schemaVersion: 2,
+        samples: [{ tick: 99 }, { tick: 100 }],
+        rcl: [1, 0, 0, 0, [], []],
       },
     });
     expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
@@ -126,6 +172,48 @@ describe("TelemetryService", () => {
     expect(phase2.samples.length).toBeLessThanOrEqual(64);
     expect(phase2.droppedSamples).toBeGreaterThan(0);
     expect(ownerBytes(owner)).toBeLessThanOrEqual(8_192);
+  });
+
+  it("drops completed RCL aggregates before reporter evidence under byte pressure", () => {
+    const fixture = serviceFixture(100);
+    const duration = [1, 9_007_199_254_740_991, 1, 9_007_199_254_740_991, 1, 99] as const;
+    const result = new TelemetryService().record(
+      {
+        schemaVersion: 5,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: null,
+        },
+        staticMining: { schemaVersion: 1, sources: [] },
+        logistics: { schemaVersion: 1, flows: [] },
+        phase2: {
+          schemaVersion: 2,
+          droppedSamples: 0,
+          samples: [],
+          rcl: [1, 0, 0, 0, [], Array.from({ length: 7 }, (_, index) => [index, ...duration])],
+        },
+      },
+      {
+        ...fixture.input,
+        base: {
+          ...fixture.input.base,
+          telemetryPolicy: {
+            ...fixture.input.base.telemetryPolicy,
+            maximumHistoryBytes: 650,
+          },
+        },
+      },
+    );
+    const phase2 = result.owner.phase2 as {
+      rcl: [number, number, number, number, unknown[], unknown[]];
+    };
+
+    expect(phase2.rcl[3]).toBe(7);
+    expect(phase2.rcl[5]).toEqual([]);
+    expect(ownerBytes(result.owner)).toBeLessThanOrEqual(650);
   });
 
   it("publishes a stable redacted reason for funded contracts without a viable actor", () => {

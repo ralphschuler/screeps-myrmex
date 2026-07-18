@@ -393,14 +393,18 @@ Malformed or future reporter state is rebuilt safely. First occurrence, bounded-
 single resolution, and stuck-recovery transitions leave the service only as capped tick-local
 records; the durable owner is not a replay queue.
 
-Telemetry owner schema V5 adds one Phase 2 schema-V1 observer ring. Current settled colony, spawn,
+Telemetry owner schema V5 contains Phase 2 owner-local schema V2. Current settled colony, spawn,
 layout, mining, logistics, link, maintenance, resource, lab, mature-infrastructure, and observer
 receipts produce exactly eleven authority rows, three modeled flow identities, fixed progression,
 reserve, utilization, and construction values, and one capped aggregate sample. The hard ring bound
-is 64 and the configured history and whole-owner byte ceilings may reduce it further. Samples
-contain no dynamic labels or gameplay commitment. Missing or malformed history reduces evidence
-only; `ColonyDirector` and domain-health composition continue to consume direct owner outputs and
-never telemetry.
+is 64 and the configured history and whole-owner byte ceilings may reduce it further. V2 also
+retains at most 64 opaque controller baselines and exactly seven destination-RCL duration rows. Only
+a continuously observed adjacent increase records elapsed ticks; missing continuity, ownership loss,
+downgrade, multi-level jump, duplicate identity, or malformed state resets evidence without success.
+Tick telemetry omits baseline-only timing and otherwise publishes one compact latest-row tuple plus
+loss counters; the owner retains all seven aggregates. Samples and timing state contain no dynamic
+labels or gameplay commitment. Missing or malformed history reduces evidence only; `ColonyDirector`
+and domain-health composition continue to consume direct owner outputs and never telemetry.
 
 Reporter aggregation admits at most 2,000 health signals plus the already-capped telemetry details
 (2,064 candidates under source defaults). Oversized arrays are rejected before element traversal,
@@ -1712,8 +1716,8 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrices
 - spawn utilization and unmet capability demand;
 - contract counts, age, completion, failure, and lease churn;
 - energy/source/logistics outcome metrics;
-- fixed Phase 2 controller progress, reserves, spawn utilization, construction backlog, authority
-  outcomes, modeled flow residuals, and a bounded aggregate window;
+- fixed Phase 2 controller progress, reset-safe adjacent-RCL durations, reserves, spawn utilization,
+  construction backlog, authority outcomes, modeled flow residuals, and a bounded aggregate window;
 - remote full-cost profit and suspension reason;
 - threat, defense response, and safe-mode decisions;
 - operation budget, losses, state, and exit reason;
@@ -1939,6 +1943,12 @@ The Phase 2 colony-health matrix is recorded in
 [`phase2-colony-health-evidence.md`](phase2-colony-health-evidence.md). It proves direct RCL8
 maturity, fixed domain-failure precedence, reserve and workforce recovery, reset/reorder
 equivalence, and one restored exit without persistent health state or duplicate domain commitments.
+
+The Phase 2 RCL-transition matrix is recorded in
+[`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md). It proves one exact
+continuously observed adjacent transition across JSON/global-heap reconstruction, deterministic room
+reordering and same-tick replay, fail-closed interrupted timing, V1-to-V2 observer-state migration,
+and fixed cardinality, identity, and byte ceilings without a telemetry gameplay reader.
 
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,

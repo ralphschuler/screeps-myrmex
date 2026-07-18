@@ -126,6 +126,7 @@ function stateBeforeLast(): Phase2TelemetryState {
 function observation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
+    controllerLevels: [],
     controllers: 2,
     rcl8Controllers: 1,
     sustainingColonies: 1,

@@ -39,9 +39,12 @@ import {
 } from "./logistics";
 import {
   emptyPhase2TelemetryObservation,
+  PHASE2_RCL_DESTINATIONS,
   observePhase2Telemetry,
   reducePhase2Telemetry,
+  type Phase2RclTransitionDuration,
   type Phase2TelemetryState,
+  type Phase2TelemetryStateInput,
 } from "./phase2";
 
 type TickTelemetryBase = Omit<
@@ -201,7 +204,7 @@ interface ParsedOwner {
   readonly reporter: unknown;
   readonly staticMining: StaticMiningTelemetryState | null;
   readonly logistics: LogisticsTelemetryState | null;
-  readonly phase2: Phase2TelemetryState | null;
+  readonly phase2: Phase2TelemetryStateInput | null;
 }
 
 function readOwnerSafely(value: unknown, maximumHistoryEntries: number): ParsedOwner {
@@ -312,12 +315,67 @@ function readStaticMiningState(value: unknown): StaticMiningTelemetryState | nul
     : null;
 }
 
-function readPhase2State(value: unknown): Phase2TelemetryState | null {
+function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
-  return row.schemaVersion === 1 && Array.isArray(row.samples)
-    ? (value as Phase2TelemetryState)
-    : null;
+  if (!Array.isArray(row.samples)) return null;
+  if (row.schemaVersion === 1) return value as Phase2TelemetryStateInput;
+  if (row.schemaVersion !== 2) return null;
+  const invalidTiming = (): Phase2TelemetryState =>
+    ({
+      schemaVersion: 2,
+      droppedSamples: row.droppedSamples,
+      samples: row.samples,
+      rclTimingSchemaVersion: 0,
+      interruptedRclTracks: 0,
+      droppedRclObservations: 0,
+      droppedRclTransitions: 0,
+      rclTracks: [],
+      rclTransitionDurations: [],
+    }) as unknown as Phase2TelemetryState;
+  try {
+    if (!Array.isArray(row.rcl) || row.rcl.length !== 6) return invalidTiming();
+    const [timingSchema, interrupted, droppedObservations, droppedTransitions, tracks, entries] =
+      row.rcl as unknown[];
+    if (!Array.isArray(entries) || entries.length > PHASE2_RCL_DESTINATIONS.length)
+      return invalidTiming();
+    const durations: Phase2RclTransitionDuration[] = PHASE2_RCL_DESTINATIONS.map(() => [
+      0,
+      0,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    const seen = new Set<number>();
+    for (const entry of entries) {
+      if (!Array.isArray(entry) || entry.length !== 7) return invalidTiming();
+      const [index, ...duration] = entry as unknown[];
+      if (
+        typeof index !== "number" ||
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        index >= durations.length ||
+        seen.has(index)
+      )
+        return invalidTiming();
+      seen.add(index);
+      durations[index] = duration as unknown as Phase2RclTransitionDuration;
+    }
+    return {
+      schemaVersion: 2,
+      droppedSamples: row.droppedSamples as number,
+      samples: row.samples as unknown as Phase2TelemetryState["samples"],
+      rclTimingSchemaVersion: timingSchema as 1,
+      interruptedRclTracks: interrupted as number,
+      droppedRclObservations: droppedObservations as number,
+      droppedRclTransitions: droppedTransitions as number,
+      rclTracks: tracks as Phase2TelemetryState["rclTracks"],
+      rclTransitionDurations: durations,
+    };
+  } catch {
+    return invalidTiming();
+  }
 }
 
 function safelyReduceStaticMining(
@@ -353,7 +411,7 @@ function safelyReduceLogistics(
 }
 
 function safelyReducePhase2(
-  previous: Phase2TelemetryState | null,
+  previous: Phase2TelemetryStateInput | null,
   input: TelemetryServiceInput,
   evidence: {
     readonly staticMining: ReturnType<typeof reduceStaticMiningTelemetry>["telemetry"];
@@ -412,9 +470,17 @@ interface MutableTelemetryOwner {
     flows: LogisticsTelemetryState["flows"][number][];
   };
   phase2: {
-    schemaVersion: 1;
+    schemaVersion: 2;
     droppedSamples: number;
     samples: Phase2TelemetryState["samples"][number][];
+    rcl: [
+      timingSchemaVersion: 1,
+      interruptedTracks: number,
+      droppedObservations: number,
+      droppedTransitions: number,
+      tracks: Phase2TelemetryState["rclTracks"][number][],
+      durations: [destinationIndex: number, ...duration: Phase2RclTransitionDuration][],
+    ];
   };
 }
 
@@ -444,6 +510,18 @@ function fitOwnerToByteBudget(owner: MutableTelemetryOwner, maximumBytes: number
   while (exceedsBudget() && owner.phase2.samples.length > 0) {
     owner.phase2.samples.shift();
     owner.phase2.droppedSamples = saturatingIncrement(owner.phase2.droppedSamples);
+  }
+  while (exceedsBudget() && owner.phase2.rcl[4].length > 0) {
+    owner.phase2.rcl[4].pop();
+    owner.phase2.rcl[1] = saturatingIncrement(owner.phase2.rcl[1]);
+  }
+  if (exceedsBudget() && owner.phase2.rcl[5].length > 0) {
+    const dropped = owner.phase2.rcl[5].reduce(
+      (sum, [, samples]) => saturatingAdd(sum, samples),
+      0,
+    );
+    owner.phase2.rcl[3] = saturatingAdd(owner.phase2.rcl[3], dropped);
+    owner.phase2.rcl[5] = [];
   }
   const entries = generatedReporterEntries(owner.reporter.entries);
   while (exceedsBudget() && entries.length > 0) {
@@ -661,6 +739,16 @@ function writeOwner(
         schemaVersion: phase2.schemaVersion,
         droppedSamples: phase2.droppedSamples,
         samples: phase2.samples.map((sample) => ({ ...sample })),
+        rcl: [
+          phase2.rclTimingSchemaVersion,
+          phase2.interruptedRclTracks,
+          phase2.droppedRclObservations,
+          phase2.droppedRclTransitions,
+          phase2.rclTracks.map((track) => [...track]),
+          phase2.rclTransitionDurations.flatMap((duration, index) =>
+            duration[0] === 0 ? [] : [[index, ...duration]],
+          ),
+        ],
       },
     };
     const generatedEntries = generatedReporterEntries(result.reporter.entries).length;

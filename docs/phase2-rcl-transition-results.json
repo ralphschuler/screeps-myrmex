@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "deterministic": {
+    "reorderedEquivalent": true,
+    "resetEquivalent": true,
+    "sameTickReplayEquivalent": true
+  },
+  "transition": {
+    "destinationRcl": 3,
+    "row": [1, 2, 2, 2, 2, 102],
+    "completedTransitions": 1,
+    "activeTracks": 2,
+    "interruptedTracks": 1,
+    "droppedObservations": 0,
+    "droppedTransitions": 0
+  },
+  "migration": {
+    "fromSchemaVersion": 1,
+    "toSchemaVersion": 2,
+    "baselineOnly": true
+  },
+  "bounds": {
+    "destinationRows": 7,
+    "maximumControllerTracks": 64,
+    "persistedRoomNames": 0,
+    "telemetryOwnerBytes": 8192,
+    "telemetryDecisionInputs": 0
+  }
+}

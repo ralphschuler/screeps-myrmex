@@ -3,13 +3,18 @@ import type { IndustryTelemetry } from "../industry";
 import type { LayoutRuntimeResult } from "../layout";
 import type { LinkRuntimeResult } from "../links";
 import type { MaintenanceTelemetry } from "../maintenance";
+import { opaqueId } from "../security";
 import type { SpawnRuntimeResult } from "../spawn";
 import type { WorldSnapshot } from "../world/snapshot";
 import type { LogisticsTelemetry } from "./logistics";
 import type { StaticMiningTelemetry } from "./static-mining";
 
-export const PHASE2_TELEMETRY_SCHEMA_VERSION = 1 as const;
+export const PHASE2_TELEMETRY_SCHEMA_VERSION = 2 as const;
 export const MAX_PHASE2_TELEMETRY_SAMPLES = 64 as const;
+export const MAX_PHASE2_CONTROLLER_TRACKERS = 64 as const;
+export const PHASE2_RCL_TIMING_SCHEMA_VERSION = 1 as const;
+
+export const PHASE2_RCL_DESTINATIONS = Object.freeze([2, 3, 4, 5, 6, 7, 8] as const);
 
 export const PHASE2_AUTHORITY_IDS = Object.freeze([
   "colony",
@@ -48,8 +53,15 @@ export const PHASE2_WINDOW_FIELDS = Object.freeze([
 ] as const);
 
 /** Fixed-cardinality settled observations. Every quantity is current-tick evidence, never policy. */
+export interface Phase2ControllerObservation {
+  readonly colonyRef: string;
+  readonly level: number;
+}
+
 export interface Phase2TelemetryObservation {
   readonly tick: number;
+  /** Bounded opaque owned-controller identities used only for continuous transition timing. */
+  readonly controllerLevels: readonly Phase2ControllerObservation[];
   readonly controllers: number;
   readonly rcl8Controllers: number;
   readonly sustainingColonies: number;
@@ -135,11 +147,57 @@ export interface Phase2TelemetrySample {
   readonly measuredCpuMilli: number;
 }
 
+/** Compact persistent active baseline: colony ref, level, entered tick, latest continuous tick. */
+export type Phase2RclTrack = readonly [
+  colonyRef: string,
+  level: number,
+  enteredAtTick: number,
+  lastObservedTick: number,
+];
+
+/** Fixed row aligned with PHASE2_RCL_DESTINATIONS. */
+export type Phase2RclTransitionDuration = readonly [
+  samples: number,
+  totalTicks: number,
+  minimumTicks: number | null,
+  maximumTicks: number | null,
+  latestTicks: number | null,
+  latestTick: number | null,
+];
+
+/** Compact current projection of the latest fixed row plus cumulative evidence-loss counters. */
+export type Phase2RclTelemetry = readonly [
+  destinationRcl: number | null,
+  samples: number,
+  totalTicks: number,
+  minimumTicks: number | null,
+  maximumTicks: number | null,
+  latestTicks: number | null,
+  latestTick: number | null,
+  interruptedTracks: number,
+  droppedObservations: number,
+  droppedTransitions: number,
+];
+
+export interface Phase2TelemetryStateV1 {
+  readonly schemaVersion: 1;
+  readonly droppedSamples: number;
+  readonly samples: readonly Phase2TelemetrySample[];
+}
+
 export interface Phase2TelemetryState {
   readonly schemaVersion: typeof PHASE2_TELEMETRY_SCHEMA_VERSION;
   readonly droppedSamples: number;
   readonly samples: readonly Phase2TelemetrySample[];
+  readonly rclTimingSchemaVersion: typeof PHASE2_RCL_TIMING_SCHEMA_VERSION;
+  readonly interruptedRclTracks: number;
+  readonly droppedRclObservations: number;
+  readonly droppedRclTransitions: number;
+  readonly rclTracks: readonly Phase2RclTrack[];
+  readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
 }
+
+export type Phase2TelemetryStateInput = Phase2TelemetryState | Phase2TelemetryStateV1;
 
 /** One row aligned with PHASE2_AUTHORITY_IDS; tuple fields keep the tick summary byte-bounded. */
 export type Phase2AuthorityTelemetry = readonly [
@@ -179,6 +237,8 @@ export interface Phase2Telemetry {
     readonly controllerProgress: number;
     readonly controllerProgressTotal: number;
     readonly minimumDowngradeTicks: number | null;
+    /** Omitted until timing completion or evidence loss exists; full seven-row history stays bounded. */
+    readonly rcl?: Phase2RclTelemetry;
   };
   readonly reserves: {
     readonly energyAvailable: number;
@@ -286,6 +346,10 @@ export function observePhase2Telemetry(input: {
     input.spawn.execution.reduce((sum, result) => sum + Math.max(0, result.cpuUsed), 0);
   return normalizeObservation({
     tick: input.tick,
+    controllerLevels: rooms.slice(0, MAX_PHASE2_CONTROLLER_TRACKERS).map((room) => ({
+      colonyRef: opaqueId("colony", room.name),
+      level: room.controller.level,
+    })),
     controllers: controllers.length,
     rcl8Controllers: controllers.filter(({ level }) => level === 8).length,
     sustainingColonies: input.colony.colonies.filter(
@@ -394,6 +458,7 @@ export function observePhase2Telemetry(input: {
     ]),
     measuredCpuMilli: Math.round(measuredCpu * 1_000),
     droppedInputs: total([
+      Math.max(0, rooms.length - MAX_PHASE2_CONTROLLER_TRACKERS),
       input.staticMining.droppedSources,
       input.logistics.droppedFlows,
       maintenance.planner.truncated,
@@ -407,6 +472,7 @@ export function observePhase2Telemetry(input: {
 export function emptyPhase2TelemetryObservation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
+    controllerLevels: [],
     controllers: 0,
     rcl8Controllers: 0,
     sustainingColonies: 0,
@@ -488,7 +554,7 @@ export function emptyPhase2TelemetryObservation(tick: number): Phase2TelemetryOb
  */
 export function reducePhase2Telemetry(input: {
   readonly observation: Phase2TelemetryObservation;
-  readonly previous?: Phase2TelemetryState | null;
+  readonly previous?: Phase2TelemetryStateInput | null;
   readonly maximumSamples?: number;
 }): Phase2TelemetryReduction {
   const observation = normalizeObservation(input.observation);
@@ -500,7 +566,12 @@ export function reducePhase2Telemetry(input: {
   );
   const previous = normalizePrevious(input.previous);
   const last = previous.samples[previous.samples.length - 1];
-  if (last !== undefined && observation.tick < last.tick)
+  const previousEvidenceTick = Math.max(
+    last?.tick ?? 0,
+    ...previous.rclTracks.map((track) => track[3]),
+    ...previous.rclTransitionDurations.map((duration) => duration[5] ?? 0),
+  );
+  if (observation.tick < previousEvidenceTick)
     throw new RangeError("phase 2 telemetry tick order is invalid");
 
   const authorities = authorityTelemetry(observation);
@@ -513,13 +584,16 @@ export function reducePhase2Telemetry(input: {
   const samples = limit === 0 ? [] : appended.slice(-limit);
   const newlyDropped = Math.max(0, appended.length - samples.length);
   const droppedSamples = saturatingAdd(previous.droppedSamples, newlyDropped);
+  const rcl = advanceRclTransitions(previous, observation.tick, observation.controllerLevels);
   const state: Phase2TelemetryState = {
     schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
     droppedSamples,
     samples,
+    ...rcl,
   };
   const identities = flowIdentities(observation);
   const busy = Math.min(observation.activeSpawns, observation.busySpawns);
+  const rclTelemetry = latestRclTelemetry(rcl);
   const telemetry: Phase2Telemetry = {
     schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
     progression: {
@@ -529,6 +603,7 @@ export function reducePhase2Telemetry(input: {
       controllerProgress: observation.controllerProgress,
       controllerProgressTotal: observation.controllerProgressTotal,
       minimumDowngradeTicks: observation.minimumDowngradeTicks,
+      ...(rclTelemetry === undefined ? {} : { rcl: rclTelemetry }),
     },
     reserves: {
       energyAvailable: observation.energyAvailable,
@@ -585,6 +660,33 @@ export function reducePhase2Telemetry(input: {
     droppedInputs: observation.droppedInputs,
   };
   return deepFreeze({ state, telemetry });
+}
+
+function latestRclTelemetry(value: RclState): Phase2RclTelemetry | undefined {
+  let selectedIndex: number | null = null;
+  let selected: Phase2RclTransitionDuration | null = null;
+  for (let index = 0; index < value.rclTransitionDurations.length; index += 1) {
+    const candidate = value.rclTransitionDurations[index];
+    if (candidate === undefined || candidate[0] === 0) continue;
+    if (selected === null || (candidate[5] ?? 0) > (selected[5] ?? 0)) {
+      selectedIndex = index;
+      selected = candidate;
+    }
+  }
+  if (
+    selected === null &&
+    value.interruptedRclTracks === 0 &&
+    value.droppedRclObservations === 0 &&
+    value.droppedRclTransitions === 0
+  )
+    return undefined;
+  return [
+    selectedIndex === null ? null : (PHASE2_RCL_DESTINATIONS[selectedIndex] ?? null),
+    ...(selected ?? [0, 0, null, null, null, null]),
+    value.interruptedRclTracks,
+    value.droppedRclObservations,
+    value.droppedRclTransitions,
+  ];
 }
 
 function authorityTelemetry(
@@ -715,12 +817,14 @@ function rollingWindow(
 function normalizeObservation(value: Phase2TelemetryObservation): Phase2TelemetryObservation {
   const result = { ...value } as Record<string, unknown>;
   for (const [key, entry] of Object.entries(result)) {
+    if (key === "controllerLevels") continue;
     if (key === "minimumDowngradeTicks" && entry === null) continue;
     result[key] = nonnegativeSafeInteger(entry);
   }
   const normalized = result as unknown as Phase2TelemetryObservation;
   return {
     ...normalized,
+    controllerLevels: value.controllerLevels,
     rcl8Controllers: Math.min(normalized.controllers, normalized.rcl8Controllers),
     sustainingColonies: Math.min(normalized.controllers, normalized.sustainingColonies),
     energyAvailable: Math.min(normalized.energyCapacity, normalized.energyAvailable),
@@ -728,46 +832,282 @@ function normalizeObservation(value: Phase2TelemetryObservation): Phase2Telemetr
   };
 }
 
-function normalizePrevious(value: Phase2TelemetryState | null | undefined): Phase2TelemetryState {
+function normalizePrevious(
+  value: Phase2TelemetryStateInput | null | undefined,
+): Phase2TelemetryState {
+  const empty = emptyPhase2State();
   const rawSamples: unknown = value?.samples;
-  if (value?.schemaVersion !== PHASE2_TELEMETRY_SCHEMA_VERSION || !Array.isArray(rawSamples))
-    return { schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION, droppedSamples: 0, samples: [] };
-  if (rawSamples.length > MAX_PHASE2_TELEMETRY_SAMPLES)
-    return {
-      schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
-      droppedSamples: saturatingAdd(
-        nonnegativeSafeInteger(value.droppedSamples),
-        rawSamples.length,
-      ),
-      samples: [],
-    };
-  const samples = rawSamples.map((sample: unknown) => {
-    if (typeof sample !== "object" || sample === null || Array.isArray(sample))
-      throw new TypeError("phase 2 telemetry sample is invalid");
-    const row = sample as Record<string, unknown>;
-    return {
-      tick: nonnegativeSafeInteger(row.tick),
-      harvestedEnergy: nonnegativeSafeInteger(row.harvestedEnergy),
-      logisticsDelivered: nonnegativeSafeInteger(row.logisticsDelivered),
-      linkDelivered: nonnegativeSafeInteger(row.linkDelivered),
-      industryOutput: nonnegativeSafeInteger(row.industryOutput),
-      authorityFailures: nonnegativeSafeInteger(row.authorityFailures),
-      reserveViolations: nonnegativeSafeInteger(row.reserveViolations),
-      measuredCpuMilli: nonnegativeSafeInteger(row.measuredCpuMilli),
-    };
-  });
-  for (let index = 1; index < samples.length; index += 1)
-    if ((samples[index - 1]?.tick ?? 0) >= (samples[index]?.tick ?? 0))
-      return {
-        schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
-        droppedSamples: saturatingAdd(nonnegativeSafeInteger(value.droppedSamples), samples.length),
-        samples: [],
-      };
+  if ((value?.schemaVersion !== 1 && value?.schemaVersion !== 2) || !Array.isArray(rawSamples))
+    return empty;
+  const droppedSamples = nonnegativeSafeInteger(value.droppedSamples);
+  let samples: Phase2TelemetrySample[];
+  let normalizedDroppedSamples = droppedSamples;
+  if (rawSamples.length > MAX_PHASE2_TELEMETRY_SAMPLES) {
+    samples = [];
+    normalizedDroppedSamples = saturatingAdd(droppedSamples, rawSamples.length);
+  } else {
+    samples = rawSamples.map((sample: unknown) => normalizeSample(sample));
+    for (let index = 1; index < samples.length; index += 1) {
+      if ((samples[index - 1]?.tick ?? 0) >= (samples[index]?.tick ?? 0)) {
+        normalizedDroppedSamples = saturatingAdd(droppedSamples, samples.length);
+        samples = [];
+        break;
+      }
+    }
+  }
+  const sampleState = {
+    schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
+    droppedSamples: normalizedDroppedSamples,
+    samples,
+  } as const;
+  if (value.schemaVersion === 1) return { ...sampleState, ...emptyRclState() };
+  return { ...sampleState, ...normalizePersistedRclState(value) };
+}
+
+function normalizeSample(sample: unknown): Phase2TelemetrySample {
+  if (typeof sample !== "object" || sample === null || Array.isArray(sample))
+    throw new TypeError("phase 2 telemetry sample is invalid");
+  const row = sample as Record<string, unknown>;
+  return {
+    tick: nonnegativeSafeInteger(row.tick),
+    harvestedEnergy: nonnegativeSafeInteger(row.harvestedEnergy),
+    logisticsDelivered: nonnegativeSafeInteger(row.logisticsDelivered),
+    linkDelivered: nonnegativeSafeInteger(row.linkDelivered),
+    industryOutput: nonnegativeSafeInteger(row.industryOutput),
+    authorityFailures: nonnegativeSafeInteger(row.authorityFailures),
+    reserveViolations: nonnegativeSafeInteger(row.reserveViolations),
+    measuredCpuMilli: nonnegativeSafeInteger(row.measuredCpuMilli),
+  };
+}
+
+function emptyPhase2State(): Phase2TelemetryState {
   return {
     schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
-    droppedSamples: nonnegativeSafeInteger(value.droppedSamples),
-    samples,
+    droppedSamples: 0,
+    samples: [],
+    ...emptyRclState(),
   };
+}
+
+type RclState = Pick<
+  Phase2TelemetryState,
+  | "rclTimingSchemaVersion"
+  | "interruptedRclTracks"
+  | "droppedRclObservations"
+  | "droppedRclTransitions"
+  | "rclTracks"
+  | "rclTransitionDurations"
+>;
+
+function emptyRclState(): RclState {
+  return {
+    rclTimingSchemaVersion: PHASE2_RCL_TIMING_SCHEMA_VERSION,
+    interruptedRclTracks: 0,
+    droppedRclObservations: 0,
+    droppedRclTransitions: 0,
+    rclTracks: [],
+    rclTransitionDurations: emptyRclTransitionDurations(),
+  };
+}
+
+function emptyRclTransitionDurations(): Phase2RclTransitionDuration[] {
+  return PHASE2_RCL_DESTINATIONS.map(() => [0, 0, null, null, null, null]);
+}
+
+function normalizePersistedRclState(value: Phase2TelemetryState): RclState {
+  try {
+    const timingSchema: unknown = (value as unknown as Record<string, unknown>)
+      .rclTimingSchemaVersion;
+    if (timingSchema !== PHASE2_RCL_TIMING_SCHEMA_VERSION) return emptyRclState();
+    if (!Array.isArray(value.rclTracks) || !Array.isArray(value.rclTransitionDurations))
+      return emptyRclState();
+    if (
+      value.rclTracks.length > MAX_PHASE2_CONTROLLER_TRACKERS ||
+      value.rclTransitionDurations.length !== PHASE2_RCL_DESTINATIONS.length
+    )
+      return emptyRclState();
+    const tracks = value.rclTracks.map((track: unknown): Phase2RclTrack => {
+      if (!Array.isArray(track) || track.length !== 4)
+        throw new TypeError("phase 2 RCL track is invalid");
+      const [colonyRef, rawLevel, rawEnteredAtTick, rawLastObservedTick] = track as unknown[];
+      const level = rcl(rawLevel, 7);
+      const enteredAtTick = nonnegativeSafeInteger(rawEnteredAtTick);
+      const lastObservedTick = nonnegativeSafeInteger(rawLastObservedTick);
+      if (!isOpaqueColonyRef(colonyRef) || enteredAtTick > lastObservedTick)
+        throw new TypeError("phase 2 RCL track is invalid");
+      return [colonyRef, level, enteredAtTick, lastObservedTick];
+    });
+    for (let index = 1; index < tracks.length; index += 1)
+      if ((tracks[index - 1]?.[0] ?? "") >= (tracks[index]?.[0] ?? ""))
+        throw new TypeError("phase 2 RCL tracks are not canonical");
+    const durations = value.rclTransitionDurations.map(
+      (duration: unknown): Phase2RclTransitionDuration => normalizeRclDuration(duration),
+    );
+    return {
+      rclTimingSchemaVersion: PHASE2_RCL_TIMING_SCHEMA_VERSION,
+      interruptedRclTracks: nonnegativeSafeInteger(value.interruptedRclTracks),
+      droppedRclObservations: nonnegativeSafeInteger(value.droppedRclObservations),
+      droppedRclTransitions: nonnegativeSafeInteger(value.droppedRclTransitions),
+      rclTracks: tracks,
+      rclTransitionDurations: durations,
+    };
+  } catch {
+    return emptyRclState();
+  }
+}
+
+function normalizeRclDuration(value: unknown): Phase2RclTransitionDuration {
+  if (!Array.isArray(value) || value.length !== 6)
+    throw new TypeError("phase 2 RCL duration is invalid");
+  const [rawSamples, rawTotal, rawMinimum, rawMaximum, rawLatest, rawLatestTick] =
+    value as unknown[];
+  const samples = nonnegativeSafeInteger(rawSamples);
+  const totalTicks = nonnegativeSafeInteger(rawTotal);
+  const minimumTicks = nullableNonnegativeSafeInteger(rawMinimum);
+  const maximumTicks = nullableNonnegativeSafeInteger(rawMaximum);
+  const latestTicks = nullableNonnegativeSafeInteger(rawLatest);
+  const latestTick = nullableNonnegativeSafeInteger(rawLatestTick);
+  if (
+    (samples === 0 &&
+      (totalTicks !== 0 ||
+        minimumTicks !== null ||
+        maximumTicks !== null ||
+        latestTicks !== null ||
+        latestTick !== null)) ||
+    (samples > 0 &&
+      (minimumTicks === null ||
+        maximumTicks === null ||
+        latestTicks === null ||
+        latestTick === null ||
+        minimumTicks === 0 ||
+        minimumTicks > maximumTicks ||
+        totalTicks < maximumTicks ||
+        latestTicks < minimumTicks ||
+        latestTicks > maximumTicks))
+  )
+    throw new TypeError("phase 2 RCL duration is inconsistent");
+  return [samples, totalTicks, minimumTicks, maximumTicks, latestTicks, latestTick];
+}
+
+function advanceRclTransitions(
+  previous: Phase2TelemetryState,
+  tick: number,
+  rawControllerLevels: unknown,
+): RclState {
+  const current = normalizeControllerLevels(rawControllerLevels);
+  const tracks: Phase2RclTrack[] = [];
+  const durations = previous.rclTransitionDurations.map((row) => [...row]) as [
+    number,
+    number,
+    number | null,
+    number | null,
+    number | null,
+    number | null,
+  ][];
+  let interrupted = previous.interruptedRclTracks;
+  const prior = new Map(previous.rclTracks.map((track) => [track[0], track] as const));
+  const seen = new Set<string>();
+
+  for (const controller of current.controllers) {
+    seen.add(controller.colonyRef);
+    const track = prior.get(controller.colonyRef);
+    if (track === undefined) {
+      if (controller.level < 8) tracks.push([controller.colonyRef, controller.level, tick, tick]);
+      continue;
+    }
+    const [, previousLevel, enteredAtTick, lastObservedTick] = track;
+    if (lastObservedTick === tick && previousLevel === controller.level) {
+      tracks.push(track);
+      continue;
+    }
+    if (lastObservedTick !== tick - 1) {
+      interrupted = saturatingAdd(interrupted, 1);
+      if (controller.level < 8) tracks.push([controller.colonyRef, controller.level, tick, tick]);
+      continue;
+    }
+    if (controller.level === previousLevel) {
+      tracks.push([controller.colonyRef, controller.level, enteredAtTick, tick]);
+      continue;
+    }
+    if (controller.level === previousLevel + 1) {
+      recordRclDuration(durations, controller.level, tick - enteredAtTick, tick);
+      if (controller.level < 8) tracks.push([controller.colonyRef, controller.level, tick, tick]);
+      continue;
+    }
+    interrupted = saturatingAdd(interrupted, 1);
+    if (controller.level < 8) tracks.push([controller.colonyRef, controller.level, tick, tick]);
+  }
+  for (const [colonyRef] of previous.rclTracks)
+    if (!seen.has(colonyRef)) interrupted = saturatingAdd(interrupted, 1);
+
+  return {
+    rclTimingSchemaVersion: PHASE2_RCL_TIMING_SCHEMA_VERSION,
+    interruptedRclTracks: interrupted,
+    droppedRclObservations: saturatingAdd(previous.droppedRclObservations, current.dropped),
+    droppedRclTransitions: previous.droppedRclTransitions,
+    rclTracks: tracks,
+    rclTransitionDurations: durations,
+  };
+}
+
+function normalizeControllerLevels(value: unknown): {
+  readonly controllers: readonly Phase2ControllerObservation[];
+  readonly dropped: number;
+} {
+  if (!Array.isArray(value)) return { controllers: [], dropped: 1 };
+  if (value.length > MAX_PHASE2_CONTROLLER_TRACKERS)
+    return { controllers: [], dropped: value.length };
+  try {
+    const controllers = value.map((entry: unknown): Phase2ControllerObservation => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+        throw new TypeError("phase 2 controller observation is invalid");
+      const row = entry as Record<string, unknown>;
+      if (!isOpaqueColonyRef(row.colonyRef))
+        throw new TypeError("phase 2 controller observation identity is invalid");
+      return { colonyRef: row.colonyRef, level: rcl(row.level, 8) };
+    });
+    controllers.sort((left, right) => left.colonyRef.localeCompare(right.colonyRef));
+    for (let index = 1; index < controllers.length; index += 1)
+      if (controllers[index - 1]?.colonyRef === controllers[index]?.colonyRef)
+        return { controllers: [], dropped: controllers.length };
+    return { controllers, dropped: 0 };
+  } catch {
+    return { controllers: [], dropped: value.length === 0 ? 1 : value.length };
+  }
+}
+
+function recordRclDuration(
+  rows: [number, number, number | null, number | null, number | null, number | null][],
+  destination: number,
+  duration: number,
+  tick: number,
+): void {
+  const index = destination - PHASE2_RCL_DESTINATIONS[0];
+  const row = rows[index];
+  if (row === undefined) return;
+  const [samples, totalTicks, minimumTicks, maximumTicks, latestTicks, latestTick] = row;
+  rows[index] = [
+    saturatingAdd(samples, 1),
+    saturatingAdd(totalTicks, duration),
+    minimumTicks === null ? duration : Math.min(minimumTicks, duration),
+    maximumTicks === null ? duration : Math.max(maximumTicks, duration),
+    latestTick === tick && latestTicks !== null ? Math.max(latestTicks, duration) : duration,
+    tick,
+  ];
+}
+
+function rcl(value: unknown, maximum: 7 | 8): number {
+  const level = nonnegativeSafeInteger(value);
+  if (level < 1 || level > maximum) throw new RangeError("phase 2 RCL is invalid");
+  return level;
+}
+
+function isOpaqueColonyRef(value: unknown): value is string {
+  return typeof value === "string" && /^colony:[0-9a-f]{8}$/.test(value);
+}
+
+function nullableNonnegativeSafeInteger(value: unknown): number | null {
+  return value === null ? null : nonnegativeSafeInteger(value);
 }
 
 function nonnegativeSafeInteger(value: unknown): number {
