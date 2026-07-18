@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "deterministic": {
+    "reorderedEquivalent": true,
+    "resetEquivalent": true
+  },
+  "authorities": [
+    { "id": "colony", "admitted": 1, "deferred": 1, "failed": 1 },
+    { "id": "spawn", "admitted": 1, "deferred": 1, "failed": 1 },
+    { "id": "mining", "admitted": 1, "deferred": 1, "failed": 0 },
+    { "id": "logistics", "admitted": 2, "deferred": 1, "failed": 0 },
+    { "id": "layout", "admitted": 1, "deferred": 2, "failed": 2 },
+    { "id": "links", "admitted": 1, "deferred": 2, "failed": 1 },
+    { "id": "maintenance", "admitted": 2, "deferred": 1, "failed": 1 },
+    { "id": "resources", "admitted": 2, "deferred": 1, "failed": 1 },
+    { "id": "labs", "admitted": 1, "deferred": 1, "failed": 1 },
+    { "id": "mature", "admitted": 1, "deferred": 1, "failed": 1 },
+    { "id": "observer", "admitted": 1, "deferred": 1, "failed": 1 }
+  ],
+  "identities": [
+    { "id": "links-sent", "balanced": true, "residual": 0 },
+    { "id": "logistics-requested", "balanced": true, "residual": 0 },
+    { "id": "maintenance-budget", "balanced": true, "residual": 5 }
+  ],
+  "gateInputs": {
+    "controllers": 2,
+    "rcl8Controllers": 1,
+    "sustainingColonies": 1,
+    "reserveViolations": 1,
+    "spawnUtilizationBasisPoints": 5000,
+    "measuredCpuMilli": 250,
+    "authorityFailures": 10,
+    "harvestedEnergy": 20,
+    "logisticsDelivered": 50,
+    "linkDelivered": 38,
+    "industryOutput": 18
+  },
+  "window": {
+    "samples": 4,
+    "firstTick": 102,
+    "lastTick": 105,
+    "harvestedEnergy": 94,
+    "logisticsDelivered": 200,
+    "linkDelivered": 152,
+    "industryOutput": 72,
+    "authorityFailures": 40,
+    "reserveViolations": 4,
+    "measuredCpuMilli": 1000,
+    "droppedSamples": 2
+  },
+  "bounds": {
+    "authorityCount": 11,
+    "identityCount": 3,
+    "scenarioWindowSamples": 4,
+    "productionMaximumSamples": 64,
+    "telemetryOwnerBytes": 8192,
+    "unboundedLabels": 0,
+    "telemetryDecisionInputs": 0
+  }
+}

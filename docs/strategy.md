@@ -90,6 +90,13 @@ the exact generated creep name or a bounded expectation expires, so a heap reset
 duplicate the order. Recovery names are stable across attempts and never suffixed; only explicit
 caller-selected name bases use bounded suffix retries.
 
+Complete-colony telemetry is observer-only. It reports fixed controller, reserve, spawn,
+construction, source, logistics, link, maintenance, resource, lab, mature-infrastructure, and
+observer outcomes plus a bounded aggregate window. Modeled stages remain distinct: a funded repair
+cap is not settled hit progress, planned terminal transaction energy is not observed destination
+stock, and lab/factory/power output requires exact next-observation settlement. Missing history
+reduces evidence and can never authorize work or RCL8 maturity.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

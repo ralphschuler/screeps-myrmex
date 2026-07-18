@@ -145,7 +145,7 @@ describe("TelemetryService logistics persistence", () => {
     const service = new TelemetryService();
     const first = service.record({}, input);
     expect(first.owner).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       logistics: { schemaVersion: 1 },
     });
     expect(JSON.stringify(first.owner).length).toBeLessThanOrEqual(2_000);

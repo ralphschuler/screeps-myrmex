@@ -1023,7 +1023,7 @@ describe("tick lifecycle", () => {
         },
       },
       telemetry: {
-        schemaVersion: 4,
+        schemaVersion: 5,
         last: { tick: 42 },
         history: [{ tick: 42 }],
       },
