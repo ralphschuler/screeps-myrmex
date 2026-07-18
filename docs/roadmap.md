@@ -126,6 +126,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   complete current evidence; loss enters one bounded recovery without persisting health or reading
   telemetry. Checked evidence is in
   [`phase2-colony-health-evidence.md`](phase2-colony-health-evidence.md).
+- Issue #275 adds fixed progression, reserve, utilization, authority-outcome, and modeled-flow gate
+  inputs plus a bounded rolling observer window in the sole telemetry owner. Telemetry remains
+  unavailable to gameplay decisions; checked evidence is in
+  [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md). Broader transition, attrition,
+  recipe-input, cooldown-window, and soak-threshold accounting remains in issue #53.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

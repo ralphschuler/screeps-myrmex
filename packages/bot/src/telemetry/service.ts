@@ -3,6 +3,8 @@ import type { ContractReconciliationResult } from "../contracts";
 import type { ArbitrationBatch } from "../execution";
 import type { GrowthCandidate } from "../growth";
 import type { IndustryTelemetry } from "../industry";
+import type { LayoutRuntimeResult } from "../layout";
+import type { LinkRuntimeResult } from "../links";
 import {
   projectMaintenanceTelemetry,
   type CriticalMaintenanceCandidate,
@@ -35,6 +37,12 @@ import {
   type LogisticsFlowObservation,
   type LogisticsTelemetryState,
 } from "./logistics";
+import {
+  emptyPhase2TelemetryObservation,
+  observePhase2Telemetry,
+  reducePhase2Telemetry,
+  type Phase2TelemetryState,
+} from "./phase2";
 
 type TickTelemetryBase = Omit<
   TickTelemetry,
@@ -46,9 +54,10 @@ type TickTelemetryBase = Omit<
   | "logistics"
   | "maintenanceV2"
   | "industry"
+  | "phase2"
 >;
 
-export const TELEMETRY_OWNER_SCHEMA_VERSION = 4 as const;
+export const TELEMETRY_OWNER_SCHEMA_VERSION = 5 as const;
 
 export interface TelemetryDetail {
   readonly domain: "budget" | "contract" | "intent" | "movement" | "spawn";
@@ -73,6 +82,10 @@ export interface TelemetryServiceInput {
   /** Settled phase-2 maintenance receipts; omitted while the gate is inactive. */
   readonly maintenanceTelemetry?: MaintenanceTelemetryInput;
   readonly industry?: IndustryTelemetry;
+  /** Direct settled layout receipts; omitted only by legacy tests or while unavailable. */
+  readonly layout?: LayoutRuntimeResult;
+  /** Direct settled link receipts; omitted only by legacy tests or while unavailable. */
+  readonly links?: LinkRuntimeResult;
   readonly movement: MovementRuntimeResult;
   readonly snapshot: WorldSnapshot;
   readonly spawn: SpawnRuntimeResult;
@@ -106,6 +119,12 @@ export class TelemetryService {
     const logistics = safelyReduceLogistics(owner.logistics, input);
     const maintenanceV2 = projectMaintenanceTelemetry(input.maintenanceTelemetry);
     const industry = input.industry ?? emptyIndustryTelemetry();
+    const phase2 = safelyReducePhase2(owner.phase2, input, {
+      staticMining: staticMining.telemetry,
+      logistics: logistics.telemetry,
+      maintenance: maintenanceV2,
+      industry,
+    });
     const detailLimit = input.base.telemetryPolicy.maximumDetailRecords;
     const allDetails = collectDetails(input);
     const details = allDetails
@@ -120,6 +139,7 @@ export class TelemetryService {
         logistics: logistics.telemetry,
         maintenanceV2,
         industry,
+        phase2: phase2.telemetry,
         staticMining: staticMining.telemetry,
       }),
       details: Object.freeze(details),
@@ -131,6 +151,7 @@ export class TelemetryService {
       logistics: logistics.telemetry,
       maintenanceV2,
       industry,
+      phase2: phase2.telemetry,
       staticMining: staticMining.telemetry,
       status,
     };
@@ -141,6 +162,7 @@ export class TelemetryService {
       input.reporterSignals,
       staticMining.state,
       logistics.state,
+      phase2.state,
     );
     const telemetry = deepFreeze({
       ...telemetryWithoutRecovery,
@@ -179,6 +201,7 @@ interface ParsedOwner {
   readonly reporter: unknown;
   readonly staticMining: StaticMiningTelemetryState | null;
   readonly logistics: LogisticsTelemetryState | null;
+  readonly phase2: Phase2TelemetryState | null;
 }
 
 function readOwnerSafely(value: unknown, maximumHistoryEntries: number): ParsedOwner {
@@ -198,14 +221,16 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
     (root.schemaVersion !== 1 &&
       root.schemaVersion !== 2 &&
       root.schemaVersion !== 3 &&
-      root.schemaVersion !== 4) ||
+      root.schemaVersion !== 4 &&
+      root.schemaVersion !== 5) ||
     !Array.isArray(root.history)
   ) {
     return emptyParsedOwner();
   }
   const reporter = root.schemaVersion >= 2 ? root.reporter : undefined;
   const staticMining = root.schemaVersion >= 3 ? readStaticMiningState(root.staticMining) : null;
-  const logistics = root.schemaVersion === 4 ? readLogisticsState(root.logistics) : null;
+  const logistics = root.schemaVersion >= 4 ? readLogisticsState(root.logistics) : null;
+  const phase2 = root.schemaVersion === 5 ? readPhase2State(root.phase2) : null;
   const priorDroppedHistory = readCounter(root.droppedHistory);
   const retainedLimit = safeNonnegativeInteger(maximumHistoryEntries);
   if (root.history.length > retainedLimit) {
@@ -215,6 +240,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
       reporter,
       staticMining,
       logistics,
+      phase2,
     };
   }
   const history: { tick: number; hash: string }[] = [];
@@ -226,6 +252,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
         reporter,
         staticMining,
         logistics,
+        phase2,
       };
     }
     const row = entry as Record<string, unknown>;
@@ -243,6 +270,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
         reporter,
         staticMining,
         logistics,
+        phase2,
       };
     }
     history.push({ tick, hash: row.hash });
@@ -253,6 +281,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
     reporter,
     staticMining,
     logistics,
+    phase2,
   };
 }
 
@@ -263,6 +292,7 @@ function emptyParsedOwner(): ParsedOwner {
     reporter: undefined,
     staticMining: null,
     logistics: null,
+    phase2: null,
   };
 }
 
@@ -279,6 +309,14 @@ function readStaticMiningState(value: unknown): StaticMiningTelemetryState | nul
   const row = value as Record<string, unknown>;
   return row.schemaVersion === 1 && Array.isArray(row.sources)
     ? (value as StaticMiningTelemetryState)
+    : null;
+}
+
+function readPhase2State(value: unknown): Phase2TelemetryState | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  return row.schemaVersion === 1 && Array.isArray(row.samples)
+    ? (value as Phase2TelemetryState)
     : null;
 }
 
@@ -314,6 +352,39 @@ function safelyReduceLogistics(
   }
 }
 
+function safelyReducePhase2(
+  previous: Phase2TelemetryState | null,
+  input: TelemetryServiceInput,
+  evidence: {
+    readonly staticMining: ReturnType<typeof reduceStaticMiningTelemetry>["telemetry"];
+    readonly logistics: ReturnType<typeof reduceLogisticsTelemetry>["telemetry"];
+    readonly maintenance: ReturnType<typeof projectMaintenanceTelemetry>;
+    readonly industry: IndustryTelemetry;
+  },
+) {
+  try {
+    return reducePhase2Telemetry({
+      observation: observePhase2Telemetry({
+        tick: input.base.tick,
+        snapshot: input.snapshot,
+        colony: input.colony,
+        spawn: input.spawn,
+        ...(input.layout === undefined ? {} : { layout: input.layout }),
+        ...(input.links === undefined ? {} : { links: input.links }),
+        ...evidence,
+      }),
+      previous,
+      maximumSamples: input.base.telemetryPolicy.maximumHistoryEntries,
+    });
+  } catch {
+    return reducePhase2Telemetry({
+      observation: { ...emptyPhase2TelemetryObservation(input.base.tick), droppedInputs: 1 },
+      previous: null,
+      maximumSamples: input.base.telemetryPolicy.maximumHistoryEntries,
+    });
+  }
+}
+
 function readCounter(value: unknown): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
@@ -340,6 +411,11 @@ interface MutableTelemetryOwner {
     schemaVersion: 1;
     flows: LogisticsTelemetryState["flows"][number][];
   };
+  phase2: {
+    schemaVersion: 1;
+    droppedSamples: number;
+    samples: Phase2TelemetryState["samples"][number][];
+  };
 }
 
 function generatedReporterEntries(value: unknown): JsonObject[] {
@@ -364,6 +440,10 @@ function fitOwnerToByteBudget(owner: MutableTelemetryOwner, maximumBytes: number
   while (exceedsBudget() && owner.history.length > 0) {
     owner.history.shift();
     owner.droppedHistory = saturatingIncrement(owner.droppedHistory);
+  }
+  while (exceedsBudget() && owner.phase2.samples.length > 0) {
+    owner.phase2.samples.shift();
+    owner.phase2.droppedSamples = saturatingIncrement(owner.phase2.droppedSamples);
   }
   const entries = generatedReporterEntries(owner.reporter.entries);
   while (exceedsBudget() && entries.length > 0) {
@@ -520,6 +600,7 @@ function writeOwner(
   reporterSignals: readonly ReporterSignal[],
   staticMining: StaticMiningTelemetryState,
   logistics: LogisticsTelemetryState,
+  phase2: Phase2TelemetryState,
 ): {
   readonly owner: JsonObject;
   readonly recoveryProgress: TickTelemetry["recoveryProgress"];
@@ -575,6 +656,11 @@ function writeOwner(
       logistics: {
         schemaVersion: logistics.schemaVersion,
         flows: logistics.flows.map((flow) => ({ ...flow })),
+      },
+      phase2: {
+        schemaVersion: phase2.schemaVersion,
+        droppedSamples: phase2.droppedSamples,
+        samples: phase2.samples.map((sample) => ({ ...sample })),
       },
     };
     const generatedEntries = generatedReporterEntries(result.reporter.entries).length;

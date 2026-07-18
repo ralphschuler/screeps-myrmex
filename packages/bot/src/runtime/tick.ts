@@ -1491,6 +1491,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                     observations: logisticsObservations(context, logisticsRuntime),
                   },
                   industry: industryDraft.telemetry,
+                  layout: context.layout,
+                  links: context.links,
                   reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
                 });
                 const telemetryTransaction = input.manager.transaction("telemetry");
@@ -1577,6 +1579,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                   observations: logisticsObservations(context, logisticsRuntime),
                 },
                 industry: industryDraft.telemetry,
+                layout: context.layout,
+                links: context.links,
                 reporterSignals: reporterSignals(input.getKernel().getHealthSnapshot()),
               }).telemetry,
             );
@@ -1657,6 +1661,7 @@ function telemetryBase(
   | "staticMining"
   | "maintenanceV2"
   | "industry"
+  | "phase2"
 > {
   return recordTickTelemetry({
     tick: context.tick,

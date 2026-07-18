@@ -18,6 +18,7 @@ import type { MaintenanceTelemetry } from "../maintenance";
 import type { TelemetryStatus } from "./service";
 import type { LogisticsTelemetry } from "./logistics";
 import type { StaticMiningTelemetry } from "./static-mining";
+import type { Phase2Telemetry } from "./phase2";
 import type { IndustryTelemetry } from "../industry";
 
 export interface FeatureGateTelemetry {
@@ -92,6 +93,8 @@ export interface TickTelemetry {
   readonly maintenanceV2: MaintenanceTelemetry;
   /** Bounded observer-only industry plan, command, and accounting evidence. */
   readonly industry: IndustryTelemetry;
+  /** Current Phase 2 gate inputs plus a bounded rolling observer window. */
+  readonly phase2: Phase2Telemetry;
 }
 
 export type ReporterTransitionTelemetry =
@@ -179,6 +182,7 @@ export function recordTickTelemetry(
   | "staticMining"
   | "maintenanceV2"
   | "industry"
+  | "phase2"
 > {
   return Object.freeze({
     tick: input.tick,

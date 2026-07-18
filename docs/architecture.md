@@ -4,7 +4,7 @@ Status: **Normative target architecture**
 
 Applies to: `packages/bot`
 
-Last updated: 2026-07-15
+Last updated: 2026-07-18
 
 This document defines the core systems of MYRMEX, the authority each system owns, and the only
 supported ways those systems integrate. It is deliberately specific so that human and AI
@@ -393,19 +393,28 @@ Malformed or future reporter state is rebuilt safely. First occurrence, bounded-
 single resolution, and stuck-recovery transitions leave the service only as capped tick-local
 records; the durable owner is not a replay queue.
 
+Telemetry owner schema V5 adds one Phase 2 schema-V1 observer ring. Current settled colony, spawn,
+layout, mining, logistics, link, maintenance, resource, lab, mature-infrastructure, and observer
+receipts produce exactly eleven authority rows, three modeled flow identities, fixed progression,
+reserve, utilization, and construction values, and one capped aggregate sample. The hard ring bound
+is 64 and the configured history and whole-owner byte ceilings may reduce it further. Samples
+contain no dynamic labels or gameplay commitment. Missing or malformed history reduces evidence
+only; `ColonyDirector` and domain-health composition continue to consume direct owner outputs and
+never telemetry.
+
 Reporter aggregation admits at most 2,000 health signals plus the already-capped telemetry details
 (2,064 candidates under source defaults). Oversized arrays are rejected before element traversal,
 and the sanitized candidates are deduplicated, sorted, and prefix-hashed once. The configured 64
 fingerprints are retained only while the shared 8,192-byte telemetry-owner ceiling permits. Byte
 fitting reuses the prepared batch without rereading source identities and makes at most 65 monotone
-capacity attempts, each over no more than 64 current and 64 prior metadata entries. It evicts
-history and then the oldest ordinary reporter entries deterministically. When cardinality or byte
-fitting omits active fingerprints, one retained opaque overflow fingerprint represents the omitted
-set and changes only when that set changes. Overflow `first` and `reminder` evidence is selected
-before ordinary transitions. A transition is published only after the candidate owner commits;
-ownerless and failed-commit fallback telemetry cannot claim a durable first/reminder/resolution
-event. A thrown telemetry service discards only its owner transaction, leaving gameplay
-reconciliation and command receipts intact.
+capacity attempts, each over no more than 64 current and 64 prior metadata entries. It evicts hash
+history and Phase 2 samples before the oldest ordinary reporter entries, then recovery and reset
+baselines, deterministically. When cardinality or byte fitting omits active fingerprints, one
+retained opaque overflow fingerprint represents the omitted set and changes only when that set
+changes. Overflow `first` and `reminder` evidence is selected before ordinary transitions. A
+transition is published only after the candidate owner commits; ownerless and failed-commit fallback
+telemetry cannot claim a durable first/reminder/resolution event. A thrown telemetry service
+discards only its owner transaction, leaving gameplay reconciliation and command receipts intact.
 
 Reporter status schema v2 is the redaction boundary for those transition records. It reads only the
 fixed signal and recovery fields through descriptors without enumerating hostile records, re-opaques
@@ -1703,6 +1712,8 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrices
 - spawn utilization and unmet capability demand;
 - contract counts, age, completion, failure, and lease churn;
 - energy/source/logistics outcome metrics;
+- fixed Phase 2 controller progress, reserves, spawn utilization, construction backlog, authority
+  outcomes, modeled flow residuals, and a bounded aggregate window;
 - remote full-cost profit and suspension reason;
 - threat, defense response, and safe-mode decisions;
 - operation budget, losses, state, and exit reason;

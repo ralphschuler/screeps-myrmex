@@ -71,8 +71,61 @@ describe("TelemetryService", () => {
       ...input,
       base: { ...input.base, tick: 101 },
     });
-    expect(next.owner).toMatchObject({ schemaVersion: 4, history: [{ tick: 101 }] });
+    expect(next.owner).toMatchObject({ schemaVersion: 5, history: [{ tick: 101 }] });
     expect(next.owner.droppedHistory).toBe(1);
+  });
+
+  it("migrates a V4 owner to the bounded Phase 2 sample ring", () => {
+    const fixture = serviceFixture(100);
+    const result = new TelemetryService().record(
+      {
+        schemaVersion: 4,
+        history: [],
+        droppedHistory: 0,
+        reporter: {
+          schemaVersion: 2,
+          entries: { schemaVersion: 1, entries: [] },
+          recovery: null,
+        },
+        staticMining: { schemaVersion: 1, sources: [] },
+        logistics: { schemaVersion: 1, flows: [] },
+      },
+      fixture.input,
+    );
+
+    expect(result.owner).toMatchObject({
+      schemaVersion: 5,
+      phase2: {
+        schemaVersion: 1,
+        droppedSamples: 0,
+        samples: [{ tick: 100 }],
+      },
+    });
+    expect(ownerBytes(result.owner)).toBeLessThanOrEqual(8_192);
+  });
+
+  it("fits the maximum rolling window under the whole-owner byte ceiling", () => {
+    const fixture = serviceFixture(100);
+    const service = new TelemetryService();
+    let owner: Record<string, unknown> = {};
+    for (let tick = 100; tick < 170; tick += 1) {
+      owner = service.record(owner, {
+        ...fixture.input,
+        base: {
+          ...fixture.input.base,
+          tick,
+          telemetryPolicy: {
+            ...fixture.input.base.telemetryPolicy,
+            maximumHistoryEntries: 64,
+          },
+        },
+      }).owner;
+    }
+
+    const phase2 = owner.phase2 as { droppedSamples: number; samples: unknown[] };
+    expect(phase2.samples.length).toBeLessThanOrEqual(64);
+    expect(phase2.droppedSamples).toBeGreaterThan(0);
+    expect(ownerBytes(owner)).toBeLessThanOrEqual(8_192);
   });
 
   it("publishes a stable redacted reason for funded contracts without a viable actor", () => {
@@ -489,7 +542,7 @@ describe("TelemetryService", () => {
       },
       { ...fixture.input, staticMining: { cpuUsed: 2, observations } },
     );
-    expect(first.owner).toMatchObject({ schemaVersion: 4, staticMining: { schemaVersion: 1 } });
+    expect(first.owner).toMatchObject({ schemaVersion: 5, staticMining: { schemaVersion: 1 } });
     expect(first.telemetry.staticMining).toMatchObject({
       observedSources: 64,
       droppedSources: 2,
