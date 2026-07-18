@@ -72,8 +72,10 @@ bounded stocked-extension evacuation, while `LogisticsPlanner` alone routes its 
 replacement and suppresses refill competition. Removal still requires fresh delivered/empty
 observation and no active evacuation flow. Issue #290 permits one empty, unselected source-adjacent
 container only while a different exact committed container remains the reachable semantic service
-for the same source. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`.
+for the same source. Issue #292 permits one empty compatible-external general container only after
+committed replacement capacity exists; one compact layout-owned handoff suppresses its refill and
+waits for active logistics endpoints to retire. `StructureRemovalArbiter` alone authorizes removal
+and `StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1365,11 +1367,11 @@ projection, evaluates at most two rooms per tick, 256 anchors, eight transforms,
 cells per candidate, and publishes only complete `owned-room-layout-v1` plans.
 
 The distinct `layouts` persistent owner stores only algorithm revision, anchor/transform,
-fingerprint, bounded blocker/commitment metadata, and at most one compact extension evacuation per
-room; reconstructible placements remain heap data. `layout.compiled.v1` is a `CacheManager`
-namespace stamped by exact algorithm, terrain, policy, and normalized-facts revisions. Failed or
-exhausted planning preserves the prior commitment and emits no partial plan, command,
-construction-site intent, or dismantle suggestion.
+fingerprint, bounded blocker/commitment metadata, at most one compact extension evacuation, and at
+most one compact general-container handoff per room; reconstructible placements remain heap data.
+`layout.compiled.v1` is a `CacheManager` namespace stamped by exact algorithm, terrain, policy, and
+normalized-facts revisions. Failed or exhausted planning preserves the prior commitment and emits no
+partial plan, command, construction-site intent, or dismantle suggestion.
 
 PR B adds a pure layout diff and makes `ConstructionSiteArbiter` the sole site-slot authority.
 Exact/adopted structures and matching owned sites suppress duplicates; stale observation, lost
@@ -1431,9 +1433,22 @@ absence, exact target/position/empty Store, and exact active same-room replaceme
 state or mining-contract revision is added; next observation proves disappearance and static mining
 retains its issuer and work position.
 
-Other structure stock evacuation, selected/stocked or general container migration, defensive
-migration, source-service switching, general multi-step migration, and creep dismantling remain
-issue #99 and fail closed.
+Issue #292 adds one replacement-first general-container step. The convergence projection restores
+committed geometry only for non-service primary containers while preserving current exact source
+services. A canonical general tile adjacent to any source blocks this convergence rather than
+changing source-service selection. Existing site/funding/build authorities create one missing safe
+general container under spare allowance. Once all five containers exist with exactly four on
+distinct committed positions, `ConstructionPlanner` may persist one compact empty, unshared, non-
+source target/replacement handoff. The following tick's sole logistics graph suppresses ordinary
+refill of that exact target without creating a flow or budget, while retaining the old edge only as
+reconciliation evidence. Removal requires ready contract views and waits until assigned/active V3
+work no longer names the target, then reuses the existing container-to-container arbiter/executor
+checks. Layout drift, stock, replacement loss, timeout, target disappearance, threat, resource
+pressure, or unavailable contract evidence authorizes no command. Next observation clears the
+handoff and exposes the final committed site.
+
+Other structure stock evacuation, selected/stocked container or source-service migration, defensive
+migration, general multi-step migration, and creep dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -1997,6 +2012,9 @@ Required architecture assertions include:
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;
+- obsolete general-container removal requires committed replacement-first capacity, one bounded
+  layout-owned empty-target handoff, ordinary-refill suppression, retirement of active V3 target
+  endpoints, preserved source services, and the existing one-command ceiling;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

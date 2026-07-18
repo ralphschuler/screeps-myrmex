@@ -14,6 +14,7 @@ import {
   emptyLayoutsOwner,
   persistLayoutCommitment,
   planOwnedRoomLayout,
+  projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
   type LayoutPlacement,
 } from "../src/layout";
@@ -422,6 +423,232 @@ describe("composed layout runtime", () => {
     expect(following.proposals).toEqual([
       expect.objectContaining({ pos: pos(19, 20), structureType: "extension" }),
     ]);
+  });
+
+  it("builds, drains logistics, and removes one obsolete general container", () => {
+    const baseline = complete();
+    const unlocks = policy.unlocks;
+    if (unlocks === null) throw new Error("expected RCL unlocks");
+    const desiredGeneral = baseline.placements.filter(
+      ({ service, structureType }) => structureType === "container" && service === undefined,
+    );
+    const plannedService = baseline.placements.find(
+      ({ service }) => service?.kind === "source-container",
+    );
+    if (desiredGeneral.length !== 4 || plannedService === undefined)
+      throw new Error("expected one-source RCL3 container layout");
+    const container = (id: string, position: ReturnType<typeof pos>, used = 0) => ({
+      hits: 250_000,
+      hitsMax: 250_000,
+      id,
+      ownerUsername: null,
+      ownership: "unowned" as const,
+      pos: position,
+      store: {
+        capacity: 2_000,
+        freeCapacity: 2_000 - used,
+        resources: used === 0 ? [] : [{ amount: used, resourceType: "energy" }],
+        usedCapacity: used,
+      },
+      structureType: "container",
+      ticksToDecay: 5_000,
+    });
+    const sourceService = container("container-source", plannedService.pos, 500);
+    const exactBefore = desiredGeneral
+      .slice(0, 2)
+      .map(({ pos: desiredPos }, index) =>
+        container(`container-general-${String(index)}`, desiredPos),
+      );
+    const obsolete = container("container-obsolete", pos(35, 35));
+    const initialStructures = [...structures, sourceService, ...exactBefore, obsolete];
+    const initial = planOwnedRoomLayout({ ...planningInput, structures: initialStructures });
+    if (initial.status !== "complete") throw new Error("expected initial container layout");
+    const initialConvergence = projectLayoutConvergencePlacements({
+      commitment: initial.commitment,
+      current: initial.placements,
+      roomName,
+      sourceCount: 1,
+      sources: planningInput.sources,
+      unlocks,
+    });
+    const initialDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment: initial.commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-container-before",
+      placements: initialConvergence,
+      policy,
+      policyEnabled: true,
+      policyFingerprint: "policy-a",
+      roomName,
+      roomStatus: "owned",
+      structures: initialStructures,
+    });
+    const replacementSite = initialDiff.proposals.find(
+      ({ structureType }) => structureType === "container",
+    );
+    if (replacementSite === undefined) throw new Error("expected committed container site");
+    const replacement = container("container-general-replacement", replacementSite.pos);
+    const currentStructures = [...initialStructures, replacement];
+    const current = planOwnedRoomLayout({ ...planningInput, structures: currentStructures });
+    if (current.status !== "complete") throw new Error("expected replacement layout");
+    const convergence = projectLayoutConvergencePlacements({
+      commitment: current.commitment,
+      current: current.placements,
+      roomName,
+      sourceCount: 1,
+      sources: planningInput.sources,
+      unlocks,
+    });
+    const room = {
+      constructionSites: [],
+      controller: { level: 3, ownership: "owned" as const },
+      energyAvailable: 800,
+      energyCapacityAvailable: 800,
+      hostileCreeps: [],
+      name: roomName,
+      observedAt: 100,
+      ownedCreeps: [],
+      ownedExtensions: [],
+      ownedSpawns: [],
+      ownedTowers: [],
+      roads: [],
+      sources: [
+        {
+          energy: 3_000,
+          energyCapacity: 3_000,
+          id: "source-a",
+          pos: pos(10, 10),
+          ticksToRegeneration: null,
+        },
+      ],
+      storedStructures: [sourceService, ...exactBefore, replacement, obsolete],
+      structures: currentStructures,
+    } as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: policy,
+      roomName,
+      state: "developing",
+      visibility: "visible",
+    } as ColonyView;
+    const stage = new ConstructionPlanner().planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      commitment: current.commitment,
+      currentPlacements: current.placements,
+      globalOwnedSiteCount: 0,
+      logisticsEvidenceReady: true,
+      observationFingerprint: "obs-container-ready",
+      placements: convergence,
+      policyFingerprint: "policy-a",
+      room,
+    });
+    if (stage.containerMigration === null) throw new Error("expected container handoff");
+    expect(stage.proposals).toEqual([]);
+    const nextRoom = { ...room, observedAt: 101 };
+    expect(
+      new ConstructionPlanner().planMigration({
+        activeLogisticsTargetIds: new Set([obsolete.id]),
+        colony,
+        commitment: current.commitment,
+        containerMigration: stage.containerMigration,
+        currentPlacements: current.placements,
+        globalOwnedSiteCount: 0,
+        logisticsEvidenceReady: true,
+        observationFingerprint: "obs-container-wait",
+        placements: convergence,
+        policyFingerprint: "policy-a",
+        room: nextRoom,
+      }).proposals,
+    ).toEqual([]);
+    const ready = new ConstructionPlanner().planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      commitment: current.commitment,
+      containerMigration: stage.containerMigration,
+      currentPlacements: current.placements,
+      globalOwnedSiteCount: 0,
+      logisticsEvidenceReady: true,
+      observationFingerprint: "obs-container-retired",
+      placements: convergence,
+      policyFingerprint: "policy-a",
+      room: nextRoom,
+    });
+    if (ready.authorization === null) throw new Error("expected removal authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [ready.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: ready.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveContainer = (value: ReturnType<typeof container>, command = vi.fn(() => 0)) =>
+      ({
+        destroy: command,
+        id: value.id,
+        isActive: () => true,
+        pos: value.pos,
+        room: liveRoom,
+        store: { getUsedCapacity: () => value.store.usedCapacity },
+        structureType: "container",
+      }) as unknown as Structure;
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) => {
+        const value = room.storedStructures.find((candidate) => candidate.id === id);
+        return value === undefined
+          ? null
+          : liveContainer(
+              value as ReturnType<typeof container>,
+              id === obsolete.id ? destroy : undefined,
+            );
+      },
+    });
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    const followingStructures = currentStructures.filter(({ id }) => id !== obsolete.id);
+    const following = planOwnedRoomLayout({
+      ...planningInput,
+      structures: followingStructures,
+      tick: 101,
+    });
+    if (following.status !== "complete") throw new Error("expected following layout");
+    const followingConvergence = projectLayoutConvergencePlacements({
+      commitment: following.commitment,
+      current: following.placements,
+      roomName,
+      sourceCount: 1,
+      sources: planningInput.sources,
+      unlocks,
+    });
+    const followingDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment: following.commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-container-following",
+      placements: followingConvergence,
+      policy,
+      policyEnabled: true,
+      policyFingerprint: "policy-a",
+      roomName,
+      roomStatus: "owned",
+      structures: followingStructures,
+    });
+    expect(
+      followingDiff.proposals.filter(({ structureType }) => structureType === "container"),
+    ).toHaveLength(1);
+    expect(
+      following.placements.find(({ service }) => service?.sourceId === "source-a")?.pos,
+    ).toEqual(current.placements.find(({ service }) => service?.sourceId === "source-a")?.pos);
   });
 
   it("removes one empty redundant source container without changing static mining", () => {

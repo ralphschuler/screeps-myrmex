@@ -6,6 +6,7 @@ import {
   parseLayoutsOwner,
   persistConstructionSiteReceipt,
   persistLayoutCommitment,
+  persistLayoutContainerMigration,
   persistLayoutExtensionEvacuation,
   reconcileOwnedLayouts,
   registerLayoutCompiledCache,
@@ -67,6 +68,40 @@ describe("layout persistence and cache", () => {
           {
             ...owner.records[0],
             extensionEvacuation: { ...evacuation, amount: 0 },
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("persists one bounded general-container migration and drops it on layout revision", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    const migration = {
+      expiresAt: 160,
+      replacementId: "container-replacement",
+      startedAt: 10,
+      targetId: "container-obsolete",
+    } as const;
+    owner = persistLayoutContainerMigration(owner, "W1N1", migration);
+
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(
+      persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.containerMigration,
+    ).toEqual(migration);
+    expect(
+      persistLayoutCommitment(owner, "W1N1", { ...commitment, fingerprint: "layout-v2:b" })
+        .records[0]?.containerMigration,
+    ).toBeUndefined();
+    expect(
+      persistLayoutContainerMigration(owner, "W1N1", null).records[0]?.containerMigration,
+    ).toBeUndefined();
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [
+          {
+            ...owner.records[0],
+            containerMigration: { ...migration, expiresAt: 159 },
           },
         ],
       }),

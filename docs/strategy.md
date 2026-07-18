@@ -63,7 +63,12 @@ extension, defensive, critical, foreign, unknown, and multiply occupied structur
 General migration remains fail-closed. One source-container exception additionally removes an empty,
 unshared container beside exactly one source only while a different exact committed source-container
 remains the selected reachable service for that source. The stationary mining identity and work
-position do not change; selected, sole, stocked, ambiguous, or replacementless containers remain.
+position do not change; selected, sole, stocked, ambiguous, or replacementless containers remain. A
+separate general-container exception first spends spare allowance on committed non-service capacity,
+then persists one bounded empty-target handoff that suppresses refill and waits for every active
+logistics endpoint naming that target to retire before removal. Canonical general positions adjacent
+to a source and unavailable contract evidence fail closed. Source services, stocked targets, and
+rooms without exact replacement evidence remain untouched.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

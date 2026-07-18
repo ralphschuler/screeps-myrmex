@@ -1,5 +1,6 @@
 import {
   LAYOUT_ALGORITHM_REVISION,
+  LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS,
   LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_OWNER_SCHEMA_VERSION,
   MAX_LAYOUT_BLOCKERS,
@@ -7,6 +8,7 @@ import {
   MAX_LAYOUT_RECORDS,
   type ConstructionSiteAttemptReceipt,
   type LayoutCommitment,
+  type LayoutContainerMigration,
   type LayoutExtensionEvacuation,
   type LayoutRecord,
   type LayoutPlacement,
@@ -59,6 +61,9 @@ export function persistLayoutCommitment(
   records.push({
     roomName,
     ...commitment,
+    ...(sameCommitment && prior.containerMigration !== undefined
+      ? { containerMigration: prior.containerMigration }
+      : {}),
     ...(sameCommitment && prior.extensionEvacuation !== undefined
       ? { extensionEvacuation: prior.extensionEvacuation }
       : {}),
@@ -78,6 +83,29 @@ export function persistLayoutCommitment(
     records: records.slice(0, MAX_LAYOUT_RECORDS),
   });
 }
+export function persistLayoutContainerMigration(
+  owner: LayoutsOwnerV1,
+  roomName: string,
+  migration: LayoutContainerMigration | null,
+): LayoutsOwnerV1 {
+  const prior = owner.records.find((record) => record.roomName === roomName);
+  if (prior === undefined) return owner;
+  if (
+    (migration === null && prior.containerMigration === undefined) ||
+    (migration !== null && JSON.stringify(migration) === JSON.stringify(prior.containerMigration))
+  )
+    return owner;
+  const records = owner.records.map((record) => {
+    if (record.roomName !== roomName) return record;
+    if (migration === null) {
+      const { containerMigration, ...retained } = record;
+      return containerMigration === undefined ? record : retained;
+    }
+    return { ...record, containerMigration: migration };
+  });
+  return freeze({ ...owner, records, revision: owner.revision + 1 });
+}
+
 export function persistLayoutExtensionEvacuation(
   owner: LayoutsOwnerV1,
   roomName: string,
@@ -165,10 +193,22 @@ function validRecord(v: unknown): v is LayoutRecord {
     Array.isArray(v.blockers) &&
     v.blockers.length <= MAX_LAYOUT_BLOCKERS &&
     v.blockers.every((b) => typeof b === "string" && b.length <= 32) &&
+    (v.containerMigration === undefined || validContainerMigration(v.containerMigration)) &&
     (v.extensionEvacuation === undefined || validExtensionEvacuation(v.extensionEvacuation)) &&
     (v.serviceBlockers === undefined || validServiceBlockers(v.serviceBlockers, v.roomName)) &&
     (v.sourceServices === undefined || validSourceServices(v.sourceServices, v.roomName)) &&
     (v.siteReceipts === undefined || validReceipts(v.siteReceipts, v.roomName))
+  );
+}
+function validContainerMigration(value: unknown): value is LayoutContainerMigration {
+  return (
+    record(value) &&
+    integer(value.startedAt) &&
+    integer(value.expiresAt) &&
+    value.expiresAt - value.startedAt === LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS &&
+    identity(value.targetId, 128) &&
+    identity(value.replacementId, 128) &&
+    value.targetId !== value.replacementId
   );
 }
 function validExtensionEvacuation(value: unknown): value is LayoutExtensionEvacuation {

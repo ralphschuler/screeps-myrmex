@@ -18,6 +18,7 @@ export const MAX_LAYOUT_BLOCKERS = 8 as const;
 export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
 export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
 export const LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS = 150 as const;
+export const LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS = 150 as const;
 export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
   officialHardCap: 100,
   reservedGlobalHeadroom: 5,
@@ -80,8 +81,15 @@ export interface LayoutExtensionEvacuation {
   readonly sourceId: string;
   readonly startedAt: number;
 }
+export interface LayoutContainerMigration {
+  readonly expiresAt: number;
+  readonly replacementId: string;
+  readonly startedAt: number;
+  readonly targetId: string;
+}
 
 export interface LayoutRecord extends LayoutCommitment {
+  readonly containerMigration?: LayoutContainerMigration;
   readonly extensionEvacuation?: LayoutExtensionEvacuation;
   readonly roomName: string;
   readonly sourceServices?: readonly LayoutPlacement[];
@@ -266,6 +274,10 @@ export type LayoutMigrationBlocker =
   | "evacuation-incomplete"
   | "evacuation-pending"
   | "layout-blocked"
+  | "logistics-active"
+  | "logistics-unavailable"
+  | "migration-expired"
+  | "migration-pending"
   | "progression-blocked"
   | "replacement-pending"
   | "reserve-unrestored"
@@ -319,6 +331,7 @@ export interface LayoutMigrationAuthorization {
 export interface LayoutMigrationPlanningResult {
   readonly authorization: LayoutMigrationAuthorization | null;
   readonly blockers: readonly LayoutMigrationBlockerRecord[];
+  readonly containerMigration: LayoutContainerMigration | null;
   readonly extensionEvacuation: LayoutExtensionEvacuation | null;
   readonly proposals: readonly LayoutMigrationProposal[];
   readonly scannedCandidates: number;

@@ -108,8 +108,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   through funded logistics, suppresses target refill, and keeps removal blocked until fresh
   delivered/empty evidence. Issue #290 removes at most one empty, unshared source-adjacent container
   only while a different exact committed container remains the selected reachable service for that
-  same source; mining identity and work position stay unchanged. Other structure types,
-  selected/stocked containers, general multi-step migration, and creep dismantling remain issue #99.
+  same source; mining identity and work position stay unchanged. Issue #292 restores committed
+  geometry for general non-service containers, builds one replacement under spare allowance, then
+  suppresses obsolete-target refill and waits for active logistics endpoints before removing the
+  empty adopted target. Other structure types, selected/stocked containers, general multi-step
+  migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

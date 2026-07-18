@@ -95,6 +95,7 @@ describe("owned-room-layout-v1", () => {
       current: planned.placements,
       roomName: input.roomName,
       sourceCount: input.sources.length,
+      sources: input.sources,
       unlocks,
     });
 
@@ -114,9 +115,83 @@ describe("owned-room-layout-v1", () => {
           structureType === "extension" && pos.x === external.pos.x && pos.y === external.pos.y,
       ),
     ).toBe(false);
-    expect(convergent.filter(({ structureType }) => structureType !== "extension")).toEqual(
-      planned.placements.filter(({ structureType }) => structureType !== "extension"),
+    expect(
+      convergent.filter(
+        ({ structureType }) => structureType !== "extension" && structureType !== "container",
+      ),
+    ).toEqual(
+      planned.placements.filter(
+        ({ structureType }) => structureType !== "extension" && structureType !== "container",
+      ),
     );
+  });
+
+  it("restores committed general-container geometry while preserving source services", () => {
+    const input = fixture(3);
+    const external = structure("container", 35, 35, "owned");
+    const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
+    if (planned.status !== "complete") throw new Error("expected complete layout");
+    const unlocks = input.policy.unlocks;
+    if (unlocks === null) throw new Error("expected RCL unlocks");
+    const services = planned.placements.filter(
+      ({ service }) => service?.kind === "source-container",
+    );
+    const convergent = projectLayoutConvergencePlacements({
+      commitment: planned.commitment,
+      current: planned.placements,
+      roomName: input.roomName,
+      sourceCount: input.sources.length,
+      sources: input.sources,
+      unlocks,
+    });
+
+    expect(planned.placements).toContainEqual(
+      expect.objectContaining({
+        adoption: "compatible-external",
+        pos: external.pos,
+        structureType: "container",
+      }),
+    );
+    expect(convergent.filter(({ structureType }) => structureType === "container")).toHaveLength(5);
+    expect(
+      convergent.some(
+        ({ pos, structureType }) =>
+          structureType === "container" && pos.x === external.pos.x && pos.y === external.pos.y,
+      ),
+    ).toBe(false);
+    expect(convergent.filter(({ service }) => service?.kind === "source-container")).toEqual(
+      services,
+    );
+    const canonicalGeneral = convergent.find(
+      ({ service, structureType }) => structureType === "container" && service === undefined,
+    );
+    if (canonicalGeneral === undefined) throw new Error("expected canonical general container");
+    const secondSource = input.sources[1];
+    if (secondSource === undefined) throw new Error("expected second source");
+    const sourceAdjacent = projectLayoutConvergencePlacements({
+      commitment: planned.commitment,
+      current: planned.placements,
+      roomName: input.roomName,
+      sourceCount: input.sources.length,
+      sources: [
+        { ...canonicalGeneral.pos, sourceId: "source-a", x: canonicalGeneral.pos.x - 1 },
+        secondSource,
+      ],
+      unlocks,
+    });
+    expect(sourceAdjacent).toContainEqual(
+      expect.objectContaining({
+        adoption: "compatible-external",
+        pos: external.pos,
+        structureType: "container",
+      }),
+    );
+    expect(
+      sourceAdjacent.some(
+        ({ adoption, service, structureType }) =>
+          structureType === "container" && service === undefined && adoption === "planned",
+      ),
+    ).toBe(false);
   });
 });
 

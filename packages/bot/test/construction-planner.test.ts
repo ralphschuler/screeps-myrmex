@@ -230,6 +230,165 @@ describe("ConstructionPlanner", () => {
     expect(JSON.stringify(reset)).toBe(JSON.stringify(first));
   });
 
+  it("stages one general-container replacement and waits for active logistics to retire", () => {
+    const fixture = generalContainerMigrationFixture();
+    const missingEvidence = planMigration({
+      currentPlacements: fixture.currentPlacements,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+    expect(missingEvidence.containerMigration).toBeNull();
+    expect(missingEvidence.blockers).toContainEqual(
+      expect.objectContaining({ reason: "logistics-unavailable" }),
+    );
+    expect(
+      planMigration({
+        activeLogisticsTargetIds: new Set(),
+        currentPlacements: fixture.currentPlacements,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: {
+          ...fixture.room,
+          sources: fixture.room.sources.map((source, index) =>
+            index === 0 ? { ...source, pos: { roomName: "W1N1", x: 19, y: 19 } } : source,
+          ),
+        },
+      }).containerMigration,
+    ).toBeNull();
+
+    const staged = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      currentPlacements: fixture.currentPlacements,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.containerMigration).toEqual({
+      expiresAt: 250,
+      replacementId: "container-general-b",
+      startedAt: 100,
+      targetId: "container-obsolete",
+    });
+    if (staged.containerMigration === null) throw new Error("expected staged container migration");
+    const sameTick = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      containerMigration: staged.containerMigration,
+      currentPlacements: fixture.currentPlacements,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+    expect(sameTick.proposals).toEqual([]);
+    expect(sameTick.blockers).toContainEqual(
+      expect.objectContaining({ reason: "migration-pending", targetId: "container-obsolete" }),
+    );
+    const nextRoom = { ...fixture.room, observedAt: 101 };
+    expect(
+      planMigration({
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: {
+          ...staged.containerMigration,
+          expiresAt: 252,
+          startedAt: 102,
+        },
+        currentPlacements: fixture.currentPlacements,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: nextRoom,
+      }).proposals,
+    ).toEqual([]);
+    const active = planMigration({
+      activeLogisticsTargetIds: new Set(["container-obsolete"]),
+      containerMigration: staged.containerMigration,
+      currentPlacements: fixture.currentPlacements,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: nextRoom,
+    });
+    expect(active.containerMigration).toEqual(staged.containerMigration);
+    expect(active.proposals).toEqual([]);
+    expect(active.blockers).toContainEqual(
+      expect.objectContaining({ reason: "logistics-active", targetId: "container-obsolete" }),
+    );
+    const stocked = sourceContainer("container-obsolete", 30, 30, 1);
+    expect(
+      planMigration({
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: staged.containerMigration,
+        currentPlacements: fixture.currentPlacements,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: {
+          ...nextRoom,
+          storedStructures: fixture.room.storedStructures.map((value) =>
+            value.id === stocked.id ? stocked : value,
+          ),
+          structures: (fixture.room.structures ?? []).map((value) =>
+            value.id === stocked.id ? stocked : value,
+          ),
+        },
+      }).containerMigration,
+    ).toBeNull();
+    expect(
+      planMigration({
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: staged.containerMigration,
+        currentPlacements: fixture.currentPlacements,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: { ...fixture.room, observedAt: staged.containerMigration.expiresAt },
+      }).containerMigration,
+    ).toBeNull();
+    expect(
+      planMigration({
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: staged.containerMigration,
+        currentPlacements: fixture.currentPlacements,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: {
+          ...nextRoom,
+          storedStructures: fixture.room.storedStructures.filter(
+            ({ id }) => id !== staged.containerMigration?.replacementId,
+          ),
+          structures: (fixture.room.structures ?? []).filter(
+            ({ id }) => id !== staged.containerMigration?.replacementId,
+          ),
+        },
+      }).containerMigration,
+    ).toBeNull();
+
+    const ready = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      containerMigration: staged.containerMigration,
+      currentPlacements: fixture.currentPlacements,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: nextRoom,
+    });
+    const reordered = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      containerMigration: { ...staged.containerMigration },
+      currentPlacements: [...fixture.currentPlacements].reverse(),
+      logisticsEvidenceReady: true,
+      placements: [...fixture.placements].reverse(),
+      room: {
+        ...nextRoom,
+        storedStructures: [...fixture.room.storedStructures].reverse(),
+        structures: [...(fixture.room.structures ?? [])].reverse(),
+      },
+    });
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "container-general-b",
+        targetId: "container-obsolete",
+        targetStructureType: "container",
+      }),
+    ]);
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(ready));
+  });
+
   it("keeps unsafe, stocked, selected, shared, and replacementless containers", () => {
     const fixture = sourceContainerMigrationFixture();
     const target = fixture.room.storedStructures.find(({ id }) => id === "container-redundant");
@@ -439,6 +598,70 @@ function sourceContainerMigrationFixture(): {
       ],
       storedStructures: [target, replacement],
       structures: [target, replacement],
+    },
+  };
+}
+
+function generalContainerMigrationFixture(): {
+  readonly currentPlacements: readonly LayoutPlacement[];
+  readonly placements: readonly LayoutPlacement[];
+  readonly room: RoomSnapshot;
+} {
+  const sourceA = sourceContainer("container-source-a", 11, 10, 500);
+  const sourceB = sourceContainer("container-source-b", 41, 40, 500);
+  const generalA = sourceContainer("container-general-a", 20, 20, 0);
+  const generalB = sourceContainer("container-general-b", 21, 20, 0);
+  const obsolete = sourceContainer("container-obsolete", 30, 30, 0);
+  const sourceServices: LayoutPlacement[] = [
+    {
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: sourceA.pos,
+      service: { kind: "source-container", sourceId: "source-a" },
+      structureType: "container",
+    },
+    {
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: sourceB.pos,
+      service: { kind: "source-container", sourceId: "source-b" },
+      structureType: "container",
+    },
+  ];
+  const desiredGeneral: LayoutPlacement[] = [
+    { ...placement("container", 20, 20), adoption: "exact" },
+    { ...placement("container", 21, 20), adoption: "exact" },
+    placement("container", 22, 20),
+  ];
+  return {
+    currentPlacements: [
+      ...sourceServices,
+      ...desiredGeneral.slice(0, 2),
+      { ...placement("container", 30, 30), adoption: "compatible-external" },
+    ],
+    placements: [...sourceServices, ...desiredGeneral],
+    room: {
+      ...migrationRoom(),
+      sources: [
+        {
+          energy: 3_000,
+          energyCapacity: 3_000,
+          id: "source-a",
+          pos: { roomName: "W1N1", x: 10, y: 10 },
+          ticksToRegeneration: null,
+        },
+        {
+          energy: 3_000,
+          energyCapacity: 3_000,
+          id: "source-b",
+          pos: { roomName: "W1N1", x: 40, y: 40 },
+          ticksToRegeneration: null,
+        },
+      ],
+      storedStructures: [sourceA, sourceB, generalA, generalB, obsolete],
+      structures: [sourceA, sourceB, generalA, generalB, obsolete],
     },
   };
 }

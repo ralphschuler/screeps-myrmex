@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { planLeaseAgents } from "../src/agents";
 import { emptyContractExecutionView, emptyContractPlanningView } from "../src/contracts";
 import { layoutExtensionEvacuationBudgetIssuer } from "../src/layout";
+import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
 import { observeLogisticsGraph, planLogisticsRuntime } from "../src/logistics/runtime";
 import type { WorldSnapshot } from "../src/world/snapshot";
@@ -396,6 +397,199 @@ describe("logistics runtime adapter", () => {
     expect(emptiedResult.graph.nodes).toContainEqual(
       expect.objectContaining({ id: "store:extension-replacement:sink:energy" }),
     );
+  });
+
+  it("suppresses refill of one persisted empty obsolete general container", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("container migration fixture room missing");
+    const store = (used: number) => ({
+      capacity: 2_000,
+      freeCapacity: 2_000 - used,
+      resources: used === 0 ? [] : [{ amount: used, resourceType: "energy" }],
+      usedCapacity: used,
+    });
+    const container = (id: string, x: number, used = 0) => ({
+      hits: 250_000,
+      hitsMax: 250_000,
+      id,
+      ownerUsername: null,
+      ownership: "unowned" as const,
+      pos: position(x, 12),
+      store: store(used),
+      structureType: "container",
+      ticksToDecay: 5_000,
+    });
+    const obsolete = container("container-obsolete", 12);
+    const replacement = container("container-replacement", 13);
+    const migrationWorld = {
+      ...snapshot,
+      observation: { ...snapshot.observation, tick: 11 },
+      observedAt: 11,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          storedStructures: [...room.storedStructures, obsolete, replacement],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const visibleMigrationRoom = migrationWorld.rooms[0];
+    if (visibleMigrationRoom === undefined) throw new Error("migration room missing");
+    const migration = {
+      expiresAt: 160,
+      replacementId: replacement.id,
+      startedAt: 10,
+      targetId: obsolete.id,
+    } as const;
+    const migrationRecord = {
+      algorithmRevision: "owned-room-layout-v2-source-services",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      containerMigration: migration,
+      fingerprint: "layout-a",
+      roomName: "W1N1",
+      transform: 0 as const,
+    };
+    const sameTickWorld = {
+      ...migrationWorld,
+      observation: { ...migrationWorld.observation, tick: 10 },
+      observedAt: 10,
+      rooms: [{ ...visibleMigrationRoom, observedAt: 10 }],
+    };
+    expect(
+      projectLayoutContainerMigrations({
+        records: [migrationRecord],
+        snapshot: sameTickWorld,
+        tick: 10,
+      }).suppressedSinkTargetIds,
+    ).toEqual([]);
+    expect(
+      projectLayoutContainerMigrations({
+        records: [
+          {
+            ...migrationRecord,
+            containerMigration: { ...migration, expiresAt: 162, startedAt: 12 },
+          },
+        ],
+        snapshot: migrationWorld,
+        tick: 11,
+      }).suppressedSinkTargetIds,
+    ).toEqual([]);
+    const demands = projectLayoutContainerMigrations({
+      records: [migrationRecord],
+      snapshot: migrationWorld,
+      tick: 11,
+    });
+    const flowId = `flow:store:container:source:energy->store:${obsolete.id}:sink:energy`;
+    const planning = {
+      contracts: [
+        {
+          budgetBinding: { category: "optional-growth" as const, issuer: "logistics/active" },
+          contractId: "contract-active-container-flow",
+          execution: {
+            action: "withdraw" as const,
+            completion: "target-depleted" as const,
+            counterpartId: obsolete.id,
+            flowId,
+            recommendedCarry: 1,
+            recommendedMove: 1,
+            reservedAmount: 50,
+            resourceType: "energy" as ResourceConstant,
+            stage: "acquire" as const,
+            version: 3 as const,
+          },
+          issuer: "logistics/active",
+          owner: { id: "W1N1", kind: "colony" as const },
+          state: "assigned" as const,
+          targetId: "container",
+        },
+      ],
+      status: "ready" as const,
+    };
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning,
+      resourceDemands: demands,
+      snapshot: migrationWorld,
+      tick: 11,
+    });
+
+    expect(demands.suppressedSinkTargetIds).toEqual([obsolete.id]);
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: `store:${obsolete.id}:sink:energy` }),
+    );
+    expect(result.graph.nodes).toContainEqual(
+      expect.objectContaining({ id: `store:${replacement.id}:sink:energy` }),
+    );
+    expect(result.contracts.commitments).toContainEqual(
+      expect.objectContaining({ flowId, reason: "sink-vanished", request: null }),
+    );
+    expect(result.contracts.retirements).toContainEqual(
+      expect.objectContaining({ reason: "logistics-sink-vanished", to: "failed" }),
+    );
+    expect(result.health).toEqual([{ colonyId: "W1N1", observedAt: 11, status: "healthy" }]);
+    const cargoWorld = world(50);
+    const cargoRoom = cargoWorld.rooms[0];
+    if (cargoRoom === undefined) throw new Error("deliver cargo room missing");
+    const deliverExecution = execution("deliver", 50);
+    const deliver = planLogisticsRuntime({
+      execution: {
+        ...deliverExecution,
+        leases: deliverExecution.leases.map((lease) => ({
+          ...lease,
+          execution: { ...lease.execution, flowId },
+          targetId: obsolete.id,
+        })),
+      },
+      includeOptional: true,
+      planning: {
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          execution: {
+            ...contract.execution,
+            action: "transfer" as const,
+            completion: "target-full" as const,
+            counterpartId: "container",
+            stage: "deliver" as const,
+          },
+          state: "active" as const,
+          targetId: obsolete.id,
+        })),
+      },
+      resourceDemands: demands,
+      snapshot: {
+        ...migrationWorld,
+        rooms: [{ ...visibleMigrationRoom, ownedCreeps: cargoRoom.ownedCreeps }],
+      },
+      tick: 11,
+    });
+    expect(deliver.contracts.retirements).toContainEqual(
+      expect.objectContaining({ reason: "logistics-sink-vanished", to: "failed" }),
+    );
+    expect(deliver.health).toEqual([{ colonyId: "W1N1", observedAt: 11, status: "healthy" }]);
+    expect(
+      projectLayoutContainerMigrations({
+        records: [migrationRecord],
+        snapshot: {
+          ...migrationWorld,
+          rooms: [
+            {
+              ...visibleMigrationRoom,
+              storedStructures: [
+                ...room.storedStructures,
+                container(obsolete.id, 12, 1),
+                replacement,
+              ],
+            },
+          ],
+        },
+        tick: 11,
+      }).suppressedSinkTargetIds,
+    ).toEqual([]);
   });
 
   it("clamps V3 acquire and partial delivery to observed exact quantities", () => {
