@@ -402,9 +402,11 @@ retains at most 64 opaque controller baselines and exactly seven destination-RCL
 a continuously observed adjacent increase records elapsed ticks; missing continuity, ownership loss,
 downgrade, multi-level jump, duplicate identity, or malformed state resets evidence without success.
 Tick telemetry omits baseline-only timing and otherwise publishes one compact latest-row tuple plus
-loss counters; the owner retains all seven aggregates. Samples and timing state contain no dynamic
-labels or gameplay commitment. Missing or malformed history reduces evidence only; `ColonyDirector`
-and domain-health composition continue to consume direct owner outputs and never telemetry.
+loss counters; the owner retains all seven aggregates. After whole-owner byte fitting, the current
+tuple and status hash are reprojected from retained state before return. Samples and timing state
+contain no dynamic labels or gameplay commitment. Missing or malformed history reduces evidence
+only; `ColonyDirector` and domain-health composition continue to consume direct owner outputs and
+never telemetry.
 
 Reporter aggregation admits at most 2,000 health signals plus the already-capped telemetry details
 (2,064 candidates under source defaults). Oversized arrays are rejected before element traversal,

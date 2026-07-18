@@ -44,7 +44,8 @@ constraints.
 - The existing 8,192-byte whole-owner ceiling remains authoritative. Byte fitting evicts ordinary
   history and Phase 2 samples first, then active RCL baselines, then completed RCL aggregates. Every
   timing loss increments a saturating fixed counter before reporter and recovery evidence is
-  considered.
+  considered. Tick output and its status hash are reprojected from the fitted owner before return,
+  so the observer never reports evicted timing as retained.
 
 ## Consequences
 

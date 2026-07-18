@@ -19,11 +19,19 @@
     "toSchemaVersion": 2,
     "baselineOnly": true
   },
+  "persistence": {
+    "ownerSchemaVersion": 2,
+    "timingSchemaVersion": 1,
+    "completedSamples": 1,
+    "replayedSamples": 1,
+    "compactOwnerRoundTrip": true,
+    "resetOutputEquivalent": true,
+    "roomNamesRedacted": true,
+    "ownerBytes": 1575
+  },
   "bounds": {
     "destinationRows": 7,
     "maximumControllerTracks": 64,
-    "persistedRoomNames": 0,
-    "telemetryOwnerBytes": 8192,
-    "telemetryDecisionInputs": 0
+    "telemetryOwnerMaximumBytes": 8192
   }
 }

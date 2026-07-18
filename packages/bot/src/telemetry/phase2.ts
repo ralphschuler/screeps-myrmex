@@ -62,6 +62,8 @@ export interface Phase2TelemetryObservation {
   readonly tick: number;
   /** Bounded opaque owned-controller identities used only for continuous transition timing. */
   readonly controllerLevels: readonly Phase2ControllerObservation[];
+  /** Whole timing batch is invalid when positive; value counts all omitted controller facts. */
+  readonly droppedControllerLevels: number;
   readonly controllers: number;
   readonly rcl8Controllers: number;
   readonly sustainingColonies: number;
@@ -350,6 +352,7 @@ export function observePhase2Telemetry(input: {
       colonyRef: opaqueId("colony", room.name),
       level: room.controller.level,
     })),
+    droppedControllerLevels: rooms.length > MAX_PHASE2_CONTROLLER_TRACKERS ? rooms.length : 0,
     controllers: controllers.length,
     rcl8Controllers: controllers.filter(({ level }) => level === 8).length,
     sustainingColonies: input.colony.colonies.filter(
@@ -473,6 +476,7 @@ export function emptyPhase2TelemetryObservation(tick: number): Phase2TelemetryOb
   return {
     tick,
     controllerLevels: [],
+    droppedControllerLevels: 0,
     controllers: 0,
     rcl8Controllers: 0,
     sustainingColonies: 0,
@@ -556,6 +560,8 @@ export function reducePhase2Telemetry(input: {
   readonly observation: Phase2TelemetryObservation;
   readonly previous?: Phase2TelemetryStateInput | null;
   readonly maximumSamples?: number;
+  /** Authoritative owner-level replay signal when retained samples were byte-evicted. */
+  readonly sameTickReplay?: boolean;
 }): Phase2TelemetryReduction {
   const observation = normalizeObservation(input.observation);
   const limit = Math.min(
@@ -564,14 +570,16 @@ export function reducePhase2Telemetry(input: {
       ? MAX_PHASE2_TELEMETRY_SAMPLES
       : nonnegativeSafeInteger(input.maximumSamples),
   );
-  const previous = normalizePrevious(input.previous);
+  const opened = normalizePrevious(input.previous);
+  const timingIsFuture =
+    opened.rclTracks.some((track) => track[3] > observation.tick) ||
+    opened.rclTransitionDurations.some((duration) => (duration[5] ?? 0) > observation.tick);
+  const previous: Phase2TelemetryState = timingIsFuture
+    ? { ...opened, ...emptyRclState() }
+    : opened;
   const last = previous.samples[previous.samples.length - 1];
-  const previousEvidenceTick = Math.max(
-    last?.tick ?? 0,
-    ...previous.rclTracks.map((track) => track[3]),
-    ...previous.rclTransitionDurations.map((duration) => duration[5] ?? 0),
-  );
-  if (observation.tick < previousEvidenceTick)
+  const sameTickReplay = input.sameTickReplay === true || last?.tick === observation.tick;
+  if (last !== undefined && observation.tick < last.tick)
     throw new RangeError("phase 2 telemetry tick order is invalid");
 
   const authorities = authorityTelemetry(observation);
@@ -584,7 +592,13 @@ export function reducePhase2Telemetry(input: {
   const samples = limit === 0 ? [] : appended.slice(-limit);
   const newlyDropped = Math.max(0, appended.length - samples.length);
   const droppedSamples = saturatingAdd(previous.droppedSamples, newlyDropped);
-  const rcl = advanceRclTransitions(previous, observation.tick, observation.controllerLevels);
+  const rcl = advanceRclTransitions(
+    previous,
+    observation.tick,
+    observation.controllerLevels,
+    observation.droppedControllerLevels,
+    sameTickReplay,
+  );
   const state: Phase2TelemetryState = {
     schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
     droppedSamples,
@@ -593,7 +607,7 @@ export function reducePhase2Telemetry(input: {
   };
   const identities = flowIdentities(observation);
   const busy = Math.min(observation.activeSpawns, observation.busySpawns);
-  const rclTelemetry = latestRclTelemetry(rcl);
+  const rclTelemetry = projectPhase2RclTelemetry(rcl);
   const telemetry: Phase2Telemetry = {
     schemaVersion: PHASE2_TELEMETRY_SCHEMA_VERSION,
     progression: {
@@ -662,7 +676,15 @@ export function reducePhase2Telemetry(input: {
   return deepFreeze({ state, telemetry });
 }
 
-function latestRclTelemetry(value: RclState): Phase2RclTelemetry | undefined {
+export function projectPhase2RclTelemetry(
+  value: Pick<
+    Phase2TelemetryState,
+    | "interruptedRclTracks"
+    | "droppedRclObservations"
+    | "droppedRclTransitions"
+    | "rclTransitionDurations"
+  >,
+): Phase2RclTelemetry | undefined {
   let selectedIndex: number | null = null;
   let selected: Phase2RclTransitionDuration | null = null;
   for (let index = 0; index < value.rclTransitionDurations.length; index += 1) {
@@ -793,6 +815,12 @@ function sampleFrom(
     reserveViolations: value.reserveViolations,
     measuredCpuMilli: value.measuredCpuMilli,
   };
+}
+
+export function projectPhase2TelemetryWindow(
+  value: Pick<Phase2TelemetryState, "samples" | "droppedSamples">,
+): Phase2TelemetryWindow {
+  return rollingWindow(value.samples, value.droppedSamples);
 }
 
 function rollingWindow(
@@ -982,19 +1010,60 @@ function normalizeRclDuration(value: unknown): Phase2RclTransitionDuration {
         minimumTicks === 0 ||
         minimumTicks > maximumTicks ||
         totalTicks < maximumTicks ||
+        maximumTicks > latestTick ||
         latestTicks < minimumTicks ||
-        latestTicks > maximumTicks))
+        latestTicks > maximumTicks ||
+        !rclDurationAggregateIsFeasible(
+          samples,
+          totalTicks,
+          minimumTicks,
+          maximumTicks,
+          latestTicks,
+        )))
   )
     throw new TypeError("phase 2 RCL duration is inconsistent");
   return [samples, totalTicks, minimumTicks, maximumTicks, latestTicks, latestTick];
+}
+
+function rclDurationAggregateIsFeasible(
+  samples: number,
+  totalTicks: number,
+  minimumTicks: number,
+  maximumTicks: number,
+  latestTicks: number,
+): boolean {
+  if (samples === 1)
+    return minimumTicks === totalTicks && maximumTicks === totalTicks && latestTicks === totalTicks;
+  if (samples === Number.MAX_SAFE_INTEGER && totalTicks !== Number.MAX_SAFE_INTEGER) return false;
+  const mandatoryValues = [...new Set([minimumTicks, maximumTicks, latestTicks])];
+  if (mandatoryValues.length > samples) return false;
+  const mandatorySum = total(mandatoryValues);
+  const remainingSamples = samples - mandatoryValues.length;
+  if (totalTicks === Number.MAX_SAFE_INTEGER) {
+    if (mandatorySum === Number.MAX_SAFE_INTEGER) return true;
+    if (remainingSamples === 0) return false;
+    return maximumTicks >= Math.ceil((Number.MAX_SAFE_INTEGER - mandatorySum) / remainingSamples);
+  }
+  if (mandatorySum > totalTicks) return false;
+  if (remainingSamples === 0) return mandatorySum === totalTicks;
+  const remainingTotal = totalTicks - mandatorySum;
+  return (
+    minimumTicks <= Math.floor(remainingTotal / remainingSamples) &&
+    maximumTicks >= Math.ceil(remainingTotal / remainingSamples)
+  );
 }
 
 function advanceRclTransitions(
   previous: Phase2TelemetryState,
   tick: number,
   rawControllerLevels: unknown,
+  droppedControllerLevels: number,
+  sameTickReplay: boolean,
 ): RclState {
-  const current = normalizeControllerLevels(rawControllerLevels);
+  const current =
+    droppedControllerLevels > 0
+      ? { controllers: [], dropped: droppedControllerLevels }
+      : normalizeControllerLevels(rawControllerLevels);
   const tracks: Phase2RclTrack[] = [];
   const durations = previous.rclTransitionDurations.map((row) => [...row]) as [
     number,
@@ -1043,7 +1112,9 @@ function advanceRclTransitions(
   return {
     rclTimingSchemaVersion: PHASE2_RCL_TIMING_SCHEMA_VERSION,
     interruptedRclTracks: interrupted,
-    droppedRclObservations: saturatingAdd(previous.droppedRclObservations, current.dropped),
+    droppedRclObservations: sameTickReplay
+      ? previous.droppedRclObservations
+      : saturatingAdd(previous.droppedRclObservations, current.dropped),
     droppedRclTransitions: previous.droppedRclTransitions,
     rclTracks: tracks,
     rclTransitionDurations: durations,

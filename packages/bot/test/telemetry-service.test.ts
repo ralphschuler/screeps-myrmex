@@ -1,11 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildRuntimeConfig } from "../src/config/runtime-config";
 import { runTick } from "../src/runtime/tick";
+import { establishedRcl2World } from "./support/established-rcl2-fixture";
 import { ConsoleReporter } from "../src/telemetry/console-reporter";
 import { projectReporterStatus } from "../src/telemetry/reporter-status";
 import { TelemetryService } from "../src/telemetry/service";
 
 describe("TelemetryService", () => {
+  beforeAll(() => {
+    vi.stubGlobal("FIND_CREEPS", 101);
+    vi.stubGlobal("FIND_SOURCES", 105);
+    vi.stubGlobal("FIND_DROPPED_RESOURCES", 106);
+    vi.stubGlobal("FIND_STRUCTURES", 107);
+    vi.stubGlobal("FIND_CONSTRUCTION_SITES", 111);
+  });
+
+  afterAll(() => vi.unstubAllGlobals());
+
   it("canonicalizes capped details and retains only a bounded observer history", () => {
     const outcome = runTick({ game: game(100), memory: {} as Memory });
     const telemetry = outcome.telemetry;
@@ -176,7 +187,7 @@ describe("TelemetryService", () => {
 
   it("drops completed RCL aggregates before reporter evidence under byte pressure", () => {
     const fixture = serviceFixture(100);
-    const duration = [1, 9_007_199_254_740_991, 1, 9_007_199_254_740_991, 1, 99] as const;
+    const duration = [1, 100, 100, 100, 100, 100] as const;
     const result = new TelemetryService().record(
       {
         schemaVersion: 5,
@@ -202,7 +213,7 @@ describe("TelemetryService", () => {
           ...fixture.input.base,
           telemetryPolicy: {
             ...fixture.input.base.telemetryPolicy,
-            maximumHistoryBytes: 650,
+            maximumHistoryBytes: 512,
           },
         },
       },
@@ -213,7 +224,61 @@ describe("TelemetryService", () => {
 
     expect(phase2.rcl[3]).toBe(7);
     expect(phase2.rcl[5]).toEqual([]);
-    expect(ownerBytes(result.owner)).toBeLessThanOrEqual(650);
+    expect(result.telemetry.phase2.progression.rcl).toEqual([
+      null,
+      0,
+      0,
+      null,
+      null,
+      null,
+      null,
+      0,
+      0,
+      7,
+    ]);
+    expect(result.owner.last).toMatchObject({ hash: result.telemetry.status.hash });
+    expect(ownerBytes(result.owner)).toBeLessThanOrEqual(512);
+  });
+
+  it("keeps fitted baseline eviction idempotent on same-tick replay", () => {
+    const outcome = runTick({ game: establishedRcl2World().game(100), memory: {} as Memory });
+    const telemetry = outcome.telemetry;
+    if (telemetry === null) throw new Error("expected telemetry");
+    const {
+      activity: _activity,
+      recoveryProgress: _recoveryProgress,
+      reporterTransitions: _reporterTransitions,
+      status: _status,
+      ...base
+    } = telemetry;
+    void _activity;
+    void _recoveryProgress;
+    void _reporterTransitions;
+    void _status;
+    const input = {
+      base: {
+        ...base,
+        telemetryPolicy: { ...base.telemetryPolicy, maximumHistoryBytes: 512 },
+      },
+      colony: outcome.colony,
+      contracts: outcome.contracts,
+      execution: outcome.execution,
+      growth: [],
+      maintenance: [],
+      movement: outcome.movement,
+      snapshot: outcome.snapshot,
+      spawn: outcome.spawn,
+      reporterSignals: [],
+    } as const;
+    const service = new TelemetryService();
+    const first = service.record({}, input);
+    const replay = service.record(first.owner, input);
+
+    expect((first.owner.phase2 as { rcl: unknown[] }).rcl[1]).toBe(1);
+    expect(replay.owner.phase2).toEqual(first.owner.phase2);
+    expect(replay.telemetry.phase2).toEqual(first.telemetry.phase2);
+    expect(replay.telemetry.status.hash).toBe(first.telemetry.status.hash);
+    expect(replay.owner.last).toMatchObject({ hash: replay.telemetry.status.hash });
   });
 
   it("publishes a stable redacted reason for funded contracts without a viable actor", () => {

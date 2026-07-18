@@ -41,6 +41,8 @@ import {
   emptyPhase2TelemetryObservation,
   PHASE2_RCL_DESTINATIONS,
   observePhase2Telemetry,
+  projectPhase2RclTelemetry,
+  projectPhase2TelemetryWindow,
   reducePhase2Telemetry,
   type Phase2RclTransitionDuration,
   type Phase2TelemetryState,
@@ -122,12 +124,17 @@ export class TelemetryService {
     const logistics = safelyReduceLogistics(owner.logistics, input);
     const maintenanceV2 = projectMaintenanceTelemetry(input.maintenanceTelemetry);
     const industry = input.industry ?? emptyIndustryTelemetry();
-    const phase2 = safelyReducePhase2(owner.phase2, input, {
-      staticMining: staticMining.telemetry,
-      logistics: logistics.telemetry,
-      maintenance: maintenanceV2,
-      industry,
-    });
+    const phase2 = safelyReducePhase2(
+      owner.phase2,
+      input,
+      {
+        staticMining: staticMining.telemetry,
+        logistics: logistics.telemetry,
+        maintenance: maintenanceV2,
+        industry,
+      },
+      owner.lastTick === input.base.tick,
+    );
     const detailLimit = input.base.telemetryPolicy.maximumDetailRecords;
     const allDetails = collectDetails(input);
     const details = allDetails
@@ -135,19 +142,22 @@ export class TelemetryService {
       .slice(0, detailLimit)
       .map((detail) => deepFreeze(detail));
     const droppedDetails = Math.max(0, allDetails.length - details.length);
-    const status = deepFreeze({
-      hash: canonicalHash({
-        base: telemetryHashView(input.base),
-        details,
-        logistics: logistics.telemetry,
-        maintenanceV2,
-        industry,
-        phase2: phase2.telemetry,
-        staticMining: staticMining.telemetry,
-      }),
-      details: Object.freeze(details),
-      droppedDetails,
-    });
+    const frozenDetails = Object.freeze(details);
+    const statusFor = (phase2Telemetry: TickTelemetry["phase2"]): TelemetryStatus =>
+      deepFreeze({
+        hash: canonicalHash({
+          base: telemetryHashView(input.base),
+          details: frozenDetails,
+          logistics: logistics.telemetry,
+          maintenanceV2,
+          industry,
+          phase2: phase2Telemetry,
+          staticMining: staticMining.telemetry,
+        }),
+        details: frozenDetails,
+        droppedDetails,
+      });
+    const status = statusFor(phase2.telemetry);
     const telemetryWithoutRecovery = {
       ...input.base,
       activity: activity(input),
@@ -167,8 +177,13 @@ export class TelemetryService {
       logistics.state,
       phase2.state,
     );
+    const fittedPhase2 = projectFittedPhase2Telemetry(phase2.telemetry, persisted.owner);
+    const fittedStatus = statusFor(fittedPhase2);
+    replaceCurrentTelemetryHash(persisted.owner, input.base.tick, fittedStatus.hash);
     const telemetry = deepFreeze({
       ...telemetryWithoutRecovery,
+      phase2: fittedPhase2,
+      status: fittedStatus,
       recoveryProgress: persisted.recoveryProgress,
       reporterTransitions: persisted.reporterTransitions,
     });
@@ -177,6 +192,42 @@ export class TelemetryService {
       telemetry,
     });
   }
+}
+
+function projectFittedPhase2Telemetry(
+  telemetry: TickTelemetry["phase2"],
+  owner: JsonObject,
+): TickTelemetry["phase2"] {
+  const phase2Owner = (owner as Record<string, unknown>).phase2;
+  const fitted = readPhase2State(phase2Owner);
+  const fittedRcl = fitted?.schemaVersion === 2 ? projectPhase2RclTelemetry(fitted) : undefined;
+  const fittedWindow =
+    fitted?.schemaVersion === 2 ? projectPhase2TelemetryWindow(fitted) : telemetry.window;
+  const { rcl: _previousRcl, ...progression } = telemetry.progression;
+  void _previousRcl;
+  return deepFreeze({
+    ...telemetry,
+    progression: {
+      ...progression,
+      ...(fittedRcl === undefined ? {} : { rcl: fittedRcl }),
+    },
+    window: fittedWindow,
+  });
+}
+
+function replaceCurrentTelemetryHash(owner: JsonObject, tick: number, hash: string): void {
+  const root = owner as Record<string, unknown>;
+  const last = root.last;
+  if (typeof last === "object" && last !== null && !Array.isArray(last)) {
+    const row = last as Record<string, unknown>;
+    if (row.tick === tick) row.hash = hash;
+  }
+  const history = root.history;
+  if (!Array.isArray(history) || history.length === 0) return;
+  const entry: unknown = history[history.length - 1];
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return;
+  const row = entry as Record<string, unknown>;
+  if (row.tick === tick) row.hash = hash;
 }
 
 function emptyIndustryTelemetry(): IndustryTelemetry {
@@ -199,6 +250,7 @@ function emptyIndustryTelemetry(): IndustryTelemetry {
 }
 
 interface ParsedOwner {
+  readonly lastTick: number | null;
   readonly history: readonly { readonly tick: number; readonly hash: string }[];
   readonly droppedHistory: number;
   readonly reporter: unknown;
@@ -230,6 +282,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
   ) {
     return emptyParsedOwner();
   }
+  const lastTick = readLastTick(root.last);
   const reporter = root.schemaVersion >= 2 ? root.reporter : undefined;
   const staticMining = root.schemaVersion >= 3 ? readStaticMiningState(root.staticMining) : null;
   const logistics = root.schemaVersion >= 4 ? readLogisticsState(root.logistics) : null;
@@ -238,6 +291,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
   const retainedLimit = safeNonnegativeInteger(maximumHistoryEntries);
   if (root.history.length > retainedLimit) {
     return {
+      lastTick,
       history: [],
       droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
       reporter,
@@ -250,6 +304,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
   for (const entry of root.history) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
       return {
+        lastTick,
         history: [],
         droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
         reporter,
@@ -268,6 +323,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
       tick < 0
     ) {
       return {
+        lastTick,
         history: [],
         droppedHistory: saturatingAdd(priorDroppedHistory, root.history.length),
         reporter,
@@ -279,6 +335,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
     history.push({ tick, hash: row.hash });
   }
   return {
+    lastTick,
     history,
     droppedHistory: priorDroppedHistory,
     reporter,
@@ -290,6 +347,7 @@ function readOwner(value: unknown, maximumHistoryEntries: number): ParsedOwner {
 
 function emptyParsedOwner(): ParsedOwner {
   return {
+    lastTick: null,
     history: [],
     droppedHistory: 0,
     reporter: undefined,
@@ -419,6 +477,7 @@ function safelyReducePhase2(
     readonly maintenance: ReturnType<typeof projectMaintenanceTelemetry>;
     readonly industry: IndustryTelemetry;
   },
+  sameTickReplay: boolean,
 ) {
   try {
     return reducePhase2Telemetry({
@@ -433,6 +492,7 @@ function safelyReducePhase2(
       }),
       previous,
       maximumSamples: input.base.telemetryPolicy.maximumHistoryEntries,
+      sameTickReplay,
     });
   } catch {
     return reducePhase2Telemetry({
@@ -445,6 +505,12 @@ function safelyReducePhase2(
 
 function readCounter(value: unknown): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function readLastTick(value: unknown): number | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const tick = (value as Record<string, unknown>).tick;
+  return typeof tick === "number" && Number.isSafeInteger(tick) && tick >= 0 ? tick : null;
 }
 
 interface MutableTelemetryOwner {
@@ -500,27 +566,32 @@ function retainedReporterFingerprints(value: unknown): Set<string> {
   );
 }
 
-function fitOwnerToByteBudget(owner: MutableTelemetryOwner, maximumBytes: number): void {
+function fitOwnerToByteBudget(
+  owner: MutableTelemetryOwner,
+  maximumBytes: number,
+  sameTickReplay: boolean,
+): void {
   const exceedsBudget = () =>
     utf8ByteLength(canonicalSerialize(owner)) > safeNonnegativeInteger(maximumBytes);
   while (exceedsBudget() && owner.history.length > 0) {
     owner.history.shift();
-    owner.droppedHistory = saturatingIncrement(owner.droppedHistory);
+    if (!sameTickReplay) owner.droppedHistory = saturatingIncrement(owner.droppedHistory);
   }
   while (exceedsBudget() && owner.phase2.samples.length > 0) {
     owner.phase2.samples.shift();
-    owner.phase2.droppedSamples = saturatingIncrement(owner.phase2.droppedSamples);
+    if (!sameTickReplay)
+      owner.phase2.droppedSamples = saturatingIncrement(owner.phase2.droppedSamples);
   }
   while (exceedsBudget() && owner.phase2.rcl[4].length > 0) {
     owner.phase2.rcl[4].pop();
-    owner.phase2.rcl[1] = saturatingIncrement(owner.phase2.rcl[1]);
+    if (!sameTickReplay) owner.phase2.rcl[1] = saturatingIncrement(owner.phase2.rcl[1]);
   }
   if (exceedsBudget() && owner.phase2.rcl[5].length > 0) {
     const dropped = owner.phase2.rcl[5].reduce(
       (sum, [, samples]) => saturatingAdd(sum, samples),
       0,
     );
-    owner.phase2.rcl[3] = saturatingAdd(owner.phase2.rcl[3], dropped);
+    if (!sameTickReplay) owner.phase2.rcl[3] = saturatingAdd(owner.phase2.rcl[3], dropped);
     owner.phase2.rcl[5] = [];
   }
   const entries = generatedReporterEntries(owner.reporter.entries);
@@ -685,10 +756,17 @@ function writeOwner(
   readonly reporterTransitions: TickTelemetry["reporterTransitions"];
 } {
   const policy = telemetry.telemetryPolicy;
-  const appended = [...owner.history, { tick: telemetry.tick, hash: telemetry.status.hash }];
+  const sameTickReplay = owner.lastTick === telemetry.tick;
+  const previousHistory = owner.history[owner.history.length - 1];
+  const appended =
+    previousHistory?.tick === telemetry.tick
+      ? [...owner.history.slice(0, -1), { tick: telemetry.tick, hash: telemetry.status.hash }]
+      : [...owner.history, { tick: telemetry.tick, hash: telemetry.status.hash }];
   const bounded =
     policy.maximumHistoryEntries === 0 ? [] : appended.slice(-policy.maximumHistoryEntries);
-  const droppedHistory = saturatingAdd(owner.droppedHistory, appended.length - bounded.length);
+  const droppedHistory = sameTickReplay
+    ? owner.droppedHistory
+    : saturatingAdd(owner.droppedHistory, appended.length - bounded.length);
   const history = bounded.map(({ tick, hash }) => ({ tick, hash }));
   const reporterOwner = safelyResolveReporterSections(owner.reporter);
   const blocker = details[0] ?? null;
@@ -752,7 +830,7 @@ function writeOwner(
       },
     };
     const generatedEntries = generatedReporterEntries(result.reporter.entries).length;
-    fitOwnerToByteBudget(result, policy.maximumHistoryBytes);
+    fitOwnerToByteBudget(result, policy.maximumHistoryBytes, sameTickReplay);
     const fittedEntries = generatedReporterEntries(result.reporter.entries).length;
     if (fittedEntries >= generatedEntries) break;
     maximumRetainedFingerprints = fittedEntries;

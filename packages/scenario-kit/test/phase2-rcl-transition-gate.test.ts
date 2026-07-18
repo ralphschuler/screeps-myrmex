@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import checked from "../../../docs/phase2-rcl-transition-results.json";
+import { utf8ByteLength } from "../../bot/src/config/canonical";
+import { runTick } from "../../bot/src/runtime/tick";
+import { establishedRcl2World } from "../../bot/test/support/established-rcl2-fixture";
 import {
   MAX_PHASE2_CONTROLLER_TRACKERS,
   PHASE2_RCL_DESTINATIONS,
@@ -8,15 +11,26 @@ import {
   type Phase2TelemetryObservation,
   type Phase2TelemetryState,
 } from "../../bot/src/telemetry/phase2";
-import { canonicalHash } from "../src";
+import { canonicalHash, canonicalSerialize } from "../src";
 
 describe("Phase 2 bounded RCL transition timing evidence (#277)", () => {
-  it("matches checked reset, interruption, and replay evidence", () => {
+  beforeAll(() => {
+    vi.stubGlobal("FIND_CREEPS", 101);
+    vi.stubGlobal("FIND_SOURCES", 105);
+    vi.stubGlobal("FIND_DROPPED_RESOURCES", 106);
+    vi.stubGlobal("FIND_STRUCTURES", 107);
+    vi.stubGlobal("FIND_CONSTRUCTION_SITES", 111);
+  });
+
+  afterAll(() => vi.unstubAllGlobals());
+
+  it("matches checked reset, interruption, persistence, and replay evidence", () => {
     expect(collectRclTransitionEvidence()).toEqual(checked);
   });
 });
 
 export function collectRclTransitionEvidence() {
+  const persistence = collectPersistenceEvidence();
   const forward = runSequence(false, true);
   const warm = runSequence(false, false);
   const reversed = runSequence(true, true);
@@ -56,14 +70,78 @@ export function collectRclTransitionEvidence() {
       toSchemaVersion: v1Upgrade.state.schemaVersion,
       baselineOnly: v1Upgrade.state.rclTracks.length === 1,
     },
+    persistence,
     bounds: {
       destinationRows: PHASE2_RCL_DESTINATIONS.length,
       maximumControllerTracks: MAX_PHASE2_CONTROLLER_TRACKERS,
-      persistedRoomNames: 0,
-      telemetryOwnerBytes: 8_192,
-      telemetryDecisionInputs: 0,
+      telemetryOwnerMaximumBytes: 8_192,
     },
   };
+}
+
+function collectPersistenceEvidence() {
+  const world = establishedRcl2World();
+  let memory = {} as Memory;
+  runTick({ game: world.game(100), memory });
+  memory = JSON.parse(JSON.stringify(memory)) as Memory;
+  runTick({ game: world.game(101), memory });
+  const completionGame = world.game(102);
+  const controller = completionGame.rooms.W1N1?.controller as unknown as
+    { level: number; progress: number; progressTotal: number } | undefined;
+  if (controller === undefined) throw new Error("expected owned controller fixture");
+  controller.level = 3;
+  controller.progress = 0;
+  controller.progressTotal = 135_000;
+  const completed = runTick({ game: completionGame, memory });
+  const completedOwner = phase2Owner(memory);
+  const completedRcl = completedOwner.rcl;
+  const completedDurations = completedRcl[5];
+
+  memory = JSON.parse(JSON.stringify(memory)) as Memory;
+  const replayed = runTick({ game: world.game(103), memory });
+  if (completed.telemetry === null || replayed.telemetry === null)
+    throw new Error("expected runtime telemetry");
+  const replayedTelemetryOwner = telemetryOwner(memory);
+  const replayedOwner = phase2Owner(memory);
+  const replayedDurations = replayedOwner.rcl[5];
+  const encoded = canonicalSerialize(replayedTelemetryOwner);
+  return {
+    ownerSchemaVersion: replayedOwner.schemaVersion,
+    timingSchemaVersion: replayedOwner.rcl[0],
+    completedSamples: completedDurations[0]?.[1] ?? 0,
+    replayedSamples: replayedDurations[0]?.[1] ?? 0,
+    compactOwnerRoundTrip: completedDurations[0]?.[1] === 1 && replayedDurations[0]?.[1] === 1,
+    resetOutputEquivalent:
+      canonicalHash(completed.telemetry.phase2.progression.rcl) ===
+      canonicalHash(replayed.telemetry.phase2.progression.rcl),
+    roomNamesRedacted: !encoded.includes("W1N1"),
+    ownerBytes: utf8ByteLength(encoded),
+  };
+}
+
+type PersistedPhase2Owner = {
+  readonly schemaVersion: number;
+  readonly rcl: readonly [
+    timingSchemaVersion: number,
+    interrupted: number,
+    droppedObservations: number,
+    droppedTransitions: number,
+    tracks: readonly unknown[],
+    durations: readonly (readonly number[])[],
+  ];
+};
+
+function telemetryOwner(memory: Memory): Record<string, unknown> {
+  const owner = memory.myrmex?.telemetry;
+  if (owner === undefined) throw new Error("expected telemetry owner");
+  return owner;
+}
+
+function phase2Owner(memory: Memory): PersistedPhase2Owner {
+  const phase2 = telemetryOwner(memory).phase2;
+  if (typeof phase2 !== "object" || phase2 === null || Array.isArray(phase2))
+    throw new Error("expected Phase 2 telemetry owner");
+  return phase2 as unknown as PersistedPhase2Owner;
 }
 
 function runSequence(
@@ -115,6 +193,7 @@ function observation(
   return {
     tick,
     controllerLevels,
+    droppedControllerLevels: 0,
     controllers: controllerLevels.length,
     rcl8Controllers: controllerLevels.filter(({ level }) => level === 8).length,
     sustainingColonies: 0,

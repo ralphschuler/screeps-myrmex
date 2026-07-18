@@ -5,6 +5,7 @@ import {
   MAX_PHASE2_CONTROLLER_TRACKERS,
   PHASE2_AUTHORITY_IDS,
   PHASE2_RCL_DESTINATIONS,
+  observePhase2Telemetry,
   reducePhase2Telemetry,
   type Phase2TelemetryObservation,
   type Phase2TelemetryState,
@@ -104,6 +105,59 @@ describe("Phase 2 telemetry reducer", () => {
       spawn: { active: 1 },
       construction: { backlog: 1, progressRemaining: 95 },
     });
+  });
+
+  it("fails the whole RCL timing batch closed when runtime observation exceeds 64 rooms", () => {
+    const outcome = runTick({
+      game: establishedRcl2World().game(100),
+      memory: {} as Memory,
+    });
+    const telemetry = outcome.telemetry;
+    const room = outcome.snapshot.ownedRooms[0];
+    if (telemetry === null || telemetry.logistics === undefined || room === undefined)
+      throw new Error("expected complete runtime telemetry fixture");
+    const overflowRooms = Array.from(
+      { length: MAX_PHASE2_CONTROLLER_TRACKERS + 1 },
+      (_, index) => ({
+        ...room,
+        name: `W${String(index)}N1`,
+        controller: { ...room.controller, level: 3 },
+      }),
+    );
+    const current = observePhase2Telemetry({
+      tick: 101,
+      snapshot: {
+        ...outcome.snapshot,
+        ownedRooms: overflowRooms,
+        rooms: overflowRooms,
+      },
+      colony: outcome.colony,
+      spawn: outcome.spawn,
+      staticMining: telemetry.staticMining,
+      logistics: telemetry.logistics,
+      maintenance: telemetry.maintenanceV2,
+      industry: telemetry.industry,
+    });
+    const tracked = current.controllerLevels[0];
+    if (tracked === undefined) throw new Error("expected one retained normalized controller");
+    const baseline = reducePhase2Telemetry({
+      observation: {
+        ...observation(100),
+        controllers: 1,
+        controllerLevels: [{ ...tracked, level: 2 }],
+      },
+      previous: null,
+    });
+    const result = reducePhase2Telemetry({ observation: current, previous: baseline.state });
+
+    expect(current.controllerLevels).toHaveLength(MAX_PHASE2_CONTROLLER_TRACKERS);
+    expect(current.droppedControllerLevels).toBe(MAX_PHASE2_CONTROLLER_TRACKERS + 1);
+    expect(result.state.rclTransitionDurations.every(([samples]) => samples === 0)).toBe(true);
+    expect(result.state.rclTracks).toEqual([]);
+    expect(result.state.interruptedRclTracks).toBe(1);
+    expect(result.state.droppedRclObservations).toBe(MAX_PHASE2_CONTROLLER_TRACKERS + 1);
+    const replay = reducePhase2Telemetry({ observation: current, previous: result.state });
+    expect(replay.state).toEqual(result.state);
   });
 
   it("persists and restores the bounded window through the runtime telemetry owner", () => {
@@ -283,6 +337,123 @@ describe("Phase 2 telemetry reducer", () => {
     expect(result.state.rclTracks).toEqual([]);
     expect(result.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(true);
 
+    const impossibleAggregate = reducePhase2Telemetry({
+      observation: observation(102),
+      previous: {
+        ...result.state,
+        rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map((_, index) =>
+          index === 0 ? [2, 2, 1, 2, 1, 100] : [0, 0, null, null, null, null],
+        ),
+      },
+    });
+    expect(impossibleAggregate.state.samples.map(({ tick }) => tick)).toEqual([100, 101, 102]);
+    expect(impossibleAggregate.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(
+      true,
+    );
+
+    const impossibleLatestAggregate = reducePhase2Telemetry({
+      observation: observation(102),
+      previous: {
+        ...result.state,
+        rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map((_, index) =>
+          index === 0 ? [2, 4, 1, 3, 2, 100] : [0, 0, null, null, null, null],
+        ),
+      },
+    });
+    expect(
+      impossibleLatestAggregate.state.rclTransitionDurations.every(([count]) => count === 0),
+    ).toBe(true);
+
+    const impossibleCompletionTick = reducePhase2Telemetry({
+      observation: observation(102),
+      previous: {
+        ...result.state,
+        rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map((_, index) =>
+          index === 0 ? [1, 100, 100, 100, 100, 50] : [0, 0, null, null, null, null],
+        ),
+      },
+    });
+    expect(
+      impossibleCompletionTick.state.rclTransitionDurations.every(([count]) => count === 0),
+    ).toBe(true);
+
+    const impossibleSaturatedAggregate = reducePhase2Telemetry({
+      observation: observation(Number.MAX_SAFE_INTEGER),
+      previous: {
+        ...result.state,
+        rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map((_, index) =>
+          index === 0
+            ? [2, Number.MAX_SAFE_INTEGER, 1, 1, 1, Number.MAX_SAFE_INTEGER]
+            : [0, 0, null, null, null, null],
+        ),
+      },
+    });
+    expect(
+      impossibleSaturatedAggregate.state.rclTransitionDurations.every(([count]) => count === 0),
+    ).toBe(true);
+
+    const impossibleSaturatedLatest = reducePhase2Telemetry({
+      observation: observation(Number.MAX_SAFE_INTEGER),
+      previous: {
+        ...result.state,
+        rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map((_, index) =>
+          index === 0
+            ? [2, Number.MAX_SAFE_INTEGER, 1, Number.MAX_SAFE_INTEGER, 2, Number.MAX_SAFE_INTEGER]
+            : [0, 0, null, null, null, null],
+        ),
+      },
+    });
+    expect(
+      impossibleSaturatedLatest.state.rclTransitionDurations.every(([count]) => count === 0),
+    ).toBe(true);
+
+    const saturatedAggregate = reducePhase2Telemetry({
+      observation: observation(Number.MAX_SAFE_INTEGER),
+      previous: {
+        ...result.state,
+        rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map((_, index) =>
+          index === 0
+            ? [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, 2, 2, 2, Number.MAX_SAFE_INTEGER]
+            : [0, 0, null, null, null, null],
+        ),
+      },
+    });
+    expect(saturatedAggregate.state.rclTransitionDurations[0]).toEqual([
+      Number.MAX_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+      2,
+      2,
+      2,
+      Number.MAX_SAFE_INTEGER,
+    ]);
+
+    const futureDatedTrack = reducePhase2Telemetry({
+      observation: {
+        ...observation(102),
+        controllerLevels: [{ colonyRef: "colony:0000000a", level: 2 }],
+      },
+      previous: {
+        ...result.state,
+        rclTracks: [["colony:0000000a", 2, 100, 200]],
+      },
+    });
+    expect(futureDatedTrack.state.samples.map(({ tick }) => tick)).toEqual([100, 101, 102]);
+    expect(futureDatedTrack.state.rclTracks).toEqual([["colony:0000000a", 2, 102, 102]]);
+
+    const futureDatedAggregate = reducePhase2Telemetry({
+      observation: observation(102),
+      previous: {
+        ...result.state,
+        rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map((_, index) =>
+          index === 0 ? [1, 2, 2, 2, 2, 200] : [0, 0, null, null, null, null],
+        ),
+      },
+    });
+    expect(futureDatedAggregate.state.samples.map(({ tick }) => tick)).toEqual([100, 101, 102]);
+    expect(futureDatedAggregate.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(
+      true,
+    );
+
     const futureTiming = reducePhase2Telemetry({
       observation: {
         ...observation(102),
@@ -329,6 +500,7 @@ function observation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
     controllerLevels: [],
+    droppedControllerLevels: 0,
     controllers: 2,
     rcl8Controllers: 1,
     sustainingColonies: 1,

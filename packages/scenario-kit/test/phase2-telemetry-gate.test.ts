@@ -127,6 +127,7 @@ function observation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
     controllerLevels: [],
+    droppedControllerLevels: 0,
     controllers: 2,
     rcl8Controllers: 1,
     sustainingColonies: 1,
