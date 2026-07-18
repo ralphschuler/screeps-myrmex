@@ -42,8 +42,11 @@ import {
   emptyPhase2TelemetryObservation,
   expandPhase2TelemetrySampleRow,
   MAX_PHASE2_TELEMETRY_SAMPLES,
+  PHASE2_COOLDOWN_IDS,
   PHASE2_RCL_DESTINATIONS,
+  hasPhase2CooldownEvidence,
   observePhase2Telemetry,
+  projectPhase2CooldownTelemetry,
   projectPhase2RclTelemetry,
   projectPhase2TelemetryWindow,
   reducePhase2Telemetry,
@@ -53,6 +56,7 @@ import {
   type Phase2TelemetryStateV2,
   type Phase2TelemetrySampleRow,
   type Phase2TelemetryStateV3,
+  type Phase2TelemetryStateV4,
 } from "./phase2";
 import {
   emptyPhase2AttritionState,
@@ -214,13 +218,28 @@ function projectFittedPhase2Telemetry(
   const phase2Owner = (owner as Record<string, unknown>).phase2;
   const fitted = readPhase2State(phase2Owner);
   const fittedRcl =
-    fitted?.schemaVersion === 2 || fitted?.schemaVersion === 3 || fitted?.schemaVersion === 4
+    fitted?.schemaVersion === 2 ||
+    fitted?.schemaVersion === 3 ||
+    fitted?.schemaVersion === 4 ||
+    fitted?.schemaVersion === 5
       ? projectPhase2RclTelemetry(fitted)
       : undefined;
   const fittedWindow =
-    fitted?.schemaVersion === 4 ? projectPhase2TelemetryWindow(fitted) : telemetry.window;
+    fitted?.schemaVersion === 5 ? projectPhase2TelemetryWindow(fitted) : telemetry.window;
+  const projectedCooldowns =
+    fitted?.schemaVersion === 5
+      ? projectPhase2CooldownTelemetry(
+          telemetry.cooldowns?.current.map(([active, cooling]) => [active, cooling]) ??
+            PHASE2_COOLDOWN_IDS.map(() => [0, 0] as const),
+          fitted.samples,
+        )
+      : telemetry.cooldowns;
+  const fittedCooldowns =
+    projectedCooldowns !== undefined && hasPhase2CooldownEvidence(projectedCooldowns)
+      ? projectedCooldowns
+      : undefined;
   const projectedAttrition =
-    fitted?.schemaVersion === 3 || fitted?.schemaVersion === 4
+    fitted?.schemaVersion === 3 || fitted?.schemaVersion === 4 || fitted?.schemaVersion === 5
       ? projectPhase2AttritionTelemetry(fitted.attrition)
       : telemetry.attrition;
   const fittedAttrition =
@@ -228,9 +247,14 @@ function projectFittedPhase2Telemetry(
       ? projectedAttrition
       : undefined;
   const { rcl: _previousRcl, ...progression } = telemetry.progression;
-  const { attrition: _previousAttrition, ...telemetryWithoutAttrition } = telemetry;
+  const {
+    attrition: _previousAttrition,
+    cooldowns: _previousCooldowns,
+    ...telemetryWithoutAttrition
+  } = telemetry;
   void _previousRcl;
   void _previousAttrition;
+  void _previousCooldowns;
   return deepFreeze({
     ...telemetryWithoutAttrition,
     progression: {
@@ -238,6 +262,7 @@ function projectFittedPhase2Telemetry(
       ...(fittedRcl === undefined ? {} : { rcl: fittedRcl }),
     },
     ...(fittedAttrition === undefined ? {} : { attrition: fittedAttrition }),
+    ...(fittedCooldowns === undefined ? {} : { cooldowns: fittedCooldowns }),
     window: fittedWindow,
   });
 }
@@ -405,7 +430,13 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
   const row = value as Record<string, unknown>;
   if (!Array.isArray(row.samples)) return null;
   if (row.schemaVersion === 1) return value as Phase2TelemetryStateInput;
-  if (row.schemaVersion !== 2 && row.schemaVersion !== 3 && row.schemaVersion !== 4) return null;
+  if (
+    row.schemaVersion !== 2 &&
+    row.schemaVersion !== 3 &&
+    row.schemaVersion !== 4 &&
+    row.schemaVersion !== 5
+  )
+    return null;
   const attrition = row.schemaVersion >= 3 ? readAttritionField(row) : undefined;
   const build = (timing: {
     readonly rclTimingSchemaVersion: 1;
@@ -414,20 +445,34 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
     readonly droppedRclTransitions: number;
     readonly rclTracks: Phase2TelemetryState["rclTracks"];
     readonly rclTransitionDurations: readonly Phase2RclTransitionDuration[];
-  }): Phase2TelemetryState | Phase2TelemetryStateV3 | Phase2TelemetryStateV2 => {
+  }):
+    | Phase2TelemetryState
+    | Phase2TelemetryStateV4
+    | Phase2TelemetryStateV3
+    | Phase2TelemetryStateV2 => {
     const common = {
       droppedSamples: row.droppedSamples as number,
       samples:
-        row.schemaVersion === 4
-          ? expandCompactPhase2Samples(row.samples as unknown[])
+        row.schemaVersion === 4 || row.schemaVersion === 5
+          ? expandCompactPhase2Samples(row.samples as unknown[], row.schemaVersion)
           : (row.samples as Phase2TelemetryState["samples"]),
       ...timing,
     };
-    return row.schemaVersion === 4
-      ? { schemaVersion: 4, ...common, attrition: attrition ?? emptyPhase2AttritionState() }
-      : row.schemaVersion === 3
-        ? { schemaVersion: 3, ...common, attrition: attrition ?? emptyPhase2AttritionState() }
-        : { schemaVersion: 2, ...common };
+    if (row.schemaVersion === 5)
+      return {
+        schemaVersion: 5,
+        ...common,
+        attrition: attrition ?? emptyPhase2AttritionState(),
+      };
+    if (row.schemaVersion === 4)
+      return {
+        schemaVersion: 4,
+        ...common,
+        attrition: attrition ?? emptyPhase2AttritionState(),
+      };
+    return row.schemaVersion === 3
+      ? { schemaVersion: 3, ...common, attrition: attrition ?? emptyPhase2AttritionState() }
+      : { schemaVersion: 2, ...common };
   };
   const invalidTiming = () =>
     build({
@@ -480,12 +525,33 @@ function readPhase2State(value: unknown): Phase2TelemetryStateInput | null {
   }
 }
 
-function expandCompactPhase2Samples(samples: readonly unknown[]): Phase2TelemetryState["samples"] {
+function expandCompactPhase2Samples(
+  samples: readonly unknown[],
+  schemaVersion: 4 | 5,
+): Phase2TelemetryState["samples"] {
   if (samples.length > MAX_PHASE2_TELEMETRY_SAMPLES)
     return samples as Phase2TelemetryState["samples"];
-  const expanded = samples.map((sample) =>
-    Array.isArray(sample) && sample.length === 10 ? expandPhase2TelemetrySampleRow(sample) : sample,
-  );
+  const expanded = samples.map((sample) => {
+    if (
+      !Array.isArray(sample) ||
+      (schemaVersion === 5 ? sample.length !== 10 && sample.length !== 11 : sample.length !== 10)
+    )
+      return sample;
+    const compact = sample as unknown[];
+    if (schemaVersion === 5) return expandPhase2TelemetrySampleRow(compact);
+    return {
+      tick: compact[0],
+      harvestedEnergy: compact[1],
+      logisticsDelivered: compact[2],
+      linkDelivered: compact[3],
+      industryEnergyInput: compact[4],
+      industryResourceInput: compact[5],
+      industryOutput: compact[6],
+      authorityFailures: compact[7],
+      reserveViolations: compact[8],
+      measuredCpuMilli: compact[9],
+    };
+  });
   return expanded as Phase2TelemetryState["samples"];
 }
 
@@ -632,7 +698,7 @@ interface MutableTelemetryOwner {
     flows: LogisticsTelemetryState["flows"][number][];
   };
   phase2: {
-    schemaVersion: 4;
+    schemaVersion: 5;
     droppedSamples: number;
     samples: Phase2TelemetrySampleRow[];
     rcl: [

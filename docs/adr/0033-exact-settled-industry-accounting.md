@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. ADR 0034 later advances the nested Phase 2 observer state to V5 while preserving this
+settled-accounting contract.
 
 ## Context
 

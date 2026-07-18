@@ -16,11 +16,11 @@
   },
   "migration": {
     "fromSchemaVersion": 1,
-    "toSchemaVersion": 4,
+    "toSchemaVersion": 5,
     "baselineOnly": true
   },
   "persistence": {
-    "ownerSchemaVersion": 4,
+    "ownerSchemaVersion": 5,
     "timingSchemaVersion": 1,
     "completedSamples": 1,
     "replayedSamples": 1,

@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted. ADR 0033 later advances the nested Phase 2 observer state from V3 to V4 while preserving
-this attrition contract.
+Accepted. ADRs 0033 and 0034 later advance the nested Phase 2 observer state from V3 through V5
+while preserving this attrition contract.
 
 ## Context
 

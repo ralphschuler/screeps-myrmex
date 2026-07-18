@@ -3,8 +3,9 @@
 ## Status
 
 Accepted. ADR 0031 advances the nested Phase 2 observer state from V1 to V2, ADR 0032 advances it to
-V3, and ADR 0033 advances it to V4; all preserve this bounded direct-outcome contract. ADR 0033
-conservatively drops legacy sample rows because they lack exact recipe inputs.
+V3, ADR 0033 advances it to V4, and ADR 0034 advances it to V5; all preserve this bounded direct-
+outcome contract. ADRs 0033 and 0034 conservatively drop legacy sample rows whose new inputs cannot
+be reconstructed.
 
 ## Context
 
