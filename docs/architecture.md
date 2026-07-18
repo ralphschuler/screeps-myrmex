@@ -1989,6 +1989,16 @@ net hit loss/restoration, disappearance/addition, reset/reorder equivalence, int
 complete over-cap rejection, V2-to-V3 observer-state migration, and atomic baseline byte eviction
 without causal labels or a telemetry gameplay reader.
 
+The Phase 2 progression and steady-state pass boundaries are predeclared in
+[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md) and its versioned JSON manifest.
+`@myrmex/scenario-kit` alone validates and evaluates that manifest; missing issue #54 measurements
+block rather than defaulting to zero. A structurally valid measurement set is bound to canonical
+manifest/measurement SHA-256 receipts, pinned seeds, an exact production-bundle SHA-256, and equal
+warm/reset/reordered outcome hashes. Zero blockers means `within-thresholds`, not a gate pass; the
+[issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54) collector must derive and
+reproduce the artifacts. The manifest is not bundled, persisted, or exposed to `ColonyDirector`,
+telemetry, or another gameplay authority.
+
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,
 shared-energy arbitration, atomic colony-ledger settlement, and reset-safe recovery-order boundary.

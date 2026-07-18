@@ -138,8 +138,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   factory, and power input/output accounting is fixed and label-free. Nested telemetry schema V5
   adds fixed extractor, link, terminal, lab, and factory current/rolling cooldown-utilization rows
   with explicit continuity and bounded cap behavior; checked evidence is in
-  [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md). Final soak thresholds remain in
-  issue #53.
+  [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md). Issue #53 predeclares the numeric
+  progression, steady-state, bounded-state, economy, and recovery thresholds in
+  [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md); issue #54 owns their measured soaks and
+  final Phase 2 pass/fail evidence.
 - Repair/rampart policy, labs, reactions, factory, and stock reserves.
 - RCL progression and spawn/energy utilization telemetry.
 

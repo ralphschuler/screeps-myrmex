@@ -1,0 +1,491 @@
+{
+  "schemaVersion": 1,
+  "issue": 53,
+  "evidenceIssue": 54,
+  "status": "declared",
+  "evidence": {
+    "progressionSeed": "phase2-progression-v1",
+    "steadyStateSeed": "phase2-steady-state-v1",
+    "variants": ["warm", "reset", "reordered"],
+    "exactProductionBundle": true
+  },
+  "fixture": {
+    "ownedColonies": 1,
+    "normalSources": 2,
+    "sourceEnergyCapacity": 3000,
+    "sourceRegenerationTicks": 300,
+    "sourceEnergyPerTick": 20,
+    "boostedControllerUpgrade": false,
+    "powerControllerUpgrade": false
+  },
+  "progression": {
+    "minimumUpgradeEnergyPerTick": 9,
+    "maximumTotalTicks": 1820000,
+    "transitions": [
+      {
+        "destinationRcl": 3,
+        "progressRequired": 45000,
+        "maximumTicks": 5000,
+        "limitId": "progression-rcl3-ticks"
+      },
+      {
+        "destinationRcl": 4,
+        "progressRequired": 135000,
+        "maximumTicks": 15000,
+        "limitId": "progression-rcl4-ticks"
+      },
+      {
+        "destinationRcl": 5,
+        "progressRequired": 405000,
+        "maximumTicks": 45000,
+        "limitId": "progression-rcl5-ticks"
+      },
+      {
+        "destinationRcl": 6,
+        "progressRequired": 1215000,
+        "maximumTicks": 135000,
+        "limitId": "progression-rcl6-ticks"
+      },
+      {
+        "destinationRcl": 7,
+        "progressRequired": 3645000,
+        "maximumTicks": 405000,
+        "limitId": "progression-rcl7-ticks"
+      },
+      {
+        "destinationRcl": 8,
+        "progressRequired": 10935000,
+        "maximumTicks": 1215000,
+        "limitId": "progression-rcl8-ticks"
+      }
+    ]
+  },
+  "steadyState": {
+    "durationTicks": 15000,
+    "minimumSustainingTicks": 13500,
+    "minimumFinalSustainingTicks": 1500,
+    "persistentGrowthWindowTicks": 1024,
+    "preloadedIndustryInputs": true
+  },
+  "limits": [
+    {
+      "id": "progression-rcl3-ticks",
+      "scope": "progression",
+      "comparison": "at-most",
+      "value": 5000,
+      "unit": "ticks"
+    },
+    {
+      "id": "progression-rcl4-ticks",
+      "scope": "progression",
+      "comparison": "at-most",
+      "value": 15000,
+      "unit": "ticks"
+    },
+    {
+      "id": "progression-rcl5-ticks",
+      "scope": "progression",
+      "comparison": "at-most",
+      "value": 45000,
+      "unit": "ticks"
+    },
+    {
+      "id": "progression-rcl6-ticks",
+      "scope": "progression",
+      "comparison": "at-most",
+      "value": 135000,
+      "unit": "ticks"
+    },
+    {
+      "id": "progression-rcl7-ticks",
+      "scope": "progression",
+      "comparison": "at-most",
+      "value": 405000,
+      "unit": "ticks"
+    },
+    {
+      "id": "progression-rcl8-ticks",
+      "scope": "progression",
+      "comparison": "at-most",
+      "value": 1215000,
+      "unit": "ticks"
+    },
+    {
+      "id": "progression-total-ticks",
+      "scope": "progression",
+      "comparison": "at-most",
+      "value": 1820000,
+      "unit": "ticks"
+    },
+    {
+      "id": "steady-state-observed-ticks",
+      "scope": "steady-state",
+      "comparison": "exactly",
+      "value": 15000,
+      "unit": "ticks"
+    },
+    {
+      "id": "steady-state-sustaining-ticks",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 13500,
+      "unit": "ticks"
+    },
+    {
+      "id": "steady-state-final-sustaining-ticks",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 1500,
+      "unit": "ticks"
+    },
+    {
+      "id": "average-cpu-to-limit",
+      "scope": "complete-gate",
+      "comparison": "at-most",
+      "value": 6500,
+      "unit": "basis-points"
+    },
+    {
+      "id": "minimum-cpu-tail-headroom",
+      "scope": "complete-gate",
+      "comparison": "at-least",
+      "value": 5,
+      "unit": "cpu"
+    },
+    {
+      "id": "minimum-nominal-bucket",
+      "scope": "nominal",
+      "comparison": "at-least",
+      "value": 5000,
+      "unit": "cpu"
+    },
+    {
+      "id": "minimum-final-bucket",
+      "scope": "complete-gate",
+      "comparison": "at-least",
+      "value": 9500,
+      "unit": "cpu"
+    },
+    {
+      "id": "minimum-injected-bucket",
+      "scope": "recovery",
+      "comparison": "at-least",
+      "value": 1000,
+      "unit": "cpu"
+    },
+    {
+      "id": "persistent-memory-bytes",
+      "scope": "complete-gate",
+      "comparison": "at-most",
+      "value": 65536,
+      "unit": "bytes"
+    },
+    {
+      "id": "final-window-persistent-growth",
+      "scope": "steady-state",
+      "comparison": "at-most",
+      "value": 0,
+      "unit": "bytes"
+    },
+    {
+      "id": "telemetry-owner-bytes",
+      "scope": "complete-gate",
+      "comparison": "at-most",
+      "value": 8192,
+      "unit": "bytes"
+    },
+    {
+      "id": "tick-telemetry-bytes",
+      "scope": "complete-gate",
+      "comparison": "at-most",
+      "value": 8192,
+      "unit": "bytes"
+    },
+    {
+      "id": "cache-entries",
+      "scope": "complete-gate",
+      "comparison": "at-most",
+      "value": 384,
+      "unit": "count"
+    },
+    {
+      "id": "cache-namespaces",
+      "scope": "complete-gate",
+      "comparison": "at-most",
+      "value": 3,
+      "unit": "count"
+    },
+    {
+      "id": "minimum-controller-downgrade-margin",
+      "scope": "nominal",
+      "comparison": "at-least",
+      "value": 3001,
+      "unit": "ticks"
+    },
+    {
+      "id": "minimum-spawn-energy",
+      "scope": "nominal",
+      "comparison": "at-least",
+      "value": 300,
+      "unit": "energy"
+    },
+    {
+      "id": "minimum-terminal-energy",
+      "scope": "nominal",
+      "comparison": "at-least",
+      "value": 10000,
+      "unit": "energy"
+    },
+    {
+      "id": "source-uptime",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 9500,
+      "unit": "basis-points"
+    },
+    {
+      "id": "source-waste",
+      "scope": "steady-state",
+      "comparison": "at-most",
+      "value": 500,
+      "unit": "basis-points"
+    },
+    {
+      "id": "spawn-utilization",
+      "scope": "steady-state",
+      "comparison": "at-most",
+      "value": 9000,
+      "unit": "basis-points"
+    },
+    {
+      "id": "logistics-fulfillment",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 9000,
+      "unit": "basis-points"
+    },
+    {
+      "id": "flow-identity-absolute-residual",
+      "scope": "complete-gate",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "units"
+    },
+    {
+      "id": "nominal-reserve-violations",
+      "scope": "nominal",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "nominal-authority-failures",
+      "scope": "nominal",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "dropped-observer-inputs",
+      "scope": "complete-gate",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "rcl-evidence-interruptions",
+      "scope": "progression",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "unrestored-attrition-hits",
+      "scope": "steady-state",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "hits"
+    },
+    {
+      "id": "nominal-structures-lost",
+      "scope": "nominal",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "final-construction-backlog",
+      "scope": "complete-gate",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "settled-lab-effects",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 1,
+      "unit": "count"
+    },
+    {
+      "id": "settled-factory-effects",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 1,
+      "unit": "count"
+    },
+    {
+      "id": "settled-power-effects",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 1,
+      "unit": "count"
+    },
+    {
+      "id": "resource-policy-observations",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 1,
+      "unit": "count"
+    },
+    {
+      "id": "settled-link-transfers",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 1,
+      "unit": "count"
+    },
+    {
+      "id": "observer-ready-observations",
+      "scope": "steady-state",
+      "comparison": "at-least",
+      "value": 1,
+      "unit": "count"
+    },
+    {
+      "id": "continuous-cooldown-observation-ticks",
+      "scope": "steady-state",
+      "comparison": "exactly",
+      "value": 15000,
+      "unit": "ticks"
+    },
+    {
+      "id": "observed-cooldown-kinds",
+      "scope": "steady-state",
+      "comparison": "exactly",
+      "value": 5,
+      "unit": "count"
+    },
+    {
+      "id": "duplicate-commitments",
+      "scope": "complete-gate",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "manual-recovery-commands",
+      "scope": "complete-gate",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "forbidden-later-phase-actions",
+      "scope": "complete-gate",
+      "comparison": "exactly",
+      "value": 0,
+      "unit": "count"
+    },
+    {
+      "id": "heap-reset-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 1,
+      "unit": "ticks"
+    },
+    {
+      "id": "memory-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 16,
+      "unit": "ticks"
+    },
+    {
+      "id": "worker-loss-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 122,
+      "unit": "ticks"
+    },
+    {
+      "id": "spawn-loss-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 1500,
+      "unit": "ticks"
+    },
+    {
+      "id": "structure-loss-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 1500,
+      "unit": "ticks"
+    },
+    {
+      "id": "blocked-logistics-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 150,
+      "unit": "ticks"
+    },
+    {
+      "id": "controller-risk-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 50,
+      "unit": "ticks"
+    },
+    {
+      "id": "low-bucket-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 50,
+      "unit": "ticks"
+    },
+    {
+      "id": "resource-shortage-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 300,
+      "unit": "ticks"
+    },
+    {
+      "id": "command-error-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 150,
+      "unit": "ticks"
+    },
+    {
+      "id": "hostile-pressure-recovery-ticks",
+      "scope": "recovery",
+      "comparison": "at-most",
+      "value": 100,
+      "unit": "ticks"
+    }
+  ],
+  "injections": [
+    { "id": "heap-reset", "recoveryLimitId": "heap-reset-recovery-ticks" },
+    { "id": "memory-recovery", "recoveryLimitId": "memory-recovery-ticks" },
+    { "id": "worker-loss", "recoveryLimitId": "worker-loss-recovery-ticks" },
+    { "id": "spawn-loss", "recoveryLimitId": "spawn-loss-recovery-ticks" },
+    { "id": "structure-loss", "recoveryLimitId": "structure-loss-recovery-ticks" },
+    { "id": "blocked-logistics", "recoveryLimitId": "blocked-logistics-recovery-ticks" },
+    { "id": "controller-risk", "recoveryLimitId": "controller-risk-recovery-ticks" },
+    { "id": "low-bucket", "recoveryLimitId": "low-bucket-recovery-ticks" },
+    { "id": "resource-shortage", "recoveryLimitId": "resource-shortage-recovery-ticks" },
+    { "id": "command-error", "recoveryLimitId": "command-error-recovery-ticks" },
+    { "id": "hostile-pressure", "recoveryLimitId": "hostile-pressure-recovery-ticks" }
+  ]
+}
