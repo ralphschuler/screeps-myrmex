@@ -125,8 +125,10 @@ npm run check
 
 The scenarios prove direct outcomes, exact settled industry accounting, and bounded cooldown
 utilization. Issue #277 separately proves bounded reset-safe RCL transition duration, and issue #279
-proves bounded reset-safe road/container net attrition. Issue #54 still owns full RCL2–RCL8
-progression and steady-state soaks; numeric pass/fail thresholds must be fixed before running them.
+proves bounded reset-safe road/container net attrition. Issue #53 fixes the numeric pass/fail
+contract in [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md) and its machine-readable
+manifest. Issue #54 still owns the full RCL2–RCL8 progression and steady-state measurements; no soak
+result or Phase 2 pass is claimed here.
 
 ## Research receipt
 
@@ -168,4 +170,6 @@ progression and steady-state soaks; numeric pass/fail thresholds must be fixed b
 ADRs [0030](adr/0030-phase2-outcome-telemetry.md),
 [0033](adr/0033-exact-settled-industry-accounting.md), and
 [0034](adr/0034-bounded-cooldown-utilization-telemetry.md) record the persistent observer, exact
-accounting, and cooldown-window boundaries.
+accounting, and cooldown-window boundaries. The threshold declaration adds no runtime authority,
+owner, schema, or telemetry reader; its validator and evaluator remain development-only in
+`@myrmex/scenario-kit`.
