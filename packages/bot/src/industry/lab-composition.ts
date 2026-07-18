@@ -21,6 +21,12 @@ import {
 } from "./lab-policy";
 import type { LabCommand } from "./lab-executor";
 import {
+  hasIndustrySettlementAccounting,
+  industrySettlementAccountingRow,
+  sumIndustrySettlementAccounting,
+  type IndustrySettlementAccountingRow,
+} from "./settlement-accounting";
+import {
   arbitrateLabCommands,
   createPendingLabAttempt,
   markLabAttemptRetryReady,
@@ -45,6 +51,7 @@ export interface LabCompositionProjection {
 }
 
 export interface LabTelemetry {
+  readonly accounting?: IndustrySettlementAccountingRow;
   readonly cancelled: number;
   readonly commands: {
     readonly executed: number;
@@ -283,7 +290,15 @@ export function projectLabTelemetry(
   projection: LabCompositionProjection,
   execution: readonly CommandExecutionResult<LabCommand>[],
 ): LabTelemetry {
+  const accounting = sumIndustrySettlementAccounting(
+    projection.settlements
+      .filter(({ status }) => status === "settled")
+      .map(({ accounting: value }) => value),
+  );
   return freeze({
+    ...(hasIndustrySettlementAccounting(accounting)
+      ? { accounting: industrySettlementAccountingRow(accounting) }
+      : {}),
     cancelled: projection.settlements.filter(({ status }) => status === "cancelled").length,
     commands: {
       executed: execution.filter(({ status }) => status === "executed").length,

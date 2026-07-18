@@ -158,9 +158,13 @@ industry the colony lifecycle owner. One factory call produces one complete reci
 power processing is admitted only for the complete effect-adjusted amount and its
 50-energy-per-power cost. `OK` remains pending until the next exact store and factory cooldown
 observation. Missing funding, mechanics drift, conflicting deltas, or exhausted retries cannot claim
-production. Source stock minima, terminal energy, and current lab fills remain protected before
-mature logistics can stage work. The shared observer authority is runtime-composed, but Phase 2
-emits no target strategy; nuke launch remains forbidden.
+production. Exact settled effects report fixed energy-input, non-energy resource-input, and output
+units: forward/reverse reaction ratios remain distinct, boosts consume mineral and energy without
+becoming reaction output, and factory/power costs come from their accepted source mechanics.
+Pending, retry, cancelled, failed, or conflicting attempts contribute zero. Source stock minima,
+terminal energy, and current lab fills remain protected before mature logistics can stage work. The
+shared observer authority is runtime-composed, but Phase 2 emits no target strategy; nuke launch
+remains forbidden.
 
 ## Military Operations
 

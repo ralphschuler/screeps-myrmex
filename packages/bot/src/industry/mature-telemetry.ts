@@ -1,12 +1,22 @@
 import type { CommandExecutionResult } from "../execution";
 import type { MatureCommand } from "./mature-executor";
 import {
+  hasIndustrySettlementAccounting,
+  industrySettlementAccountingRow,
+  sumIndustrySettlementAccounting,
+  type IndustrySettlementAccountingRow,
+} from "./settlement-accounting";
+import {
   MATURE_RUNTIME_CAPS,
   type MatureAttemptSettlement,
   type MatureCommandIntent,
 } from "./mature-runtime";
 
 export interface MatureCommandTelemetry {
+  readonly accounting?: {
+    readonly factory: IndustrySettlementAccountingRow;
+    readonly powerProcessing: IndustrySettlementAccountingRow;
+  };
   readonly commands: {
     readonly executed: number;
     readonly failed: number;
@@ -21,8 +31,6 @@ export interface MatureCommandTelemetry {
     readonly cancelled: number;
     readonly pending: number;
     readonly retries: number;
-    readonly settledFactoryAmount: number;
-    readonly settledPower: number;
   };
   readonly truncated: boolean;
 }
@@ -36,7 +44,30 @@ export function projectMatureCommandTelemetry(input: {
   const execution = input.execution.slice(0, MATURE_RUNTIME_CAPS.maximumCandidates);
   const intents = input.intents.slice(0, MATURE_RUNTIME_CAPS.maximumCandidates);
   const settlements = input.settlements.slice(0, MATURE_RUNTIME_CAPS.maximumPendingAttempts);
+  const accounting = {
+    factory: sumIndustrySettlementAccounting(
+      settlements
+        .filter(({ kind, status }) => kind === "factory" && status === "settled")
+        .map(({ accounting: value }) => value),
+    ),
+    powerProcessing: sumIndustrySettlementAccounting(
+      settlements
+        .filter(({ kind, status }) => kind === "power-processing" && status === "settled")
+        .map(({ accounting: value }) => value),
+    ),
+  };
+  const hasAccounting =
+    hasIndustrySettlementAccounting(accounting.factory) ||
+    hasIndustrySettlementAccounting(accounting.powerProcessing);
   return freeze({
+    ...(hasAccounting
+      ? {
+          accounting: {
+            factory: industrySettlementAccountingRow(accounting.factory),
+            powerProcessing: industrySettlementAccountingRow(accounting.powerProcessing),
+          },
+        }
+      : {}),
     commands: {
       executed: execution.filter(({ status }) => status === "executed").length,
       failed: execution.filter(({ status }) => status === "failed").length,
@@ -51,12 +82,6 @@ export function projectMatureCommandTelemetry(input: {
       cancelled: settlements.filter(({ status }) => status === "cancelled").length,
       pending: settlements.filter(({ status }) => status === "pending").length,
       retries: settlements.filter(({ status }) => status === "retry").length,
-      settledFactoryAmount: settlements
-        .filter(({ kind, status }) => kind === "factory" && status === "settled")
-        .reduce((total, { settledAmount }) => total + settledAmount, 0),
-      settledPower: settlements
-        .filter(({ kind, status }) => kind === "power-processing" && status === "settled")
-        .reduce((total, { settledAmount }) => total + settledAmount, 0),
     },
     truncated:
       input.execution.length > execution.length ||

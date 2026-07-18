@@ -37,16 +37,13 @@ describe("Phase 2 telemetry reducer", () => {
       links: { sent: 40, delivered: 38, lost: 2 },
       maintenanceEnergy: 15,
       terminalTransactionEnergyPlanned: 4,
-      labOutput: 5,
-      factoryOutput: 6,
-      powerOutput: 7,
     });
     expect(result.telemetry.identities).toEqual([
       [true, 0],
       [true, 0],
       [true, 5],
     ]);
-    expect(result.telemetry.window).toEqual([1, 100, 100, 20, 50, 38, 18, 10, 1, 250, 0]);
+    expect(result.telemetry.window).toEqual([1, 100, 100, 20, 50, 38, 190, 113, 18, 10, 1, 250, 0]);
     expect(result.telemetry.attrition).toBeUndefined();
     expect(Object.isFrozen(result.telemetry.authorities)).toBe(true);
   });
@@ -81,11 +78,51 @@ describe("Phase 2 telemetry reducer", () => {
       previous: JSON.parse(JSON.stringify(baseline.state)) as Phase2TelemetryState,
     });
 
-    expect(changed.state.schemaVersion).toBe(3);
+    expect(changed.state.schemaVersion).toBe(4);
     expect(changed.telemetry.attrition?.rows).toEqual([
       [1, 5_000, 100, 0, 0, 0],
       [1, 250_000, 0, 5_000, 0, 0],
     ]);
+  });
+
+  it("drops legacy samples without fabricating missing recipe inputs", () => {
+    const previous = reducePhase2Telemetry({
+      observation: {
+        ...observation(100),
+        controllerLevels: [{ colonyRef: "colony:00000001", level: 2 }],
+        attrition: {
+          colonies: ["colony:00000001"],
+          assets: [["road:00000001", "colony:00000001", 4_000, 5_000]],
+          droppedObservations: 0,
+        },
+      },
+      previous: null,
+    }).state;
+    const legacy = {
+      ...previous,
+      schemaVersion: 3,
+      samples: previous.samples.map((sample) => {
+        const legacy = { ...sample } as Record<string, unknown>;
+        delete legacy.industryEnergyInput;
+        delete legacy.industryResourceInput;
+        return legacy;
+      }),
+    } as unknown as Phase2TelemetryState;
+
+    const result = reducePhase2Telemetry({
+      observation: {
+        ...observation(101),
+        controllerLevels: [{ colonyRef: "colony:00000001", level: 2 }],
+      },
+      previous: JSON.parse(JSON.stringify(legacy)) as Phase2TelemetryState,
+    });
+
+    expect(result.state.schemaVersion).toBe(4);
+    expect(result.state.samples.map(({ tick }) => tick)).toEqual([101]);
+    expect(result.state.droppedSamples).toBe(1);
+    expect(result.state.rclTracks).toEqual([["colony:00000001", 2, 100, 101]]);
+    expect(result.state.attrition.tracks).toHaveLength(0);
+    expect(result.state.attrition.interruptedAssets).toBe(1);
   });
 
   it("keeps a deterministic bounded rolling window across JSON reset", () => {
@@ -107,7 +144,7 @@ describe("Phase 2 telemetry reducer", () => {
     });
 
     expect(third.state.samples.map(({ tick }) => tick)).toEqual([101, 102]);
-    expect(third.telemetry.window).toEqual([2, 101, 102, 70, 100, 76, 36, 20, 2, 500, 1]);
+    expect(third.telemetry.window).toEqual([2, 101, 102, 70, 100, 76, 380, 226, 36, 20, 2, 500, 1]);
     const replay = reducePhase2Telemetry({
       observation: { ...observation(102), harvestedEnergy: 40 },
       previous: second.state,
@@ -142,6 +179,57 @@ describe("Phase 2 telemetry reducer", () => {
       reserves: { energyAvailable: 300, energyCapacity: 400 },
       spawn: { active: 1 },
       construction: { backlog: 1, progressRemaining: 95 },
+    });
+  });
+
+  it("wires exact settled industry inputs and outputs into fixed Phase 2 units", () => {
+    const outcome = runTick({
+      game: establishedRcl2World().game(100),
+      memory: {} as Memory,
+    });
+    const telemetry = outcome.telemetry;
+    if (telemetry === null || telemetry.logistics === undefined)
+      throw new Error("expected complete runtime telemetry fixture");
+    const current = observePhase2Telemetry({
+      tick: 101,
+      snapshot: outcome.snapshot,
+      colony: outcome.colony,
+      spawn: outcome.spawn,
+      staticMining: telemetry.staticMining,
+      logistics: telemetry.logistics,
+      maintenance: telemetry.maintenanceV2,
+      industry: {
+        ...telemetry.industry,
+        labs: {
+          accounting: [20, 45, 15],
+          cancelled: 0,
+          commands: { executed: 3, failed: 0, rejected: 0 },
+          commitments: 3,
+          intents: 3,
+          readinessBlockers: 0,
+          resourceDemands: 0,
+          retries: 0,
+          settledAmount: 7,
+        },
+        mature: {
+          accounting: {
+            factory: [40, 100, 20],
+            powerProcessing: [150, 3, 3],
+          },
+          commands: { executed: 2, failed: 0, rejected: 0 },
+          intents: { factory: 1, powerProcessing: 1, total: 2 },
+          settlements: { cancelled: 0, pending: 0, retries: 0 },
+          truncated: false,
+        },
+      },
+    });
+
+    expect(current).toMatchObject({
+      industryEnergyInput: 210,
+      industryResourceInput: 148,
+      labOutput: 15,
+      factoryOutput: 20,
+      powerOutput: 3,
     });
   });
 
@@ -209,7 +297,13 @@ describe("Phase 2 telemetry reducer", () => {
     expect(second.telemetry.phase2.window.slice(0, 3)).toEqual([2, 100, 101]);
     expect(memory.myrmex?.telemetry).toMatchObject({
       schemaVersion: 5,
-      phase2: { schemaVersion: 3, samples: [{ tick: 100 }, { tick: 101 }] },
+      phase2: {
+        schemaVersion: 4,
+        samples: [
+          [100, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [101, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ],
+      },
     });
 
     const resetMemory = JSON.parse(JSON.stringify(memory)) as Memory;
@@ -235,7 +329,7 @@ describe("Phase 2 telemetry reducer", () => {
     });
 
     expect(result.telemetry.window.slice(0, 3)).toEqual([1, 200, 200]);
-    expect(result.telemetry.window[10]).toBe(Number.MAX_SAFE_INTEGER);
+    expect(result.telemetry.window[12]).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it("tracks one adjacent RCL duration across JSON reset without duplicate replay", () => {
@@ -343,13 +437,14 @@ describe("Phase 2 telemetry reducer", () => {
       },
     });
 
-    expect(result.state.schemaVersion).toBe(3);
-    expect(result.state.samples.map(({ tick }) => tick)).toEqual([100, 101]);
+    expect(result.state.schemaVersion).toBe(4);
+    expect(result.state.samples.map(({ tick }) => tick)).toEqual([101]);
+    expect(result.state.droppedSamples).toBe(1);
     expect(result.state.rclTracks).toHaveLength(0);
     expect(result.state.droppedRclObservations).toBe(MAX_PHASE2_CONTROLLER_TRACKERS + 1);
   });
 
-  it("drops malformed transition state without losing valid sample history", () => {
+  it("drops legacy samples and malformed transition state independently", () => {
     const malformedTracks = new Array(MAX_PHASE2_CONTROLLER_TRACKERS + 1) as unknown[];
     Object.defineProperty(malformedTracks, 0, {
       get: () => {
@@ -371,7 +466,7 @@ describe("Phase 2 telemetry reducer", () => {
       } as unknown as Phase2TelemetryState,
     });
 
-    expect(result.state.samples.map(({ tick }) => tick)).toEqual([100, 101]);
+    expect(result.state.samples.map(({ tick }) => tick)).toEqual([101]);
     expect(result.state.rclTracks).toEqual([]);
     expect(result.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(true);
 
@@ -384,7 +479,7 @@ describe("Phase 2 telemetry reducer", () => {
         ),
       },
     });
-    expect(impossibleAggregate.state.samples.map(({ tick }) => tick)).toEqual([100, 101, 102]);
+    expect(impossibleAggregate.state.samples.map(({ tick }) => tick)).toEqual([101, 102]);
     expect(impossibleAggregate.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(
       true,
     );
@@ -475,7 +570,7 @@ describe("Phase 2 telemetry reducer", () => {
         rclTracks: [["colony:0000000a", 2, 100, 200]],
       },
     });
-    expect(futureDatedTrack.state.samples.map(({ tick }) => tick)).toEqual([100, 101, 102]);
+    expect(futureDatedTrack.state.samples.map(({ tick }) => tick)).toEqual([101, 102]);
     expect(futureDatedTrack.state.rclTracks).toEqual([["colony:0000000a", 2, 102, 102]]);
 
     const futureDatedAggregate = reducePhase2Telemetry({
@@ -487,7 +582,7 @@ describe("Phase 2 telemetry reducer", () => {
         ),
       },
     });
-    expect(futureDatedAggregate.state.samples.map(({ tick }) => tick)).toEqual([100, 101, 102]);
+    expect(futureDatedAggregate.state.samples.map(({ tick }) => tick)).toEqual([101, 102]);
     expect(futureDatedAggregate.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(
       true,
     );
@@ -503,7 +598,7 @@ describe("Phase 2 telemetry reducer", () => {
         rclTracks: [["colony:0000000a", 1, 100, 101]],
       } as unknown as Phase2TelemetryState,
     });
-    expect(futureTiming.state.samples.map(({ tick }) => tick)).toEqual([100, 101, 102]);
+    expect(futureTiming.state.samples.map(({ tick }) => tick)).toEqual([101, 102]);
     expect(futureTiming.state.rclTracks).toEqual([["colony:0000000a", 2, 102, 102]]);
     expect(futureTiming.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(true);
   });
@@ -555,20 +650,11 @@ describe("Phase 2 telemetry reducer", () => {
         previous: null,
       }),
     ).toThrow(/nonnegative safe integer/u);
+    const current = reducePhase2Telemetry({ observation: observation(100), previous: null }).state;
     expect(() =>
       reducePhase2Telemetry({
         observation: observation(99),
-        previous: {
-          schemaVersion: 2,
-          droppedSamples: 0,
-          samples: [{ ...sample(100) }],
-          rclTimingSchemaVersion: 1,
-          interruptedRclTracks: 0,
-          droppedRclObservations: 0,
-          droppedRclTransitions: 0,
-          rclTracks: [],
-          rclTransitionDurations: PHASE2_RCL_DESTINATIONS.map(() => [0, 0, null, null, null, null]),
-        },
+        previous: current,
       }),
     ).toThrow(/tick order/u);
   });
@@ -638,6 +724,8 @@ function observation(tick: number): Phase2TelemetryObservation {
     industryFailed: 1,
     industryReserved: 30,
     terminalTransactionEnergyPlanned: 4,
+    industryEnergyInput: 190,
+    industryResourceInput: 113,
     labAdmitted: 1,
     labDeferred: 1,
     labFailed: 1,
@@ -671,6 +759,8 @@ function sample(tick: number) {
     harvestedEnergy: 0,
     logisticsDelivered: 0,
     linkDelivered: 0,
+    industryEnergyInput: 0,
+    industryResourceInput: 0,
     industryOutput: 0,
     authorityFailures: 0,
     reserveViolations: 0,

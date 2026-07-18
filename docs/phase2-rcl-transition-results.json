@@ -16,18 +16,18 @@
   },
   "migration": {
     "fromSchemaVersion": 1,
-    "toSchemaVersion": 3,
+    "toSchemaVersion": 4,
     "baselineOnly": true
   },
   "persistence": {
-    "ownerSchemaVersion": 3,
+    "ownerSchemaVersion": 4,
     "timingSchemaVersion": 1,
     "completedSamples": 1,
     "replayedSamples": 1,
     "compactOwnerRoundTrip": true,
     "resetOutputEquivalent": true,
     "roomNamesRedacted": true,
-    "ownerBytes": 1575
+    "ownerBytes": 1039
   },
   "bounds": {
     "destinationRows": 7,

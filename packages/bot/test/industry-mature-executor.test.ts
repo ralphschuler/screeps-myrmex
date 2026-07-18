@@ -35,6 +35,7 @@ describe("mature structure executor", () => {
         intents: [factoryIntent(), powerIntent()],
         settlements: [
           {
+            accounting: { energyInput: 40, resourceInput: 100, resourceOutput: 20 },
             attemptId: "factory-attempt",
             kind: "factory",
             objectiveId: "factory-objective",
@@ -45,6 +46,7 @@ describe("mature structure executor", () => {
             status: "settled",
           },
           {
+            accounting: { energyInput: 0, resourceInput: 0, resourceOutput: 0 },
             attemptId: "power-attempt",
             kind: "power-processing",
             objectiveId: "power-objective",
@@ -57,15 +59,13 @@ describe("mature structure executor", () => {
         ],
       }),
     ).toEqual({
+      accounting: {
+        factory: [40, 100, 20],
+        powerProcessing: [0, 0, 0],
+      },
       commands: { executed: 1, failed: 0, rejected: 1 },
       intents: { factory: 1, powerProcessing: 1, total: 2 },
-      settlements: {
-        cancelled: 0,
-        pending: 0,
-        retries: 1,
-        settledFactoryAmount: 20,
-        settledPower: 0,
-      },
+      settlements: { cancelled: 0, pending: 0, retries: 1 },
       truncated: false,
     });
   });

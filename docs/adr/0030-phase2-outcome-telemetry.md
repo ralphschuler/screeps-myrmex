@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted. ADR 0031 advances the nested Phase 2 observer state from V1 to V2, and ADR 0032 advances
-it to V3; both preserve this sample-ring and direct-outcome contract.
+Accepted. ADR 0031 advances the nested Phase 2 observer state from V1 to V2, ADR 0032 advances it to
+V3, and ADR 0033 advances it to V4; all preserve this bounded direct-outcome contract. ADR 0033
+conservatively drops legacy sample rows because they lack exact recipe inputs.
 
 ## Context
 

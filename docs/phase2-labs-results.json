@@ -15,6 +15,7 @@
     "retryReady": true
   },
   "telemetry": {
+    "accounting": [0, 5, 10],
     "cancelled": 0,
     "commands": { "executed": 0, "failed": 0, "rejected": 0 },
     "commitments": 1,

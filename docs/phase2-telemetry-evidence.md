@@ -1,8 +1,9 @@
 # Phase 2 Outcome Telemetry Evidence
 
 Issue [#275](https://github.com/ralphschuler/screeps-myrmex/issues/275) adds the deterministic
-bounded direct-outcome foundation for the broader Phase 2 telemetry issue #53. `TelemetryService`
-remains an observer and is not an input to `ColonyDirector` or any domain planner.
+bounded direct-outcome foundation for the broader Phase 2 telemetry issue #53. The current #53 slice
+adds exact settled lab, factory, and power input accounting. `TelemetryService` remains an observer
+and is not an input to `ColonyDirector` or any domain planner.
 
 ## Outcome contract
 
@@ -16,14 +17,17 @@ remains an observer and is not an input to `ColonyDirector` or any domain planne
   execution;
 - source uptime, inferred extraction/waste, logistics lifecycle deltas, successful link
   sent/delivered energy and loss, maintenance budget/scheduled tower energy, planned terminal
-  transaction energy, and exactly settled lab/factory/power output;
+  transaction energy, and exact settled lab/factory/power energy input, non-energy resource input,
+  and output units;
 - one fixed admitted/deferred/failed row for each of eleven Phase 2 authorities; and
 - three explicit accounting identities with signed residuals.
 
-Attribution already present in bounded domain receipts and opaque `TelemetryDetail` records remains
-available without adding room, objective, contract, budget, or player-controlled metric labels. The
-Phase 2 aggregate itself has no dynamic label set. Authority tuples use the exported
-`PHASE2_AUTHORITY_IDS` order and fields
+Settled industry accounting aggregates are optional compact tuples aligned with exported
+`INDUSTRY_SETTLEMENT_ACCOUNTING_FIELDS` order `(energy input, resource input, resource output)`;
+they are omitted when no exact effect settled. Attribution already present in bounded domain
+receipts and opaque `TelemetryDetail` records remains available without adding room, objective,
+contract, budget, or player-controlled metric labels. The Phase 2 aggregate itself has no dynamic
+label set. Authority tuples use the exported `PHASE2_AUTHORITY_IDS` order and fields
 `(admitted, deferred, failed, energy, resource units, CPU milli-units, spawn ticks)`. Identity
 tuples use `PHASE2_FLOW_IDENTITY_IDS` and fields `(balanced, residual)`. The rolling tuple uses the
 exported `PHASE2_WINDOW_FIELDS` order. These fixed schemas preserve the existing 8,192-byte
@@ -31,14 +35,14 @@ tick-telemetry gate without abbreviating units or creating dynamic keys.
 
 ## Modeled accounting boundaries
 
-| Flow                          | Evidence                                                                 | Boundary                                                         |
-| ----------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Source extraction             | reset-safe current/previous source energy and regeneration observations  | first observation after lost history reports zero delta          |
-| Logistics                     | cumulative funded-flow pickup, delivery, and loss deltas                 | stock movement outside a tracked flow is not invented            |
-| Links                         | successful executor sent, delivered, and loss amounts                    | rejected/failed commands contribute no delivered energy          |
-| Maintenance                   | requested/funded creep caps and scheduled tower energy                   | a funded creep cap is budget evidence, not settled hit progress  |
-| Terminal                      | source-policy planned transaction energy and settled command disposition | the planned amount is not reported as observed destination stock |
-| Labs/factory/power processing | exact existing next-observation settlement receipts                      | pending and retry attempts contribute no output                  |
+| Flow                          | Evidence                                                                 | Boundary                                                              |
+| ----------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| Source extraction             | reset-safe current/previous source energy and regeneration observations  | first observation after lost history reports zero delta               |
+| Logistics                     | cumulative funded-flow pickup, delivery, and loss deltas                 | stock movement outside a tracked flow is not invented                 |
+| Links                         | successful executor sent, delivered, and loss amounts                    | rejected/failed commands contribute no delivered energy               |
+| Maintenance                   | requested/funded creep caps and scheduled tower energy                   | a funded creep cap is budget evidence, not settled hit progress       |
+| Terminal                      | source-policy planned transaction energy and settled command disposition | the planned amount is not reported as observed destination stock      |
+| Labs/factory/power processing | exact existing next-observation settlement receipts                      | only exact effects contribute input/output; every other state is zero |
 
 The checked identities are:
 
@@ -53,13 +57,16 @@ underlying work.
 
 ## Rolling window and bounds
 
-Telemetry owner schema V5 now contains owner-local Phase 2 schema V3. It preserves the V1 fixed
-sample ring and V2 bounded RCL timing state documented in
-[`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md), then adds the bounded
-road/container net-attrition state documented in
+Telemetry owner schema V5 now contains owner-local Phase 2 schema V4. It preserves the V2 bounded
+RCL timing and V3 road/container net-attrition state documented in
+[`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md) and
 [`phase2-attrition-evidence.md`](phase2-attrition-evidence.md). Each fixed sample retains only tick,
-harvested energy, logistics/link delivery, settled industry output, authority failures, reserve
-violations, and measured domain milli-CPU.
+harvested energy, logistics/link delivery, exact settled industry energy input, non-energy resource
+input and output, authority failures, reserve violations, and measured domain milli-CPU. Persistent
+rows are compact tuples aligned with exported `PHASE2_SAMPLE_FIELDS`; tick-local windows align with
+`PHASE2_WINDOW_FIELDS`. V1–V3 samples are dropped and counted during migration because absent recipe
+inputs cannot safely become zero; timing and attrition evidence remain independent and are
+preserved.
 
 - hard sample maximum: 64;
 - effective sample maximum: configured telemetry history count;
@@ -83,10 +90,14 @@ kernel report remains authoritative for total system and phase CPU.
 
 - byte-equivalent output under reordered input properties and normalized runtime collections;
 - JSON Memory reconstruction of the rolling state;
-- exact logistics, link, and maintenance identity results;
+- exact logistics, link, maintenance, and industry input/output values;
 - fixed authority order and outcome counts;
 - a six-tick replay with a four-sample retained window and deterministic dropped count; and
 - production bounds and the zero telemetry-decision-input invariant.
+
+[`phase2-industry-accounting-results.json`](phase2-industry-accounting-results.json) additionally
+proves fixed forward/reverse/boost, factory, and power settlement projections; zero non-settled
+accounting; V3-to-V4 conservative sample migration; and reset/reorder equivalence.
 
 Executable checks:
 
@@ -94,13 +105,15 @@ Executable checks:
 npx vitest run packages/bot/test/phase2-telemetry.test.ts
 npx vitest run packages/bot/test/telemetry-service.test.ts
 npx vitest run packages/scenario-kit/test/phase2-telemetry-gate.test.ts
+npx vitest run packages/scenario-kit/test/phase2-industry-accounting-gate.test.ts
 npm run check
 ```
 
-The scenario proves the direct-outcome telemetry contract. Issue #277 separately proves bounded
-reset-safe RCL transition duration, and issue #279 proves bounded reset-safe road/container net
-attrition. Issue #54 still owns full RCL2–RCL8 progression and steady-state soaks and must set
-pass/fail thresholds before running them.
+The scenarios prove the direct-outcome and exact settled industry-accounting contracts. Issue #277
+separately proves bounded reset-safe RCL transition duration, and issue #279 proves bounded
+reset-safe road/container net attrition. Cooldown-utilization windows remain in issue #53. Issue #54
+still owns full RCL2–RCL8 progression and steady-state soaks and must set pass/fail thresholds
+before running them.
 
 ## Research receipt
 
@@ -113,8 +126,21 @@ pass/fail thresholds before running them.
   is energy-driven and RCL8 retains a finite 150,000-tick downgrade timer.
 - Official [`Room.energyAvailable`](https://docs.screeps.com/api/#Room.energyAvailable) and
   `energyCapacityAvailable` distinguish current spawn-pool stock from installed capacity.
+- Official [`StructureLab.runReaction`](https://docs.screeps.com/api/#StructureLab.runReaction) and
+  [`reverseReaction`](https://docs.screeps.com/api/#StructureLab.reverseReaction) schedule opposite
+  reagent/product effects; source-controlled `LAB_REACTION_AMOUNT` is five.
+- Official [`StructureFactory.produce`](https://docs.screeps.com/api/#StructureFactory.produce)
+  schedules one source-controlled recipe batch only when all components are present.
+- Official
+  [`StructurePowerSpawn.processPower`](https://docs.screeps.com/api/#StructurePowerSpawn.processPower)
+  consumes power plus source-controlled energy; `POWER_SPAWN_ENERGY_RATIO` is 50.
 - Screeps Wiki [CPU](https://wiki.screepspl.us/CPU/), [Energy](https://wiki.screepspl.us/Energy/),
-  and [Maturity Matrix](https://wiki.screepspl.us/Maturity_Matrix/) provide community terminology
-  and operational framing. They do not define a gameplay authorization or engine maturity flag.
+  [Maturity Matrix](https://wiki.screepspl.us/Maturity_Matrix/),
+  [StructureLab](https://wiki.screepspl.us/StructureLab),
+  [StructureFactory](https://wiki.screepspl.us/StructureFactory), and
+  [Power](https://wiki.screepspl.us/Power) provide community terminology and staging/throughput
+  guidance. They do not define a gameplay authorization or engine maturity flag.
 
-ADR [0030](adr/0030-phase2-outcome-telemetry.md) records the persistent observer boundary.
+ADRs [0030](adr/0030-phase2-outcome-telemetry.md) and
+[0033](adr/0033-exact-settled-industry-accounting.md) record the persistent observer and exact
+accounting boundaries.

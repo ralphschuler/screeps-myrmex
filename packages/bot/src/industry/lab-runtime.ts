@@ -2,6 +2,11 @@ import type { IntentData, IntentEnvelope } from "../execution";
 import type { CreepSnapshot, OwnedLabSnapshot, WorldSnapshot } from "../world/snapshot";
 import type { LabClusterAssignment } from "./lab-cluster";
 import type { LabPolicyCommitment, LabPolicyDisposition } from "./lab-policy";
+import {
+  EMPTY_INDUSTRY_SETTLEMENT_ACCOUNTING,
+  industrySettlementAccounting,
+  type IndustrySettlementAccounting,
+} from "./settlement-accounting";
 
 export const LAB_RUNTIME_CAPS = Object.freeze({
   maximumBoostParts: 50,
@@ -284,6 +289,7 @@ export type LabSettlementReason =
   | "awaiting-retry";
 
 export interface LabAttemptSettlement {
+  readonly accounting: IndustrySettlementAccounting;
   readonly attemptId: string;
   readonly kind: "boost" | "reaction" | "reverse-reaction";
   readonly objectiveId: string;
@@ -704,6 +710,7 @@ function settlement(
   settledAmount: number,
 ): LabAttemptSettlement {
   return freeze({
+    accounting: labSettlementAccounting(attempt, status, settledAmount),
     attemptId: attempt.attemptId,
     kind: attempt.kind,
     objectiveId: attempt.objectiveId,
@@ -713,6 +720,23 @@ function settlement(
     settledAmount,
     status,
   });
+}
+
+function labSettlementAccounting(
+  attempt: PendingLabAttempt,
+  status: LabAttemptSettlement["status"],
+  settledAmount: number,
+): IndustrySettlementAccounting {
+  if (status !== "settled") return EMPTY_INDUSTRY_SETTLEMENT_ACCOUNTING;
+  if (attempt.kind === "reaction")
+    return industrySettlementAccounting(0, settledAmount * 2, settledAmount);
+  if (attempt.kind === "reverse-reaction")
+    return industrySettlementAccounting(0, settledAmount, settledAmount * 2);
+  return industrySettlementAccounting(
+    settledAmount * LAB_RUNTIME_CAPS.boostEnergyPerPart,
+    settledAmount * LAB_RUNTIME_CAPS.boostMineralPerPart,
+    0,
+  );
 }
 
 function readyReactionLab(

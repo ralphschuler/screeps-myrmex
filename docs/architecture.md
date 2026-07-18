@@ -393,16 +393,21 @@ Malformed or future reporter state is rebuilt safely. First occurrence, bounded-
 single resolution, and stuck-recovery transitions leave the service only as capped tick-local
 records; the durable owner is not a replay queue.
 
-Telemetry owner schema V5 contains Phase 2 owner-local schema V3. Current settled colony, spawn,
+Telemetry owner schema V5 contains Phase 2 owner-local schema V4. Current settled colony, spawn,
 layout, mining, logistics, link, maintenance, resource, lab, mature-infrastructure, and observer
 receipts produce exactly eleven authority rows, three modeled flow identities, fixed progression,
-reserve, utilization, and construction values, and one capped aggregate sample. The hard ring bound
-is 64 and the configured history and whole-owner byte ceilings may reduce it further. V3 also
-preserves at most 64 opaque controller baselines and exactly seven destination-RCL duration rows.
-Only a continuously observed adjacent increase records elapsed ticks; missing continuity, ownership
-loss, downgrade, multi-level jump, duplicate identity, or malformed state resets evidence without
-success. Tick telemetry omits baseline-only timing and otherwise publishes one compact latest-row
-tuple plus loss counters; the owner retains all seven aggregates.
+reserve, utilization, construction, and industry-accounting values, and one capped aggregate sample.
+The hard ring bound is 64 and the configured history and whole-owner byte ceilings may reduce it
+further. Persistent samples are compact tuples aligned with the exported fixed sample-field order.
+V4 records exact settled industry energy input, non-energy resource input, and output units in
+compact tuples aligned with one exported fixed field order; pending, retry, cancelled, failed, or
+conflicting attempts contribute zero, empty aggregate rows are omitted, and boost progress is not
+reaction output. V1–V3 samples are dropped and counted during migration because their missing inputs
+cannot be reconstructed. V4 also preserves at most 64 opaque controller baselines and exactly seven
+destination-RCL duration rows. Only a continuously observed adjacent increase records elapsed ticks;
+missing continuity, ownership loss, downgrade, multi-level jump, duplicate identity, or malformed
+state resets evidence without success. Tick telemetry omits baseline-only timing and otherwise
+publishes one compact latest-row tuple plus loss counters; the owner retains all seven aggregates.
 
 V3 adds one attrition schema with at most 64 opaque visible-owned-colony references, 128 opaque
 road/container baselines, and exactly two cumulative rows; its compact owner field is absent while
@@ -1520,9 +1525,11 @@ stock bands create bounded funded objectives, and policy demands enter the exist
 before readiness. Forward, explicitly funded reverse, and boost intents share one cluster key and
 the common arbiter. `IndustryOwnerV5` preserves the V4 lab boundary and distinguishes pending
 observation from durable retry-ready state, while bounded observer telemetry reports commands,
-blockers, exact settlement, retries, and cancellations. Checked `phase2-labs-results.json` evidence
-makes `phase2.labs` source-available under `runtime-config-source-v26` without enabling factory
-behavior.
+blockers, exact settlement, retries, and cancellations. Each exact settlement also emits one fixed
+energy-input/resource-input/resource-output row: forward and reverse reaction ratios remain
+distinct, and boost mineral/energy consumption cannot be mislabeled as produced compound. Checked
+`phase2-labs-results.json` evidence makes `phase2.labs` source-available under
+`runtime-config-source-v26` without enabling factory behavior.
 
 Funded `ready` factory and power-processing commitments enter one bounded mature command projection.
 Both intent kinds claim the canonical physical-structure exclusive key before the shared channel's
@@ -1530,6 +1537,8 @@ final arbitration. The sole `MatureStructureExecutor` revalidates current mechan
 activation, RCL, cooldown, level/effect, exact stock, and factory capacity before calling `produce`
 or `processPower`. Only normalized `OK` creates one of at most 64 mature attempts in
 `IndustryOwnerV5`; exact next-tick recipe/store/cooldown or operated-power/energy deltas settle it.
+The settlement splits factory components into energy and non-energy inputs and accounts processed
+power plus its effect-adjusted energy cost; every non-settled disposition reports zero accounting.
 An issued attempt may record its exact irreversible effect after its objective disappears, but that
 receipt authorizes no retry. No effect retries within a fixed cap, while stale, conflicting,
 missing, unfunded, or late retry evidence fails closed. A fixed-cardinality observer projection
