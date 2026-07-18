@@ -81,6 +81,8 @@ export interface LogisticsResourceDemandProjection {
   readonly nodes: readonly LogisticsNode[];
   /** Removes ordinary sink projections for an exact target while a specialized flow owns it. */
   readonly suppressedSinkTargetIds?: readonly string[];
+  /** Removes ordinary source projections so specialized flow stock is reserved exactly once. */
+  readonly suppressedSourceTargetIds?: readonly string[];
 }
 
 export interface ProjectLabResourceDemandsInput {

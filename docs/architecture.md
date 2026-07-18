@@ -74,8 +74,10 @@ observation and no active evacuation flow. Issue #290 permits one empty, unselec
 container only while a different exact committed container remains the reachable semantic service
 for the same source. Issue #292 permits one empty compatible-external general container only after
 committed replacement capacity exists; one compact layout-owned handoff suppresses its refill and
-waits for active logistics endpoints to retire. `StructureRemovalArbiter` alone authorizes removal
-and `StructureDestroyExecutor` alone calls `Structure.destroy`.
+waits for active logistics endpoints to retire. Issue #294 extends that handoff to exact energy-only
+stock: the sole funded logistics path evacuates at most 2,000 energy, and fresh empty-target,
+delivered-replacement, and retired-flow evidence remains mandatory. `StructureRemovalArbiter` alone
+authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1288,6 +1290,13 @@ evidence after spawn use. The fixed 64-record projection remains inside the exis
 flow, and contract bounds. Logistics owns admission and execution terms; layout owns only the
 migration commitment and consumes only fresh completion evidence.
 
+Energy-only general-container migration uses the same authority. Its specialized source replaces the
+ordinary source node for the exact target, and both endpoint refill sinks are suppressed, so one
+physical Store cannot publish duplicate source stock or competing capacity. Source/sink suppression
+IDs are each capped at 128 and fail closed as a complete set. The externally funded edge, V3
+contracts, leases, and executors remain Logistics-owned; layout consumes only fresh target,
+replacement, flow, and endpoint evidence.
+
 ### 12.4 MovementArbiter
 
 Every creep movement request is a `MovementIntent` with actor ID, desired position/range, deadline,
@@ -1447,8 +1456,19 @@ checks. Layout drift, stock, replacement loss, timeout, target disappearance, th
 pressure, or unavailable contract evidence authorizes no command. Next observation clears the
 handoff and exposes the final committed site.
 
-Other structure stock evacuation, selected/stocked container or source-service migration, defensive
-migration, general multi-step migration, and creep dismantling remain issue #99 and fail closed.
+Issue #294 extends only that general-container handoff. An energy-only target whose exact amount
+fits the replacement persists paired amount and replacement-baseline evidence. On following ticks,
+one externally funded `optional-growth` edge enters the sole logistics graph, replaces the target's
+ordinary source projection so stock is reserved once, and suppresses ordinary refill sinks for both
+endpoints. Existing V3 contracts and lease agents perform the transfer. Removal waits for the target
+to be empty, replacement energy to gain the committed amount, and exact flow plus target/replacement
+work to retire. Mixed resources, capacity loss, target refill, malformed Store evidence, missing
+contract views, threat, timeout, or commitment drift fail closed. Legacy handoffs without the paired
+fields retain #292's empty-target semantics.
+[ADR 0040](adr/0040-stocked-general-container-evacuation.md) records this extension.
+
+Other structure stock evacuation, selected/stocked source-service migration, defensive migration,
+general multi-step migration, and creep dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2013,8 +2033,11 @@ Required architecture assertions include:
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;
 - obsolete general-container removal requires committed replacement-first capacity, one bounded
-  layout-owned empty-target handoff, ordinary-refill suppression, retirement of active V3 target
-  endpoints, preserved source services, and the existing one-command ceiling;
+  layout-owned handoff, ordinary-refill suppression, retirement of active V3 target endpoints,
+  preserved source services, and the existing one-command ceiling;
+- a stocked general-container handoff accepts only exact energy that fits the replacement, replaces
+  its ordinary source projection, uses the sole funded logistics/lease path, and requires fresh
+  empty-target, delivered-replacement, and retired flow/endpoint evidence before removal;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

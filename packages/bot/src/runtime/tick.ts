@@ -2177,6 +2177,7 @@ function colonyDirectorSystem(
           ? (parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null)?.records ?? [])
           : [];
       const layoutContainerMigrations = projectLayoutContainerMigrations({
+        existingBudgets: priorLedger,
         records: layoutRecords,
         snapshot: context.snapshot,
         tick: context.tick,
@@ -2387,6 +2388,7 @@ function colonyDirectorSystem(
           budgetRequest === null ? [] : [budgetRequest],
         ),
         ...logistics.budgets,
+        ...layoutContainerMigrations.budgets,
         ...layoutEvacuations.budgets,
         ...provisionalMaintenance.budgets,
         ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
@@ -2772,6 +2774,11 @@ function mergeResourceDemands(
     suppressedSinkTargetIds: Object.freeze(
       projections
         .flatMap(({ suppressedSinkTargetIds }) => suppressedSinkTargetIds ?? [])
+        .sort((left, right) => left.localeCompare(right)),
+    ),
+    suppressedSourceTargetIds: Object.freeze(
+      projections
+        .flatMap(({ suppressedSourceTargetIds }) => suppressedSourceTargetIds ?? [])
         .sort((left, right) => left.localeCompare(right)),
     ),
   });

@@ -111,7 +111,9 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   same source; mining identity and work position stay unchanged. Issue #292 restores committed
   geometry for general non-service containers, builds one replacement under spare allowance, then
   suppresses obsolete-target refill and waits for active logistics endpoints before removing the
-  empty adopted target. Other structure types, selected/stocked containers, general multi-step
+  empty adopted target. Issue #294 extends that handoff to an exact energy-only target, routing at
+  most 2,000 energy through funded logistics and requiring fresh delivered/empty plus retired-flow
+  evidence. Other structure types, selected/stocked source services, mixed stock, general multi-step
   migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { planStaticMining } from "../src/economy";
 import { ConstructionPlanner } from "../src/maintenance";
+import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import type { WorldSnapshot } from "../src/world/snapshot";
 import {
   CONSTRUCTION_SITE_LIMITS,
@@ -459,7 +460,7 @@ describe("composed layout runtime", () => {
       .map(({ pos: desiredPos }, index) =>
         container(`container-general-${String(index)}`, desiredPos),
       );
-    const obsolete = container("container-obsolete", pos(35, 35));
+    const obsolete = container("container-obsolete", pos(35, 35), 50);
     const initialStructures = [...structures, sourceService, ...exactBefore, obsolete];
     const initial = planOwnedRoomLayout({ ...planningInput, structures: initialStructures });
     if (initial.status !== "complete") throw new Error("expected initial container layout");
@@ -550,9 +551,35 @@ describe("composed layout runtime", () => {
     });
     if (stage.containerMigration === null) throw new Error("expected container handoff");
     expect(stage.proposals).toEqual([]);
+    expect(stage.containerMigration).toMatchObject({
+      energyAmount: 50,
+      replacementInitialEnergy: 0,
+    });
     const nextRoom = { ...room, observedAt: 101 };
+    const migrationProjection = projectLayoutContainerMigrations({
+      existingBudgets: [],
+      records: [
+        {
+          ...current.commitment,
+          containerMigration: stage.containerMigration,
+          roomName,
+        },
+      ],
+      snapshot: {
+        observation: { age: 0, shard: "shard0", status: "observed", tick: 101 },
+        rooms: [nextRoom],
+      } as unknown as WorldSnapshot,
+      tick: 101,
+    });
+    expect(migrationProjection).toMatchObject({
+      budgets: [expect.objectContaining({ category: "optional-growth" })],
+      edges: [expect.objectContaining({ maximumAmount: 50 })],
+    });
+    const migrationFlowId =
+      "layout-container-evacuation:W1N1:container-obsolete:container-general-replacement";
     expect(
       new ConstructionPlanner().planMigration({
+        activeLogisticsFlowIds: new Set([migrationFlowId]),
         activeLogisticsTargetIds: new Set([obsolete.id]),
         colony,
         commitment: current.commitment,
@@ -566,7 +593,27 @@ describe("composed layout runtime", () => {
         room: nextRoom,
       }).proposals,
     ).toEqual([]);
+    const emptiedObsolete = container(obsolete.id, obsolete.pos);
+    const stockedReplacement = container(replacement.id, replacement.pos, 50);
+    const deliveredRoom = {
+      ...nextRoom,
+      storedStructures: nextRoom.storedStructures.map((value) =>
+        value.id === obsolete.id
+          ? emptiedObsolete
+          : value.id === replacement.id
+            ? stockedReplacement
+            : value,
+      ),
+      structures: (nextRoom.structures ?? []).map((value) =>
+        value.id === obsolete.id
+          ? emptiedObsolete
+          : value.id === replacement.id
+            ? stockedReplacement
+            : value,
+      ),
+    };
     const ready = new ConstructionPlanner().planMigration({
+      activeLogisticsFlowIds: new Set(),
       activeLogisticsTargetIds: new Set(),
       colony,
       commitment: current.commitment,
@@ -577,7 +624,7 @@ describe("composed layout runtime", () => {
       observationFingerprint: "obs-container-retired",
       placements: convergence,
       policyFingerprint: "policy-a",
-      room: nextRoom,
+      room: deliveredRoom,
     });
     if (ready.authorization === null) throw new Error("expected removal authorization");
     const arbitration = arbitrateStructureRemovals({
@@ -602,7 +649,7 @@ describe("composed layout runtime", () => {
       isCurrentCommitment: () => true,
       resolveRoom: () => liveRoom,
       resolveStructure: (id) => {
-        const value = room.storedStructures.find((candidate) => candidate.id === id);
+        const value = deliveredRoom.storedStructures.find((candidate) => candidate.id === id);
         return value === undefined
           ? null
           : liveContainer(

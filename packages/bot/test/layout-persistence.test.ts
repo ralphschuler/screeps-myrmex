@@ -77,8 +77,10 @@ describe("layout persistence and cache", () => {
   it("persists one bounded general-container migration and drops it on layout revision", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
     const migration = {
+      energyAmount: 50,
       expiresAt: 160,
       replacementId: "container-replacement",
+      replacementInitialEnergy: 0,
       startedAt: 10,
       targetId: "container-obsolete",
     } as const;
@@ -106,6 +108,30 @@ describe("layout persistence and cache", () => {
         ],
       }),
     ).toBeNull();
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [
+          {
+            ...owner.records[0],
+            containerMigration: { ...migration, replacementInitialEnergy: undefined },
+          },
+        ],
+      }),
+    ).toBeNull();
+    const {
+      energyAmount: _energyAmount,
+      replacementInitialEnergy: _baseline,
+      ...legacy
+    } = migration;
+    void _energyAmount;
+    void _baseline;
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [{ ...owner.records[0], containerMigration: legacy }],
+      })?.records[0]?.containerMigration,
+    ).toEqual(legacy);
   });
 
   it("persists 32 canonical receipts and drops them on layout revision", () => {
