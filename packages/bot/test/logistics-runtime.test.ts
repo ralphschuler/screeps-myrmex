@@ -592,6 +592,110 @@ describe("logistics runtime adapter", () => {
     ).toEqual([]);
   });
 
+  it("projects one funded exact-energy flow for a stocked general-container migration", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("container evacuation fixture room missing");
+    const container = (id: string, x: number, used: number) => ({
+      hits: 250_000,
+      hitsMax: 250_000,
+      id,
+      ownerUsername: null,
+      ownership: "unowned" as const,
+      pos: position(x, 12),
+      store: {
+        capacity: 2_000,
+        freeCapacity: 2_000 - used,
+        resources: used === 0 ? [] : [{ amount: used, resourceType: "energy" }],
+        usedCapacity: used,
+      },
+      structureType: "container",
+      ticksToDecay: 5_000,
+    });
+    const obsolete = container("container-obsolete", 12, 50);
+    const replacement = container("container-replacement", 13, 0);
+    const migration = {
+      energyAmount: 50,
+      expiresAt: 160,
+      replacementId: replacement.id,
+      replacementInitialEnergy: 0,
+      startedAt: 10,
+      targetId: obsolete.id,
+    } as const;
+    const migrationSnapshot = {
+      ...snapshot,
+      observation: { ...snapshot.observation, tick: 11 },
+      observedAt: 11,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          storedStructures: [...room.storedStructures, obsolete, replacement],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const projection = projectLayoutContainerMigrations({
+      existingBudgets: [],
+      records: [
+        {
+          algorithmRevision: "owned-room-layout-v2-source-services",
+          anchor: position(25, 25),
+          blockers: [],
+          committedAt: 1,
+          containerMigration: migration,
+          fingerprint: "layout-a",
+          roomName: "W1N1",
+          transform: 0,
+        },
+      ],
+      snapshot: migrationSnapshot,
+      tick: 11,
+    });
+
+    expect(projection.budgets).toEqual([
+      expect.objectContaining({
+        category: "optional-growth",
+        colonyId: "W1N1",
+        expiresAt: 160,
+      }),
+    ]);
+    expect(projection.edges).toEqual([
+      expect.objectContaining({
+        id: "layout-container-evacuation:W1N1:container-obsolete:container-replacement",
+        maximumAmount: 50,
+      }),
+    ]);
+    expect(projection.nodes).toEqual([
+      expect.objectContaining({ kind: "source", observedAmount: 50 }),
+      expect.objectContaining({ freeCapacity: 2_000, kind: "sink" }),
+    ]);
+    expect(projection.suppressedSinkTargetIds).toEqual([
+      "container-obsolete",
+      "container-replacement",
+    ]);
+    expect(projection.suppressedSourceTargetIds).toEqual(["container-obsolete"]);
+    const runtime = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: projection,
+      snapshot: migrationSnapshot,
+      tick: 11,
+    });
+    expect(runtime.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: `store:${obsolete.id}:source:energy` }),
+    );
+    expect(runtime.graph.nodes).toContainEqual(
+      expect.objectContaining({
+        id: `${projection.edges[0]?.id ?? ""}:source:energy`,
+        observedAmount: 50,
+      }),
+    );
+    expect(runtime.plan.blockers).not.toContainEqual(
+      expect.objectContaining({ reason: "duplicate-id" }),
+    );
+  });
+
   it("clamps V3 acquire and partial delivery to observed exact quantities", () => {
     const acquire = planLeaseAgents({
       availablePathCpu: 1,

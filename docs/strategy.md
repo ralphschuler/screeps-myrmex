@@ -65,10 +65,13 @@ unshared container beside exactly one source only while a different exact commit
 remains the selected reachable service for that source. The stationary mining identity and work
 position do not change; selected, sole, stocked, ambiguous, or replacementless containers remain. A
 separate general-container exception first spends spare allowance on committed non-service capacity,
-then persists one bounded empty-target handoff that suppresses refill and waits for every active
-logistics endpoint naming that target to retire before removal. Canonical general positions adjacent
-to a source and unavailable contract evidence fail closed. Source services, stocked targets, and
-rooms without exact replacement evidence remain untouched.
+then persists one bounded target handoff. An empty target suppresses refill and waits for every
+active logistics endpoint naming it to retire. An exact energy-only target whose amount fits the
+replacement additionally uses the sole funded logistics flow, suppresses both refill sinks, and
+requires fresh empty-target, delivered-replacement, and retired flow/endpoint evidence before
+removal. Canonical general positions adjacent to a source, mixed stock, source-service targets,
+capacity loss, and unavailable contract evidence fail closed. Other stocked structures and rooms
+without exact replacement evidence remain untouched.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

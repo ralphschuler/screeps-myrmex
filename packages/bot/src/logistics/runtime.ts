@@ -482,20 +482,18 @@ function mergeDemandGraph(
   demands: LogisticsResourceDemandProjection | undefined,
 ): LogisticsGraphObservation {
   if (demands === undefined) return observed;
-  const requestedSuppressions = demands.suppressedSinkTargetIds ?? [];
-  const validSuppressions =
-    requestedSuppressions.length <= 128 &&
-    requestedSuppressions.every((id) => id.length > 0 && id.length <= 128) &&
-    new Set(requestedSuppressions).size === requestedSuppressions.length;
-  const suppressedTargets = new Set(validSuppressions ? requestedSuppressions : []);
+  const suppressedSinkTargets = validSuppressionSet(demands.suppressedSinkTargetIds ?? []);
+  const suppressedSourceTargets = validSuppressionSet(demands.suppressedSourceTargetIds ?? []);
   const suppressedNodeIds = new Set(
-    observed.endpoints.flatMap((endpoint) =>
-      endpoint.targetId !== null && suppressedTargets.has(endpoint.targetId)
-        ? observed.nodes.some(({ id, kind }) => id === endpoint.nodeId && kind === "sink")
-          ? [endpoint.nodeId]
-          : []
-        : [],
-    ),
+    observed.endpoints.flatMap((endpoint) => {
+      if (endpoint.targetId === null) return [];
+      const node = observed.nodes.find(({ id }) => id === endpoint.nodeId);
+      if (node?.kind === "sink" && suppressedSinkTargets.has(endpoint.targetId))
+        return [endpoint.nodeId];
+      if (node?.kind === "source" && suppressedSourceTargets.has(endpoint.targetId))
+        return [endpoint.nodeId];
+      return [];
+    }),
   );
   return freeze({
     edges: [
@@ -511,6 +509,14 @@ function mergeDemandGraph(
     ],
     nodes: [...observed.nodes.filter(({ id }) => !suppressedNodeIds.has(id)), ...demands.nodes],
   });
+}
+
+function validSuppressionSet(values: readonly string[]): ReadonlySet<string> {
+  return values.length <= 128 &&
+    values.every((id) => id.length > 0 && id.length <= 128) &&
+    new Set(values).size === values.length
+    ? new Set(values)
+    : new Set();
 }
 
 function flowProgress(

@@ -17,6 +17,7 @@ export const MAX_LAYOUT_RECORDS = 64 as const;
 export const MAX_LAYOUT_BLOCKERS = 8 as const;
 export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
 export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
+export const MAX_LAYOUT_CONTAINER_ENERGY = 2_000 as const;
 export const LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS = 150 as const;
 export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
@@ -82,8 +83,11 @@ export interface LayoutExtensionEvacuation {
   readonly startedAt: number;
 }
 export interface LayoutContainerMigration {
+  /** Present together only when exact energy must reach the replacement before removal. */
+  readonly energyAmount?: number;
   readonly expiresAt: number;
   readonly replacementId: string;
+  readonly replacementInitialEnergy?: number;
   readonly startedAt: number;
   readonly targetId: string;
 }
@@ -94,6 +98,26 @@ export interface LayoutRecord extends LayoutCommitment {
   readonly roomName: string;
   readonly sourceServices?: readonly LayoutPlacement[];
   readonly siteReceipts?: readonly ConstructionSiteAttemptReceipt[];
+}
+
+export function layoutContainerMigrationFlowId(
+  roomName: string,
+  migration: Pick<LayoutContainerMigration, "replacementId" | "targetId">,
+): string {
+  return `layout-container-evacuation:${roomName}:${migration.targetId}:${migration.replacementId}`;
+}
+
+export function layoutContainerMigrationBudgetIssuer(
+  roomName: string,
+  migration: Pick<LayoutContainerMigration, "replacementId" | "targetId">,
+): string | null {
+  const issuer = [
+    "layout-migration",
+    `${String(roomName.length)}:${roomName}`,
+    `${String(migration.targetId.length)}:${migration.targetId}`,
+    `${String(migration.replacementId.length)}:${migration.replacementId}`,
+  ].join("/");
+  return issuer.length <= 128 ? issuer : null;
 }
 
 export function layoutExtensionEvacuationFlowId(

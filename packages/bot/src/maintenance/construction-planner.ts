@@ -3,8 +3,11 @@ import {
   CONSTRUCTION_SITE_LIMITS,
   LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS,
   LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
+  MAX_LAYOUT_CONTAINER_ENERGY,
   MAX_LAYOUT_EXTENSION_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
+  layoutContainerMigrationBudgetIssuer,
+  layoutContainerMigrationFlowId,
   layoutExtensionEvacuationFlowId,
   type LayoutCommitment,
   type LayoutContainerMigration,
@@ -436,15 +439,35 @@ export class ConstructionPlanner {
           });
           break;
         }
+        if (
+          (evidence.targetEnergy > 0 || (containerMigration?.energyAmount ?? 0) > 0) &&
+          layoutContainerMigrationBudgetIssuer(input.room.name, {
+            replacementId: evidence.replacement.id,
+            targetId: candidate.target.id,
+          }) === null
+        ) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-unavailable",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
         if (containerMigration === null) {
           containerMigration = {
+            ...(evidence.targetEnergy === 0
+              ? {}
+              : {
+                  energyAmount: evidence.targetEnergy,
+                  replacementInitialEnergy: evidence.replacementEnergy,
+                }),
             expiresAt: input.room.observedAt + LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS,
             replacementId: evidence.replacement.id,
             startedAt: input.room.observedAt,
             targetId: candidate.target.id,
           };
           pushMigrationBlocker(blockers, {
-            reason: "migration-pending",
+            reason: evidence.targetEnergy === 0 ? "migration-pending" : "target-stocked",
             roomName: input.room.name,
             targetId: candidate.target.id,
           });
@@ -480,7 +503,53 @@ export class ConstructionPlanner {
           });
           break;
         }
-        if (input.activeLogisticsTargetIds.has(candidate.target.id)) {
+        const evacuationAmount = containerMigration.energyAmount ?? 0;
+        if (evacuationAmount === 0 && evidence.targetEnergy > 0) {
+          containerMigration = null;
+          pushMigrationBlocker(blockers, {
+            reason: "target-stocked",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (evacuationAmount > 0) {
+          if (input.activeLogisticsFlowIds === undefined) {
+            pushMigrationBlocker(blockers, {
+              reason: "logistics-unavailable",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          const replacementBaseline = containerMigration.replacementInitialEnergy;
+          const flowActive = input.activeLogisticsFlowIds.has(
+            layoutContainerMigrationFlowId(input.room.name, containerMigration),
+          );
+          let reason: LayoutMigrationBlocker | null = null;
+          if (
+            replacementBaseline === undefined ||
+            evidence.targetEnergy > evacuationAmount ||
+            evidence.replacementEnergy < replacementBaseline
+          )
+            reason = "evacuation-incomplete";
+          else if (evidence.targetEnergy > 0) reason = "target-stocked";
+          else if (flowActive) reason = "evacuation-pending";
+          else if (evidence.replacementEnergy < replacementBaseline + evacuationAmount)
+            reason = "evacuation-incomplete";
+          if (reason !== null) {
+            pushMigrationBlocker(blockers, {
+              reason,
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+        }
+        if (
+          input.activeLogisticsTargetIds.has(candidate.target.id) ||
+          input.activeLogisticsTargetIds.has(evidence.replacement.id)
+        ) {
           pushMigrationBlocker(blockers, {
             reason: "logistics-active",
             roomName: input.room.name,
@@ -655,7 +724,12 @@ function generalContainerMigrationEvidence(
   allowance: number,
 ):
   | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
-  | { readonly reason: null; readonly replacement: StoredStructureSnapshot } {
+  | {
+      readonly reason: null;
+      readonly replacement: StoredStructureSnapshot;
+      readonly replacementEnergy: number;
+      readonly targetEnergy: number;
+    } {
   const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
   if (
     occupying.length !== 1 ||
@@ -663,15 +737,9 @@ function generalContainerMigrationEvidence(
     room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
   )
     return { reason: "target-shared", replacement: null };
-  if (
-    target.ownership === "foreign" ||
-    target.store.usedCapacity !== 0 ||
-    target.store.resources.some(({ amount }) => amount !== 0)
-  )
-    return {
-      reason: target.store.usedCapacity === 0 ? "target-unavailable" : "target-stocked",
-      replacement: null,
-    };
+  const targetEnergy = exactContainerEnergy(target);
+  if (target.ownership === "foreign" || targetEnergy === null)
+    return { reason: "target-unavailable", replacement: null };
   if (
     room.sources.some(({ pos }) => inRangeOne(pos, target.pos)) ||
     desiredGeneralContainers.some((placement) =>
@@ -708,9 +776,31 @@ function generalContainerMigrationEvidence(
     )
     .sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x || a.id.localeCompare(b.id));
   const replacement = replacements[replacements.length - 1];
-  return replacement === undefined
-    ? { reason: "replacement-pending", replacement: null }
-    : { reason: null, replacement };
+  if (replacement === undefined) return { reason: "replacement-pending", replacement: null };
+  const replacementEnergy = exactContainerEnergy(replacement);
+  if (
+    replacementEnergy === null ||
+    replacement.store.freeCapacity === null ||
+    replacement.store.freeCapacity < targetEnergy ||
+    replacementEnergy + targetEnergy > MAX_LAYOUT_CONTAINER_ENERGY
+  )
+    return { reason: "evacuation-capacity", replacement: null };
+  return { reason: null, replacement, replacementEnergy, targetEnergy };
+}
+
+function exactContainerEnergy(container: StoredStructureSnapshot): number | null {
+  const energy = container.store.resources
+    .filter(({ resourceType }) => resourceType === "energy")
+    .reduce((total, resource) => total + resource.amount, 0);
+  return Number.isSafeInteger(energy) &&
+    energy >= 0 &&
+    energy <= MAX_LAYOUT_CONTAINER_ENERGY &&
+    energy === container.store.usedCapacity &&
+    container.store.resources.every(
+      ({ amount, resourceType }) => amount >= 0 && (amount === 0 || resourceType === "energy"),
+    )
+    ? energy
+    : null;
 }
 
 function sourceContainerMigrationEvidence(

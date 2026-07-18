@@ -4,6 +4,7 @@ import {
   LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_OWNER_SCHEMA_VERSION,
   MAX_LAYOUT_BLOCKERS,
+  MAX_LAYOUT_CONTAINER_ENERGY,
   MAX_LAYOUT_EXTENSION_ENERGY,
   MAX_LAYOUT_RECORDS,
   type ConstructionSiteAttemptReceipt,
@@ -201,14 +202,25 @@ function validRecord(v: unknown): v is LayoutRecord {
   );
 }
 function validContainerMigration(value: unknown): value is LayoutContainerMigration {
+  if (
+    !record(value) ||
+    !integer(value.startedAt) ||
+    !integer(value.expiresAt) ||
+    value.expiresAt - value.startedAt !== LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS ||
+    !identity(value.targetId, 128) ||
+    !identity(value.replacementId, 128) ||
+    value.targetId === value.replacementId
+  )
+    return false;
+  const hasEnergyAmount = value.energyAmount !== undefined;
+  const hasReplacementBaseline = value.replacementInitialEnergy !== undefined;
+  if (hasEnergyAmount !== hasReplacementBaseline) return false;
   return (
-    record(value) &&
-    integer(value.startedAt) &&
-    integer(value.expiresAt) &&
-    value.expiresAt - value.startedAt === LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS &&
-    identity(value.targetId, 128) &&
-    identity(value.replacementId, 128) &&
-    value.targetId !== value.replacementId
+    !hasEnergyAmount ||
+    (positiveInteger(value.energyAmount) &&
+      value.energyAmount <= MAX_LAYOUT_CONTAINER_ENERGY &&
+      integer(value.replacementInitialEnergy) &&
+      value.replacementInitialEnergy + value.energyAmount <= MAX_LAYOUT_CONTAINER_ENERGY)
   );
 }
 function validExtensionEvacuation(value: unknown): value is LayoutExtensionEvacuation {
