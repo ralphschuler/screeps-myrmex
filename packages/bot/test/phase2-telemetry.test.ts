@@ -47,7 +47,45 @@ describe("Phase 2 telemetry reducer", () => {
       [true, 5],
     ]);
     expect(result.telemetry.window).toEqual([1, 100, 100, 20, 50, 38, 18, 10, 1, 250, 0]);
+    expect(result.telemetry.attrition).toBeUndefined();
     expect(Object.isFrozen(result.telemetry.authorities)).toBe(true);
+  });
+
+  it("composes reset-safe road/container attrition into the Phase 2 owner", () => {
+    const baseline = reducePhase2Telemetry({
+      observation: {
+        ...observation(100),
+        attrition: {
+          colonies: ["colony:00000001"],
+          assets: [
+            ["road:00000001", "colony:00000001", 4_000, 5_000],
+            ["container:00000001", "colony:00000001", 200_000, 250_000],
+          ],
+          droppedObservations: 0,
+        },
+      },
+      previous: null,
+    });
+    const changed = reducePhase2Telemetry({
+      observation: {
+        ...observation(101),
+        attrition: {
+          colonies: ["colony:00000001"],
+          assets: [
+            ["road:00000001", "colony:00000001", 3_900, 5_000],
+            ["container:00000001", "colony:00000001", 205_000, 250_000],
+          ],
+          droppedObservations: 0,
+        },
+      },
+      previous: JSON.parse(JSON.stringify(baseline.state)) as Phase2TelemetryState,
+    });
+
+    expect(changed.state.schemaVersion).toBe(3);
+    expect(changed.telemetry.attrition?.rows).toEqual([
+      [1, 5_000, 100, 0, 0, 0],
+      [1, 250_000, 0, 5_000, 0, 0],
+    ]);
   });
 
   it("keeps a deterministic bounded rolling window across JSON reset", () => {
@@ -171,7 +209,7 @@ describe("Phase 2 telemetry reducer", () => {
     expect(second.telemetry.phase2.window.slice(0, 3)).toEqual([2, 100, 101]);
     expect(memory.myrmex?.telemetry).toMatchObject({
       schemaVersion: 5,
-      phase2: { schemaVersion: 2, samples: [{ tick: 100 }, { tick: 101 }] },
+      phase2: { schemaVersion: 3, samples: [{ tick: 100 }, { tick: 101 }] },
     });
 
     const resetMemory = JSON.parse(JSON.stringify(memory)) as Memory;
@@ -305,7 +343,7 @@ describe("Phase 2 telemetry reducer", () => {
       },
     });
 
-    expect(result.state.schemaVersion).toBe(2);
+    expect(result.state.schemaVersion).toBe(3);
     expect(result.state.samples.map(({ tick }) => tick)).toEqual([100, 101]);
     expect(result.state.rclTracks).toHaveLength(0);
     expect(result.state.droppedRclObservations).toBe(MAX_PHASE2_CONTROLLER_TRACKERS + 1);
@@ -470,6 +508,46 @@ describe("Phase 2 telemetry reducer", () => {
     expect(futureTiming.state.rclTransitionDurations.every(([count]) => count === 0)).toBe(true);
   });
 
+  it("drops malformed attrition state without losing samples or RCL timing", () => {
+    const baseline = reducePhase2Telemetry({
+      observation: {
+        ...observation(100),
+        controllerLevels: [{ colonyRef: "colony:00000001", level: 2 }],
+        attrition: {
+          colonies: ["colony:00000001"],
+          assets: [["road:00000001", "colony:00000001", 4_000, 5_000]],
+          droppedObservations: 0,
+        },
+      },
+      previous: null,
+    });
+    const oversized = new Array(129) as unknown[];
+    Object.defineProperty(oversized, 0, {
+      get: () => {
+        throw new Error("over-cap persisted attrition must not be read");
+      },
+    });
+    const result = reducePhase2Telemetry({
+      observation: {
+        ...observation(101),
+        controllerLevels: [{ colonyRef: "colony:00000001", level: 2 }],
+      },
+      previous: {
+        ...baseline.state,
+        attrition: { ...baseline.state.attrition, tracks: oversized },
+      } as unknown as Phase2TelemetryState,
+    });
+
+    expect(result.state.samples.map(({ tick }) => tick)).toEqual([100, 101]);
+    expect(result.state.rclTracks).toEqual([["colony:00000001", 2, 100, 101]]);
+    expect(result.state.attrition.tracks).toEqual([]);
+    expect(result.state.attrition.rows).toEqual([
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+    ]);
+    expect(result.telemetry.attrition).toBeUndefined();
+  });
+
   it("fails closed on malformed values instead of publishing misleading gate inputs", () => {
     expect(() =>
       reducePhase2Telemetry({
@@ -499,6 +577,7 @@ describe("Phase 2 telemetry reducer", () => {
 function observation(tick: number): Phase2TelemetryObservation {
   return {
     tick,
+    attrition: { colonies: [], assets: [], droppedObservations: 0 },
     controllerLevels: [],
     droppedControllerLevels: 0,
     controllers: 2,

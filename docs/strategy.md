@@ -95,10 +95,14 @@ construction, source, logistics, link, maintenance, resource, lab, mature-infras
 observer outcomes plus a bounded aggregate window. Adjacent-RCL timing requires continuous per-tick
 ownership observation; a gap, downgrade, multi-level jump, malformed identity, or reset without
 valid owner state establishes a new baseline instead of claiming progression. Completed durations
-aggregate into seven fixed RCL2–RCL8 rows from opaque colony references. Modeled stages remain
-distinct: a funded repair cap is not settled hit progress, planned terminal transaction energy is
-not observed destination stock, and lab/factory/power output requires exact next-observation
-settlement. Missing history reduces evidence and can never authorize work or RCL8 maturity.
+aggregate into seven fixed RCL2–RCL8 rows from opaque colony references. Consecutive complete
+owned-room observations similarly report only bounded road/container net hit loss/restoration and
+visible disappearance/addition; gaps, ownership loss, over-cap input, and byte eviction establish a
+new baseline, and no snapshot delta is labeled as decay, damage, repair, or replacement. Modeled
+stages remain distinct: a funded repair cap is not settled hit progress, planned terminal
+transaction energy is not observed destination stock, and lab/factory/power output requires exact
+next-observation settlement. Missing history reduces evidence and can never authorize work or RCL8
+maturity.
 
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU

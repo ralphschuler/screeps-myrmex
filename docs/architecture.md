@@ -393,20 +393,29 @@ Malformed or future reporter state is rebuilt safely. First occurrence, bounded-
 single resolution, and stuck-recovery transitions leave the service only as capped tick-local
 records; the durable owner is not a replay queue.
 
-Telemetry owner schema V5 contains Phase 2 owner-local schema V2. Current settled colony, spawn,
+Telemetry owner schema V5 contains Phase 2 owner-local schema V3. Current settled colony, spawn,
 layout, mining, logistics, link, maintenance, resource, lab, mature-infrastructure, and observer
 receipts produce exactly eleven authority rows, three modeled flow identities, fixed progression,
 reserve, utilization, and construction values, and one capped aggregate sample. The hard ring bound
-is 64 and the configured history and whole-owner byte ceilings may reduce it further. V2 also
-retains at most 64 opaque controller baselines and exactly seven destination-RCL duration rows. Only
-a continuously observed adjacent increase records elapsed ticks; missing continuity, ownership loss,
-downgrade, multi-level jump, duplicate identity, or malformed state resets evidence without success.
-Tick telemetry omits baseline-only timing and otherwise publishes one compact latest-row tuple plus
-loss counters; the owner retains all seven aggregates. After whole-owner byte fitting, the current
-tuple and status hash are reprojected from retained state before return. Samples and timing state
-contain no dynamic labels or gameplay commitment. Missing or malformed history reduces evidence
-only; `ColonyDirector` and domain-health composition continue to consume direct owner outputs and
-never telemetry.
+is 64 and the configured history and whole-owner byte ceilings may reduce it further. V3 also
+preserves at most 64 opaque controller baselines and exactly seven destination-RCL duration rows.
+Only a continuously observed adjacent increase records elapsed ticks; missing continuity, ownership
+loss, downgrade, multi-level jump, duplicate identity, or malformed state resets evidence without
+success. Tick telemetry omits baseline-only timing and otherwise publishes one compact latest-row
+tuple plus loss counters; the owner retains all seven aggregates.
+
+V3 adds one attrition schema with at most 64 opaque visible-owned-colony references, 128 opaque
+road/container baselines, and exactly two cumulative rows; its compact owner field is absent while
+there is no baseline, aggregate, or loss counter. Consecutive complete observations report only
+compared asset/capacity ticks, net hits lost/restored, and visible disappearance/addition. Missing
+visibility, ownership loss, tick gaps, changed capacity, collisions, malformed evidence, or over-cap
+input interrupts the batch and cannot claim loss. Disappearance accounts for the last visible
+remaining hits but never claims decay, combat, dismantle, or replacement causality. Tick telemetry
+omits baseline-only zero evidence. Whole-owner fitting drops the complete baseline before fixed rows
+and reprojects their loss counters, current telemetry, and status hash from retained state. Samples,
+timing, and attrition contain no dynamic labels or gameplay commitment. Missing or malformed
+observer history reduces evidence only; `ColonyDirector` and domain-health composition continue to
+consume direct owner outputs and never telemetry.
 
 Reporter aggregation admits at most 2,000 health signals plus the already-capped telemetry details
 (2,064 candidates under source defaults). Oversized arrays are rejected before element traversal,
@@ -1718,8 +1727,9 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrices
 - spawn utilization and unmet capability demand;
 - contract counts, age, completion, failure, and lease churn;
 - energy/source/logistics outcome metrics;
-- fixed Phase 2 controller progress, reset-safe adjacent-RCL durations, reserves, spawn utilization,
-  construction backlog, authority outcomes, modeled flow residuals, and a bounded aggregate window;
+- fixed Phase 2 controller progress, reset-safe adjacent-RCL durations, bounded road/container net
+  attrition, reserves, spawn utilization, construction backlog, authority outcomes, modeled flow
+  residuals, and a bounded aggregate window;
 - remote full-cost profit and suspension reason;
 - threat, defense response, and safe-mode decisions;
 - operation budget, losses, state, and exit reason;
@@ -1949,8 +1959,15 @@ equivalence, and one restored exit without persistent health state or duplicate 
 The Phase 2 RCL-transition matrix is recorded in
 [`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md). It proves one exact
 continuously observed adjacent transition across JSON/global-heap reconstruction, deterministic room
-reordering and same-tick replay, fail-closed interrupted timing, V1-to-V2 observer-state migration,
-and fixed cardinality, identity, and byte ceilings without a telemetry gameplay reader.
+reordering and same-tick replay, fail-closed interrupted timing, V1-to-V3 observer-state migration
+that preserves the V2 timing contract, and fixed cardinality, identity, and byte ceilings without a
+telemetry gameplay reader.
+
+The Phase 2 road/container attrition matrix is recorded in
+[`phase2-attrition-evidence.md`](phase2-attrition-evidence.md). It proves bounded adjacent-snapshot
+net hit loss/restoration, disappearance/addition, reset/reorder equivalence, interruption safety,
+complete over-cap rejection, V2-to-V3 observer-state migration, and atomic baseline byte eviction
+without causal labels or a telemetry gameplay reader.
 
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,

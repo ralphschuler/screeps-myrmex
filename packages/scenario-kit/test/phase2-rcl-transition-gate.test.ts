@@ -192,6 +192,7 @@ function observation(
 ): Phase2TelemetryObservation {
   return {
     tick,
+    attrition: { colonies: [], assets: [], droppedObservations: 0 },
     controllerLevels,
     droppedControllerLevels: 0,
     controllers: controllerLevels.length,

@@ -53,11 +53,13 @@ underlying work.
 
 ## Rolling window and bounds
 
-Telemetry owner schema V5 now contains owner-local Phase 2 schema V2. It preserves the V1 fixed
-sample ring and adds the bounded RCL timing state documented in
-[`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md). Each fixed sample retains
-only tick, harvested energy, logistics/link delivery, settled industry output, authority failures,
-reserve violations, and measured domain milli-CPU.
+Telemetry owner schema V5 now contains owner-local Phase 2 schema V3. It preserves the V1 fixed
+sample ring and V2 bounded RCL timing state documented in
+[`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md), then adds the bounded
+road/container net-attrition state documented in
+[`phase2-attrition-evidence.md`](phase2-attrition-evidence.md). Each fixed sample retains only tick,
+harvested energy, logistics/link delivery, settled industry output, authority failures, reserve
+violations, and measured domain milli-CPU.
 
 - hard sample maximum: 64;
 - effective sample maximum: configured telemetry history count;
@@ -66,8 +68,10 @@ reserve violations, and measured domain milli-CPU.
 - accounting identities: exactly 3;
 - dynamic Phase 2 labels: zero;
 - malformed state: discarded as observer history only;
-- byte pressure: old Phase 2 samples, RCL baselines, and completed timing aggregates are evicted and
-  counted before reporter health evidence.
+- road/container baseline: at most 128 opaque assets across 64 visible owned colonies and two fixed
+  aggregate rows;
+- byte pressure: old Phase 2 samples, RCL baselines/aggregates, and then attrition baselines/rows
+  are evicted and counted before reporter health evidence.
 
 The measured CPU input currently includes mining, logistics, tower-maintenance, and spawn command
 receipts that expose CPU directly. It is a lower-bound domain measurement, not total tick CPU; the
@@ -94,8 +98,9 @@ npm run check
 ```
 
 The scenario proves the direct-outcome telemetry contract. Issue #277 separately proves bounded
-reset-safe RCL transition duration. Issue #54 still owns full RCL2–RCL8 progression and steady-state
-soaks and must set pass/fail thresholds before running them.
+reset-safe RCL transition duration, and issue #279 proves bounded reset-safe road/container net
+attrition. Issue #54 still owns full RCL2–RCL8 progression and steady-state soaks and must set
+pass/fail thresholds before running them.
 
 ## Research receipt
 
