@@ -3,6 +3,7 @@ export { compileOwnedRoomLayoutV1 } from "./layout-v1";
 export {
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
+  projectLayoutConvergencePlacements,
   reconstructCommittedLayout,
   selectLayoutPlanningWindow,
 } from "./planner";

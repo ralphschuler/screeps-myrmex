@@ -133,6 +133,7 @@ import {
   parseLayoutsOwner,
   persistLayoutCommitment,
   planOwnedRoomLayout,
+  projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
   reconstructCommittedLayout,
   registerLayoutCompiledCache,
@@ -1850,12 +1851,22 @@ function layoutPlanningSystem(
           roomName: room.name,
         });
         maintenanceLayouts.push({ placements, roomName: room.name });
+        const convergencePlacements =
+          colony.rclPolicy.unlocks === null
+            ? placements
+            : projectLayoutConvergencePlacements({
+                commitment,
+                current: placements,
+                roomName: room.name,
+                sourceCount: room.sources.length,
+                unlocks: colony.rclPolicy.unlocks,
+              });
         const migration = constructionPlanner.planMigration({
           colony,
           commitment,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
           observationFingerprint,
-          placements,
+          placements: convergencePlacements,
           policyFingerprint,
           room,
         });
@@ -1871,7 +1882,7 @@ function layoutPlanningSystem(
             commitmentConflicted: false,
             constructionSites: room.constructionSites,
             observationFingerprint,
-            placements,
+            placements: convergencePlacements,
             policy: colony.rclPolicy,
             policyEnabled: true,
             policyFingerprint,

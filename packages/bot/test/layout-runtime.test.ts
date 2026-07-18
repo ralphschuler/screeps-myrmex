@@ -165,6 +165,202 @@ describe("composed layout runtime", () => {
     ).toBe(JSON.stringify(planOwnedRoomLayout(planningInput)));
   });
 
+  it("builds desired extension capacity before removing one empty obsolete extension", () => {
+    const idealExtensions = Array.from({ length: 10 }, (_, index) => ({
+      adoption: "planned" as const,
+      layer: "primary" as const,
+      minimumRcl: 3,
+      pos: pos(10 + index, 20),
+      structureType: "extension",
+    }));
+    const commitment = { ...complete().commitment, fingerprint: "layout-extension-migration-a" };
+    const extension = (id: string, x: number, y: number, usedCapacity = 0) => ({
+      active: true,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      pos: pos(x, y),
+      store: {
+        capacity: 50,
+        freeCapacity: 50 - usedCapacity,
+        resources: usedCapacity === 0 ? [] : [{ amount: usedCapacity, resourceType: "energy" }],
+        usedCapacity,
+      },
+    });
+    const structure = (id: string, x: number, y: number) => ({
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: pos(x, y),
+      structureType: "extension",
+    });
+    const exactBefore = Array.from({ length: 8 }, (_, index) =>
+      extension(`extension-exact-${String(index)}`, 10 + index, 20),
+    );
+    const obsolete = extension("extension-obsolete", 30, 30);
+    const room = (extensions: readonly ReturnType<typeof extension>[]) =>
+      ({
+        constructionSites: [],
+        controller: { level: 3, ownership: "owned" as const },
+        hostileCreeps: [],
+        name: roomName,
+        observedAt: 100,
+        ownedCreeps: [],
+        ownedExtensions: extensions,
+        ownedSpawns: [],
+        ownedTowers: [],
+        roads: [],
+        sources: [],
+        storedStructures: [],
+        structures: extensions.map(({ id, pos: extensionPos }) =>
+          structure(id, extensionPos.x, extensionPos.y),
+        ),
+      }) as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: policy,
+      roomName,
+      state: "developing",
+      visibility: "visible",
+    } as ColonyView;
+    const beforeRoom = room([...exactBefore, obsolete]);
+    const beforeDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-before",
+      placements: idealExtensions,
+      policy,
+      policyEnabled: true,
+      policyFingerprint: "policy-a",
+      roomName,
+      roomStatus: "owned",
+      structures: beforeRoom.structures ?? [],
+    });
+    const beforeMigration = new ConstructionPlanner().planMigration({
+      colony,
+      commitment,
+      globalOwnedSiteCount: 0,
+      observationFingerprint: "obs-before",
+      placements: idealExtensions,
+      policyFingerprint: "policy-a",
+      room: beforeRoom,
+    });
+
+    expect(beforeDiff.proposals).toEqual([
+      expect.objectContaining({ pos: pos(18, 20), structureType: "extension" }),
+    ]);
+    expect(beforeMigration.proposals).toEqual([]);
+
+    const replacement = extension("extension-replacement", 18, 20);
+    const readyRoom = room([...exactBefore, replacement, obsolete]);
+    const planReady = (value: Parameters<ConstructionPlanner["planMigration"]>[0]["room"]) =>
+      new ConstructionPlanner().planMigration({
+        colony,
+        commitment,
+        globalOwnedSiteCount: 0,
+        observationFingerprint: "obs-ready",
+        placements: idealExtensions,
+        policyFingerprint: "policy-a",
+        room: value,
+      });
+    const ready = planReady(readyRoom);
+    const reorderedReady = planReady({
+      ...readyRoom,
+      ownedExtensions: [...readyRoom.ownedExtensions].reverse(),
+      structures: [...(readyRoom.structures ?? [])].reverse(),
+    });
+    const stockedRoom = room([
+      ...exactBefore,
+      replacement,
+      extension("extension-obsolete", 30, 30, 1),
+    ]);
+    const sharedRoom = {
+      ...readyRoom,
+      structures: [
+        ...(readyRoom.structures ?? []),
+        {
+          hits: 1,
+          hitsMax: 300_000,
+          id: "rampart-shared",
+          ownerUsername: "me",
+          ownership: "owned" as const,
+          pos: obsolete.pos,
+          structureType: "rampart",
+        },
+      ],
+    };
+
+    expect(JSON.stringify(reorderedReady)).toBe(JSON.stringify(ready));
+    expect(planReady(stockedRoom).proposals).toEqual([]);
+    expect(planReady(sharedRoom).proposals).toEqual([]);
+    if (ready.authorization === null) throw new Error("expected extension migration authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [ready.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: ready.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveExtension = (value: ReturnType<typeof extension>, destroyCommand?: () => number) =>
+      ({
+        destroy: destroyCommand ?? vi.fn(() => 0),
+        id: value.id,
+        isActive: () => true,
+        my: true,
+        pos: value.pos,
+        room: liveRoom,
+        store: { getUsedCapacity: () => value.store.usedCapacity },
+        structureType: "extension",
+      }) as unknown as Structure;
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) =>
+        id === obsolete.id
+          ? liveExtension(obsolete, destroy)
+          : id === replacement.id
+            ? liveExtension(replacement)
+            : null,
+    });
+
+    expect(arbitration.intents).toEqual([
+      expect.objectContaining({
+        replacementStructureType: "extension",
+        targetId: "extension-obsolete",
+        targetStructureType: "extension",
+      }),
+    ]);
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    const followingRoom = room([...exactBefore, replacement]);
+    const following = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-following",
+      placements: idealExtensions,
+      policy,
+      policyEnabled: true,
+      policyFingerprint: "policy-a",
+      roomName,
+      roomStatus: "owned",
+      structures: followingRoom.structures ?? [],
+    });
+    expect(following.proposals).toEqual([
+      expect.objectContaining({ pos: pos(19, 20), structureType: "extension" }),
+    ]);
+  });
+
   it("removes one temporary road then makes the planned tower eligible next observation", () => {
     const tower = {
       adoption: "planned",

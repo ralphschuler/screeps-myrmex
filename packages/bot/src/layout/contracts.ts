@@ -231,22 +231,37 @@ export type LayoutMigrationBlocker =
   | "global-site-headroom"
   | "layout-blocked"
   | "progression-blocked"
+  | "replacement-pending"
   | "reserve-unrestored"
   | "room-site-cap"
   | "site-conflict"
+  | "target-shared"
+  | "target-stocked"
+  | "target-unavailable"
   | "threat"
   | "workforce-unavailable";
-export interface LayoutMigrationProposal {
+interface LayoutMigrationProposalBase {
   readonly colonyId: string;
   readonly layoutFingerprint: string;
   readonly observationFingerprint: string;
   readonly policyFingerprint: string;
   readonly pos: PositionSnapshot;
-  readonly replacementStructureType: "tower";
   readonly stableId: string;
   readonly targetId: string;
-  readonly targetStructureType: "road";
 }
+export type LayoutMigrationProposal =
+  | (LayoutMigrationProposalBase & {
+      readonly replacementId: null;
+      readonly replacementStructureType: "tower";
+      readonly targetRequiresEmptyStore: false;
+      readonly targetStructureType: "road";
+    })
+  | (LayoutMigrationProposalBase & {
+      readonly replacementId: string;
+      readonly replacementStructureType: "extension";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetStructureType: "extension";
+    });
 export interface LayoutMigrationBlockerRecord {
   readonly reason: LayoutMigrationBlocker;
   readonly roomName: string;
@@ -281,20 +296,31 @@ export interface StructureRemovalArbitrationRecord {
   readonly reason?: StructureRemovalArbitrationReason;
   readonly status: "accepted" | "deferred" | "rejected";
 }
-export interface DestroyOwnedStructureIntent {
+interface DestroyOwnedStructureIntentBase {
   readonly colonyId: string;
   readonly kind: "destroy-owned-structure";
   readonly layoutFingerprint: string;
   readonly observationFingerprint: string;
   readonly policyFingerprint: string;
-  readonly replacementStructureType: "tower";
   readonly roomName: string;
   readonly stableId: string;
   readonly targetId: string;
-  readonly targetStructureType: "road";
   readonly x: number;
   readonly y: number;
 }
+export type DestroyOwnedStructureIntent =
+  | (DestroyOwnedStructureIntentBase & {
+      readonly replacementId: null;
+      readonly replacementStructureType: "tower";
+      readonly targetRequiresEmptyStore: false;
+      readonly targetStructureType: "road";
+    })
+  | (DestroyOwnedStructureIntentBase & {
+      readonly replacementId: string;
+      readonly replacementStructureType: "extension";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetStructureType: "extension";
+    });
 export interface StructureRemovalArbitrationInput {
   readonly authorizations: readonly LayoutMigrationAuthorization[];
   readonly limits: StructureRemovalLimits;
@@ -316,10 +342,13 @@ export interface StructureDestroyExecutionResult {
     | "adapter-fault"
     | "hostiles-present"
     | "room-not-owned"
+    | "replacement-absent"
+    | "replacement-mismatch"
     | "room-unavailable"
     | "stale-commitment"
     | "target-absent"
     | "target-mismatch"
+    | "target-not-empty"
     | null;
   readonly intent: DestroyOwnedStructureIntent;
 }

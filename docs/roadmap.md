@@ -101,8 +101,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
 - Static mining, logistics contracts, links, storage, terminal, and layouts.
 - Issue #284 adds one deterministic, road-only layout convergence step: under fresh safe colony,
   layout, RCL, allowance, and site-headroom evidence, the sole removal arbiter/executor may destroy
-  one road that solely blocks a planned tower. It adds no Memory state. General build-before-remove
-  migration, stocked evacuation, and non-road dismantling remain issue #99.
+  one road that solely blocks a planned tower. Issue #286 adds one extension-only replacement-first
+  step: spare allowance builds canonical committed capacity before the same authority may remove one
+  empty, unshared, obsolete extension under exact current replacement evidence. Both add no Memory
+  state. Stock evacuation, other structure types, persistent multi-step migration, and creep
+  dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
