@@ -141,11 +141,13 @@ export function projectLayoutConvergencePlacements(input: {
     idealGeneralContainers.every((placement) =>
       input.sources.every((source) => !inRangeOne(source, placement.pos)),
     );
+  const labConvergenceSafe = input.unlocks.labs === 10;
   return freeze(
     [
       ...input.current.filter(
         ({ adoption, service, structureType }) =>
           structureType !== "extension" &&
+          (structureType !== "lab" || !labConvergenceSafe) &&
           structureType !== "link" &&
           structureType !== "tower" &&
           (structureType !== "container" ||
@@ -156,6 +158,7 @@ export function projectLayoutConvergencePlacements(input: {
         ({ layer, structureType }) =>
           layer === "primary" &&
           (structureType === "extension" ||
+            (structureType === "lab" && labConvergenceSafe) ||
             structureType === "link" ||
             structureType === "tower" ||
             (structureType === "container" && containerConvergenceSafe)),

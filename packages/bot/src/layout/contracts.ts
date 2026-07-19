@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 9 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 10 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -17,6 +17,8 @@ export const MAX_LAYOUT_RECORDS = 64 as const;
 export const MAX_LAYOUT_BLOCKERS = 8 as const;
 export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
 export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
+export const MAX_LAYOUT_LAB_ENERGY = 2_000 as const;
+export const MAX_LAYOUT_LAB_MINERAL = 3_000 as const;
 export const MAX_LAYOUT_LINK_ENERGY = 800 as const;
 export const MAX_LAYOUT_TOWER_ENERGY = 1_000 as const;
 /** Official energy cost of one tower attack, heal, or repair action. */
@@ -122,7 +124,7 @@ export interface LayoutStructureRemovalReceipt {
   readonly observedAt: number;
   readonly replacementId: string;
   readonly targetId: string;
-  readonly targetStructureType: "container" | "extension" | "link" | "tower";
+  readonly targetStructureType: "container" | "extension" | "lab" | "link" | "tower";
 }
 export interface LayoutContainerMigration {
   /** Legacy paired fields remain valid for one exact energy transfer. */
@@ -411,6 +413,9 @@ export type LayoutMigrationBlocker =
   | "colony-unsafe"
   | "controller-risk"
   | "global-site-headroom"
+  | "industry-active"
+  | "industry-unavailable"
+  | "lab-cluster-invalid"
   | "evacuation-capacity"
   | "evacuation-expired"
   | "evacuation-incomplete"
@@ -460,6 +465,13 @@ export type LayoutMigrationProposal =
       readonly replacementStructureType: "tower";
       readonly targetRequiresEmptyStore: true;
       readonly targetStructureType: "tower";
+    })
+  | (LayoutMigrationProposalBase & {
+      readonly replacementId: string;
+      readonly replacementStructureType: "lab";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetRequiresZeroCooldown: true;
+      readonly targetStructureType: "lab";
     })
   | (LayoutMigrationProposalBase & {
       readonly replacementExpectedEnergy: number;
@@ -541,6 +553,13 @@ export type DestroyOwnedStructureIntent =
       readonly targetStructureType: "tower";
     })
   | (DestroyOwnedStructureIntentBase & {
+      readonly replacementId: string;
+      readonly replacementStructureType: "lab";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetRequiresZeroCooldown: true;
+      readonly targetStructureType: "lab";
+    })
+  | (DestroyOwnedStructureIntentBase & {
       readonly replacementExpectedEnergy: number;
       readonly replacementId: string;
       readonly replacementRequiresZeroCooldown: true;
@@ -600,7 +619,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV9 {
+export interface LayoutsOwnerV10 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

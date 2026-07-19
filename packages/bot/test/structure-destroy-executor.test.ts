@@ -57,6 +57,23 @@ const linkIntent: DestroyOwnedStructureIntent = {
   x: 10,
   y: 11,
 };
+const labIntent: DestroyOwnedStructureIntent = {
+  colonyId: "W1N1",
+  kind: "destroy-owned-structure",
+  layoutFingerprint: "layout-a",
+  observationFingerprint: "observation-a",
+  policyFingerprint: "policy-a",
+  replacementId: "lab-replacement",
+  replacementStructureType: "lab",
+  roomName: "W1N1",
+  stableId: "remove-lab/lab-obsolete",
+  targetId: "lab-obsolete",
+  targetRequiresEmptyStore: true,
+  targetRequiresZeroCooldown: true,
+  targetStructureType: "lab",
+  x: 10,
+  y: 11,
+};
 const towerIntent: DestroyOwnedStructureIntent = {
   colonyId: "W1N1",
   kind: "destroy-owned-structure",
@@ -286,6 +303,79 @@ describe("StructureDestroyExecutor", () => {
     expect(
       new StructureDestroyExecutor().execute([towerIntent], adapter(tower("tower-obsolete", 1)))[0],
     ).toMatchObject({ called: false, fault: "target-not-empty" });
+  });
+
+  it("revalidates one empty zero-cooldown lab and an exact active replacement", () => {
+    const room = { controller: { my: true }, name: "W1N1" } as unknown as Room;
+    const destroy = vi.fn(() => 0);
+    const lab = (
+      id: string,
+      options: {
+        readonly active?: boolean;
+        readonly cooldown?: number;
+        readonly energy?: number;
+        readonly energyCapacity?: number;
+        readonly mineral?: number;
+        readonly mineralCapacity?: number;
+        readonly mineralType?: string | null;
+      } = {},
+    ) => {
+      const energy = options.energy ?? 0;
+      const mineral = options.mineral ?? 0;
+      const energyCapacity = options.energyCapacity ?? 2_000;
+      const mineralCapacity = options.mineralCapacity ?? 3_000;
+      return {
+        cooldown: options.cooldown ?? 0,
+        destroy: id === labIntent.targetId ? destroy : vi.fn(() => 0),
+        id,
+        isActive: () => options.active ?? true,
+        mineralType: options.mineralType ?? null,
+        my: true,
+        pos: { roomName: "W1N1", x: id === labIntent.targetId ? 10 : 12, y: 11 },
+        room,
+        store: {
+          getCapacity: (resource?: string) =>
+            resource === "energy"
+              ? energyCapacity
+              : resource === undefined
+                ? null
+                : mineralCapacity,
+          getFreeCapacity: (resource?: string) =>
+            resource === "energy"
+              ? energyCapacity - energy
+              : resource === undefined
+                ? null
+                : mineralCapacity - mineral,
+          getUsedCapacity: (resource?: string) =>
+            resource === "energy" ? energy : resource === undefined ? energy + mineral : mineral,
+        },
+        structureType: "lab",
+      } as unknown as Structure;
+    };
+    const adapter = (target = lab("lab-obsolete"), replacement = lab("lab-replacement")) => ({
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => room,
+      resolveStructure: (id: string) =>
+        id === labIntent.targetId ? target : id === labIntent.replacementId ? replacement : null,
+    });
+
+    expect(new StructureDestroyExecutor().execute([labIntent], adapter())[0]).toMatchObject({
+      called: true,
+      code: "OK",
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+    for (const [value, fault] of [
+      [adapter(lab("lab-obsolete", { cooldown: 1 })), "target-cooldown"],
+      [adapter(lab("lab-obsolete", { energy: 1 })), "target-not-empty"],
+      [adapter(lab("lab-obsolete", { mineral: 1, mineralType: "H" })), "target-not-empty"],
+      [adapter(lab("lab-obsolete", { energyCapacity: 1_999 })), "target-not-empty"],
+      [adapter(undefined, lab("lab-replacement", { active: false })), "replacement-mismatch"],
+    ] as const)
+      expect(new StructureDestroyExecutor().execute([labIntent], value)[0]).toMatchObject({
+        called: false,
+        fault,
+      });
   });
 
   it("revalidates empty targets and exact active 800-capacity idle replacement energy", () => {
