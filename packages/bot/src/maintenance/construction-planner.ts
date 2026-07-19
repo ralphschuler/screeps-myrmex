@@ -3,6 +3,7 @@ import {
   CONSTRUCTION_SITE_LIMITS,
   LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS,
   LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
+  LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_CONTAINER_ENERGY,
   MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
   MAX_LAYOUT_CONTAINER_STORE_RESOURCES,
@@ -15,6 +16,8 @@ import {
   layoutContainerMigrationResourceBudgetIssuer,
   layoutContainerMigrationResourceFlowId,
   layoutExtensionEvacuationFlowId,
+  layoutTowerEvacuationBudgetIssuer,
+  layoutTowerEvacuationFlowId,
   type LayoutCommitment,
   type LayoutContainerMigration,
   type LayoutContainerMigrationResource,
@@ -25,6 +28,7 @@ import {
   type LayoutMigrationProposal,
   type LayoutPlacement,
   type LayoutStructureRemovalReceipt,
+  type LayoutTowerEvacuation,
 } from "../layout";
 import type {
   PositionSnapshot,
@@ -213,6 +217,7 @@ export class ConstructionPlanner {
     readonly containerMigration?: LayoutContainerMigration | null;
     readonly currentPlacements?: readonly LayoutPlacement[];
     readonly extensionEvacuation?: LayoutExtensionEvacuation | null;
+    readonly towerEvacuation?: LayoutTowerEvacuation | null;
     readonly globalOwnedSiteCount: number;
     readonly logisticsEvidenceReady?: boolean;
     readonly observationFingerprint: string;
@@ -292,9 +297,12 @@ export class ConstructionPlanner {
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
       ...towerCandidates.map((target) => ({ kind: "tower" as const, target })),
     ].sort((left, right) => {
-      const activeSourceId = input.extensionEvacuation?.sourceId;
-      const leftActive = left.kind === "extension" && left.target.id === activeSourceId;
-      const rightActive = right.kind === "extension" && right.target.id === activeSourceId;
+      const leftActive =
+        (left.kind === "tower" && left.target.id === input.towerEvacuation?.sourceId) ||
+        (left.kind === "extension" && left.target.id === input.extensionEvacuation?.sourceId);
+      const rightActive =
+        (right.kind === "tower" && right.target.id === input.towerEvacuation?.sourceId) ||
+        (right.kind === "extension" && right.target.id === input.extensionEvacuation?.sourceId);
       return Number(rightActive) - Number(leftActive) || compareMigrationCandidate(left, right);
     });
     let containerMigration = input.containerMigration ?? null;
@@ -329,6 +337,7 @@ export class ConstructionPlanner {
         blockers,
         containerMigration,
         extensionEvacuation: null,
+        towerEvacuation: null,
         proposals,
         removalReceipt,
         scannedCandidates: 0,
@@ -347,6 +356,7 @@ export class ConstructionPlanner {
         blockers,
         containerMigration,
         extensionEvacuation: input.extensionEvacuation ?? null,
+        towerEvacuation: input.towerEvacuation ?? null,
         proposals,
         removalReceipt,
         scannedCandidates: considered.length,
@@ -361,6 +371,7 @@ export class ConstructionPlanner {
       roomName: input.room.name,
     } as const;
     let extensionEvacuation: LayoutExtensionEvacuation | null = null;
+    let towerEvacuation = input.towerEvacuation ?? null;
     const admitRemoval = (proposal: LayoutMigrationProposal): boolean => {
       const assessment = assessRemovalReceipt(removalReceipt, proposal, input.room.observedAt);
       removalReceipt = assessment.receipt;
@@ -700,11 +711,13 @@ export class ConstructionPlanner {
       }
 
       if (candidate.kind === "tower") {
+        if (towerEvacuation !== null && towerEvacuation.sourceId !== candidate.target.id) continue;
         const tower = towerMigrationEvidence(
           input.room,
           candidate.target,
           desiredTowers,
           input.colony.rclPolicy.unlocks?.towers ?? 0,
+          towerEvacuation?.replacementId,
         );
         if (tower.replacement === null) {
           pushMigrationBlocker(blockers, {
@@ -712,7 +725,96 @@ export class ConstructionPlanner {
             roomName: input.room.name,
             targetId: candidate.target.id,
           });
+          if (towerEvacuation !== null) break;
           continue;
+        }
+        if (towerEvacuation !== null && towerEvacuation.replacementId !== tower.replacement.id) {
+          pushMigrationBlocker(blockers, {
+            reason: "replacement-pending",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (towerEvacuation === null && tower.targetEnergy > 0) {
+          const identity = {
+            replacementId: tower.replacement.id,
+            sourceId: candidate.target.id,
+          };
+          if (
+            input.logisticsEvidenceReady !== true ||
+            input.activeLogisticsFlowIds === undefined ||
+            input.activeLogisticsTargetIds === undefined ||
+            layoutTowerEvacuationBudgetIssuer(input.room.name, identity) === null ||
+            layoutTowerEvacuationFlowId(input.room.name, identity) === null
+          ) {
+            pushMigrationBlocker(blockers, {
+              reason: "logistics-unavailable",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          if (
+            tower.replacementEnergy + tower.targetEnergy > MAX_LAYOUT_TOWER_ENERGY ||
+            tower.replacement.store.freeCapacity === null ||
+            tower.replacement.store.freeCapacity < tower.targetEnergy
+          ) {
+            pushMigrationBlocker(blockers, {
+              reason: "evacuation-capacity",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          towerEvacuation = {
+            amount: tower.targetEnergy,
+            expiresAt: input.room.observedAt + LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS,
+            replacementId: tower.replacement.id,
+            replacementInitialEnergy: tower.replacementEnergy,
+            sourceId: candidate.target.id,
+            startedAt: input.room.observedAt,
+          };
+        }
+        if (towerEvacuation !== null) {
+          const flowId = layoutTowerEvacuationFlowId(input.room.name, towerEvacuation);
+          const flowActive = flowId !== null && input.activeLogisticsFlowIds?.has(flowId) === true;
+          let reason: LayoutMigrationBlocker | null = null;
+          if (
+            input.logisticsEvidenceReady !== true ||
+            input.activeLogisticsFlowIds === undefined ||
+            input.activeLogisticsTargetIds === undefined ||
+            flowId === null
+          )
+            reason = "logistics-unavailable";
+          else if (input.room.observedAt >= towerEvacuation.expiresAt) {
+            reason = "evacuation-expired";
+            if (tower.targetEnergy > 0 && !flowActive) towerEvacuation = null;
+          } else if (
+            tower.targetEnergy > towerEvacuation.amount ||
+            tower.replacementEnergy < towerEvacuation.replacementInitialEnergy
+          )
+            reason = "evacuation-incomplete";
+          else if (tower.targetEnergy > 0) reason = "target-stocked";
+          else if (flowActive) reason = "evacuation-pending";
+          else if (
+            tower.replacementEnergy <
+            towerEvacuation.replacementInitialEnergy + towerEvacuation.amount
+          )
+            reason = "evacuation-incomplete";
+          else if (
+            input.activeLogisticsTargetIds.has(candidate.target.id) ||
+            input.activeLogisticsTargetIds.has(tower.replacement.id)
+          )
+            reason = "logistics-active";
+          if (reason !== null) {
+            pushMigrationBlocker(blockers, {
+              reason,
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
         }
         admitRemoval({
           colonyId: input.colony.id,
@@ -863,6 +965,7 @@ export class ConstructionPlanner {
       blockers,
       containerMigration,
       extensionEvacuation,
+      towerEvacuation,
       proposals: proposals.sort((a, b) => a.stableId.localeCompare(b.stableId)),
       removalReceipt,
       scannedCandidates: considered.length,
@@ -1326,9 +1429,15 @@ function towerMigrationEvidence(
   target: StructureSnapshot,
   desiredTowers: readonly LayoutPlacement[],
   allowance: number,
+  requiredReplacementId?: string,
 ):
   | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
-  | { readonly reason: null; readonly replacement: RoomSnapshot["ownedTowers"][number] } {
+  | {
+      readonly reason: null;
+      readonly replacement: RoomSnapshot["ownedTowers"][number];
+      readonly replacementEnergy: number;
+      readonly targetEnergy: number;
+    } {
   const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
   if (
     occupying.length !== 1 ||
@@ -1340,7 +1449,6 @@ function towerMigrationEvidence(
   const targetEnergy = observedTarget === undefined ? null : exactTowerEnergy(observedTarget);
   if (observedTarget === undefined || !observedTarget.active || targetEnergy === null)
     return { reason: "target-unavailable", replacement: null };
-  if (targetEnergy > 0) return { reason: "target-stocked", replacement: null };
   const exact = room.ownedTowers
     .filter(
       (tower) =>
@@ -1357,19 +1465,30 @@ function towerMigrationEvidence(
   )
     return { reason: "replacement-pending", replacement: null };
   const replacement = exact.find((tower) => {
+    if (requiredReplacementId !== undefined && tower.id !== requiredReplacementId) return false;
     const energy = exactTowerEnergy(tower);
     return energy !== null && energy >= MINIMUM_OPERATIONAL_TOWER_ENERGY;
   });
-  return replacement === undefined
+  if (replacement === undefined) return { reason: "replacement-pending", replacement: null };
+  const replacementEnergy = exactTowerEnergy(replacement);
+  return replacementEnergy === null
     ? { reason: "replacement-pending", replacement: null }
-    : { reason: null, replacement };
+    : { reason: null, replacement, replacementEnergy, targetEnergy };
 }
 
 function exactTowerEnergy(tower: RoomSnapshot["ownedTowers"][number]): number | null {
-  const energy = tower.store.resources
-    .filter(({ resourceType }) => resourceType === "energy")
-    .reduce((total, resource) => total + resource.amount, 0);
+  if (
+    tower.store.capacity !== MAX_LAYOUT_TOWER_ENERGY ||
+    tower.store.resources.length > 1 ||
+    tower.store.resources.some(
+      ({ amount, resourceType }) =>
+        resourceType !== "energy" || !Number.isSafeInteger(amount) || amount <= 0,
+    )
+  )
+    return null;
+  const energy = tower.store.resources[0]?.amount ?? 0;
   return energy === tower.store.usedCapacity &&
+    tower.store.freeCapacity === MAX_LAYOUT_TOWER_ENERGY - energy &&
     Number.isSafeInteger(energy) &&
     energy >= 0 &&
     energy <= MAX_LAYOUT_TOWER_ENERGY

@@ -3,6 +3,7 @@ import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { planStaticMining } from "../src/economy";
 import { ConstructionPlanner } from "../src/maintenance";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
+import { projectLayoutTowerEvacuations } from "../src/logistics/tower-evacuation";
 import type { WorldSnapshot } from "../src/world/snapshot";
 import {
   CONSTRUCTION_SITE_LIMITS,
@@ -15,6 +16,7 @@ import {
   emptyLayoutsOwner,
   parseLayoutsOwner,
   persistLayoutCommitment,
+  persistLayoutTowerEvacuation,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
@@ -643,7 +645,7 @@ describe("composed layout runtime", () => {
     ]);
   });
 
-  it("builds an operational replacement before removing one empty obsolete tower", () => {
+  it("builds a replacement, evacuates stock, and removes one obsolete tower", () => {
     const towerPolicy = projectColonyRclPolicy({
       activeThreat: false,
       controllerLevel: 5,
@@ -723,7 +725,7 @@ describe("composed layout runtime", () => {
             ({ amount, resourceType }) => resourceType === "energy" && amount >= 10,
           ),
       );
-    const obsoleteStocked = tower("tower-obsolete", pos(30, 30), 10);
+    const obsoleteStocked = tower("tower-obsolete", pos(30, 30), 500);
     const initialRoom = room([obsoleteStocked], 100);
     const initialDiff = diffOwnedRoomLayout({
       colonyId: roomName,
@@ -754,33 +756,89 @@ describe("composed layout runtime", () => {
     expect(operational(initialRoom)).toBe(true);
 
     const replacement = tower("tower-replacement", pos(siteIntent.x, siteIntent.y), 10);
-    const obsoleteEmpty = tower("tower-obsolete", obsoleteStocked.pos, 0);
-    const readyRoom = room([replacement, obsoleteEmpty], 101);
+    const stockedRoom = room([replacement, obsoleteStocked], 101);
+    type MigrationInput = Parameters<ConstructionPlanner["planMigration"]>[0];
     const plan = (
       value: ReturnType<typeof room>,
-      removalReceipt: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"] = null,
+      towerEvacuation: MigrationInput["towerEvacuation"] = null,
+      removalReceipt: MigrationInput["removalReceipt"] = null,
+      activeLogisticsFlowIds: ReadonlySet<string> = new Set(),
+      activeLogisticsTargetIds: ReadonlySet<string> = new Set(),
     ) =>
       new ConstructionPlanner().planMigration({
+        activeLogisticsFlowIds,
+        activeLogisticsTargetIds,
         colony: towerColony,
         commitment,
         globalOwnedSiteCount: 0,
+        logisticsEvidenceReady: true,
         observationFingerprint: `tower-${String(value.observedAt)}`,
         placements: idealTowers,
         policyFingerprint: "policy-tower",
         removalReceipt,
         room: value,
+        towerEvacuation,
       });
-    const ready = plan(readyRoom);
+    const staged = plan(stockedRoom);
+    expect(staged.proposals).toEqual([]);
+    expect(staged.towerEvacuation).toMatchObject({
+      amount: 500,
+      replacementId: "tower-replacement",
+      replacementInitialEnergy: 10,
+      sourceId: "tower-obsolete",
+    });
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment, idealTowers);
+    owner = persistLayoutTowerEvacuation(owner, roomName, staged.towerEvacuation);
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const towerEvacuation = owner.records[0]?.towerEvacuation;
+    if (towerEvacuation === undefined) throw new Error("expected persisted tower evacuation");
+    const logistics = projectLayoutTowerEvacuations({
+      existingBudgets: [],
+      records: owner.records,
+      snapshot: { rooms: [stockedRoom] } as unknown as WorldSnapshot,
+      tick: 101,
+    });
+    expect(logistics.budgets).toHaveLength(1);
+    expect(logistics.demands.edges).toHaveLength(1);
+    const flowId = logistics.demands.edges[0]?.id;
+    if (flowId === undefined) throw new Error("expected tower evacuation flow");
+
+    const partialRoom = room(
+      [
+        tower("tower-obsolete", obsoleteStocked.pos, 250),
+        tower("tower-replacement", replacement.pos, 260),
+      ],
+      102,
+    );
+    const partial = plan(
+      partialRoom,
+      towerEvacuation,
+      null,
+      new Set([flowId]),
+      new Set(["tower-obsolete", "tower-replacement"]),
+    );
+    expect(partial.proposals).toEqual([]);
+    expect(partial.towerEvacuation).toEqual(towerEvacuation);
+
+    const deliveredReplacement = tower("tower-replacement", replacement.pos, 510);
+    const obsoleteEmpty = tower("tower-obsolete", obsoleteStocked.pos, 0);
+    const readyRoom = room([deliveredReplacement, obsoleteEmpty], 103);
+    const ready = plan(readyRoom, towerEvacuation);
+    const resetReadyRoom = JSON.parse(
+      JSON.stringify({
+        ...readyRoom,
+        ownedTowers: [...readyRoom.ownedTowers].reverse(),
+        structures: [...(readyRoom.structures ?? [])].reverse(),
+      }),
+    ) as typeof readyRoom;
     const resetReady = plan(
-      JSON.parse(
-        JSON.stringify({
-          ...readyRoom,
-          ownedTowers: [...readyRoom.ownedTowers].reverse(),
-          structures: [...(readyRoom.structures ?? [])].reverse(),
-        }),
-      ) as typeof readyRoom,
+      resetReadyRoom,
+      JSON.parse(JSON.stringify(towerEvacuation)) as typeof towerEvacuation,
     );
     expect(JSON.stringify(resetReady)).toBe(JSON.stringify(ready));
+    expect(operational(initialRoom)).toBe(true);
+    expect(operational(stockedRoom)).toBe(true);
+    expect(operational(partialRoom)).toBe(true);
     expect(operational(readyRoom)).toBe(true);
     expect(ready.proposals).toEqual([
       expect.objectContaining({
@@ -817,24 +875,28 @@ describe("composed layout runtime", () => {
       resolveStructure: (id) =>
         id === obsoleteEmpty.id
           ? (liveTower(obsoleteEmpty, destroy) as unknown as Structure)
-          : id === replacement.id
-            ? (liveTower(replacement) as unknown as Structure)
+          : id === deliveredReplacement.id
+            ? (liveTower(deliveredReplacement) as unknown as Structure)
             : null,
     });
-    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment, idealTowers);
-    owner = reconcileStructureDestroyExecution(owner, execution, 101).owner;
+    owner = reconcileStructureDestroyExecution(owner, execution, 103).owner;
     owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
     const receipt = owner.records[0]?.removalReceipt ?? null;
     expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
     expect(destroy).toHaveBeenCalledOnce();
-    expect(plan(room([replacement, obsoleteEmpty], 102), receipt)).toMatchObject({
+    expect(
+      plan(room([deliveredReplacement, obsoleteEmpty], 104), towerEvacuation, receipt),
+    ).toMatchObject({
       blockers: [expect.objectContaining({ reason: "removal-pending" })],
       proposals: [],
     });
 
-    const followingRoom = room([replacement], 103);
+    const followingRoom = room([deliveredReplacement], 105);
     expect(operational(followingRoom)).toBe(true);
-    expect(plan(followingRoom, receipt).removalReceipt).toBeNull();
+    expect(plan(followingRoom, towerEvacuation, receipt)).toMatchObject({
+      removalReceipt: null,
+      towerEvacuation: null,
+    });
     const followingDiff = diffOwnedRoomLayout({
       colonyId: roomName,
       commitment,

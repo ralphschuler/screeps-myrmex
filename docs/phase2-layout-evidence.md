@@ -27,7 +27,10 @@ service. Issue [#310](https://github.com/ralphschuler/screeps-myrmex/issues/310)
 extension/container destroy path one bounded reset-safe receipt. Issue
 [#312](https://github.com/ralphschuler/screeps-myrmex/issues/312) restores committed tower geometry
 and reuses that receipt for one active empty obsolete tower only after an exact operational
-replacement exists. Parent issue #99 still owns other structure migration and dismantling.
+replacement exists. Issue [#314](https://github.com/ralphschuler/screeps-myrmex/issues/314) adds one
+exact funded energy-evacuation continuation for a stocked obsolete tower whose operational
+replacement has complete capacity. Parent issue #99 still owns other structure migration and
+dismantling.
 
 ## Runtime order
 
@@ -38,42 +41,46 @@ replacement exists. Parent issue #99 still owns other structure migration and di
    allowing the ordinary diff/site chain to spend spare controller allowance without changing
    current world usability. Tower removal remains separate and requires full allowance of at least
    two, exactly allowance minus one active committed towers, one active empty unshared obsolete
-   target, and an exact active committed replacement holding at least 10 energy. The diff also
-   follows current engine co-location: planned primary geometry may retain existing roads/ramparts,
-   and planned road/rampart layers may share another buildable structure; current sites and
-   incompatible primary occupancy still block. `ConstructionPlanner` may then project one active
-   empty external extension after exact current replacement evidence, one compact stocked-extension
-   evacuation commitment, one unselected source container with a different exact selected service
-   for the same source, or one compact general-container handoff after exact committed replacement
-   capacity exists. Before that migration policy, source-service selection gives one valid persisted
-   position continuity precedence over newly observed exact containers and sites; current offload
-   quality may degrade without moving static-mining terms. If the selected container is absent, one
-   different exact legal/reachable replacement may advance its issuance coordinate only under fresh
-   no-threat, no-controller-risk, legal-workforce, and restored-reserve evidence. Under the same
-   safety evidence, a current exact selected container may advance only to a different exact
-   candidate that strictly precedes it under the existing canonical ordering; worse/equal candidates
-   cannot oscillate the selection, and every persisted position remains reserved to its own source
-   across overlapping candidate sets. An empty redundant source target remains directly removable; a
-   stocked one persists the same bounded handoff plus its source identity. An energy-only target
-   persists its exact amount and the replacement's current energy. A target with one non-energy kind
-   or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline
-   tuples; energy as the only manifest row, malformed stock, or insufficient aggregate capacity
-   fails closed.
+   target, and an exact active committed replacement holding at least 10 energy. A stocked target
+   may first persist one exact 150-tick energy evacuation only when that replacement can hold the
+   full amount. The diff also follows current engine co-location: planned primary geometry may
+   retain existing roads/ramparts, and planned road/rampart layers may share another buildable
+   structure; current sites and incompatible primary occupancy still block. `ConstructionPlanner`
+   may then project one active empty external extension after exact current replacement evidence,
+   one compact stocked-extension evacuation commitment, one unselected source container with a
+   different exact selected service for the same source, or one compact general-container handoff
+   after exact committed replacement capacity exists. Before that migration policy, source-service
+   selection gives one valid persisted position continuity precedence over newly observed exact
+   containers and sites; current offload quality may degrade without moving static-mining terms. If
+   the selected container is absent, one different exact legal/reachable replacement may advance its
+   issuance coordinate only under fresh no-threat, no-controller-risk, legal-workforce, and
+   restored-reserve evidence. Under the same safety evidence, a current exact selected container may
+   advance only to a different exact candidate that strictly precedes it under the existing
+   canonical ordering; worse/equal candidates cannot oscillate the selection, and every persisted
+   position remains reserved to its own source across overlapping candidate sets. An empty redundant
+   source target remains directly removable; a stocked one persists the same bounded handoff plus
+   its source identity. An energy-only target persists its exact amount and the replacement's
+   current energy. A target with one non-energy kind or two to eight kinds persists binary-ordered
+   compact resource/amount/replacement-baseline tuples; energy as the only manifest row, malformed
+   stock, or insufficient aggregate capacity fails closed.
 4. On the following tick, runtime composition validates each stocked commitment from fresh
    observation, requests one distinct `optional-growth` reservation per resource kind, and injects
    exact source/replacement projections into `LogisticsPlanner`. Specialized sources replace the
    target's ordinary source nodes, all replacement sinks share one aggregate-capacity key, and
-   ordinary refill sinks cannot compete. Existing V3 haul contracts and lease agents perform only
-   the funded withdraw/transfer path.
+   ordinary refill sinks cannot compete. A tower evacuation contributes exactly one energy flow,
+   suppresses obsolete-tower refill, and reserves the exact replacement tower's physical capacity
+   once. Existing V3 haul contracts and lease agents perform only the funded withdraw/transfer path.
 5. An empty general-container handoff suppresses the obsolete target's ordinary refill and retires
    assigned/active V3 work that still names it. A stocked general or redundant-source handoff
    instead supplies one exact flow per resource and suppresses the target source plus both endpoint
    refill sinks. Removal waits for fresh empty-target, every delivered replacement gain, and retired
-   exact-flow/endpoint evidence. Unavailable contract views, capacity loss, refill, threat, timeout,
-   drift, or a projection above 64 flows fail closed without a prefix. `StructureRemovalArbiter`
-   then requires one exact current planner authorization and accepts at most one deterministic
-   container, extension, or tower removal after proving current global/room site headroom. The
-   following observation re-enters ordinary site arbitration.
+   exact-flow/endpoint evidence. A stocked tower uses the same fresh empty-target, baseline-plus-
+   amount replacement gain, and retired exact-flow/endpoint gate while preserving at least 10 energy
+   in the active committed replacement. Unavailable contract views, capacity loss, refill, threat,
+   timeout, drift, or a projection above 64 flows fail closed without a prefix.
+   `StructureRemovalArbiter` then requires one exact current planner authorization and accepts at
+   most one deterministic container, extension, or tower removal after proving current global/room
+   site headroom. The following observation re-enters ordinary site arbitration.
 6. `layout.execute` alone resolves live rooms and targets. `ConstructionSiteExecutor` calls
    `Room.createConstructionSite`; `StructureDestroyExecutor` calls `Structure.destroy` after fresh
    ownership, threat, commitment, ID, type, room, and position checks. Extension removal also
@@ -83,7 +90,7 @@ replacement exists. Parent issue #99 still owns other structure migration and di
    removal rechecks an active empty owned target and the exact active owned same-room replacement's
    minimum 10 energy immediately before the call.
 7. On a selected-service switch only, `layout.handoff-reconcile` reconciles the complete layout
-   draft and stages layouts-owner V6 before the root commit. The predecessor remains executable. On
+   draft and stages layouts-owner V7 before the root commit. The predecessor remains executable. On
    the following tick, StaticMiningPlanner consumes the durable coordinate; Reconcile atomically
    cancels the predecessor, creates/funds its exact next sequence, and leaves exactly one
    commitment.
@@ -113,16 +120,19 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - at most 128 container/extension/tower-removal candidates and authorizations; over-cap batches fail
   before traversal;
 - one accepted removal globally per tick;
-- layouts owner-local schema V6 migrates V1-V5 records, preserves V3's optional bounded source
+- layouts owner-local schema V7 migrates V1-V6 records, preserves V3's optional bounded source
   identity and V4's optional source-service issuance coordinate, moves a valid legacy nested receipt
-  to the generic field, admits `tower` only in V6, and makes rollback to older code fail closed;
-- at most one compact extension evacuation, one compact container handoff, and one fixed-shape
-  three-attempt destroy receipt per room across 64 records; retry matching adds no unbounded scan;
+  to the generic field, preserves V6 tower receipts, adds no tower evacuation while migrating, and
+  makes rollback to older code fail closed;
+- at most one compact extension evacuation, one compact tower evacuation, one compact container
+  handoff, and one fixed-shape three-attempt destroy receipt per room across 64 records; retry
+  matching adds no unbounded scan;
 - container evacuation is capped by the official 2,000 capacity and either one legacy energy pair or
   one to eight compact resource tuples, with a one-row energy manifest forbidden; fresh replacement
   evidence is capped at 64 Store rows;
-- at most 64 extension edges and 64 general-container resource edges, each with two nodes; mixed
-  projection overflow rejects the complete migration graph before the common logistics caps;
+- at most 64 extension edges, 64 tower edges, and 64 general-container resource edges, each with two
+  nodes; mixed projection overflow rejects the complete migration graph before the common logistics
+  caps;
 - empty general-container handoffs add only bounded sink-suppression IDs;
 - 150-tick exclusive evacuation and general-container handoff timeouts;
 - current global and room site headroom required before removal;
@@ -140,42 +150,42 @@ RCL3 extensions produce one canonical desired site and no removal; observing the
 extension authorizes one empty obsolete target; stocked/shared targets remain; executor
 replacement/Store drift fails closed; the next observation exposes only committed capacity and the
 final desired site. Tower replacement-first convergence proves one operational adopted tower makes a
-committed replacement site eligible under spare allowance; after fresh observation finds the
-obsolete tower empty, an exact active committed replacement with 10 energy remains throughout one
-reset/reorder-stable destroy, pending-success observation emits no duplicate, and target
-disappearance exposes the final committed site. The stocked continuation proves one exact persisted
-amount, reset/reorder identity, obsolete-target refill suppression, externally funded
-acquire/deliver terms, active-flow removal blocking, observed replacement gain, and final
-one-command removal. The container continuation proves one exact selected source service survives
-removal of one empty unshared adjacent container, static-mining identity/work position remain
-unchanged, reordered/reset input is byte-identical, unsafe or stocked variants fail closed, and next
-observation emits no repeated removal. The general-container continuation proves spare-allowance
-site-first replacement, persisted one-tick suppression, active-target retirement,
-unavailable-contract refusal, source-adjacent-placement refusal, reset/reorder identity, one exact
-destroy call, preserved source service, and one final committed site. Its stocked continuation
-proves paired exact energy/baseline persistence and legacy empty-handoff parsing. The stocked
-redundant-source continuation proves canonical energy and mixed manifests,
-source/selected-replacement validation, funded projection and suppression, flow/endpoint retirement,
-delivery, unchanged static-mining identity/work position, expiry-without-delivery blocking. Generic
-removal evidence proves empty and stocked source/general containers plus extensions share exact
-identity binding, pending-success observation, capped three-attempt backoff, reset/reorder
-equivalence, fresh drift clearing, and another room's progress between eligibility ticks. The
-source-service continuity outcome proves that a better exact alternate and selected-container loss
-preserve the prior legal tile, one byte-stable mining contract, and dropped-energy fallback;
-malformed, ambiguous, conflicting, blocked, reordered, and reconstructed prior inputs cannot
-override bounded legal selection. The selected-service handoff outcome proves a vanished container
-plus exact replacement advances one coordinate only under explicit safety. It also proves one
-strictly better existing exact candidate advances once, while a worse candidate and the
-still-existing predecessor cannot cause oscillation, while overlapping source candidates cannot
-steal another source's persisted exact service. Layouts V1-V3 migrate without invented history, and
-one current-tick predecessor atomically becomes one funded/assigned next-sequence commitment after
-reset/reorder without an idempotency or binding conflict. The resource-manifest continuations prove
-canonical one-non-energy and two-kind persistence under Store/structure reorder and JSON
-reconstruction, distinct funded resource flows sharing aggregate replacement capacity,
-singleton-energy refusal, complete-projection overflow refusal, active/incomplete removal blocking,
-every observed replacement gain, endpoint retirement, and one exact destroy call. Existing mandatory
-runtime-tail and mature-build tests remain green. `npm run check` supplies repository-wide format,
-lint, type, test, documentation, bundle, and package evidence.
+committed replacement site eligible under spare allowance. Its stocked continuation persists one
+exact amount only when that active committed replacement begins with 10 energy and has complete
+capacity; one externally funded acquire/deliver flow suppresses obsolete-target refill and reserves
+replacement capacity. Partial delivery plus JSON reset/reordering preserves terms, active flow and
+endpoints block removal, fresh empty-target and replacement gain admit one destroy, pending success
+emits no duplicate, and target disappearance exposes the final committed site. The container
+continuation proves one exact selected source service survives removal of one empty unshared
+adjacent container, static-mining identity/work position remain unchanged, reordered/reset input is
+byte-identical, unsafe or stocked variants fail closed, and next observation emits no repeated
+removal. The general-container continuation proves spare-allowance site-first replacement, persisted
+one-tick suppression, active-target retirement, unavailable-contract refusal,
+source-adjacent-placement refusal, reset/reorder identity, one exact destroy call, preserved source
+service, and one final committed site. Its stocked continuation proves paired exact energy/baseline
+persistence and legacy empty-handoff parsing. The stocked redundant-source continuation proves
+canonical energy and mixed manifests, source/selected-replacement validation, funded projection and
+suppression, flow/endpoint retirement, delivery, unchanged static-mining identity/work position,
+expiry-without-delivery blocking. Generic removal evidence proves empty and stocked source/general
+containers plus extensions share exact identity binding, pending-success observation, capped
+three-attempt backoff, reset/reorder equivalence, fresh drift clearing, and another room's progress
+between eligibility ticks. The source-service continuity outcome proves that a better exact
+alternate and selected-container loss preserve the prior legal tile, one byte-stable mining
+contract, and dropped-energy fallback; malformed, ambiguous, conflicting, blocked, reordered, and
+reconstructed prior inputs cannot override bounded legal selection. The selected-service handoff
+outcome proves a vanished container plus exact replacement advances one coordinate only under
+explicit safety. It also proves one strictly better existing exact candidate advances once, while a
+worse candidate and the still-existing predecessor cannot cause oscillation, while overlapping
+source candidates cannot steal another source's persisted exact service. Layouts V1-V3 migrate
+without invented history, and one current-tick predecessor atomically becomes one funded/assigned
+next-sequence commitment after reset/reorder without an idempotency or binding conflict. The
+resource-manifest continuations prove canonical one-non-energy and two-kind persistence under
+Store/structure reorder and JSON reconstruction, distinct funded resource flows sharing aggregate
+replacement capacity, singleton-energy refusal, complete-projection overflow refusal,
+active/incomplete removal blocking, every observed replacement gain, endpoint retirement, and one
+exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
+`npm run check` supplies repository-wide format, lint, type, test, documentation, bundle, and
+package evidence.
 
 ## Mechanics sources
 
@@ -212,6 +222,8 @@ lint, type, test, documentation, bundle, and package evidence.
 - Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/)
   provides community extension-layout/reachability context only; MYRMEX remains clean-room and
   source-defined.
+- Screeps Wiki [StructureTower](https://wiki.screepspl.us/StructureTower/) supplies tower placement,
+  refill-access, and ten-energy action terminology only.
 - Screeps Wiki [Structure](https://wiki.screepspl.us/Structure/) confirms the community model that
   structures originate as construction sites and complete through creep build work.
 - Screeps Wiki [Energy](https://wiki.screepspl.us/Energy/) supplies hauling and extension-filling

@@ -84,8 +84,11 @@ blocked room leaves the global removal slot available to another eligible room. 
 first uses spare allowance to build committed geometry. An active empty obsolete tower may be
 removed only at full allowance of at least two, with exactly allowance minus one active committed
 towers and one exact active committed replacement retaining at least the 10 energy required for an
-immediate defense action. A sole, stocked, inactive, underfunded, threatened, or pressured tower
-remains.
+immediate defense action. A stocked target first persists one exact 150-tick evacuation only when
+that replacement can hold all target energy. The sole logistics authority moves it under funded
+optional growth; target refill is suppressed, replacement capacity is reserved once, and removal
+waits for fresh empty-target, delivered-replacement, and retired-flow/endpoint evidence. A sole,
+over-capacity, inactive, underfunded, threatened, or pressured tower remains.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
