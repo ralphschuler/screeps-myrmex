@@ -1,9 +1,11 @@
 import type { BudgetRequest } from "../colony";
-import type {
-  CapabilityVector,
-  ContractPlanningView,
-  ContractTransitionRequest,
-  WorkContractRequest,
+import {
+  contractIdFor,
+  type CapabilityVector,
+  type ContractPlanningView,
+  type ContractReplacementRequest,
+  type ContractTransitionRequest,
+  type WorkContractRequest,
 } from "../contracts";
 import type { LayoutPlacement } from "../layout";
 import type { PositionSnapshot, RoomSnapshot, WorldSnapshot } from "../world/snapshot";
@@ -31,12 +33,13 @@ export interface StaticMiningProjection {
 
 export interface StaticMiningPlan {
   readonly projections: readonly StaticMiningProjection[];
+  readonly replacements: readonly ContractReplacementRequest[];
   readonly requests: readonly WorkContractRequest[];
   readonly transitions: readonly ContractTransitionRequest[];
 }
 
 export function emptyStaticMiningPlan(): StaticMiningPlan {
-  return freeze({ projections: [], requests: [], transitions: [] });
+  return freeze({ projections: [], replacements: [], requests: [], transitions: [] });
 }
 
 const EXPIRY = 1_000_000_000;
@@ -49,7 +52,7 @@ export function planStaticMining(input: {
   readonly tick: number;
 }): StaticMiningPlan {
   const projections: StaticMiningProjection[] = [];
-  const requests: WorkContractRequest[] = [];
+  const desiredRequests: WorkContractRequest[] = [];
   const visibleColonies = new Set<string>();
   for (const room of [...input.snapshot.rooms].sort((a, b) => a.name.localeCompare(b.name))) {
     if (room.controller?.ownership !== "owned") continue;
@@ -69,7 +72,7 @@ export function planStaticMining(input: {
         colonyId: room.name,
         category: "harvesting-filling",
         issuer: identity,
-        revision: 1,
+        revision: placement.service?.issuerSequence ?? 1,
         expiresAt: EXPIRY,
         energy: null,
         cpu: { minimum: 1, desired: 1 },
@@ -82,6 +85,7 @@ export function planStaticMining(input: {
         { roomName: source.pos.roomName, x: source.pos.x, y: source.pos.y },
         placement.pos,
         capability,
+        placement.service?.issuerSequence ?? 1,
       );
       projections.push({
         blocker: null,
@@ -93,8 +97,39 @@ export function planStaticMining(input: {
         sourceId: source.id,
         workPosition: placement.pos,
       });
-      requests.push(contractRequest);
+      desiredRequests.push(contractRequest);
     }
+  }
+  const replacements: ContractReplacementRequest[] = [];
+  const requests: WorkContractRequest[] = [];
+  if (input.planning?.status === "ready") {
+    for (const desired of desiredRequests) {
+      const existing = input.planning.contracts.filter(({ issuer }) => issuer === desired.issuer);
+      if (existing.length === 0) {
+        requests.push(desired);
+        continue;
+      }
+      const predecessor = existing[0];
+      if (existing.length !== 1 || predecessor === undefined) continue;
+      const desiredId = contractIdFor(desired.issuer, desired.issuerKey, desired.issuerSequence);
+      if (predecessor.contractId === desiredId) {
+        if (sameStaticMiningTerms(predecessor, desired)) requests.push(desired);
+        continue;
+      }
+      if (
+        predecessor.issuerSequence !== undefined &&
+        desired.issuerSequence === predecessor.issuerSequence + 1 &&
+        predecessor.targetId === desired.targetId
+      )
+        replacements.push({
+          predecessorContractId: predecessor.contractId,
+          reason: "source-service-handoff",
+          successor: desired,
+          tick: input.tick,
+        });
+    }
+  } else {
+    requests.push(...desiredRequests);
   }
   const transitions: ContractTransitionRequest[] = [];
   if (input.planning?.status === "ready") {
@@ -129,6 +164,9 @@ export function planStaticMining(input: {
   }
   return freeze({
     projections: projections.sort((a, b) => a.identity.localeCompare(b.identity)),
+    replacements: replacements.sort((a, b) =>
+      a.predecessorContractId.localeCompare(b.predecessorContractId),
+    ),
     requests: requests.sort((a, b) => a.issuer.localeCompare(b.issuer)),
     transitions: transitions.sort((a, b) => a.contractId.localeCompare(b.contractId)),
   });
@@ -147,6 +185,7 @@ function contract(
   target: PositionSnapshot,
   workPosition: PositionSnapshot,
   capability: CapabilityVector,
+  issuerSequence: number,
 ): WorkContractRequest {
   return {
     budgetBinding: { category: "harvesting-filling", issuer: identity },
@@ -169,7 +208,7 @@ function contract(
     expiresAt: EXPIRY,
     issuer: identity,
     issuerKey: sourceId,
-    issuerSequence: 1,
+    issuerSequence,
     kind: "harvest",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 3 },
     maxAssignmentCost: 150,
@@ -182,6 +221,22 @@ function contract(
     target,
     targetId: sourceId,
   };
+}
+
+function sameStaticMiningTerms(
+  existing: ContractPlanningView["contracts"][number],
+  desired: WorkContractRequest,
+): boolean {
+  const desiredExecution = desired.execution;
+  const existingExecution = existing.execution;
+  return (
+    desiredExecution?.version === 2 &&
+    existingExecution.version === 2 &&
+    existing.targetId === desired.targetId &&
+    existingExecution.workPosition.roomName === desiredExecution.workPosition.roomName &&
+    existingExecution.workPosition.x === desiredExecution.workPosition.x &&
+    existingExecution.workPosition.y === desiredExecution.workPosition.y
+  );
 }
 
 function offload(room: RoomSnapshot, placement: LayoutPlacement): StaticMiningOffloadState {

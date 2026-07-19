@@ -3,16 +3,20 @@
 Issue [#46](https://github.com/ralphschuler/screeps-myrmex/issues/46) establishes deterministic
 static extraction for visible owned sources. Issue
 [#302](https://github.com/ralphschuler/screeps-myrmex/issues/302) preserves those executable terms
-when alternate source containers appear. The checked gate result remains
-[`phase2-mining-results.json`](phase2-mining-results.json).
+when alternate source containers appear. Issue
+[#304](https://github.com/ralphschuler/screeps-myrmex/issues/304) adds one explicit lost-service
+handoff. The checked gate result remains [`phase2-mining-results.json`](phase2-mining-results.json).
 
 ## Composed deterministic scenario
 
 The scenario composes the production source-service selector, static-mining projection, body
 projection, and observer-only mining telemetry reducer with a deterministic funding and replacement
 ledger. Warm, serialized-state reset, and reordered source observations produce the same semantic
-result. Focused runtime evidence additionally retains the persisted work position and byte-stable
-contract when a newly observed exact alternate replaces the selected container observation.
+result. Focused runtime evidence retains the persisted work position and byte-stable contract while
+the selected exact container remains. When that container disappears, a different exact reachable
+replacement under fresh safety evidence persists sequence 2 and leaves sequence 1 executable. On the
+following tick, it atomically reconciles to exactly one successor contract after reset and reordered
+observation.
 
 The fixed room has two sources. One has exactly one legal adjacent tile at `W1N1/9/10`. Each run
 keeps one stable primary extraction identity per source and checks a maximum of eight adjacent
@@ -32,8 +36,10 @@ eight tiles.
 | Miner death and expiry               | one stable replacement demand is retained until scheduling          |
 | Spawn busy and low energy            | replacement waits; no duplicate identity is introduced              |
 | Temporary blocked tile               | the committed work position remains stable for deterministic retry  |
-| Exact alternate appears              | prior legal service and contract terms remain byte-stable           |
-| Selected container disappears        | prior tile remains selected with the existing drop fallback         |
+| Exact alternate appears              | selected exact service and contract remain byte-stable              |
+| Selected container disappears        | prior tile remains until a safe exact successor exists              |
+| Safe exact replacement exists        | sequence 1 atomically advances to one funded sequence 2             |
+| Unsafe/unfunded replacement          | predecessor remains unchanged; no executable switch occurs          |
 | Invalid/ambiguous prior evidence     | continuity is ignored; bounded normal selection remains fail-closed |
 | RCL downgrade and recovery           | `rcl-locked` returns to `container-ready` without identity churn    |
 | Link candidate                       | `link-candidate` is exposed with zero link commands                 |
@@ -57,13 +63,16 @@ adjacent cells per source.
   scenario proves only the read-only `link-candidate` transition and zero link commands.
 - [#49](https://github.com/ralphschuler/screeps-myrmex/issues/49) owns repair policy and commands.
   This scenario observes container decay but does not schedule repair.
-- Production runtime integration remains owned by the concurrent runtime worker. Live engine timing,
-  real traffic contention, deployed utilization, and executor return codes are not substituted by
-  this deterministic local evidence.
+- `ContractLedger` remains the sole contract state owner. One replacement consumes one bounded
+  request and transition; validation failure restores the predecessor byte-for-byte.
+- The focused multi-tick runtime outcome proves the persisted layout/contract transition. Live
+  engine timing, real traffic contention, and deployed utilization are not substituted by this
+  deterministic local evidence.
 
 ## Mechanics sources
 
-ADR 0017 records the consulted official [`Source`](https://docs.screeps.com/api/#Source),
+ADRs 0017 and [0044](adr/0044-selected-source-service-handoff.md) record the consulted official
+[`Source`](https://docs.screeps.com/api/#Source),
 [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest), and
 [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) contracts. The Screeps Wiki
 [`Static Harvesting`](https://wiki.screepspl.us/Static_Harvesting/) page supplies terminology only;
@@ -76,5 +85,7 @@ npx vitest run packages/bot/test/source-services.test.ts \
   packages/bot/test/static-mining-runtime.test.ts \
   packages/scenario-kit/test/phase2-static-mining-gate.test.ts
 npx markdownlint-cli2 docs/phase2-mining-evidence.md docs/phase2-layout-evidence.md \
-  docs/adr/0017-static-mining-authority.md docs/architecture.md docs/strategy.md docs/roadmap.md
+  docs/adr/0017-static-mining-authority.md \
+  docs/adr/0044-selected-source-service-handoff.md docs/architecture.md docs/strategy.md \
+  docs/roadmap.md
 ```

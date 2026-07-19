@@ -117,6 +117,46 @@ describe("source service selection", () => {
     ).toMatchObject({ adoption: "planned", pos: pos(9, 9) });
   });
 
+  it("advances one issuance coordinate only for an authorized exact replacement", () => {
+    const previous = select({ structures: [structure("container", 9, 9, "old-service")] });
+    const replacementOnly = {
+      constructionSites: [],
+      placements: [origin],
+      priorSourceServices: previous.placements,
+      roomName,
+      sources: [pos(10, 10, "source-a")],
+      structures: [structure("container", 11, 11, "new-service")],
+      terrain: terrain(),
+    };
+
+    expect(selectSourceServices(replacementOnly).placements[0]).toMatchObject({
+      adoption: "planned",
+      pos: pos(9, 9),
+      service: { kind: "source-container", sourceId: "source-a" },
+    });
+    const switched = selectSourceServices({
+      ...replacementOnly,
+      sourceServiceHandoffAuthorized: true,
+    });
+    expect(switched.placements[0]).toEqual({
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: pos(11, 11),
+      service: { issuerSequence: 2, kind: "source-container", sourceId: "source-a" },
+      structureType: "container",
+    });
+
+    const cloned = JSON.parse(JSON.stringify(replacementOnly)) as typeof replacementOnly;
+    const reset = selectSourceServices({
+      ...cloned,
+      priorSourceServices: JSON.parse(JSON.stringify(switched.placements)) as LayoutPlacement[],
+      sourceServiceHandoffAuthorized: true,
+      structures: [structure("container", 11, 11, "new-service")],
+    });
+    expect(JSON.stringify(reset)).toBe(JSON.stringify(switched));
+  });
+
   it("ignores ambiguous, conflicting, non-adjacent, or blocked prior service evidence", () => {
     const exactAlternate = structure("container", 11, 11, "new-service");
     const prior = (x: number, y: number, sourceId = "source-a"): LayoutPlacement => ({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { minerCapability, planStaticMining } from "../src/economy";
-import type { ContractPlanningView } from "../src/contracts";
+import { contractIdFor, type ContractPlanningView } from "../src/contracts";
 import type { LayoutPlacement } from "../src/layout";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
@@ -9,12 +9,17 @@ const service = (
   sourceId: string,
   x: number,
   adoption: LayoutPlacement["adoption"] = "planned",
+  issuerSequence?: number,
 ): LayoutPlacement => ({
   adoption,
   layer: "primary",
   minimumRcl: 2,
   pos: pos(x, 10),
-  service: { kind: "source-container", sourceId },
+  service: {
+    ...(issuerSequence === undefined ? {} : { issuerSequence }),
+    kind: "source-container",
+    sourceId,
+  },
   structureType: "container",
 });
 
@@ -106,6 +111,59 @@ describe("StaticMiningPlanner", () => {
     expect(result.requests).toHaveLength(1);
   });
 
+  it("replaces one prior source position with the exact next mining sequence", () => {
+    const predecessorRequest = planStaticMining({
+      layouts: new Map([["W1N1", [service("a", 11)]]]),
+      snapshot: world(),
+      tick: 10,
+    }).requests[0];
+    if (predecessorRequest === undefined) throw new Error("expected predecessor request");
+    const predecessorId = contractIdFor(
+      predecessorRequest.issuer,
+      predecessorRequest.issuerKey,
+      predecessorRequest.issuerSequence,
+    );
+    const predecessorExecution = predecessorRequest.execution;
+    if (predecessorExecution === undefined) throw new Error("expected predecessor execution");
+    const planning: ContractPlanningView = {
+      status: "ready",
+      contracts: [
+        {
+          budgetBinding: predecessorRequest.budgetBinding,
+          contractId: predecessorId,
+          execution: predecessorExecution,
+          issuer: predecessorRequest.issuer,
+          issuerSequence: 1,
+          owner: predecessorRequest.owner,
+          state: "active",
+          targetId: "a",
+        },
+      ],
+    };
+
+    const result = planStaticMining({
+      layouts: new Map([["W1N1", [service("a", 12, "exact", 2)]]]),
+      planning,
+      snapshot: world(),
+      tick: 11,
+    });
+    const successor = result.replacements[0]?.successor;
+    expect(result.requests).toEqual([]);
+    expect(result.replacements).toEqual([
+      {
+        predecessorContractId: predecessorId,
+        reason: "source-service-handoff",
+        successor,
+        tick: 11,
+      },
+    ]);
+    expect(successor).toMatchObject({
+      issuer: "mining/W1N1/a",
+      issuerSequence: 2,
+      execution: { version: 2, workPosition: pos(12, 10) },
+    });
+  });
+
   it("suspends an existing static contract only for visible room or layout loss", () => {
     const planning = staticPlanning();
     const layoutLoss = planStaticMining({
@@ -155,7 +213,12 @@ describe("StaticMiningPlanner", () => {
       snapshot: offloadWorld({ free: 2_000, hits: 250_000, hitsMax: 250_000, withLink: true }),
       tick: 10,
     });
-    expect(Object.keys(result).sort()).toEqual(["projections", "requests", "transitions"]);
+    expect(Object.keys(result).sort()).toEqual([
+      "projections",
+      "replacements",
+      "requests",
+      "transitions",
+    ]);
     expect(result.requests).toHaveLength(1);
     expect(result.requests[0]?.kind).toBe("harvest");
     expect(result.requests[0]?.execution).toMatchObject({
@@ -192,6 +255,7 @@ function staticPlanning(): ContractPlanningView {
           workPosition: pos(11, 10),
         },
         issuer: "mining/W1N1/a",
+        issuerSequence: 1,
         owner: { id: "W1N1", kind: "colony" },
         state: "active",
         targetId: "a",

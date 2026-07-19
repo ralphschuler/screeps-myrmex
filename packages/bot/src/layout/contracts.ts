@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 3 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 4 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -41,6 +41,8 @@ export type LayoutTransform = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type LayoutLayer = "primary" | "road" | "rampart";
 export type LayoutAdoption = "planned" | "exact" | "matching-site" | "compatible-external";
 export interface LayoutSemanticService {
+  /** Absent is the initial issuance; explicit values begin at the first handoff sequence (2). */
+  readonly issuerSequence?: number;
   readonly kind: "source-container";
   readonly sourceId: string;
 }
@@ -504,7 +506,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV3 {
+export interface LayoutsOwnerV4 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];
@@ -519,6 +521,7 @@ export interface LayoutPlanningInput {
   readonly priorCommitment: LayoutCommitment | null;
   readonly priorSourceServices?: readonly LayoutPlacement[];
   readonly roomName: string;
+  readonly sourceServiceHandoffAuthorized?: boolean;
   readonly sources: readonly PositionSnapshot[];
   readonly structures: readonly StructureSnapshot[];
   readonly terrain: TerrainSnapshot;
@@ -529,6 +532,7 @@ export interface SourceServicePlanningInput {
   readonly placements: readonly LayoutPlacement[];
   readonly priorSourceServices?: readonly LayoutPlacement[];
   readonly roomName: string;
+  readonly sourceServiceHandoffAuthorized?: boolean;
   readonly sources: readonly PositionSnapshot[];
   readonly structures: readonly StructureSnapshot[];
   readonly terrain: TerrainSnapshot;

@@ -90,6 +90,33 @@ describe("contract request channel", () => {
     ]);
   });
 
+  it("publishes detached atomic replacements inside the shared request and transition caps", () => {
+    const channel = createContractRequestChannel();
+    const scope = channel.openProducer("planner.replacement");
+    const successor = makeRequest("source-a", { issuerSequence: 2 });
+    scope.producer.replace({
+      predecessorContractId: "contract:predecessor",
+      reason: "source-service-handoff",
+      successor,
+      tick: 100,
+    });
+    const staged = scope.stage();
+    staged.commit();
+    const batch = channel.seal();
+
+    expect(staged.replacements).toBe(1);
+    expect(batch.replacements).toEqual([
+      {
+        predecessorContractId: "contract:predecessor",
+        reason: "source-service-handoff",
+        successor,
+        tick: 100,
+      },
+    ]);
+    expect(Object.isFrozen(batch.replacements)).toBe(true);
+    expect(Object.isFrozen(batch.replacements[0]?.successor)).toBe(true);
+  });
+
   it("rejects only the producer that exceeds aggregate request capacity", () => {
     const channel = createContractRequestChannel();
     commit(

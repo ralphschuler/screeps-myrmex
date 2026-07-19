@@ -127,31 +127,25 @@ describe("static mining runtime activation", () => {
     expect(commands.harvest).not.toHaveBeenCalled();
   });
 
-  it("keeps one byte-stable mining contract when an exact alternate replaces the observed container", () => {
+  it("keeps one byte-stable mining contract while its exact selected container still exists", () => {
     const memory = {} as Memory;
     const commands = commandSpies();
     const oldService = [{ id: "container-old", x: 9, y: 9 }] as const;
-    const alternate = [{ id: "container-alternate", x: 10, y: 11 }] as const;
+    const withAlternate = [...oldService, { id: "container-alternate", x: 10, y: 11 }] as const;
     runTick({ game: miningGame(500, commands, true, 2, oldService), memory });
     runTick({ game: miningGame(501, commands, true, 2, oldService), memory });
     runTick({ game: miningGame(502, commands, true, 2, oldService), memory });
     const before = activeMiningContract(memory, "mining/W1N1/source-a");
 
-    const changed = runTick({ game: miningGame(503, commands, true, 2, alternate), memory });
+    runTick({ game: miningGame(503, commands, true, 2, withAlternate), memory });
     const reconstructed = JSON.parse(JSON.stringify(memory)) as Memory;
     const outcome = runTick({
-      game: miningGame(504, commands, true, 2, alternate, true),
+      game: miningGame(504, commands, true, 2, withAlternate, true),
       memory: reconstructed,
     });
     const after = activeMiningContract(reconstructed, "mining/W1N1/source-a");
 
     expect(before).toMatchObject({ execution: { workPosition: { x: 9, y: 9 } } });
-    expect(
-      changed.layout.arbitration?.rejected.some(
-        ({ proposal }) =>
-          proposal.structureType === "container" && proposal.pos.x === 9 && proposal.pos.y === 9,
-      ),
-    ).toBe(true);
     expect(after).toEqual(before);
     expect(
       outcome.contracts?.submissions.filter(({ contractId }) =>
@@ -159,6 +153,78 @@ describe("static mining runtime activation", () => {
       ),
     ).toEqual([expect.objectContaining({ accepted: true, outcome: "duplicate-active" })]);
     expect(commands.harvest).not.toHaveBeenCalled();
+  });
+
+  it("atomically hands a lost selected service to one exact replacement after reset and reorder", () => {
+    const memory = {} as Memory;
+    const commands = commandSpies();
+    const oldService = [{ id: "container-old", x: 9, y: 9 }] as const;
+    const alternate = [{ id: "container-alternate", x: 10, y: 11 }] as const;
+    runTick({ game: miningGame(600, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(601, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(602, commands, true, 2, oldService), memory });
+    const predecessor = activeMiningContract(memory, "mining/W1N1/source-a") as {
+      id: string;
+      issuerSequence: number;
+    };
+
+    const handoff = runTick({ game: miningGame(603, commands, true, 2, alternate), memory });
+    expect(handoff.kernel.faults).toEqual([]);
+    expect(handoff.kernel.systems).toContainEqual(
+      expect.objectContaining({ systemId: "layout.handoff-reconcile", status: "completed" }),
+    );
+    const stagedLayout = memory.myrmex?.layouts as unknown as {
+      records?: Array<{
+        sourceServices?: Array<{ service?: { issuerSequence?: number; sourceId?: string } }>;
+      }>;
+    };
+    expect(
+      stagedLayout.records?.[0]?.sourceServices?.find(
+        ({ service }) => service?.sourceId === "source-a",
+      )?.service?.issuerSequence,
+    ).toBe(2);
+    const reconstructed = JSON.parse(JSON.stringify(memory)) as Memory;
+    const outcome = runTick({
+      game: miningGame(604, commands, true, 2, alternate, true),
+      memory: reconstructed,
+    });
+    const successor = activeMiningContract(reconstructed, "mining/W1N1/source-a") as {
+      execution: { workPosition: { x: number; y: number } };
+      id: string;
+      issuerSequence: number;
+      state: string;
+    };
+
+    expect(predecessor.issuerSequence).toBe(1);
+    expect(successor).toMatchObject({
+      execution: { workPosition: { x: 10, y: 11 } },
+      issuerSequence: 2,
+    });
+    expect(["funded", "assigned"]).toContain(successor.state);
+    expect(successor.id).not.toBe(predecessor.id);
+    expect(outcome.contracts?.replacements).toEqual([
+      expect.objectContaining({
+        accepted: true,
+        predecessorContractId: predecessor.id,
+        successorContractId: successor.id,
+      }),
+    ]);
+    const reconcileOrder = outcome.kernel.systems
+      .filter(({ phase }) => phase === "reconcile")
+      .map(({ systemId }) => systemId);
+    expect(reconcileOrder.indexOf("layout.handoff-reconcile")).toBeLessThan(
+      reconcileOrder.indexOf("state.reconcile"),
+    );
+    const contracts = reconstructed.myrmex?.contracts as unknown as {
+      active?: Array<{ issuer?: string }>;
+      outcomes?: Array<{ id?: string; state?: string }>;
+    };
+    expect(
+      contracts.active?.filter(({ issuer }) => issuer === "mining/W1N1/source-a"),
+    ).toHaveLength(1);
+    expect(contracts.outcomes).toContainEqual(
+      expect.objectContaining({ id: predecessor.id, state: "cancelled" }),
+    );
   });
 });
 

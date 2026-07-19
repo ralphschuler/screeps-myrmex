@@ -14,18 +14,19 @@ import {
   type LayoutExtensionEvacuation,
   type LayoutRecord,
   type LayoutPlacement,
-  type LayoutsOwnerV3,
+  type LayoutsOwnerV4,
 } from "./contracts";
 import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
 
-export function emptyLayoutsOwner(): LayoutsOwnerV3 {
+export function emptyLayoutsOwner(): LayoutsOwnerV4 {
   return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
 }
-export function parseLayoutsOwner(value: unknown): LayoutsOwnerV3 | null {
+export function parseLayoutsOwner(value: unknown): LayoutsOwnerV4 | null {
   if (
     !record(value) ||
     (value.schemaVersion !== 1 &&
       value.schemaVersion !== 2 &&
+      value.schemaVersion !== 3 &&
       value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION) ||
     !integer(value.revision) ||
     !Array.isArray(value.records) ||
@@ -35,17 +36,30 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV3 | null {
   const records: LayoutRecord[] = [];
   let staleRecords = 0;
   const migratingV1 = value.schemaVersion === 1;
+  const migratingBeforeV3 = value.schemaVersion === 1 || value.schemaVersion === 2;
   const migratingLegacy = value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION;
   for (const item of value.records) {
     if (record(item) && record(item.containerMigration)) {
       if (migratingV1 && item.containerMigration.resourceManifest !== undefined) return null;
       if (
-        migratingLegacy &&
+        migratingBeforeV3 &&
         (item.containerMigration.sourceId !== undefined ||
           item.containerMigration.removalReceipt !== undefined)
       )
         return null;
     }
+    if (
+      migratingLegacy &&
+      record(item) &&
+      Array.isArray(item.sourceServices) &&
+      item.sourceServices.some(
+        (placement) =>
+          record(placement) &&
+          record(placement.service) &&
+          placement.service.issuerSequence !== undefined,
+      )
+    )
+      return null;
     if (staleRecord(item)) {
       staleRecords += 1;
       continue;
@@ -62,11 +76,11 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV3 | null {
   });
 }
 export function persistLayoutCommitment(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   roomName: string,
   commitment: LayoutCommitment,
   placements: readonly LayoutPlacement[] = [],
-): LayoutsOwnerV3 {
+): LayoutsOwnerV4 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   const records = owner.records.filter((r) => r.roomName !== roomName);
   const sourceServices = placements.filter(
@@ -99,10 +113,10 @@ export function persistLayoutCommitment(
   });
 }
 export function persistLayoutContainerMigration(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   roomName: string,
   migration: LayoutContainerMigration | null,
-): LayoutsOwnerV3 {
+): LayoutsOwnerV4 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -122,10 +136,10 @@ export function persistLayoutContainerMigration(
 }
 
 export function persistLayoutExtensionEvacuation(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   roomName: string,
   evacuation: LayoutExtensionEvacuation | null,
-): LayoutsOwnerV3 {
+): LayoutsOwnerV4 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -146,7 +160,7 @@ export function persistLayoutExtensionEvacuation(
 }
 
 export function freshSourceServicePlacements(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   roomName: string,
 ): readonly LayoutPlacement[] {
   const record = owner.records.find((item) => item.roomName === roomName);
@@ -163,9 +177,9 @@ export function freshSourceServicePlacements(
   );
 }
 export function reconcileOwnedLayouts(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   ownedRoomNames: readonly string[],
-): LayoutsOwnerV3 {
+): LayoutsOwnerV4 {
   const owned = new Set(ownedRoomNames);
   const records = owner.records.filter((r) => owned.has(r.roomName));
   return records.length === owner.records.length
@@ -173,10 +187,10 @@ export function reconcileOwnedLayouts(
     : freeze({ ...owner, revision: owner.revision + 1, records });
 }
 export function persistConstructionSiteReceipt(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   roomName: string,
   receipt: ConstructionSiteAttemptReceipt,
-): LayoutsOwnerV3 {
+): LayoutsOwnerV4 {
   const records = owner.records.map((item) =>
     item.roomName === roomName
       ? {
@@ -328,6 +342,8 @@ function validSourceServices(value: unknown, roomName: unknown): boolean {
         coordinate(item.pos.y) &&
         record(item.service) &&
         item.service.kind === "source-container" &&
+        (item.service.issuerSequence === undefined ||
+          (positiveInteger(item.service.issuerSequence) && item.service.issuerSequence >= 2)) &&
         typeof item.service.sourceId === "string" &&
         item.service.sourceId.length > 0 &&
         item.service.sourceId.length <= 128,

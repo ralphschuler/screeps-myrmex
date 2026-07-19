@@ -5,16 +5,19 @@ import {
   compareStrings,
   normalizeContractRequest,
   requestSignature,
+  type ContractReplacementRequest,
   type ContractTransitionRequest,
   type WorkContractRequest,
 } from "./contracts";
 
 export interface ContractRequestProducer {
+  replace(request: ContractReplacementRequest): void;
   submit(request: WorkContractRequest): void;
   transition(request: ContractTransitionRequest): void;
 }
 
 export interface StagedContractRequests {
+  readonly replacements: number;
   readonly requests: number;
   readonly transitions: number;
   commit(): void;
@@ -29,6 +32,7 @@ export interface ContractRequestProducerScope {
 }
 
 export interface ContractRequestBatch {
+  readonly replacements: readonly ContractReplacementRequest[];
   readonly requests: readonly WorkContractRequest[];
   readonly transitions: readonly ContractTransitionRequest[];
 }
@@ -39,6 +43,7 @@ export interface ContractRequestChannel {
 }
 
 interface MutableScope {
+  replacements: ContractReplacementRequest[];
   requests: WorkContractRequest[];
   state: "committed" | "discarded" | "open" | "staged";
   transitions: ContractTransitionRequest[];
@@ -58,6 +63,7 @@ export function createContractRequestChannel(): ContractRequestChannel {
         throw new Error(`Contract request producer ${systemId} is already open`);
       }
       const scope: MutableScope = {
+        replacements: [],
         requests: [],
         state: "open",
         transitions: [],
@@ -67,6 +73,7 @@ export function createContractRequestChannel(): ContractRequestChannel {
       const discard = (): void => {
         if (scope.state === "open" || scope.state === "staged") {
           scope.state = "discarded";
+          scope.replacements = [];
           scope.requests = [];
           scope.transitions = [];
         }
@@ -75,9 +82,32 @@ export function createContractRequestChannel(): ContractRequestChannel {
       return Object.freeze({
         systemId,
         producer: Object.freeze({
+          replace(request: ContractReplacementRequest): void {
+            assertScopeOpen(scope, systemId);
+            if (
+              scope.requests.length + scope.replacements.length >=
+              MAX_CONTRACT_REQUESTS_PER_TICK
+            ) {
+              throw new RangeError(
+                `Contract producer ${systemId} exceeded ${String(MAX_CONTRACT_REQUESTS_PER_TICK)} requests`,
+              );
+            }
+            if (
+              scope.transitions.length + scope.replacements.length >=
+              MAX_CONTRACT_TRANSITIONS_PER_TICK
+            ) {
+              throw new RangeError(
+                `Contract producer ${systemId} exceeded ${String(MAX_CONTRACT_TRANSITIONS_PER_TICK)} transitions`,
+              );
+            }
+            scope.replacements.push(normalizeReplacement(request));
+          },
           submit(request: WorkContractRequest): void {
             assertScopeOpen(scope, systemId);
-            if (scope.requests.length >= MAX_CONTRACT_REQUESTS_PER_TICK) {
+            if (
+              scope.requests.length + scope.replacements.length >=
+              MAX_CONTRACT_REQUESTS_PER_TICK
+            ) {
               throw new RangeError(
                 `Contract producer ${systemId} exceeded ${String(MAX_CONTRACT_REQUESTS_PER_TICK)} requests`,
               );
@@ -86,7 +116,10 @@ export function createContractRequestChannel(): ContractRequestChannel {
           },
           transition(request: ContractTransitionRequest): void {
             assertScopeOpen(scope, systemId);
-            if (scope.transitions.length >= MAX_CONTRACT_TRANSITIONS_PER_TICK) {
+            if (
+              scope.transitions.length + scope.replacements.length >=
+              MAX_CONTRACT_TRANSITIONS_PER_TICK
+            ) {
               throw new RangeError(
                 `Contract producer ${systemId} exceeded ${String(MAX_CONTRACT_TRANSITIONS_PER_TICK)} transitions`,
               );
@@ -99,11 +132,13 @@ export function createContractRequestChannel(): ContractRequestChannel {
         },
         stage(): StagedContractRequests {
           assertScopeOpen(scope, systemId);
+          scope.replacements = [...scope.replacements];
           scope.requests = [...scope.requests];
           scope.transitions = [...scope.transitions];
           scope.state = "staged";
           let resolved = false;
           return Object.freeze({
+            replacements: scope.replacements.length,
             requests: scope.requests.length,
             transitions: scope.transitions.length,
             commit(): void {
@@ -113,13 +148,16 @@ export function createContractRequestChannel(): ContractRequestChannel {
               if (scope.state !== "staged" || sealed) {
                 throw new Error(`Contract request stage for ${systemId} is already closed`);
               }
-              if (committedRequests + scope.requests.length > MAX_CONTRACT_REQUESTS_PER_TICK) {
+              if (
+                committedRequests + scope.requests.length + scope.replacements.length >
+                MAX_CONTRACT_REQUESTS_PER_TICK
+              ) {
                 throw new RangeError(
                   `Contract channel committed request capacity of ${String(MAX_CONTRACT_REQUESTS_PER_TICK)} exceeded by ${systemId}`,
                 );
               }
               if (
-                committedTransitions + scope.transitions.length >
+                committedTransitions + scope.transitions.length + scope.replacements.length >
                 MAX_CONTRACT_TRANSITIONS_PER_TICK
               ) {
                 throw new RangeError(
@@ -132,8 +170,8 @@ export function createContractRequestChannel(): ContractRequestChannel {
               // committed safety/lifecycle work remains available to reconciliation.
               resolved = true;
               scope.state = "committed";
-              committedRequests += scope.requests.length;
-              committedTransitions += scope.transitions.length;
+              committedRequests += scope.requests.length + scope.replacements.length;
+              committedTransitions += scope.transitions.length + scope.replacements.length;
             },
             discard(): void {
               if (!resolved) {
@@ -152,16 +190,35 @@ export function createContractRequestChannel(): ContractRequestChannel {
       for (const [, scope] of scopes) {
         discardScope(scope);
       }
+      const replacements = committed
+        .flatMap(([, scope]) => scope.replacements)
+        .sort(compareReplacements);
       const requests = committed.flatMap(([, scope]) => scope.requests).sort(compareRequests);
       const transitions = committed
         .flatMap(([, scope]) => scope.transitions)
         .sort(compareTransitions);
 
       return Object.freeze({
+        replacements: Object.freeze(replacements),
         requests: Object.freeze(requests),
         transitions: Object.freeze(transitions),
       });
     },
+  });
+}
+
+function normalizeReplacement(request: ContractReplacementRequest): ContractReplacementRequest {
+  const transition = normalizeTransition({
+    contractId: request.predecessorContractId,
+    reason: request.reason,
+    tick: request.tick,
+    to: "cancelled",
+  });
+  return Object.freeze({
+    predecessorContractId: transition.contractId,
+    reason: transition.reason,
+    successor: normalizeContractRequest(request.successor),
+    tick: transition.tick,
   });
 }
 
@@ -194,6 +251,18 @@ function normalizeTransition(request: ContractTransitionRequest): ContractTransi
     tick: request.tick,
     to: request.to,
   });
+}
+
+function compareReplacements(
+  left: ContractReplacementRequest,
+  right: ContractReplacementRequest,
+): number {
+  return (
+    left.tick - right.tick ||
+    compareStrings(left.predecessorContractId, right.predecessorContractId) ||
+    compareRequests(left.successor, right.successor) ||
+    compareStrings(left.reason, right.reason)
+  );
 }
 
 function compareRequests(left: WorkContractRequest, right: WorkContractRequest): number {
@@ -232,6 +301,7 @@ function assertScopeOpen(scope: MutableScope, systemId: string): void {
 function discardScope(scope: MutableScope): void {
   if (scope.state === "open" || scope.state === "staged") {
     scope.state = "discarded";
+    scope.replacements = [];
     scope.requests = [];
     scope.transitions = [];
   }

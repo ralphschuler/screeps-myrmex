@@ -17,6 +17,11 @@ interface RankedCandidate {
   readonly terrainRank: number;
 }
 
+interface PriorService {
+  readonly issuerSequence: number;
+  readonly pos: PositionSnapshot;
+}
+
 export function selectSourceServices(
   input: SourceServicePlanningInput,
 ): SourceServicePlanningResult {
@@ -43,20 +48,38 @@ export function selectSourceServices(
       .filter((candidate): candidate is RankedCandidate => candidate !== null)
       .sort(compareCandidate);
     const prior = priorServices.get(id);
-    const selected =
-      (prior === undefined ? undefined : ranked.find(({ pos }) => key(pos) === key(prior))) ??
-      ranked[0];
+    const priorCandidate =
+      prior === undefined ? undefined : ranked.find(({ pos }) => key(pos) === key(prior.pos));
+    const exactReplacement = ranked.find(
+      ({ adoption, pos }) => adoption === "exact" && key(pos) !== key(prior?.pos ?? pos),
+    );
+    const handoff =
+      input.sourceServiceHandoffAuthorized === true &&
+      prior !== undefined &&
+      prior.issuerSequence < Number.MAX_SAFE_INTEGER &&
+      (priorCandidate === undefined || priorCandidate.adoption === "planned") &&
+      exactReplacement !== undefined;
+    const selected = handoff ? exactReplacement : (priorCandidate ?? ranked[0]);
     if (selected === undefined) {
       blockers.push(blocker(id, source, "no-legal-position"));
       continue;
     }
     assigned.add(key(selected.pos));
+    const issuerSequence = handoff
+      ? prior.issuerSequence + 1
+      : prior !== undefined && key(selected.pos) === key(prior.pos)
+        ? prior.issuerSequence
+        : 1;
     placements.push({
       adoption: selected.adoption,
       layer: "primary",
       minimumRcl: 2,
       pos: selected.pos,
-      service: { kind: "source-container", sourceId: id },
+      service: {
+        ...(issuerSequence === 1 ? {} : { issuerSequence }),
+        kind: "source-container",
+        sourceId: id,
+      },
       structureType: "container",
     });
   }
@@ -73,10 +96,10 @@ function sourceId(source: PositionSnapshot): string {
 }
 function priorServicePositions(
   input: SourceServicePlanningInput,
-): ReadonlyMap<string, PositionSnapshot> {
+): ReadonlyMap<string, PriorService> {
   const prior = input.priorSourceServices;
   if (prior === undefined || prior.length > 8) return new Map();
-  const positions = new Map<string, PositionSnapshot>();
+  const positions = new Map<string, PriorService>();
   const assigned = new Set<string>();
   for (const placement of prior) {
     const sourceId = placement.service?.sourceId;
@@ -87,6 +110,9 @@ function priorServicePositions(
       sourceId === undefined ||
       sourceId.length === 0 ||
       sourceId.length > 128 ||
+      (placement.service.issuerSequence !== undefined &&
+        (!Number.isSafeInteger(placement.service.issuerSequence) ||
+          placement.service.issuerSequence < 2)) ||
       placement.pos.roomName !== input.roomName ||
       !coordinate(placement.pos.x) ||
       !coordinate(placement.pos.y) ||
@@ -94,7 +120,10 @@ function priorServicePositions(
       assigned.has(key(placement.pos))
     )
       return new Map();
-    positions.set(sourceId, placement.pos);
+    positions.set(sourceId, {
+      issuerSequence: placement.service.issuerSequence ?? 1,
+      pos: placement.pos,
+    });
     assigned.add(key(placement.pos));
   }
   return positions;

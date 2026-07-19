@@ -51,9 +51,12 @@ one bundle, one composition root, one tick loop, and internal modules with stric
 `StaticMiningPlanner` is the sole owned-source extraction projection. It consumes visible source
 facts and fresh semantic source-service placements, emits stable `mining/{colonyId}/{sourceId}`
 contracts, and owns neither commands nor persistent mining state. A persisted source-service
-position has continuity precedence while that adjacent tile remains legal and reachable; a newer
-exact container or site cannot silently change executable mining terms. ContractLedger, population
-policy, SpawnBroker, movement arbitration, and executors retain their existing authorities.
+position has continuity precedence while its container or matching site remains current; a newer
+exact container cannot silently change executable mining terms. After selected-container loss, one
+fresh safe exact replacement advances a bounded layout-owned issuance coordinate, and
+`ContractLedger` atomically retires the predecessor and admits only its exact next sequence.
+Population policy, SpawnBroker, movement arbitration, and executors retain their existing
+authorities.
 
 `LinkArbiter` is the sole link-transfer admission authority. Mining, logistics, and controller
 policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
@@ -490,22 +493,23 @@ receipt, reconciliation result, or command.
 
 The executable foundation registers these systems explicitly in `runtime/tick.ts`:
 
-| System                | Phase     | Admission                       | CPU estimate |
-| --------------------- | --------- | ------------------------------- | -----------: |
-| `core.boot`           | Boot      | mandatory, recovery-safe        |         0.05 |
-| `world.observe`       | Observe   | mandatory, recovery-safe        |         1.00 |
-| `safety.foundation`   | Safety    | mandatory, recovery-safe        |         0.10 |
-| `colony.director`     | Plan      | mandatory, recovery-safe        |         1.50 |
-| `industry.publish`    | Plan      | optional economic               |         0.50 |
-| `cache.sweep`         | Plan      | surplus maintenance, cadence 25 |         0.25 |
-| `execution.arbitrate` | Execute   | mandatory tail                  |         0.50 |
-| `industry.execute`    | Execute   | mandatory tail                  |         0.25 |
-| `spawn.execute`       | Execute   | mandatory tail, recovery-safe   |         0.75 |
-| `spawn.settle`        | Execute   | mandatory tail, recovery-safe   |         0.75 |
-| `industry.reconcile`  | Reconcile | mandatory before root commit    |         0.50 |
-| `contracts.reconcile` | Reconcile | operational, recovery-safe      |         0.50 |
-| `state.reconcile`     | Reconcile | mandatory tail                  |         1.00 |
-| `telemetry.minimum`   | Telemetry | mandatory tail                  |         0.50 |
+| System                     | Phase     | Admission                       | CPU estimate |
+| -------------------------- | --------- | ------------------------------- | -----------: |
+| `core.boot`                | Boot      | mandatory, recovery-safe        |         0.05 |
+| `world.observe`            | Observe   | mandatory, recovery-safe        |         1.00 |
+| `safety.foundation`        | Safety    | mandatory, recovery-safe        |         0.10 |
+| `colony.director`          | Plan      | mandatory, recovery-safe        |         1.50 |
+| `industry.publish`         | Plan      | optional economic               |         0.50 |
+| `cache.sweep`              | Plan      | surplus maintenance, cadence 25 |         0.25 |
+| `execution.arbitrate`      | Execute   | mandatory tail                  |         0.50 |
+| `industry.execute`         | Execute   | mandatory tail                  |         0.25 |
+| `spawn.execute`            | Execute   | mandatory tail, recovery-safe   |         0.75 |
+| `spawn.settle`             | Execute   | mandatory tail, recovery-safe   |         0.75 |
+| `industry.reconcile`       | Reconcile | mandatory before root commit    |         0.50 |
+| `layout.handoff-reconcile` | Reconcile | mandatory handoff precommit     |         0.10 |
+| `contracts.reconcile`      | Reconcile | operational, recovery-safe      |         0.50 |
+| `state.reconcile`          | Reconcile | mandatory tail                  |         1.00 |
+| `telemetry.minimum`        | Telemetry | mandatory tail                  |         0.50 |
 
 Memory opening is a bounded preflight because recovery status is an input to CPU-mode selection. It
 may perform only the documented migration step budget. `RuntimeKernel` remains the sole scheduled
@@ -516,8 +520,11 @@ budget-consuming contract reconciliation. When admitted, operational `contracts.
 its owner transaction before mandatory-tail `state.reconcile`; only the latter commits the
 `Memory.myrmex` root. `industry.execute` follows shared intent arbitration in the mandatory Execute
 tail; `industry.reconcile` stages terminal, lab, mature, and observer effects through one industry
-owner transaction before `state.reconcile`. Later outcomes replace their own foundation markers
-without adding another loop.
+owner transaction before `state.reconcile`. On the rare explicit selected-source handoff,
+`layout.handoff-reconcile` stages the complete layout draft before its root commit; the following
+tick's contract reconciliation consumes that durable coordinate. It is a continuation of the same
+layout owner, not a second planner or state authority. Later outcomes replace their own foundation
+markers without adding another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -1403,16 +1410,17 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V3
-`layouts` owner. `OK` waits for observed world change; full and unexpected faults back off; RCL,
-target, and ownership failures wait for the relevant fresh fingerprint; invalid arguments stay
-failed closed until layout revision. PR B emits detached create-site intent data only. Live API
-execution and reconciliation remain PR C.
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V4
+`layouts` owner. V3's optional source-migration identity remains unchanged; V4 adds only one
+optional source-service issuance coordinate. `OK` waits for observed world change; full and
+unexpected faults back off; RCL, target, and ownership failures wait for the relevant fresh
+fingerprint; invalid arguments stay failed closed until layout revision. PR B emits detached
+create-site intent data only. Live API execution and reconciliation remain PR C.
 
 PR C completes the chain with `layout.plan` after colony publication, mandatory-tail
 `layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V3 layouts owner; degraded,
+commitments and bounded receipts stage through the owner-local schema V4 layouts owner; degraded,
 unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
 command. Every observed owned layout site enters the existing funded survival-growth build flow,
 while controller risk, recovery, maintenance, and protected reserves retain precedence.
@@ -1512,13 +1520,26 @@ Issue #302 closes the implicit-switch path before selected source-service migrat
 bounded selector consumes the existing persisted source-service projection and keeps its position
 when that source-adjacent tile remains legal and reachable, even if a new exact container or site
 would otherwise rank first or the selected container disappears. Current observation still derives
-`exact`, `matching-site`, or `planned` offload quality, so container loss degrades to dropped energy
-without changing issuer sequence, request signature, work position, or persistent schema. Invalid,
-ambiguous, conflicting, or unreachable continuity evidence is ignored; source and structure reorder
-plus heap reconstruction remain deterministic.
+`exact`, `matching-site`, or `planned` offload quality, so container loss first degrades to dropped
+energy without changing issuer sequence, request signature, or work position. Invalid, ambiguous,
+conflicting, or unreachable continuity evidence is ignored; source and structure reorder plus heap
+reconstruction remain deterministic.
 
-Other structure stock evacuation, explicit selected source-service migration, defensive migration,
-general multi-step migration, and creep dismantling remain issue #99 and fail closed.
+Issue #304 adds the explicit successor path. Only after the selected container is absent may a
+different exact legal/reachable container advance the optional source-service issuance coordinate,
+and only under fresh owned-room, no-threat, no-controller-risk, legal-workforce, and
+restored-reserve evidence. Layouts-owner V4 migrates V1-V3 records without inventing that
+coordinate. Static mining emits one bounded replacement request; `ContractLedger` validates the same
+issuer, source, owner, kind, target, and funding binding plus the exact next sequence before
+atomically cancelling the predecessor and creating the successor. Rejection restores byte-identical
+predecessor state. `layout.handoff-reconcile` stages only this complete layout continuation before
+the sole root commit. The current predecessor remains executable; on the following tick, the
+successor can be funded and assigned during the same Reconcile that atomically retires it.
+[ADR 0044](adr/0044-selected-source-service-handoff.md) records the boundary.
+
+Other structure stock evacuation, selected-service optimization while the old container exists,
+defensive migration, general multi-step migration, and creep dismantling remain issue #99 and fail
+closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,

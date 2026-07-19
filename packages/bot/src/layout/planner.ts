@@ -63,6 +63,7 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
           ? {}
           : { priorSourceServices: input.priorSourceServices }),
         roomName: input.roomName,
+        sourceServiceHandoffAuthorized: input.sourceServiceHandoffAuthorized === true,
         sources: input.sources,
         structures: input.structures,
         terrain: input.terrain,
