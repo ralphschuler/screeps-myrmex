@@ -20,7 +20,10 @@ export {
   StructureDestroyExecutor,
   type StructureDestroyExecutionAdapter,
 } from "./structure-destroy-executor";
-export { reconcileConstructionSiteExecution } from "./reconciliation";
+export {
+  reconcileConstructionSiteExecution,
+  reconcileStructureDestroyExecution,
+} from "./reconciliation";
 export {
   emptyLayoutsOwner,
   parseLayoutsOwner,

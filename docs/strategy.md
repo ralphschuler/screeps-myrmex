@@ -60,21 +60,23 @@ continues through delivery. Removal waits for fresh empty-source, delivered-repl
 retired-flow evidence. Current site headroom is required; the executor rechecks target stock and
 replacement identity; only fresh observation proves removal. Stored structures other than this one
 extension, defensive, critical, foreign, unknown, and multiply occupied structures remain excluded.
-General migration remains fail-closed. One source-container exception additionally removes an empty,
-unshared container beside exactly one source only while a different exact committed source-container
-remains the selected reachable service for that source. The stationary mining identity and work
-position do not change; selected, sole, stocked, ambiguous, or replacementless containers remain. A
-separate general-container exception first spends spare allowance on committed non-service capacity,
-then persists one bounded target handoff. An empty target suppresses refill and waits for every
-active logistics endpoint naming it to retire. An exact energy-only target whose amount fits the
+General migration remains fail-closed. One source-container exception removes an unshared,
+unselected container beside exactly one source only while a different exact committed
+source-container remains the selected reachable service for that source. An empty target is directly
+eligible; a stocked target persists one bounded source-specific handoff and reuses the exact
+resource-manifest logistics path before removal. The stationary mining identity and work position do
+not change; selected, sole, ambiguous, or replacementless containers remain. A separate
+general-container exception first spends spare allowance on committed non-service capacity, then
+persists one bounded target handoff. An empty target suppresses refill and waits for every active
+logistics endpoint naming it to retire. An exact energy-only target whose amount fits the
 replacement additionally uses the sole funded logistics flow. A target containing one non-energy
 kind or two to eight resource kinds instead persists one compact binary-ordered manifest and uses
 one distinct funded flow per kind; energy as the only manifest row remains invalid so its legacy
 identity cannot be duplicated. Both stocked paths suppress the target source and both refill sinks,
 and require fresh empty-target, every delivered replacement gain, and retired flow/endpoint evidence
 before removal. Canonical general positions adjacent to a source, over-eight-kind or malformed
-stock, source-service targets, capacity loss, and unavailable contract evidence fail closed. Other
-stocked structures and rooms without exact replacement evidence remain untouched.
+stock, selected source-service targets, capacity loss, and unavailable contract evidence fail
+closed. Other stocked structures and rooms without exact replacement evidence remain untouched.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
