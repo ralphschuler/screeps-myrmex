@@ -47,7 +47,7 @@ describe("layout persistence and cache", () => {
       structureType: "container",
     } as const;
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
-    expect(owner.schemaVersion).toBe(11);
+    expect(owner.schemaVersion).toBe(12);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const { issuerSequence: _sequence, ...legacyService } = placement.service;
@@ -64,7 +64,7 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(legacy)).toEqual({
       ...legacy,
-      schemaVersion: 11,
+      schemaVersion: 12,
       revision: owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
@@ -132,7 +132,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutTowerEvacuation(owner, "W1N1", evacuation);
 
-    expect(owner.schemaVersion).toBe(11);
+    expect(owner.schemaVersion).toBe(12);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 7 })).toEqual({
       ...owner,
@@ -182,7 +182,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutLinkEvacuation(owner, "W1N1", evacuation);
 
-    expect(owner.schemaVersion).toBe(11);
+    expect(owner.schemaVersion).toBe(12);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.linkEvacuation).toEqual(
       evacuation,
@@ -211,9 +211,9 @@ describe("layout persistence and cache", () => {
       ).toBeNull();
   });
 
-  it("migrates V10 without inventing lab evacuation and persists one bounded V11 record", () => {
+  it("migrates V10 without inventing lab evacuation and preserves bounded energy terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(11);
+    expect(owner.schemaVersion).toBe(12);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 10 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
@@ -257,9 +257,58 @@ describe("layout persistence and cache", () => {
       ).toBeNull();
   });
 
+  it("migrates V11 energy terms and persists one bounded V12 mineral evacuation", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    expect(owner.schemaVersion).toBe(12);
+    const energy = {
+      amount: 750,
+      expiresAt: 160,
+      replacementId: "lab-replacement",
+      replacementInitialEnergy: 250,
+      sourceId: "lab-obsolete",
+      startedAt: 10,
+    } as const;
+    owner = persistLayoutLabEvacuation(owner, "W1N1", energy);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 11 })).toEqual({
+      ...owner,
+      revision: owner.revision + 1,
+    });
+
+    const mineral = {
+      amount: 3_000,
+      destinationId: "storage",
+      destinationInitialAmount: 10_000,
+      expiresAt: 160,
+      replacementId: "lab-replacement",
+      resourceType: "XGH2O",
+      sourceId: "lab-obsolete",
+      startedAt: 10,
+    } as const;
+    owner = persistLayoutLabEvacuation(owner, "W1N1", mineral);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 11 })).toBeNull();
+
+    for (const invalid of [
+      { ...mineral, amount: 3_001 },
+      { ...mineral, destinationId: mineral.sourceId },
+      { ...mineral, destinationInitialAmount: -1 },
+      { ...mineral, destinationInitialAmount: 997_001 },
+      { ...mineral, expiresAt: 159 },
+      { ...mineral, resourceType: "energy" },
+      { ...mineral, resourceType: " XGH2O" },
+      { ...mineral, replacementInitialEnergy: 0 },
+    ])
+      expect(
+        parseLayoutsOwner({
+          ...owner,
+          records: [{ ...owner.records[0], labEvacuation: invalid }],
+        }),
+      ).toBeNull();
+  });
+
   it("migrates V9 without inventing lab receipts and rejects spoofed legacy evidence", () => {
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(11);
+    expect(owner.schemaVersion).toBe(12);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 9 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
@@ -475,7 +524,7 @@ describe("layout persistence and cache", () => {
     });
     expect(migrated).toMatchObject({
       revision: owner.revision + 1,
-      schemaVersion: 11,
+      schemaVersion: 12,
       records: [
         {
           removalReceipt: {

@@ -34,11 +34,40 @@ describe("composed lab runtime", () => {
     expect(idle.migrationRooms).toHaveLength(1);
     expect(idle.migrationRooms[0]).toMatchObject({
       activity: [],
+      evacuationStorageId: "storage",
       observedAt: 100,
       quiescent: true,
       roomName: "W1N1",
     });
     expect(idle.migrationRooms[0]?.assignment?.roomName).toBe("W1N1");
+    const room = required(snapshot.ownedRooms[0]);
+    for (const roomOverride of [
+      { ownedStorages: [{ ...required(room.ownedStorages?.[0]), active: false }] },
+      {
+        ownedStorages: [
+          required(room.ownedStorages?.[0]),
+          { ...required(room.ownedStorages?.[0]), id: "storage-b" },
+        ],
+      },
+      {
+        ownedStorages: [],
+        ownedTerminals: [{ ...required(room.ownedStorages?.[0]), cooldown: 0 }],
+      },
+    ]) {
+      expect(
+        composeLabRuntime({
+          fundedBudgetIds: new Set(),
+          pendingAttempts: [],
+          policy: buildRuntimeConfig().policy.industry,
+          previousCommitments: [],
+          reactionObjectives: [],
+          reactions,
+          reactionTimes,
+          snapshot: { ...snapshot, ownedRooms: [{ ...room, ...roomOverride }] },
+          snapshotRevision: "snapshot/100",
+        }).migrationRooms[0]?.evacuationStorageId,
+      ).toBeNull();
+    }
     expect(active.migrationRooms[0]).toMatchObject({
       observedAt: 100,
       quiescent: false,

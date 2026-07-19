@@ -8,7 +8,12 @@ import type {
   WorldSnapshot,
 } from "../world/snapshot";
 import type { LogisticsContractEndpoint } from "./contracts";
-import type { LogisticsEdge, LogisticsNode, LogisticsPriorityClass } from "./planner";
+import {
+  aggregateStoreCapacityReservationKey,
+  type LogisticsEdge,
+  type LogisticsNode,
+  type LogisticsPriorityClass,
+} from "./planner";
 import type { LogisticsResourceDemandProjection } from "./resource-demands";
 
 interface MatureObjectiveBase {
@@ -316,7 +321,7 @@ function projectTransfer(
     : genericSourceNodeId(structure.id, transfer.resourceType);
   const nodeId = `mature:${objective.id}:r${String(objective.revision)}:${transfer.mode}:${transfer.resourceType}`;
   const node = freeze({
-    capacityReservationKey: `store:${objective.colonyId}:${target.id}:aggregate-capacity`,
+    capacityReservationKey: aggregateStoreCapacityReservationKey(objective.colonyId, target.id),
     colonyId: objective.colonyId,
     freeCapacity: target.store.freeCapacity ?? 0,
     id: nodeId,

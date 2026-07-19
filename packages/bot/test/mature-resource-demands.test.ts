@@ -58,9 +58,7 @@ describe("mature resource-demand projection", () => {
     ).toBe(true);
     expect(
       new Set(result.nodes.map(({ capacityReservationKey }) => capacityReservationKey)),
-    ).toEqual(
-      new Set(["store:W1N1:factory:aggregate-capacity", "store:W1N1:storage:aggregate-capacity"]),
-    );
+    ).toEqual(new Set(["store-capacity/4:W1N1/7:factory", "store-capacity/4:W1N1/7:storage"]));
     const observed = observeLogisticsGraph(world(), true);
     expect(observed.nodes.filter(({ id }) => id === "store:storage:source:wire")).toHaveLength(1);
     expect(result.nodes.some(({ id }) => id === "store:storage:source:wire")).toBe(false);
