@@ -148,6 +148,7 @@ describe("StructureRemovalArbiter", () => {
   it("preserves typed empty-idle link terms in the sole removal intent", () => {
     const link = {
       ...proposal("link-reserve-external"),
+      replacementExpectedEnergy: 0,
       replacementId: "link-reserve-exact",
       replacementRequiresZeroCooldown: true,
       replacementStructureType: "link",
@@ -162,6 +163,7 @@ describe("StructureRemovalArbiter", () => {
     });
     expect(result.intents).toEqual([
       expect.objectContaining({
+        replacementExpectedEnergy: 0,
         replacementId: "link-reserve-exact",
         replacementRequiresZeroCooldown: true,
         replacementStructureType: "link",
@@ -171,17 +173,17 @@ describe("StructureRemovalArbiter", () => {
         targetStructureType: "link",
       }),
     ]);
-    const untyped = {
-      ...link,
-      replacementRequiresZeroCooldown: false,
-    } as unknown as LayoutMigrationProposal;
-    expect(
-      arbitrateStructureRemovals({
-        authorizations: [authorization(untyped)],
-        limits: STRUCTURE_REMOVAL_LIMITS,
-        proposals: [untyped],
-      }).rejected[0]?.reason,
-    ).toBe("invalid-proposal");
+    for (const untyped of [
+      { ...link, replacementExpectedEnergy: 801 },
+      { ...link, replacementRequiresZeroCooldown: false },
+    ] as unknown as LayoutMigrationProposal[])
+      expect(
+        arbitrateStructureRemovals({
+          authorizations: [authorization(untyped)],
+          limits: STRUCTURE_REMOVAL_LIMITS,
+          proposals: [untyped],
+        }).rejected[0]?.reason,
+      ).toBe("invalid-proposal");
   });
 
   it("rejects a proposal without one exact current authorization", () => {

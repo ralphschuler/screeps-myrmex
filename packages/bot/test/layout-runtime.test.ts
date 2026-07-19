@@ -4,6 +4,7 @@ import { planStaticMining } from "../src/economy";
 import { planLinkRuntime } from "../src/links";
 import { ConstructionPlanner } from "../src/maintenance";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
+import { projectLayoutLinkEvacuations } from "../src/logistics/link-evacuation";
 import { projectLayoutTowerEvacuations } from "../src/logistics/tower-evacuation";
 import type { WorldSnapshot } from "../src/world/snapshot";
 import {
@@ -15,8 +16,10 @@ import {
   arbitrateStructureRemovals,
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
+  layoutLinkEvacuationFlowId,
   parseLayoutsOwner,
   persistLayoutCommitment,
+  persistLayoutLinkEvacuation,
   persistLayoutTowerEvacuation,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
@@ -646,7 +649,7 @@ describe("composed layout runtime", () => {
     ]);
   });
 
-  it("builds reserve capacity and removes one empty obsolete reserve link without flow loss", () => {
+  it("builds reserve capacity, evacuates stock, and removes one obsolete reserve link", () => {
     const projectedPolicy = projectColonyRclPolicy({
       activeThreat: false,
       controllerLevel: 8,
@@ -736,7 +739,7 @@ describe("composed layout runtime", () => {
       store: { capacity: 1_000_000, freeCapacity: 1_000_000, resources: [], usedCapacity: 0 },
       structureType: "storage",
     };
-    const external = link("link-reserve-external", pos(30, 30));
+    const external = link("link-reserve-external", pos(30, 30), 300);
     const critical = [
       link("link-source-a", pos(11, 10), 800),
       link("link-source-b", pos(41, 10)),
@@ -818,11 +821,14 @@ describe("composed layout runtime", () => {
         ? { ...value, adoption: "compatible-external" as const, pos: external.pos }
         : { ...value, adoption: "exact" as const },
     );
-    const readyRoom = room([...critical, replacement, external], 101);
+    const stockedRoom = room([...critical, replacement, external], 101);
     type MigrationInput = Parameters<ConstructionPlanner["planMigration"]>[0];
     const plan = (
       value: ReturnType<typeof room>,
+      linkEvacuation: MigrationInput["linkEvacuation"] = null,
       removalReceipt: MigrationInput["removalReceipt"] = null,
+      activeLogisticsFlowIds: ReadonlySet<string> = new Set(),
+      activeLogisticsTargetIds: ReadonlySet<string> = new Set(),
       orderedCurrent: readonly LayoutPlacement[] = [...sourceServices, ...currentLinks],
       orderedDesired: readonly LayoutPlacement[] = desiredPlacements,
     ) => {
@@ -862,11 +868,13 @@ describe("composed layout runtime", () => {
       if (linkRuntime === undefined) throw new Error("expected public link-runtime evidence");
       expect(linkRuntime.arbitration.accepted).toEqual([]);
       return new ConstructionPlanner().planMigration({
-        activeLogisticsTargetIds: new Set(),
+        activeLogisticsFlowIds,
+        activeLogisticsTargetIds,
         colony,
         commitment,
         currentPlacements: orderedCurrent,
         globalOwnedSiteCount: 0,
+        linkEvacuation,
         linkRuntime,
         logisticsEvidenceReady: true,
         observationFingerprint: `link-${String(value.observedAt)}`,
@@ -876,7 +884,55 @@ describe("composed layout runtime", () => {
         room: value,
       });
     };
-    const ready = plan(readyRoom);
+    const staged = plan(stockedRoom);
+    expect(staged.proposals).toEqual([]);
+    expect(staged.linkEvacuation).toMatchObject({
+      amount: 300,
+      replacementId: replacement.id,
+      replacementInitialEnergy: 0,
+      sourceId: external.id,
+    });
+    let owner = persistLayoutCommitment(
+      emptyLayoutsOwner(),
+      roomName,
+      commitment,
+      desiredPlacements,
+    );
+    owner = persistLayoutLinkEvacuation(owner, roomName, staged.linkEvacuation);
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const linkEvacuation = owner.records[0]?.linkEvacuation;
+    if (linkEvacuation === undefined) throw new Error("expected persisted link evacuation");
+    const authorizedFlowId = layoutLinkEvacuationFlowId(roomName, linkEvacuation);
+    if (authorizedFlowId === null) throw new Error("expected bounded link evacuation identity");
+    const logistics = projectLayoutLinkEvacuations({
+      authorizedFlowIds: new Set([authorizedFlowId]),
+      existingBudgets: [],
+      records: owner.records,
+      snapshot: { rooms: [stockedRoom] } as unknown as WorldSnapshot,
+      tick: 101,
+    });
+    expect(logistics.budgets).toHaveLength(1);
+    expect(logistics.demands.edges).toHaveLength(1);
+    const flowId = logistics.demands.edges[0]?.id;
+    if (flowId === undefined) throw new Error("expected link evacuation flow");
+
+    const partialTarget = link(external.id, external.pos, 100);
+    const partialReplacement = link(replacement.id, replacement.pos, 200);
+    const partialRoom = room([...critical, partialReplacement, partialTarget], 102);
+    expect(
+      plan(
+        partialRoom,
+        linkEvacuation,
+        null,
+        new Set([flowId]),
+        new Set([external.id, replacement.id]),
+      ),
+    ).toMatchObject({ proposals: [], linkEvacuation });
+
+    const obsoleteEmpty = link(external.id, external.pos, 0);
+    const deliveredReplacement = link(replacement.id, replacement.pos, 300);
+    const readyRoom = room([...critical, deliveredReplacement, obsoleteEmpty], 103);
+    const ready = plan(readyRoom, linkEvacuation);
     const resetReadyRoom = JSON.parse(
       JSON.stringify({
         ...readyRoom,
@@ -886,13 +942,17 @@ describe("composed layout runtime", () => {
     ) as typeof readyRoom;
     const resetReady = plan(
       resetReadyRoom,
+      JSON.parse(JSON.stringify(linkEvacuation)) as typeof linkEvacuation,
       null,
+      new Set(),
+      new Set(),
       [...sourceServices, ...currentLinks].reverse(),
       [...desiredPlacements].reverse(),
     );
     expect(JSON.stringify(resetReady)).toBe(JSON.stringify(ready));
     expect(ready.proposals).toEqual([
       expect.objectContaining({
+        replacementExpectedEnergy: 300,
         replacementId: replacement.id,
         targetId: external.id,
         targetStructureType: "link",
@@ -927,31 +987,30 @@ describe("composed layout runtime", () => {
       isCurrentCommitment: () => true,
       resolveRoom: () => liveRoom,
       resolveStructure: (id) =>
-        id === external.id
-          ? (liveLink(external, destroy) as unknown as Structure)
-          : id === replacement.id
-            ? (liveLink(replacement) as unknown as Structure)
+        id === obsoleteEmpty.id
+          ? (liveLink(obsoleteEmpty, destroy) as unknown as Structure)
+          : id === deliveredReplacement.id
+            ? (liveLink(deliveredReplacement) as unknown as Structure)
             : null,
     });
-    let owner = persistLayoutCommitment(
-      emptyLayoutsOwner(),
-      roomName,
-      commitment,
-      desiredPlacements,
-    );
-    owner = reconcileStructureDestroyExecution(owner, execution, 101).owner;
+    owner = reconcileStructureDestroyExecution(owner, execution, 103).owner;
     owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
     const receipt = owner.records[0]?.removalReceipt ?? null;
     expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
     expect(destroy).toHaveBeenCalledOnce();
-    expect(plan(room([...critical, replacement, external], 102), receipt)).toMatchObject({
+    expect(
+      plan(room([...critical, deliveredReplacement, obsoleteEmpty], 104), linkEvacuation, receipt),
+    ).toMatchObject({
       blockers: [expect.objectContaining({ reason: "removal-pending" })],
       proposals: [],
     });
     expect(destroy).toHaveBeenCalledOnce();
 
-    const followingRoom = room([...critical, replacement], 103);
-    expect(plan(followingRoom, receipt)).toMatchObject({ removalReceipt: null });
+    const followingRoom = room([...critical, deliveredReplacement], 105);
+    expect(plan(followingRoom, linkEvacuation, receipt)).toMatchObject({
+      linkEvacuation: null,
+      removalReceipt: null,
+    });
     const followingDiff = diffOwnedRoomLayout({
       colonyId: roomName,
       commitment,

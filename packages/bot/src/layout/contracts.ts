@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 8 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 9 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -27,6 +27,7 @@ export const MAX_LAYOUT_CONTAINER_MIGRATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_CONTAINER_STORE_RESOURCES = 64 as const;
 export const MAX_LAYOUT_CONTAINER_FLOW_ID_LENGTH = 128 as const;
 export const LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS = 150 as const;
+export const LAYOUT_LINK_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS = 150 as const;
 export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
@@ -101,6 +102,14 @@ export interface LayoutTowerEvacuation {
   readonly sourceId: string;
   readonly startedAt: number;
 }
+export interface LayoutLinkEvacuation {
+  readonly amount: number;
+  readonly expiresAt: number;
+  readonly replacementId: string;
+  readonly replacementInitialEnergy: number;
+  readonly sourceId: string;
+  readonly startedAt: number;
+}
 export type LayoutContainerMigrationResource = readonly [
   resourceType: string,
   amount: number,
@@ -132,6 +141,7 @@ export interface LayoutContainerMigration {
 export interface LayoutRecord extends LayoutCommitment {
   readonly containerMigration?: LayoutContainerMigration;
   readonly extensionEvacuation?: LayoutExtensionEvacuation;
+  readonly linkEvacuation?: LayoutLinkEvacuation;
   readonly towerEvacuation?: LayoutTowerEvacuation;
   /** One exact bounded receipt for the latest irreversible removal attempt in this room. */
   readonly removalReceipt?: LayoutStructureRemovalReceipt;
@@ -217,6 +227,27 @@ export function layoutTowerEvacuationFlowId(
 export function layoutTowerEvacuationBudgetIssuer(
   roomName: string,
   evacuation: Pick<LayoutTowerEvacuation, "replacementId" | "sourceId">,
+): string | null {
+  const issuer = [
+    "layout-migration",
+    `${String(roomName.length)}:${roomName}`,
+    `${String(evacuation.sourceId.length)}:${evacuation.sourceId}`,
+    `${String(evacuation.replacementId.length)}:${evacuation.replacementId}`,
+  ].join("/");
+  return issuer.length <= 128 ? issuer : null;
+}
+
+export function layoutLinkEvacuationFlowId(
+  roomName: string,
+  evacuation: Pick<LayoutLinkEvacuation, "replacementId" | "sourceId">,
+): string | null {
+  const flowId = `layout-link-evacuation:${roomName}:${evacuation.sourceId}:${evacuation.replacementId}`;
+  return flowId.length <= 128 ? flowId : null;
+}
+
+export function layoutLinkEvacuationBudgetIssuer(
+  roomName: string,
+  evacuation: Pick<LayoutLinkEvacuation, "replacementId" | "sourceId">,
 ): string | null {
   const issuer = [
     "layout-migration",
@@ -431,6 +462,7 @@ export type LayoutMigrationProposal =
       readonly targetStructureType: "tower";
     })
   | (LayoutMigrationProposalBase & {
+      readonly replacementExpectedEnergy: number;
       readonly replacementId: string;
       readonly replacementRequiresZeroCooldown: true;
       readonly replacementStructureType: "link";
@@ -455,6 +487,7 @@ export interface LayoutMigrationPlanningResult {
   readonly blockers: readonly LayoutMigrationBlockerRecord[];
   readonly containerMigration: LayoutContainerMigration | null;
   readonly extensionEvacuation: LayoutExtensionEvacuation | null;
+  readonly linkEvacuation: LayoutLinkEvacuation | null;
   readonly towerEvacuation: LayoutTowerEvacuation | null;
   readonly proposals: readonly LayoutMigrationProposal[];
   readonly removalReceipt: LayoutStructureRemovalReceipt | null;
@@ -508,6 +541,7 @@ export type DestroyOwnedStructureIntent =
       readonly targetStructureType: "tower";
     })
   | (DestroyOwnedStructureIntentBase & {
+      readonly replacementExpectedEnergy: number;
       readonly replacementId: string;
       readonly replacementRequiresZeroCooldown: true;
       readonly replacementStructureType: "link";
@@ -538,8 +572,8 @@ export interface StructureDestroyExecutionResult {
     | "room-not-owned"
     | "replacement-absent"
     | "replacement-cooldown"
+    | "replacement-energy-mismatch"
     | "replacement-mismatch"
-    | "replacement-not-empty"
     | "replacement-underfunded"
     | "room-unavailable"
     | "stale-commitment"
@@ -566,7 +600,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV8 {
+export interface LayoutsOwnerV9 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

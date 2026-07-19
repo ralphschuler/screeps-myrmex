@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   planLinkRuntime,
   projectLinkDomainHealth,
+  validateReserveLinkEvacuationContinuity,
   type LinkRoomLayoutEvidence,
 } from "../src/links";
 import type { LedgerEntry } from "../src/colony";
@@ -98,6 +99,74 @@ describe("link runtime projection", () => {
     ).toBe(false);
   });
 
+  it("validates exact reserve continuity and excludes active evacuation IDs from native flow", () => {
+    const evidence: LinkRoomLayoutEvidence = {
+      roomName: "W1N1",
+      evidence: {
+        algorithmRevision: "layout-v2",
+        controller: pos(40, 40),
+        fingerprint: "reserve-evacuation",
+        linkPlacements: [
+          pos(11, 10),
+          pos(41, 10),
+          pos(20, 20),
+          pos(25, 25),
+          pos(26, 25),
+          pos(39, 40),
+        ],
+        sourceServices: [
+          { pos: pos(10, 10), sourceId: "source-a" },
+          { pos: pos(40, 10), sourceId: "source-b" },
+        ],
+        storage: pos(20, 21),
+      },
+    };
+    const links = [
+      link("source-a-link", 11, 10, 800),
+      link("source-b-link", 41, 10, 800),
+      link("hub", 20, 20, 0),
+      link("reserve-exact", 25, 25, 0),
+      link("reserve-external", 30, 30, 300),
+      link("controller", 39, 40, 0),
+    ];
+    const room = {
+      controller: { level: 8, ownership: "owned" },
+      name: "W1N1",
+      observedAt: 100,
+      ownedLinks: links,
+      sources: [{ id: "source-a" }, { id: "source-b" }],
+    } as unknown as RoomSnapshot;
+    const candidate = {
+      id: "layout-link-evacuation:W1N1:reserve-external:reserve-exact",
+      replacementId: "reserve-exact",
+      roomName: "W1N1",
+      sourceId: "reserve-external",
+    };
+
+    expect(
+      validateReserveLinkEvacuationContinuity({
+        candidates: [candidate],
+        layouts: [evidence],
+        rooms: [room],
+        tick: 100,
+      }),
+    ).toEqual([candidate.id]);
+    expect(
+      validateReserveLinkEvacuationContinuity({
+        candidates: [candidate],
+        layouts: [evidence],
+        rooms: [{ ...room, sources: [{ id: "source-a" }] } as unknown as RoomSnapshot],
+        tick: 100,
+      }),
+    ).toEqual([]);
+
+    const excluded = plan({
+      excludedLinkIds: new Set(["source"]),
+      links: [link("source", 11, 10, 800), link("hub", 20, 20, 0)],
+    });
+    expect(excluded.rooms[0]?.arbitration.accepted).toEqual([]);
+  });
+
   it("publishes direct health only for complete current role classification", () => {
     const room = {
       controller: { level: 8, ownership: "owned" },
@@ -138,6 +207,7 @@ describe("link runtime projection", () => {
 
 function plan(
   change: {
+    excludedLinkIds?: ReadonlySet<string>;
     links?: ReturnType<typeof link>[];
     layouts?: LinkRoomLayoutEvidence[];
     reservations?: LedgerEntry[];
@@ -150,6 +220,7 @@ function plan(
     ownedLinks: change.links ?? [link("source", 11, 10, 800), link("hub", 20, 20, 0)],
   } as unknown as RoomSnapshot;
   return planLinkRuntime({
+    ...(change.excludedLinkIds === undefined ? {} : { excludedLinkIds: change.excludedLinkIds }),
     growth: [
       {
         action: "upgrade-controller",

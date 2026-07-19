@@ -9,6 +9,8 @@ import {
   type LogisticsFlowProgress,
 } from "./contracts";
 import {
+  MAX_LOGISTICS_EDGES,
+  MAX_LOGISTICS_NODES,
   planLogistics,
   type LogisticsEdge,
   type LogisticsNode,
@@ -351,6 +353,19 @@ function blockerColonies(
 }
 
 /** Renews terminal logistics authority without making the planner own ledger revisions. */
+export function executableLogisticsView(
+  execution: ContractExecutionView,
+  blockedFlowIds: ReadonlySet<string>,
+): ContractExecutionView {
+  if (execution.status !== "ready" || blockedFlowIds.size === 0) return execution;
+  return freeze({
+    leases: execution.leases.filter(
+      ({ execution: terms }) => terms.version !== 3 || !blockedFlowIds.has(terms.flowId),
+    ),
+    status: execution.status,
+  });
+}
+
 export function renewLogisticsBudgets(
   projection: LogisticsRuntimeProjection,
   existing: readonly {
@@ -495,20 +510,28 @@ function mergeDemandGraph(
       return [];
     }),
   );
-  return freeze({
-    edges: [
-      ...observed.edges.filter(
-        ({ sinkNodeId, sourceNodeId }) =>
-          !suppressedNodeIds.has(sinkNodeId) && !suppressedNodeIds.has(sourceNodeId),
-      ),
-      ...demands.edges,
-    ],
-    endpoints: [
-      ...observed.endpoints.filter(({ nodeId }) => !suppressedNodeIds.has(nodeId)),
-      ...demands.endpoints,
-    ],
-    nodes: [...observed.nodes.filter(({ id }) => !suppressedNodeIds.has(id)), ...demands.nodes],
-  });
+  const edges = [
+    ...observed.edges.filter(
+      ({ sinkNodeId, sourceNodeId }) =>
+        !suppressedNodeIds.has(sinkNodeId) && !suppressedNodeIds.has(sourceNodeId),
+    ),
+    ...demands.edges,
+  ];
+  const endpoints = [
+    ...observed.endpoints.filter(({ nodeId }) => !suppressedNodeIds.has(nodeId)),
+    ...demands.endpoints,
+  ];
+  const nodes = [
+    ...observed.nodes.filter(({ id }) => !suppressedNodeIds.has(id)),
+    ...demands.nodes,
+  ];
+  if (
+    edges.length > MAX_LOGISTICS_EDGES ||
+    endpoints.length > MAX_LOGISTICS_NODES ||
+    nodes.length > MAX_LOGISTICS_NODES
+  )
+    return observed;
+  return freeze({ edges, endpoints, nodes });
 }
 
 function validSuppressionSet(values: readonly string[]): ReadonlySet<string> {

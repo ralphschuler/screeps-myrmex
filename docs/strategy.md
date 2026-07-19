@@ -92,9 +92,13 @@ over-capacity, inactive, underfunded, threatened, or pressured tower remains. At
 convergence similarly spends spare allowance through the ordinary build chain. It may remove only
 one active external reserve link after canonical current/ideal role evidence proves all source, hub,
 and controller anchors remain exact and active, the missing anchor plus target and exact replacement
-are reserve capacity, both reserve links are empty 800-capacity stores at zero cooldown, and no
-active logistics endpoint names either. Stocked, cooling, productive-role, incomplete, or pressured
-links remain.
+are reserve capacity, both links have exact 800-capacity energy-only stores at zero cooldown, and no
+accepted native link transfer names either. An empty target is directly removable. A stocked target
+first persists one bounded exact evacuation only when the replacement can hold all energy; the sole
+funded creep-logistics path moves it without native link-transfer loss. Removal then requires exact
+target emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, unchanged reserve
+roles, and zero cooldown. Cooling, malformed, productive-role, incomplete, or pressured links
+remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

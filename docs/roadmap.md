@@ -134,8 +134,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   retired-flow evidence. Issue #316 restores RCL8 committed link geometry, then removes one active
   empty idle external link only when canonical current/ideal role evidence classifies the target,
   missing anchor, and exact replacement as reserve capacity while every source, hub, and controller
-  link remains active. Other structure types, general multi-step migration, and creep dismantling
-  remain issue #99.
+  link remains active. Issue #318 persists one bounded positive-energy reserve-link evacuation only
+  when the exact reserve replacement can hold the complete amount, routes it through funded creep
+  logistics without native link-transfer loss, and requires exact delivery, retired work, zero
+  cooldown, unchanged reserve roles, and no accepted native transfer before removal. Other structure
+  types, general multi-step migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
