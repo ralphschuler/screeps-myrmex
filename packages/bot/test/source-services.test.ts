@@ -157,6 +157,101 @@ describe("source service selection", () => {
     expect(JSON.stringify(reset)).toBe(JSON.stringify(switched));
   });
 
+  it("hands an existing service to a strictly better exact container without oscillating", () => {
+    const previous = select({ structures: [structure("container", 9, 9, "old-service")] });
+    const bothExact = {
+      constructionSites: [],
+      placements: [origin],
+      priorSourceServices: previous.placements,
+      roomName,
+      sourceServiceHandoffAuthorized: true,
+      sources: [pos(10, 10, "source-a")],
+      structures: [
+        structure("container", 9, 9, "old-service"),
+        structure("container", 10, 11, "better-service"),
+      ],
+      terrain: terrain(),
+    };
+
+    const switched = selectSourceServices(bothExact);
+    expect(switched.placements[0]).toMatchObject({
+      adoption: "exact",
+      pos: pos(10, 11),
+      service: { issuerSequence: 2, kind: "source-container", sourceId: "source-a" },
+    });
+
+    const stable = selectSourceServices({
+      ...bothExact,
+      priorSourceServices: switched.placements,
+      structures: [...bothExact.structures].reverse(),
+    });
+    expect(stable).toEqual(switched);
+
+    const previousBest = select({
+      structures: [structure("container", 10, 11, "better-service")],
+    });
+    const alreadyBest = selectSourceServices({
+      ...bothExact,
+      priorSourceServices: previousBest.placements,
+    });
+    expect(alreadyBest).toEqual(previousBest);
+
+    const exhausted = selectSourceServices({
+      ...bothExact,
+      priorSourceServices: previous.placements.map((placement) => ({
+        ...placement,
+        service: {
+          issuerSequence: Number.MAX_SAFE_INTEGER,
+          kind: "source-container" as const,
+          sourceId: "source-a",
+        },
+      })),
+    });
+    expect(exhausted.placements[0]?.pos).toEqual(pos(9, 9));
+
+    const matchingSite = select({ constructionSites: [site(9, 9)] });
+    expect(
+      selectSourceServices({
+        ...bothExact,
+        constructionSites: [site(9, 9)],
+        priorSourceServices: matchingSite.placements,
+        structures: [structure("container", 10, 11, "better-service")],
+      }).placements[0],
+    ).toMatchObject({ adoption: "matching-site", pos: pos(9, 9) });
+  });
+
+  it("does not hand one source to another source's persisted exact service", () => {
+    const prior = (x: number, y: number, sourceId: string): LayoutPlacement => ({
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: pos(x, y),
+      service: { kind: "source-container", sourceId },
+      structureType: "container",
+    });
+    const result = selectSourceServices({
+      constructionSites: [],
+      placements: [origin],
+      priorSourceServices: [prior(9, 9, "source-a"), prior(10, 11, "source-b")],
+      roomName,
+      sourceServiceHandoffAuthorized: true,
+      sources: [pos(10, 10, "source-a"), pos(10, 12, "source-b")],
+      structures: [
+        structure("container", 9, 9, "source-a-service"),
+        structure("container", 10, 11, "source-b-service"),
+      ],
+      terrain: terrain(),
+    });
+
+    expect(result.placements).toMatchObject([
+      { pos: pos(9, 9), service: { sourceId: "source-a" } },
+      { pos: pos(10, 11), service: { sourceId: "source-b" } },
+    ]);
+    expect(result.placements.every(({ service }) => service?.issuerSequence === undefined)).toBe(
+      true,
+    );
+  });
+
   it("ignores ambiguous, conflicting, non-adjacent, or blocked prior service evidence", () => {
     const exactAlternate = structure("container", 11, 11, "new-service");
     const prior = (x: number, y: number, sourceId = "source-a"): LayoutPlacement => ({

@@ -9,7 +9,8 @@ Accepted
 Issue #302 gives one persisted source-service position continuity precedence. This prevents a new
 container observation from changing the executable terms of the stable `mining/{room}/{source}`
 contract, but it also leaves a source drop-mining on the old tile after its selected container
-disappears, even when a different exact reachable container exists.
+disappears. It also prevents convergence when a later-built exact reachable container strictly
+outranks the selected exact container under the existing canonical source-service policy.
 
 Changing the work position under issuer sequence 1 is correctly rejected by `ContractLedger` as an
 idempotency conflict. Submitting sequence 2 while sequence 1 still owns the same BudgetLedger
@@ -19,8 +20,14 @@ partial handoff if successor admission failed.
 ## Decision
 
 - `LayoutPlanner` remains the sole source-service selection and persistence authority. A selected
-  exact container or matching site remains pinned. A selected tile whose container is absent may
-  switch only to a different current exact legal and reachable container for the same source.
+  matching site remains pinned. A selected tile whose container is absent may switch only to a
+  different current exact legal and reachable container for the same source. Issue #306 also permits
+  a selected exact container to switch only when a different current exact candidate strictly
+  precedes it under the existing adoption, route-distance, terrain, y, and x ordering. A worse or
+  equal candidate cannot advance the coordinate, preventing oscillation while both containers
+  remain. Every structurally valid persisted source-service position stays reserved to its source
+  during the bounded selection pass, so overlapping adjacent candidate sets cannot steal another
+  source's executable service.
 - Runtime composition authorizes that switch only from fresh visible ownership with no active threat
   or controller risk, a legal workforce, and restored protected spawn reserve. Missing, stale,
   malformed, unsafe, or non-exact evidence preserves the prior executable terms or fails closed.
@@ -50,15 +57,16 @@ partial handoff if successor admission failed.
 
 ## Consequences
 
-A source can move from a vanished selected container to one exact replacement without an idempotency
-or funding-binding conflict, duplicate extraction commitment, or durable zero-contract state. The
-same actor may be reassigned by the existing allocator; movement and action arbiters retain command
-authority.
+A source can move from a vanished selected container or a still-existing selected exact container to
+one strictly preferred exact replacement without an idempotency or funding-binding conflict,
+duplicate extraction commitment, durable zero-contract state, ranking oscillation, or cross-source
+service theft. The same actor may be reassigned by the existing allocator; movement and action
+arbiters retain command authority.
 
 The layouts owner gains at most one optional integer per selected source inside its existing
 64-room/eight-service bounds. Rollback to V3 disables layout work while preserving V4 bytes;
-redeploying V4 resumes. General selected-service optimization, stock movement, old-container
-removal, other structure classes, and creep dismantling remain issue #99.
+redeploying V4 resumes. Stock movement, old-container removal, other structure classes, and creep
+dismantling remain issue #99.
 
 ## Mechanics sources
 

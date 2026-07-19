@@ -94,7 +94,10 @@ Static mining assigns one deterministic primary extraction commitment per visibl
 persisted, its legal reachable work position outranks newly observed alternate containers or sites.
 Losing the selected container first keeps the same mining terms and degrades to dropped energy. A
 switch then requires a different exact legal/reachable container plus fresh visible ownership, no
-threat or controller risk, legal workforce, and restored protected reserve. The layout-owned
+threat or controller risk, legal workforce, and restored protected reserve. The same safety gate may
+switch a still-existing selected exact container only when another exact candidate strictly precedes
+it under the existing route, terrain, and coordinate ordering; worse or equal alternates cannot
+cause churn, and another source's persisted service is never a candidate for theft. The layout-owned
 issuance coordinate advances exactly once, while `ContractLedger` atomically replaces the same
 source and funding binding with its next sequence; the current-tick predecessor remains executable
 and no duplicate or durable zero-contract state is allowed. Useful `WORK` is capped by source

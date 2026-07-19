@@ -127,11 +127,11 @@ describe("static mining runtime activation", () => {
     expect(commands.harvest).not.toHaveBeenCalled();
   });
 
-  it("keeps one byte-stable mining contract while its exact selected container still exists", () => {
+  it("keeps one byte-stable mining contract when an exact alternate ranks worse", () => {
     const memory = {} as Memory;
     const commands = commandSpies();
-    const oldService = [{ id: "container-old", x: 9, y: 9 }] as const;
-    const withAlternate = [...oldService, { id: "container-alternate", x: 10, y: 11 }] as const;
+    const oldService = [{ id: "container-old", x: 10, y: 11 }] as const;
+    const withAlternate = [...oldService, { id: "container-alternate", x: 9, y: 9 }] as const;
     runTick({ game: miningGame(500, commands, true, 2, oldService), memory });
     runTick({ game: miningGame(501, commands, true, 2, oldService), memory });
     runTick({ game: miningGame(502, commands, true, 2, oldService), memory });
@@ -145,13 +145,108 @@ describe("static mining runtime activation", () => {
     });
     const after = activeMiningContract(reconstructed, "mining/W1N1/source-a");
 
-    expect(before).toMatchObject({ execution: { workPosition: { x: 9, y: 9 } } });
+    expect(before).toMatchObject({ execution: { workPosition: { x: 10, y: 11 } } });
     expect(after).toEqual(before);
     expect(
       outcome.contracts?.submissions.filter(({ contractId }) =>
         contractId?.includes("mining/W1N1/source-a"),
       ),
     ).toEqual([expect.objectContaining({ accepted: true, outcome: "duplicate-active" })]);
+    expect(commands.harvest).not.toHaveBeenCalled();
+  });
+
+  it("preserves the selected service while the protected reserve is unrestored", () => {
+    const memory = {} as Memory;
+    const commands = commandSpies();
+    const oldService = [{ id: "container-old", x: 9, y: 9 }] as const;
+    const bothServices = [...oldService, { id: "container-better", x: 10, y: 11 }] as const;
+    runTick({ game: miningGame(525, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(526, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(527, commands, true, 2, oldService), memory });
+    const predecessor = activeMiningContract(memory, "mining/W1N1/source-a") as {
+      execution: { workPosition: { x: number; y: number } };
+      id: string;
+      issuerSequence: number;
+    };
+
+    const unsafe = runTick({
+      game: miningGame(528, commands, true, 2, bothServices, false, 0),
+      memory,
+    });
+    const preserved = activeMiningContract(memory, "mining/W1N1/source-a");
+    const layout = memory.myrmex?.layouts as unknown as {
+      records?: Array<{
+        sourceServices?: Array<{
+          pos?: { x?: number; y?: number };
+          service?: { issuerSequence?: number; sourceId?: string };
+        }>;
+      }>;
+    };
+
+    expect(unsafe.kernel.faults).toEqual([]);
+    expect(preserved).toMatchObject({
+      execution: predecessor.execution,
+      id: predecessor.id,
+      issuerSequence: predecessor.issuerSequence,
+    });
+    expect(
+      layout.records?.[0]?.sourceServices?.find(({ service }) => service?.sourceId === "source-a"),
+    ).toMatchObject({ pos: { x: 9, y: 9 }, service: { sourceId: "source-a" } });
+  });
+
+  it("atomically hands an existing selected service to a better exact container without oscillating", () => {
+    const memory = {} as Memory;
+    const commands = commandSpies();
+    const oldService = [{ id: "container-old", x: 9, y: 9 }] as const;
+    const bothServices = [...oldService, { id: "container-better", x: 10, y: 11 }] as const;
+    runTick({ game: miningGame(550, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(551, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(552, commands, true, 2, oldService), memory });
+    const predecessor = activeMiningContract(memory, "mining/W1N1/source-a") as {
+      id: string;
+      issuerSequence: number;
+    };
+
+    const handoff = runTick({ game: miningGame(553, commands, true, 2, bothServices), memory });
+    expect(handoff.kernel.faults).toEqual([]);
+    const reconstructed = JSON.parse(JSON.stringify(memory)) as Memory;
+    const replaced = runTick({
+      game: miningGame(554, commands, true, 2, bothServices, true),
+      memory: reconstructed,
+    });
+    const successor = activeMiningContract(reconstructed, "mining/W1N1/source-a") as {
+      execution: { workPosition: { x: number; y: number } };
+      id: string;
+      issuerSequence: number;
+    };
+
+    expect(successor).toMatchObject({
+      execution: { workPosition: { x: 10, y: 11 } },
+      issuerSequence: 2,
+    });
+    expect(replaced.contracts?.replacements).toEqual([
+      expect.objectContaining({
+        accepted: true,
+        predecessorContractId: predecessor.id,
+        successorContractId: successor.id,
+      }),
+    ]);
+
+    const stable = runTick({
+      game: miningGame(555, commands, true, 2, bothServices),
+      memory: reconstructed,
+    });
+    expect(activeMiningContract(reconstructed, "mining/W1N1/source-a")).toEqual(successor);
+    expect(stable.contracts?.replacements).toEqual([]);
+    const layout = reconstructed.myrmex?.layouts as unknown as {
+      records?: Array<{
+        sourceServices?: Array<{ service?: { issuerSequence?: number; sourceId?: string } }>;
+      }>;
+    };
+    expect(
+      layout.records?.[0]?.sourceServices?.find(({ service }) => service?.sourceId === "source-a")
+        ?.service?.issuerSequence,
+    ).toBe(2);
     expect(commands.harvest).not.toHaveBeenCalled();
   });
 
@@ -283,6 +378,7 @@ function miningGame(
     readonly y: number;
   }[] = [],
   reverseObservations = false,
+  roomEnergyAvailable = 800,
 ): RuntimeGame {
   const roomName = "W1N1";
   const pos = (x: number, y: number) => ({ roomName, x, y });
@@ -373,7 +469,7 @@ function miningGame(
   const room = {
     controller,
     createConstructionSite: commands.createConstructionSite,
-    energyAvailable: 800,
+    energyAvailable: roomEnergyAvailable,
     energyCapacityAvailable: 800,
     find: (kind: number): unknown[] =>
       kind === FIND_CREEPS_VALUE

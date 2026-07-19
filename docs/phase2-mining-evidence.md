@@ -5,7 +5,9 @@ static extraction for visible owned sources. Issue
 [#302](https://github.com/ralphschuler/screeps-myrmex/issues/302) preserves those executable terms
 when alternate source containers appear. Issue
 [#304](https://github.com/ralphschuler/screeps-myrmex/issues/304) adds one explicit lost-service
-handoff. The checked gate result remains [`phase2-mining-results.json`](phase2-mining-results.json).
+handoff. Issue [#306](https://github.com/ralphschuler/screeps-myrmex/issues/306) safely reuses that
+handoff for one strictly better existing exact service. The checked gate result remains
+[`phase2-mining-results.json`](phase2-mining-results.json).
 
 ## Composed deterministic scenario
 
@@ -13,9 +15,12 @@ The scenario composes the production source-service selector, static-mining proj
 projection, and observer-only mining telemetry reducer with a deterministic funding and replacement
 ledger. Warm, serialized-state reset, and reordered source observations produce the same semantic
 result. Focused runtime evidence retains the persisted work position and byte-stable contract while
-the selected exact container remains. When that container disappears, a different exact reachable
-replacement under fresh safety evidence persists sequence 2 and leaves sequence 1 executable. On the
-following tick, it atomically reconciles to exactly one successor contract after reset and reordered
+only worse exact candidates exist. A different existing exact container that strictly precedes the
+selected service under the canonical ordering persists sequence 2 once and cannot oscillate back
+while both containers remain. Persisted services stay source-scoped when adjacent candidate sets
+overlap. When the selected container disappears, a different exact reachable replacement follows the
+same path. Both require fresh safety evidence and leave sequence 1 executable; on the following
+tick, each path atomically reconciles to exactly one successor contract after reset and reordered
 observation.
 
 The fixed room has two sources. One has exactly one legal adjacent tile at `W1N1/9/10`. Each run
@@ -36,7 +41,9 @@ eight tiles.
 | Miner death and expiry               | one stable replacement demand is retained until scheduling          |
 | Spawn busy and low energy            | replacement waits; no duplicate identity is introduced              |
 | Temporary blocked tile               | the committed work position remains stable for deterministic retry  |
-| Exact alternate appears              | selected exact service and contract remain byte-stable              |
+| Worse exact alternate appears        | selected exact service and contract remain byte-stable              |
+| Better exact alternate appears       | one safe atomic next-sequence handoff; no selection oscillation     |
+| Source candidate sets overlap        | each persisted exact service remains scoped to its source           |
 | Selected container disappears        | prior tile remains until a safe exact successor exists              |
 | Safe exact replacement exists        | sequence 1 atomically advances to one funded sequence 2             |
 | Unsafe/unfunded replacement          | predecessor remains unchanged; no executable switch occurs          |
