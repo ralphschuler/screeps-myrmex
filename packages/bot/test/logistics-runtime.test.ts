@@ -5,8 +5,10 @@ import {
   emptyContractPlanningView,
   type ContractExecutionView,
 } from "../src/contracts";
+import { assignLabCluster, fingerprintLabLayout } from "../src/industry";
 import {
   layoutExtensionEvacuationBudgetIssuer,
+  layoutLabEvacuationBudgetIssuer,
   layoutLinkEvacuationBudgetIssuer,
   layoutLinkEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
@@ -14,6 +16,7 @@ import {
 } from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
+import { projectLayoutLabEvacuations } from "../src/logistics/lab-evacuation";
 import { projectLayoutLinkEvacuations } from "../src/logistics/link-evacuation";
 import {
   executableLogisticsView,
@@ -456,6 +459,203 @@ describe("logistics runtime adapter", () => {
     expect(emptiedResult.graph.nodes).toContainEqual(
       expect.objectContaining({ id: "store:extension-replacement:sink:energy" }),
     );
+  });
+
+  it("routes one authorized energy-only obsolete-lab evacuation through the sole logistics graph", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("lab evacuation fixture room missing");
+    const lab = (id: string, x: number, y: number, energy: number) => ({
+      active: true,
+      cooldown: 0,
+      energy,
+      energyCapacity: 2_000,
+      hits: 500,
+      hitsMax: 500,
+      id,
+      mineralAmount: 0,
+      mineralCapacity: 3_000,
+      mineralType: null,
+      pos: position(x, y),
+      store: {
+        capacity: null,
+        freeCapacity: null,
+        resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+        usedCapacity: energy,
+      },
+    });
+    const exactPositions = [
+      [10, 10],
+      [11, 10],
+      [12, 10],
+      [10, 11],
+      [11, 11],
+      [12, 11],
+      [10, 12],
+      [11, 12],
+      [12, 12],
+    ] as const;
+    const emptyExactLabs = exactPositions.map(([x, y], index) =>
+      lab(`lab-exact-${String(index)}`, x, y, 0),
+    );
+    const limits = { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 };
+    const exactAssignment = assignLabCluster({
+      labs: emptyExactLabs,
+      layoutFingerprint: fingerprintLabLayout("W1N1", emptyExactLabs),
+      limits,
+      roomName: "W1N1",
+    }).assignment;
+    if (exactAssignment === null) throw new Error("expected exact lab assignment");
+    const replacementId = [
+      ...exactAssignment.reagentLabIds,
+      ...exactAssignment.productLabIds,
+      ...exactAssignment.boostLabIds,
+    ].sort()[0];
+    if (replacementId === undefined) throw new Error("expected assigned replacement lab");
+    const ownedLabs = [
+      ...emptyExactLabs.map((value) =>
+        value.id === replacementId ? lab(value.id, value.pos.x, value.pos.y, 250) : value,
+      ),
+      lab("lab-obsolete", 30, 30, 750),
+    ];
+    const assignment = assignLabCluster({
+      labs: ownedLabs,
+      layoutFingerprint: fingerprintLabLayout("W1N1", ownedLabs),
+      limits,
+      roomName: "W1N1",
+    }).assignment;
+    if (assignment === null) throw new Error("expected current lab assignment");
+    expect([
+      ...assignment.reagentLabIds,
+      ...assignment.productLabIds,
+      ...assignment.boostLabIds,
+    ]).not.toContain("lab-obsolete");
+    const evacuationWorld = {
+      ...snapshot,
+      observation: { ...snapshot.observation, tick: 11 },
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          ownedLabs,
+          storedStructures: [
+            ...room.storedStructures,
+            ...ownedLabs.map((value) => ({
+              hits: value.hits,
+              hitsMax: value.hitsMax,
+              id: value.id,
+              ownerUsername: "me",
+              ownership: "owned" as const,
+              pos: value.pos,
+              store: value.store,
+              structureType: "lab",
+              ticksToDecay: null,
+            })),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const terms = {
+      amount: 750,
+      expiresAt: 160,
+      replacementId,
+      replacementInitialEnergy: 250,
+      sourceId: "lab-obsolete",
+      startedAt: 10,
+    } as const;
+    const budgetIssuer = layoutLabEvacuationBudgetIssuer("W1N1", terms);
+    if (budgetIssuer === null) throw new Error("lab evacuation budget issuer overflowed");
+    const record = {
+      algorithmRevision: "owned-room-layout-v2-source-services",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      fingerprint: "layout-a",
+      labEvacuation: terms,
+      roomName: "W1N1",
+      transform: 0,
+    } as const satisfies LayoutRecord;
+    const migrationRooms = [
+      {
+        activity: [],
+        assignment,
+        limits,
+        observedAt: 11,
+        quiescent: true,
+        roomName: "W1N1",
+      },
+    ] as const;
+    const evacuation = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms,
+      records: [record],
+      snapshot: evacuationWorld,
+      tick: 11,
+    });
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: false,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: evacuation.demands,
+      snapshot: evacuationWorld,
+      tick: 11,
+    });
+    const flow = result.contracts.commitments.find(({ flowId }) =>
+      flowId.startsWith("layout-lab-evacuation:"),
+    );
+
+    expect(evacuation.authorizedFlowIds).toEqual([
+      `layout-lab-evacuation:W1N1:lab-obsolete:${replacementId}`,
+    ]);
+    expect(evacuation.budgets).toEqual([
+      expect.objectContaining({ category: "optional-growth", issuer: budgetIssuer }),
+    ]);
+    expect(evacuation.demands).toMatchObject({
+      suppressedSinkTargetIds: ["lab-obsolete", replacementId],
+      suppressedSourceTargetIds: ["lab-obsolete", replacementId],
+    });
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: "store:lab-obsolete:source:energy" }),
+    );
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: `store:${replacementId}:source:energy` }),
+    );
+    expect(flow?.request).toMatchObject({
+      budgetBinding: { category: "optional-growth", issuer: budgetIssuer },
+      execution: { action: "withdraw", counterpartId: replacementId },
+      quantity: 750,
+      targetId: "lab-obsolete",
+    });
+
+    const empty = {
+      authorizedFlowIds: [],
+      budgets: [],
+      demands: {
+        edges: [],
+        endpoints: [],
+        nodes: [],
+        suppressedSinkTargetIds: [],
+        suppressedSourceTargetIds: [],
+      },
+    };
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [{ ...migrationRooms[0], activity: ["commitment"], quiescent: false }],
+        records: [record],
+        snapshot: evacuationWorld,
+        tick: 11,
+      }),
+    ).toEqual(empty);
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms,
+        records: Array.from({ length: 65 }, () => record),
+        snapshot: evacuationWorld,
+        tick: 11,
+      }),
+    ).toEqual(empty);
   });
 
   it("routes one persisted obsolete-tower evacuation through the sole logistics graph", () => {
