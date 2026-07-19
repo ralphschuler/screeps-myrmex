@@ -455,23 +455,225 @@ describe("ConstructionPlanner", () => {
         ],
       },
     };
-    expect(
+    const mixedRoom = {
+      ...fixture.room,
+      storedStructures: fixture.room.storedStructures.map((value) =>
+        value.id === mixedTarget.id ? mixedTarget : value,
+      ),
+      structures: (fixture.room.structures ?? []).map((value) =>
+        value.id === mixedTarget.id ? mixedTarget : value,
+      ),
+    };
+    const mixed = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      currentPlacements: fixture.currentPlacements,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: mixedRoom,
+    });
+    expect(mixed.containerMigration).toMatchObject({
+      replacementId: "container-general-b",
+      resourceManifest: [
+        ["U", 25, 0],
+        ["energy", 25, 0],
+      ],
+      targetId: "container-obsolete",
+    });
+    const reorderedMixed = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      currentPlacements: [...fixture.currentPlacements].reverse(),
+      logisticsEvidenceReady: true,
+      placements: [...fixture.placements].reverse(),
+      room: {
+        ...mixedRoom,
+        storedStructures: [...mixedRoom.storedStructures].reverse().map((value) =>
+          value.id === mixedTarget.id
+            ? {
+                ...value,
+                store: { ...value.store, resources: [...value.store.resources].reverse() },
+              }
+            : value,
+        ),
+        structures: [...mixedRoom.structures].reverse(),
+      },
+    });
+    const resetMixedInput = JSON.parse(
+      JSON.stringify({
+        currentPlacements: fixture.currentPlacements,
+        placements: fixture.placements,
+        room: mixedRoom,
+      }),
+    ) as Pick<
+      Parameters<ConstructionPlanner["planMigration"]>[0],
+      "currentPlacements" | "placements" | "room"
+    >;
+    const resetMixed = planMigration({
+      ...resetMixedInput,
+      activeLogisticsTargetIds: new Set(),
+      logisticsEvidenceReady: true,
+    });
+    expect(JSON.stringify(reorderedMixed)).toBe(JSON.stringify(mixed));
+    expect(JSON.stringify(resetMixed)).toBe(JSON.stringify(mixed));
+    if (mixed.containerMigration === null) throw new Error("expected mixed migration");
+    const emptiedMixedTarget = sourceContainer("container-obsolete", 30, 30, 0);
+    const deliveredMixedReplacement = {
+      ...sourceContainer("container-general-b", 21, 20, 0),
+      store: {
+        capacity: 2_000,
+        freeCapacity: 1_950,
+        resources: [
+          { amount: 25, resourceType: "energy" },
+          { amount: 25, resourceType: "U" },
+        ],
+        usedCapacity: 50,
+      },
+    };
+    const deliveredMixedRoom = {
+      ...mixedRoom,
+      observedAt: 101,
+      storedStructures: mixedRoom.storedStructures.map((value) =>
+        value.id === emptiedMixedTarget.id
+          ? emptiedMixedTarget
+          : value.id === deliveredMixedReplacement.id
+            ? deliveredMixedReplacement
+            : value,
+      ),
+      structures: mixedRoom.structures.map((value) =>
+        value.id === emptiedMixedTarget.id
+          ? emptiedMixedTarget
+          : value.id === deliveredMixedReplacement.id
+            ? deliveredMixedReplacement
+            : value,
+      ),
+    };
+    const incompleteMixedReplacement = {
+      ...deliveredMixedReplacement,
+      store: {
+        ...deliveredMixedReplacement.store,
+        freeCapacity: 1_951,
+        resources: [
+          { amount: 25, resourceType: "energy" },
+          { amount: 24, resourceType: "U" },
+        ],
+        usedCapacity: 49,
+      },
+    };
+    const completeMixed = (room: typeof deliveredMixedRoom, flowIds: ReadonlySet<string>) =>
       planMigration({
+        activeLogisticsFlowIds: flowIds,
         activeLogisticsTargetIds: new Set(),
+        containerMigration: mixed.containerMigration,
         currentPlacements: fixture.currentPlacements,
         logisticsEvidenceReady: true,
         placements: fixture.placements,
-        room: {
-          ...fixture.room,
-          storedStructures: fixture.room.storedStructures.map((value) =>
-            value.id === mixedTarget.id ? mixedTarget : value,
+        room,
+      });
+    expect(
+      completeMixed(
+        {
+          ...deliveredMixedRoom,
+          storedStructures: deliveredMixedRoom.storedStructures.map((value) =>
+            value.id === incompleteMixedReplacement.id ? incompleteMixedReplacement : value,
           ),
-          structures: (fixture.room.structures ?? []).map((value) =>
-            value.id === mixedTarget.id ? mixedTarget : value,
+          structures: deliveredMixedRoom.structures.map((value) =>
+            value.id === incompleteMixedReplacement.id ? incompleteMixedReplacement : value,
           ),
         },
-      }).containerMigration,
-    ).toBeNull();
+        new Set(),
+      ).proposals,
+    ).toEqual([]);
+    const partialMixedTarget = {
+      ...sourceContainer("container-obsolete", 30, 30, 25),
+      store: {
+        capacity: 2_000,
+        freeCapacity: 1_975,
+        resources: [{ amount: 25, resourceType: "U" }],
+        usedCapacity: 25,
+      },
+    };
+    const partialMixedReplacement = sourceContainer("container-general-b", 21, 20, 25);
+    const partialMixed = completeMixed(
+      {
+        ...deliveredMixedRoom,
+        storedStructures: deliveredMixedRoom.storedStructures.map((value) =>
+          value.id === partialMixedTarget.id
+            ? partialMixedTarget
+            : value.id === partialMixedReplacement.id
+              ? partialMixedReplacement
+              : value,
+        ),
+        structures: deliveredMixedRoom.structures.map((value) =>
+          value.id === partialMixedTarget.id
+            ? partialMixedTarget
+            : value.id === partialMixedReplacement.id
+              ? partialMixedReplacement
+              : value,
+        ),
+      },
+      new Set(),
+    );
+    expect(partialMixed.containerMigration).toEqual(mixed.containerMigration);
+    expect(partialMixed.proposals).toEqual([]);
+    const capacityLostReplacement = sourceContainer("container-general-b", 21, 20, 1_980);
+    const capacityLost = completeMixed(
+      {
+        ...mixedRoom,
+        observedAt: 101,
+        storedStructures: mixedRoom.storedStructures.map((value) =>
+          value.id === capacityLostReplacement.id ? capacityLostReplacement : value,
+        ),
+        structures: mixedRoom.structures.map((value) =>
+          value.id === capacityLostReplacement.id ? capacityLostReplacement : value,
+        ),
+      },
+      new Set(),
+    );
+    expect(capacityLost.containerMigration).toEqual(mixed.containerMigration);
+    expect(capacityLost.proposals).toEqual([]);
+    expect(
+      completeMixed(
+        deliveredMixedRoom,
+        new Set(["layout-container-evacuation:W1N1:container-obsolete:container-general-b:1:U"]),
+      ).proposals,
+    ).toEqual([]);
+    expect(completeMixed(deliveredMixedRoom, new Set()).proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "container-general-b",
+        targetId: "container-obsolete",
+      }),
+    ]);
+    const diverseReplacementResources = [
+      { amount: 25, resourceType: "energy" },
+      { amount: 25, resourceType: "U" },
+      ...Array.from({ length: 7 }, (_, index) => ({
+        amount: 1,
+        resourceType: `extra-${String(index)}`,
+      })),
+    ];
+    const diverseReplacement = {
+      ...deliveredMixedReplacement,
+      store: {
+        capacity: 2_000,
+        freeCapacity: 1_943,
+        resources: diverseReplacementResources,
+        usedCapacity: 57,
+      },
+    };
+    expect(
+      completeMixed(
+        {
+          ...deliveredMixedRoom,
+          storedStructures: deliveredMixedRoom.storedStructures.map((value) =>
+            value.id === diverseReplacement.id ? diverseReplacement : value,
+          ),
+          structures: deliveredMixedRoom.structures.map((value) =>
+            value.id === diverseReplacement.id ? diverseReplacement : value,
+          ),
+        },
+        new Set(),
+      ).proposals,
+    ).toHaveLength(1);
+
     const fullReplacement = sourceContainer("container-general-b", 21, 20, 1_980);
     expect(
       planMigration({
@@ -549,6 +751,27 @@ describe("ConstructionPlanner", () => {
     ).toEqual([]);
 
     const deliveredReplacement = sourceContainer("container-general-b", 21, 20, 50);
+    const legacyRefilledRoom = {
+      ...mixedRoom,
+      observedAt: 101,
+      storedStructures: mixedRoom.storedStructures.map((value) =>
+        value.id === deliveredReplacement.id ? deliveredReplacement : value,
+      ),
+      structures: mixedRoom.structures.map((value) =>
+        value.id === deliveredReplacement.id ? deliveredReplacement : value,
+      ),
+    };
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: staged.containerMigration,
+        currentPlacements: fixture.currentPlacements,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: legacyRefilledRoom,
+      }).proposals,
+    ).toEqual([]);
     const deliveredRoom = {
       ...stockedRoom,
       observedAt: 101,

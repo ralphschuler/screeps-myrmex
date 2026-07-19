@@ -3,6 +3,7 @@ import { CacheManager } from "../src/cache";
 import {
   emptyLayoutsOwner,
   layoutCacheDependencies,
+  layoutContainerMigrationResourceFlowId,
   parseLayoutsOwner,
   persistConstructionSiteReceipt,
   persistLayoutCommitment,
@@ -87,6 +88,10 @@ describe("layout persistence and cache", () => {
     owner = persistLayoutContainerMigration(owner, "W1N1", migration);
 
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 1 })).toEqual({
+      ...owner,
+      revision: owner.revision + 1,
+    });
     expect(
       persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.containerMigration,
     ).toEqual(migration);
@@ -132,6 +137,61 @@ describe("layout persistence and cache", () => {
         records: [{ ...owner.records[0], containerMigration: legacy }],
       })?.records[0]?.containerMigration,
     ).toEqual(legacy);
+
+    const mixed = {
+      expiresAt: 160,
+      replacementId: "container-replacement",
+      resourceManifest: [
+        ["U", 25, 5],
+        ["energy", 25, 10],
+      ],
+      startedAt: 10,
+      targetId: "container-obsolete",
+    } as const;
+    owner = persistLayoutContainerMigration(owner, "W1N1", mixed);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 1 })).toBeNull();
+    for (const resourceManifest of [
+      [...mixed.resourceManifest].reverse(),
+      [mixed.resourceManifest[0], mixed.resourceManifest[0]],
+      Array.from({ length: 9 }, (_, index) => [`r${String(index)}`, 1, 0] as const),
+      [
+        ["U", 1_500, 0],
+        ["energy", 501, 0],
+      ],
+    ])
+      expect(
+        parseLayoutsOwner({
+          ...owner,
+          records: [
+            {
+              ...owner.records[0],
+              containerMigration: { ...mixed, resourceManifest },
+            },
+          ],
+        }),
+      ).toBeNull();
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [
+          {
+            ...owner.records[0],
+            containerMigration: { ...migration, resourceManifest: mixed.resourceManifest },
+          },
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      layoutContainerMigrationResourceFlowId(
+        "W1N1",
+        {
+          replacementId: "r".repeat(24),
+          targetId: "t".repeat(24),
+        },
+        "resource".repeat(8),
+      ),
+    ).toBeNull();
   });
 
   it("persists 32 canonical receipts and drops them on layout revision", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { planLeaseAgents } from "../src/agents";
 import { emptyContractExecutionView, emptyContractPlanningView } from "../src/contracts";
-import { layoutExtensionEvacuationBudgetIssuer } from "../src/layout";
+import { layoutExtensionEvacuationBudgetIssuer, type LayoutRecord } from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
 import { observeLogisticsGraph, planLogisticsRuntime } from "../src/logistics/runtime";
@@ -694,6 +694,197 @@ describe("logistics runtime adapter", () => {
     expect(runtime.plan.blockers).not.toContainEqual(
       expect.objectContaining({ reason: "duplicate-id" }),
     );
+  });
+
+  it("projects mixed container stock as atomic resource-specific funded flows", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("mixed container fixture room missing");
+    const stored = (
+      id: string,
+      x: number,
+      resources: readonly { readonly amount: number; readonly resourceType: string }[],
+    ) => {
+      const usedCapacity = resources.reduce((total, { amount }) => total + amount, 0);
+      return {
+        hits: 250_000,
+        hitsMax: 250_000,
+        id,
+        ownerUsername: null,
+        ownership: "unowned" as const,
+        pos: position(x, 12),
+        store: {
+          capacity: 2_000,
+          freeCapacity: 2_000 - usedCapacity,
+          resources,
+          usedCapacity,
+        },
+        structureType: "container",
+        ticksToDecay: 5_000,
+      };
+    };
+    const obsolete = stored("container-obsolete", 12, [
+      { amount: 25, resourceType: "energy" },
+      { amount: 25, resourceType: "U" },
+    ]);
+    const replacement = stored("container-replacement", 13, []);
+    const migration = {
+      expiresAt: 160,
+      replacementId: replacement.id,
+      resourceManifest: [
+        ["U", 25, 0],
+        ["energy", 25, 0],
+      ],
+      startedAt: 10,
+      targetId: obsolete.id,
+    } as const;
+    const migrationSnapshot = {
+      ...snapshot,
+      observation: { ...snapshot.observation, tick: 11 },
+      observedAt: 11,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          storedStructures: [...room.storedStructures, obsolete, replacement],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const record = {
+      algorithmRevision: "owned-room-layout-v2-source-services",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      containerMigration: migration,
+      fingerprint: "layout-a",
+      roomName: "W1N1",
+      transform: 0,
+    } as const;
+    const projection = projectLayoutContainerMigrations({
+      existingBudgets: [],
+      records: [record],
+      snapshot: migrationSnapshot,
+      tick: 11,
+    });
+
+    expect(projection.edges).toEqual([
+      expect.objectContaining({
+        id: "layout-container-evacuation:W1N1:container-obsolete:container-replacement:1:U",
+        maximumAmount: 25,
+      }),
+      expect.objectContaining({
+        id: "layout-container-evacuation:W1N1:container-obsolete:container-replacement:6:energy",
+        maximumAmount: 25,
+      }),
+    ]);
+    expect(new Set(projection.budgets.map(({ issuer }) => issuer)).size).toBe(2);
+    expect(projection.nodes.filter(({ kind }) => kind === "source")).toEqual([
+      expect.objectContaining({ observedAmount: 25, resourceType: "U" }),
+      expect.objectContaining({ observedAmount: 25, resourceType: "energy" }),
+    ]);
+    expect(
+      new Set(
+        projection.nodes.flatMap(({ capacityReservationKey }) =>
+          capacityReservationKey === undefined ? [] : [capacityReservationKey],
+        ),
+      ),
+    ).toEqual(new Set(["container:W1N1:container-replacement:aggregate-capacity"]));
+    expect(projection.suppressedSinkTargetIds).toEqual([
+      "container-obsolete",
+      "container-replacement",
+    ]);
+    expect(projection.suppressedSourceTargetIds).toEqual(["container-obsolete"]);
+    const runtime = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: projection,
+      snapshot: migrationSnapshot,
+      tick: 11,
+    });
+    const migrationPlans = runtime.plan.projections.filter(({ id }) =>
+      id.startsWith("layout-container-evacuation:"),
+    );
+    expect(migrationPlans).toEqual([
+      expect.objectContaining({ admittedAmount: 25, blocker: null, resourceType: "U" }),
+      expect.objectContaining({ admittedAmount: 25, blocker: null, resourceType: "energy" }),
+    ]);
+    const migrationCommitments = runtime.contracts.commitments.filter(({ flowId }) =>
+      flowId.startsWith("layout-container-evacuation:"),
+    );
+    expect(migrationCommitments.map(({ resourceType }) => resourceType)).toEqual(["U", "energy"]);
+    expect(migrationCommitments.map(({ budgetBinding }) => budgetBinding?.category)).toEqual([
+      "optional-growth",
+      "optional-growth",
+    ]);
+    expect(
+      migrationCommitments.map(({ request }) =>
+        request?.execution?.version === 3
+          ? { resourceType: request.execution.resourceType, version: request.execution.version }
+          : null,
+      ),
+    ).toEqual([
+      { resourceType: "U", version: 3 },
+      { resourceType: "energy", version: 3 },
+    ]);
+
+    const overflowRecords: LayoutRecord[] = [];
+    const overflowRooms: WorldSnapshot["rooms"][number][] = [];
+    for (let index = 0; index < 33; index += 1) {
+      const overflowRoomName = `W${String(index)}N1`;
+      const move = (value: typeof obsolete, id: string) => ({
+        ...value,
+        id,
+        pos: { ...value.pos, roomName: overflowRoomName },
+      });
+      const overflowTarget = move(obsolete, `target-${String(index)}`);
+      const overflowReplacement = move(replacement, `replacement-${String(index)}`);
+      overflowRooms.push({
+        ...room,
+        name: overflowRoomName,
+        observedAt: 11,
+        storedStructures: [overflowTarget, overflowReplacement],
+      });
+      overflowRecords.push({
+        ...record,
+        anchor: { ...record.anchor, roomName: overflowRoomName },
+        containerMigration: {
+          ...migration,
+          replacementId: overflowReplacement.id,
+          targetId: overflowTarget.id,
+        },
+        fingerprint: `layout-${String(index)}`,
+        roomName: overflowRoomName,
+      });
+    }
+    expect(
+      projectLayoutContainerMigrations({
+        records: overflowRecords,
+        snapshot: { ...migrationSnapshot, rooms: overflowRooms },
+        tick: 11,
+      }),
+    ).toMatchObject({ budgets: [], edges: [], endpoints: [], nodes: [] });
+
+    const malformedCapacityTarget = {
+      ...obsolete,
+      store: { ...obsolete.store, capacity: 1_999 },
+    };
+    expect(
+      projectLayoutContainerMigrations({
+        records: [record],
+        snapshot: {
+          ...migrationSnapshot,
+          rooms: [
+            {
+              ...room,
+              observedAt: 11,
+              storedStructures: [malformedCapacityTarget, replacement],
+            },
+          ],
+        },
+        tick: 11,
+      }).edges,
+    ).toEqual([]);
   });
 
   it("clamps V3 acquire and partial delivery to observed exact quantities", () => {

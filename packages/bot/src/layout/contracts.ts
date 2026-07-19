@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 1 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 2 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -18,6 +18,10 @@ export const MAX_LAYOUT_BLOCKERS = 8 as const;
 export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
 export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
 export const MAX_LAYOUT_CONTAINER_ENERGY = 2_000 as const;
+export const MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES = 8 as const;
+export const MAX_LAYOUT_CONTAINER_MIGRATION_FLOWS = 64 as const;
+export const MAX_LAYOUT_CONTAINER_STORE_RESOURCES = 64 as const;
+export const MAX_LAYOUT_CONTAINER_FLOW_ID_LENGTH = 128 as const;
 export const LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS = 150 as const;
 export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
@@ -82,12 +86,19 @@ export interface LayoutExtensionEvacuation {
   readonly sourceId: string;
   readonly startedAt: number;
 }
+export type LayoutContainerMigrationResource = readonly [
+  resourceType: string,
+  amount: number,
+  replacementInitialAmount: number,
+];
 export interface LayoutContainerMigration {
-  /** Present together only when exact energy must reach the replacement before removal. */
+  /** Legacy paired fields remain valid for one exact energy transfer. */
   readonly energyAmount?: number;
   readonly expiresAt: number;
   readonly replacementId: string;
   readonly replacementInitialEnergy?: number;
+  /** Canonical binary-ordered tuples for bounded mixed-resource evacuation. */
+  readonly resourceManifest?: readonly LayoutContainerMigrationResource[];
   readonly startedAt: number;
   readonly targetId: string;
 }
@@ -111,11 +122,37 @@ export function layoutContainerMigrationBudgetIssuer(
   roomName: string,
   migration: Pick<LayoutContainerMigration, "replacementId" | "targetId">,
 ): string | null {
+  return boundedContainerMigrationIdentity(roomName, migration, null);
+}
+
+export function layoutContainerMigrationResourceFlowId(
+  roomName: string,
+  migration: Pick<LayoutContainerMigration, "replacementId" | "targetId">,
+  resourceType: string,
+): string | null {
+  const flowId = `${layoutContainerMigrationFlowId(roomName, migration)}:${String(resourceType.length)}:${resourceType}`;
+  return flowId.length <= MAX_LAYOUT_CONTAINER_FLOW_ID_LENGTH ? flowId : null;
+}
+
+export function layoutContainerMigrationResourceBudgetIssuer(
+  roomName: string,
+  migration: Pick<LayoutContainerMigration, "replacementId" | "targetId">,
+  resourceType: string,
+): string | null {
+  return boundedContainerMigrationIdentity(roomName, migration, resourceType);
+}
+
+function boundedContainerMigrationIdentity(
+  roomName: string,
+  migration: Pick<LayoutContainerMigration, "replacementId" | "targetId">,
+  resourceType: string | null,
+): string | null {
   const issuer = [
     "layout-migration",
     `${String(roomName.length)}:${roomName}`,
     `${String(migration.targetId.length)}:${migration.targetId}`,
     `${String(migration.replacementId.length)}:${migration.replacementId}`,
+    ...(resourceType === null ? [] : [`${String(resourceType.length)}:${resourceType}`]),
   ].join("/");
   return issuer.length <= 128 ? issuer : null;
 }
@@ -454,7 +491,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV1 {
+export interface LayoutsOwnerV2 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];
