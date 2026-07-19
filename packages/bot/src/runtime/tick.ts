@@ -136,6 +136,7 @@ import {
   persistLayoutContainerMigration,
   persistLayoutExtensionEvacuation,
   persistLayoutRemovalReceipt,
+  persistLayoutTowerEvacuation,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
@@ -152,7 +153,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV6,
+  type LayoutsOwnerV7,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -176,6 +177,7 @@ import {
 } from "../logistics/runtime";
 import { projectLayoutContainerMigrations } from "../logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../logistics/extension-evacuation";
+import { projectLayoutTowerEvacuations } from "../logistics/tower-evacuation";
 import type { LogisticsResourceDemandProjection } from "../logistics/resource-demands";
 import {
   LinkExecutor,
@@ -446,7 +448,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV6 | null;
+  owner: LayoutsOwnerV7 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -1982,6 +1984,8 @@ function layoutPlanningSystem(
           extensionEvacuation:
             owner.records.find(({ roomName }) => roomName === room.name)?.extensionEvacuation ??
             null,
+          towerEvacuation:
+            owner.records.find(({ roomName }) => roomName === room.name)?.towerEvacuation ?? null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
           logisticsEvidenceReady:
             context.contractExecution.status === "ready" &&
@@ -2003,6 +2007,11 @@ function layoutPlanningSystem(
           migrationOwner,
           room.name,
           migration.extensionEvacuation,
+        );
+        migrationOwner = persistLayoutTowerEvacuation(
+          migrationOwner,
+          room.name,
+          migration.towerEvacuation,
         );
         migrationOwner = persistLayoutRemovalReceipt(
           migrationOwner,
@@ -2082,7 +2091,7 @@ function layoutPlanningSystem(
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV6 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV7 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2095,14 +2104,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV6 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV7 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV6["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV7["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -2295,6 +2304,12 @@ function colonyDirectorSystem(
         snapshot: context.snapshot,
         tick: context.tick,
       });
+      const layoutTowerEvacuations = projectLayoutTowerEvacuations({
+        existingBudgets: priorLedger,
+        records: layoutRecords,
+        snapshot: context.snapshot,
+        tick: context.tick,
+      });
       const fundedIndustryBudgetIds = new Set(
         priorLedger
           .filter(
@@ -2355,6 +2370,7 @@ function colonyDirectorSystem(
             mature.resourceDemands,
             layoutContainerMigrations,
             layoutEvacuations.demands,
+            layoutTowerEvacuations.demands,
           ),
           snapshot: context.snapshot,
           tick: context.tick,
@@ -2497,6 +2513,7 @@ function colonyDirectorSystem(
         ...logistics.budgets,
         ...layoutContainerMigrations.budgets,
         ...layoutEvacuations.budgets,
+        ...layoutTowerEvacuations.budgets,
         ...provisionalMaintenance.budgets,
         ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
         ...projectLabBudgetRequests(labs, context.tick),

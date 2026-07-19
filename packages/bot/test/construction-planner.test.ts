@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { planStaticMining } from "../src/economy";
-import type { LayoutCommitment, LayoutPlacement } from "../src/layout";
+import {
+  layoutTowerEvacuationFlowId,
+  type LayoutCommitment,
+  type LayoutPlacement,
+} from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
 import type { RoomSnapshot, StructureSnapshot, WorldSnapshot } from "../src/world/snapshot";
@@ -177,6 +181,155 @@ describe("ConstructionPlanner", () => {
       room([obsolete]),
     ])
       expect(planMigration({ colony, placements, room: blocked }).proposals).toEqual([]);
+  });
+
+  it("persists and completes one stocked obsolete-tower evacuation before removal", () => {
+    const towerPolicy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 5,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 1_800,
+      energyCapacityAvailable: 1_800,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "developing",
+      visibility: "visible",
+    });
+    const colony = { ...migrationColony(), rclPolicy: towerPolicy } as ColonyView;
+    const placements = [placement("tower", 15, 15), placement("tower", 16, 15)];
+    const tower = (id: string, x: number, energy: number) => ({
+      active: true,
+      hits: 3_000,
+      hitsMax: 3_000,
+      id,
+      pos: { roomName: "W1N1", x, y: 15 },
+      store: {
+        capacity: 1_000,
+        freeCapacity: 1_000 - energy,
+        resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+        usedCapacity: energy,
+      },
+    });
+    const room = (targetEnergy: number, replacementEnergy: number, observedAt: number) => {
+      const towers = [
+        tower("tower-replacement", 15, replacementEnergy),
+        tower("tower-obsolete", 30, targetEnergy),
+      ];
+      return {
+        ...migrationRoom(),
+        controller: { level: 5, ownership: "owned" as const },
+        observedAt,
+        ownedTowers: towers,
+        structures: towers.map((value) =>
+          structure(value.id, "tower", 3_000, 3_000, value.pos.x, value.pos.y),
+        ),
+      } as unknown as RoomSnapshot;
+    };
+
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      logisticsEvidenceReady: true,
+      placements,
+      room: room(500, 10, 100),
+    });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.blockers).toContainEqual({
+      reason: "target-stocked",
+      roomName: "W1N1",
+      targetId: "tower-obsolete",
+    });
+    expect(staged.towerEvacuation).toEqual({
+      amount: 500,
+      expiresAt: 250,
+      replacementId: "tower-replacement",
+      replacementInitialEnergy: 10,
+      sourceId: "tower-obsolete",
+      startedAt: 100,
+    });
+    const evacuation = staged.towerEvacuation;
+    if (evacuation === null) throw new Error("expected tower evacuation");
+    const flowId = layoutTowerEvacuationFlowId("W1N1", evacuation);
+    if (flowId === null) throw new Error("expected bounded flow identity");
+
+    const partialRoom = room(300, 210, 101);
+    const partial = planMigration({
+      activeLogisticsFlowIds: new Set([flowId]),
+      activeLogisticsTargetIds: new Set(["tower-obsolete", "tower-replacement"]),
+      colony,
+      logisticsEvidenceReady: true,
+      placements: [...placements].reverse(),
+      room: {
+        ...partialRoom,
+        ownedTowers: [...partialRoom.ownedTowers].reverse(),
+        structures: [...(partialRoom.structures ?? [])].reverse(),
+      },
+      towerEvacuation: JSON.parse(JSON.stringify(evacuation)) as typeof evacuation,
+    });
+    expect(partial.proposals).toEqual([]);
+    expect(partial.towerEvacuation).toEqual(evacuation);
+
+    const endpointActive = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(["tower-replacement"]),
+      colony,
+      logisticsEvidenceReady: true,
+      placements,
+      room: room(0, 510, 102),
+      towerEvacuation: evacuation,
+    });
+    expect(endpointActive.proposals).toEqual([]);
+    expect(endpointActive.blockers).toContainEqual({
+      reason: "logistics-active",
+      roomName: "W1N1",
+      targetId: "tower-obsolete",
+    });
+
+    const complete = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      logisticsEvidenceReady: true,
+      placements,
+      room: room(0, 510, 102),
+      towerEvacuation: evacuation,
+    });
+    expect(complete.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "tower-replacement",
+        targetId: "tower-obsolete",
+        targetStructureType: "tower",
+      }),
+    ]);
+    expect(complete.towerEvacuation).toEqual(evacuation);
+
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony,
+        logisticsEvidenceReady: true,
+        placements,
+        room: room(1_000, 10, 100),
+      }).towerEvacuation,
+    ).toBeNull();
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony,
+        logisticsEvidenceReady: true,
+        placements,
+        room: room(501, 10, 101),
+        towerEvacuation: evacuation,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-incomplete" })],
+      proposals: [],
+      towerEvacuation: evacuation,
+    });
   });
 
   it("preserves the exact source service while proposing one empty redundant container", () => {

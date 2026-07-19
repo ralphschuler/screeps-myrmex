@@ -128,8 +128,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   capped reset-safe retry, so a failed room cannot repeatedly consume the global removal slot. Issue
   #312 restores committed tower geometry while allowance is available, then removes at most one
   active empty obsolete tower only after an exact active committed replacement retains one action's
-  energy; the same bounded receipt and one-command authority apply. Other structure types, general
-  multi-step migration, and creep dismantling remain issue #99.
+  energy; the same bounded receipt and one-command authority apply. Issue #314 persists one bounded
+  stocked-tower evacuation only when that operational replacement has exact capacity, routes its
+  energy through funded logistics, and keeps removal blocked until fresh delivered/empty and
+  retired- flow evidence. Other structure types, general multi-step migration, and creep dismantling
+  remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { planLeaseAgents } from "../src/agents";
 import { emptyContractExecutionView, emptyContractPlanningView } from "../src/contracts";
-import { layoutExtensionEvacuationBudgetIssuer, type LayoutRecord } from "../src/layout";
+import {
+  layoutExtensionEvacuationBudgetIssuer,
+  layoutTowerEvacuationBudgetIssuer,
+  type LayoutRecord,
+} from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
 import { observeLogisticsGraph, planLogisticsRuntime } from "../src/logistics/runtime";
+import { projectLayoutTowerEvacuations } from "../src/logistics/tower-evacuation";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 describe("logistics runtime adapter", () => {
@@ -397,6 +402,116 @@ describe("logistics runtime adapter", () => {
     expect(emptiedResult.graph.nodes).toContainEqual(
       expect.objectContaining({ id: "store:extension-replacement:sink:energy" }),
     );
+  });
+
+  it("routes one persisted obsolete-tower evacuation through the sole logistics graph", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("tower evacuation fixture room missing");
+    const tower = (id: string, x: number, used: number) => ({
+      active: true,
+      hits: 3_000,
+      hitsMax: 3_000,
+      id,
+      pos: position(x, 12),
+      store: {
+        capacity: 1_000,
+        freeCapacity: 1_000 - used,
+        resources: used === 0 ? [] : [{ amount: used, resourceType: "energy" }],
+        usedCapacity: used,
+      },
+    });
+    const evacuationWorld = {
+      ...snapshot,
+      rooms: [
+        {
+          ...room,
+          ownedTowers: [tower("tower-obsolete", 11, 500), tower("tower-replacement", 12, 10)],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const terms = {
+      amount: 500,
+      expiresAt: 160,
+      replacementId: "tower-replacement",
+      replacementInitialEnergy: 10,
+      sourceId: "tower-obsolete",
+      startedAt: 10,
+    } as const;
+    const budgetIssuer = layoutTowerEvacuationBudgetIssuer("W1N1", terms);
+    if (budgetIssuer === null) throw new Error("tower evacuation budget issuer overflowed");
+    const record = {
+      algorithmRevision: "owned-room-layout-v2-source-services",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      fingerprint: "layout-a",
+      roomName: "W1N1",
+      towerEvacuation: terms,
+      transform: 0,
+    } as const satisfies LayoutRecord;
+    const evacuation = projectLayoutTowerEvacuations({
+      existingBudgets: [],
+      records: [record],
+      snapshot: evacuationWorld,
+      tick: 10,
+    });
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: false,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: evacuation.demands,
+      snapshot: evacuationWorld,
+      tick: 10,
+    });
+    const flow = result.contracts.commitments.find(({ flowId }) =>
+      flowId.startsWith("layout-tower-evacuation:"),
+    );
+
+    expect(evacuation.budgets).toEqual([
+      expect.objectContaining({ category: "optional-growth", issuer: budgetIssuer }),
+    ]);
+    expect(evacuation.demands.nodes).toHaveLength(2);
+    expect(evacuation.demands.endpoints).toHaveLength(2);
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: "store:tower-obsolete:sink:energy" }),
+    );
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: "store:tower-replacement:sink:energy" }),
+    );
+    expect(flow?.request).toMatchObject({
+      budgetBinding: { category: "optional-growth", issuer: budgetIssuer },
+      execution: { action: "withdraw", counterpartId: "tower-replacement" },
+      quantity: 500,
+      targetId: "tower-obsolete",
+    });
+
+    const reset = projectLayoutTowerEvacuations({
+      existingBudgets: [],
+      records: JSON.parse(JSON.stringify([record])) as LayoutRecord[],
+      snapshot: {
+        ...evacuationWorld,
+        rooms: [
+          {
+            ...room,
+            ownedTowers: [tower("tower-replacement", 12, 10), tower("tower-obsolete", 11, 500)],
+          },
+        ],
+      },
+      tick: 10,
+    });
+    expect(JSON.stringify(reset)).toBe(JSON.stringify(evacuation));
+    expect(
+      projectLayoutTowerEvacuations({
+        existingBudgets: [],
+        records: Array.from({ length: 65 }, () => record),
+        snapshot: evacuationWorld,
+        tick: 10,
+      }),
+    ).toEqual({
+      budgets: [],
+      demands: { edges: [], endpoints: [], nodes: [], suppressedSinkTargetIds: [] },
+    });
   });
 
   it("suppresses refill of one persisted empty obsolete general container", () => {

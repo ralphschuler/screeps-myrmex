@@ -9,6 +9,7 @@ import {
   persistLayoutCommitment,
   persistLayoutContainerMigration,
   persistLayoutExtensionEvacuation,
+  persistLayoutTowerEvacuation,
   reconcileOwnedLayouts,
   reconcileStructureDestroyExecution,
   registerLayoutCompiledCache,
@@ -44,7 +45,7 @@ describe("layout persistence and cache", () => {
       structureType: "container",
     } as const;
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
-    expect(owner.schemaVersion).toBe(6);
+    expect(owner.schemaVersion).toBe(7);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const { issuerSequence: _sequence, ...legacyService } = placement.service;
@@ -61,7 +62,7 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(legacy)).toEqual({
       ...legacy,
-      schemaVersion: 6,
+      schemaVersion: 7,
       revision: owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
@@ -109,6 +110,52 @@ describe("layout persistence and cache", () => {
         ],
       }),
     ).toBeNull();
+  });
+
+  it("migrates V6 and persists one bounded tower evacuation in V7", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    const legacy = { ...owner, schemaVersion: 6 };
+    expect(parseLayoutsOwner(legacy)).toEqual({
+      ...owner,
+      revision: owner.revision + 1,
+    });
+
+    const evacuation = {
+      amount: 500,
+      expiresAt: 160,
+      replacementId: "tower-replacement",
+      replacementInitialEnergy: 10,
+      sourceId: "tower-obsolete",
+      startedAt: 10,
+    } as const;
+    owner = persistLayoutTowerEvacuation(owner, "W1N1", evacuation);
+
+    expect(owner.schemaVersion).toBe(7);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.towerEvacuation).toEqual(
+      evacuation,
+    );
+    expect(
+      persistLayoutCommitment(owner, "W1N1", { ...commitment, fingerprint: "layout-v2:b" })
+        .records[0]?.towerEvacuation,
+    ).toBeUndefined();
+    expect(
+      persistLayoutTowerEvacuation(owner, "W1N1", null).records[0]?.towerEvacuation,
+    ).toBeUndefined();
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 6 })).toBeNull();
+
+    for (const invalid of [
+      { ...evacuation, amount: 0 },
+      { ...evacuation, amount: 1_000 },
+      { ...evacuation, expiresAt: 159 },
+      { ...evacuation, replacementId: evacuation.sourceId },
+    ])
+      expect(
+        parseLayoutsOwner({
+          ...owner,
+          records: [{ ...owner.records[0], towerEvacuation: invalid }],
+        }),
+      ).toBeNull();
   });
 
   it("persists one bounded general-container migration and drops it on layout revision", () => {
@@ -295,7 +342,7 @@ describe("layout persistence and cache", () => {
     });
     expect(migrated).toMatchObject({
       revision: owner.revision + 1,
-      schemaVersion: 6,
+      schemaVersion: 7,
       records: [
         {
           removalReceipt: {
@@ -449,6 +496,10 @@ describe("layout persistence and cache", () => {
       targetStructureType: "tower",
     });
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(tower.owner)))).toEqual(tower.owner);
+    expect(parseLayoutsOwner({ ...tower.owner, schemaVersion: 6 })).toEqual({
+      ...tower.owner,
+      revision: tower.owner.revision + 1,
+    });
     expect(parseLayoutsOwner({ ...tower.owner, schemaVersion: 5 })).toBeNull();
   });
 

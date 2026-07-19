@@ -91,9 +91,12 @@ Issue #310 persists one compact exact receipt for every current extension/contai
 `OK` waits for fresh disappearance, failures back off and stop after three attempts, and a blocked
 room emits no proposal that could consume the global slot. Issue #312 reuses that authority for one
 active empty obsolete tower only after committed replacement-first geometry leaves an exact active
-committed tower with at least one action's energy. Sole, stocked, inactive, underfunded, unsafe, or
-pressured tower removals fail closed. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`.
+committed tower with at least one action's energy. Issue #314 lets one stocked obsolete tower
+persist an exact bounded evacuation only when that operational replacement has complete free
+capacity; `LogisticsPlanner` alone routes the energy, and removal waits for fresh empty-target,
+delivered- replacement, and retired-flow/endpoint evidence. Sole, over-capacity, inactive,
+underfunded, unsafe, or pressured tower removals fail closed. `StructureRemovalArbiter` alone
+authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1426,7 +1429,7 @@ detached create-site intent data only. Live API execution and reconciliation rem
 PR C completes the chain with `layout.plan` after colony publication, mandatory-tail
 `layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V6 layouts owner; degraded,
+commitments and bounded receipts stage through the owner-local schema V7 layouts owner; degraded,
 unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
 command. Every observed owned layout site enters the existing funded survival-growth build flow,
 while controller risk, recovery, maintenance, and protected reserves retain precedence.
@@ -1566,6 +1569,16 @@ executor freshly rechecks those target and replacement terms before the sole des
 owner V6 adds only `tower` to the existing fixed receipt discriminator; V1-V5 migrate without
 inventing tower evidence, rollback preserves future-owner bytes, and retry/backoff limits do not
 change. [ADR 0046](adr/0046-replacement-first-empty-tower-removal.md) records the boundary.
+
+Issue #314 extends only that tower path. One exact positive target amount persists for 150 ticks
+only when the same active committed replacement begins with at least 10 energy and can hold the
+complete amount. Following ticks project one externally funded `optional-growth` energy flow into
+the sole logistics graph, suppress target refill, and reserve replacement capacity once. Existing V3
+contracts, leases, agents, and executors perform withdraw/transfer work. Removal requires fresh
+empty target, baseline-plus-amount replacement energy, retired exact flow and endpoints, and the
+unchanged operational-replacement and colony-safety evidence. Layouts owner V7 adds one optional
+fixed-shape tower evacuation; V1-V6 migrate without invented terms and older code preserves V7
+bytes. [ADR 0047](adr/0047-stocked-obsolete-tower-evacuation.md) records the boundary.
 
 Other structure stock evacuation, defensive migration, general multi-step migration, and creep
 dismantling remain issue #99 and fail closed.
@@ -2131,7 +2144,9 @@ Required architecture assertions include:
   before fresh delivered/empty evidence and flow retirement;
 - obsolete-tower removal requires full allowance of at least two, allowance-minus-one active
   committed towers, an active empty unshared target, an exact active committed replacement with at
-  least 10 energy, current safety, and the same global one-command ceiling;
+  least 10 energy, current safety, and the same global one-command ceiling; stocked targets first
+  use one exact bounded funded logistics evacuation and require fresh delivery plus flow/endpoint
+  retirement;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;
