@@ -19,6 +19,7 @@ import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-ev
 import { projectLayoutLabEvacuations } from "../src/logistics/lab-evacuation";
 import { projectLayoutLinkEvacuations } from "../src/logistics/link-evacuation";
 import {
+  currentlyExecutableLogisticsFlowIds,
   executableLogisticsView,
   observeLogisticsGraph,
   planLogisticsRuntime,
@@ -603,7 +604,25 @@ describe("logistics runtime adapter", () => {
     const flow = result.contracts.commitments.find(({ flowId }) =>
       flowId.startsWith("layout-lab-evacuation:"),
     );
+    if (flow === undefined) throw new Error("expected admitted lab evacuation commitment");
+    const blockedFlowId = `${flow.flowId}:blocked`;
+    const authorizationProjection = {
+      ...result,
+      contracts: {
+        ...result.contracts,
+        commitments: [
+          ...result.contracts.commitments,
+          { ...flow, flowId: blockedFlowId, request: null },
+        ],
+      },
+    };
 
+    expect([
+      ...currentlyExecutableLogisticsFlowIds(
+        new Set([flow.flowId, blockedFlowId]),
+        authorizationProjection,
+      ),
+    ]).toEqual([flow.flowId]);
     expect(evacuation.authorizedFlowIds).toEqual([
       `layout-lab-evacuation:W1N1:lab-obsolete:${replacementId}`,
     ]);
@@ -620,7 +639,7 @@ describe("logistics runtime adapter", () => {
     expect(result.graph.nodes).not.toContainEqual(
       expect.objectContaining({ id: `store:${replacementId}:source:energy` }),
     );
-    expect(flow?.request).toMatchObject({
+    expect(flow.request).toMatchObject({
       budgetBinding: { category: "optional-growth", issuer: budgetIssuer },
       execution: { action: "withdraw", counterpartId: replacementId },
       quantity: 750,
