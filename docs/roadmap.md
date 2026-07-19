@@ -113,8 +113,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   suppresses obsolete-target refill and waits for active logistics endpoints before removing the
   empty adopted target. Issue #294 extends that handoff to an exact energy-only target, routing at
   most 2,000 energy through funded logistics and requiring fresh delivered/empty plus retired-flow
-  evidence. Other structure types, selected/stocked source services, mixed stock, general multi-step
-  migration, and creep dismantling remain issue #99.
+  evidence. Issue #296 extends it to a binary-ordered manifest of two to eight resource kinds, with
+  one distinct funded flow per kind and an atomic 64-flow projection ceiling. Other structure types,
+  selected/stocked source services, single non-energy stock, general multi-step migration, and creep
+  dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

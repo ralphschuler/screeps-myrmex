@@ -12,8 +12,9 @@ source-container removal while preserving the exact selected service. Issue
 [#292](https://github.com/ralphschuler/screeps-myrmex/issues/292) adds one replacement-first empty
 general-container handoff with logistics-target retirement. Issue
 [#294](https://github.com/ralphschuler/screeps-myrmex/issues/294) extends it with one exact
-energy-only evacuation; parent issue #99 still owns other structure migration, mixed stock,
-source-service switching, and dismantling.
+energy-only evacuation. Issue [#296](https://github.com/ralphschuler/screeps-myrmex/issues/296)
+extends the same handoff to a bounded mixed-resource manifest; parent issue #99 still owns other
+structure migration, single non-energy stock, source-service switching, and dismantling.
 
 ## Runtime order
 
@@ -27,20 +28,24 @@ source-service switching, and dismantling.
    evacuation commitment, one empty unselected source container with a different exact selected
    service for the same source, or one compact general-container handoff after exact committed
    replacement capacity exists. An energy-only general target persists its exact amount and the
-   replacement's current energy; mixed or insufficient-capacity stock fails closed.
+   replacement's current energy. A target with two to eight kinds persists binary-ordered compact
+   resource/amount/replacement-baseline tuples; a single non-energy kind, malformed stock, or
+   insufficient aggregate capacity fails closed.
 4. On the following tick, runtime composition validates each stocked commitment from fresh
-   observation, requests one `optional-growth` reservation, and injects one exact source/replacement
-   projection into `LogisticsPlanner`. The specialized source replaces the target's ordinary source
-   node so stock is reserved once, and ordinary refill sinks cannot compete. Existing V3 haul
-   contracts and lease agents perform only the funded withdraw/transfer path.
+   observation, requests one distinct `optional-growth` reservation per resource kind, and injects
+   exact source/replacement projections into `LogisticsPlanner`. Specialized sources replace the
+   target's ordinary source nodes, all replacement sinks share one aggregate-capacity key, and
+   ordinary refill sinks cannot compete. Existing V3 haul contracts and lease agents perform only
+   the funded withdraw/transfer path.
 5. An empty general-container handoff suppresses the obsolete target's ordinary refill and retires
-   assigned/active V3 work that still names it. An energy-bearing handoff instead supplies one exact
-   flow and suppresses both endpoint refill sinks. Removal waits for fresh empty-target,
-   delivered-replacement, and retired exact-flow/endpoint evidence. Unavailable contract views,
-   mixed stock, capacity loss, threat, timeout, or drift fail closed. `StructureRemovalArbiter` then
-   requires one exact current planner authorization and accepts at most one deterministic road,
-   container, or extension removal after proving current global/room site headroom. The following
-   observation re-enters ordinary site arbitration.
+   assigned/active V3 work that still names it. A stocked handoff instead supplies one exact flow
+   per resource and suppresses the target source plus both endpoint refill sinks. Removal waits for
+   fresh empty-target, every delivered replacement gain, and retired exact-flow/endpoint evidence.
+   Unavailable contract views, capacity loss, refill, threat, timeout, drift, or a projection above
+   64 flows fail closed without a prefix. `StructureRemovalArbiter` then requires one exact current
+   planner authorization and accepts at most one deterministic road, container, or extension removal
+   after proving current global/room site headroom. The following observation re-enters ordinary
+   site arbitration.
 6. `layout.execute` alone resolves live rooms and targets. `ConstructionSiteExecutor` calls
    `Room.createConstructionSite`; `StructureDestroyExecutor` calls `Structure.destroy` after fresh
    ownership, threat, commitment, ID, type, room, and position checks. Extension removal also
@@ -68,11 +73,14 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - at most 128 road/container/extension-removal candidates and authorizations; over-cap batches fail
   before traversal;
 - one accepted removal globally per tick;
+- layouts owner-local schema V2 migrates V1 empty/energy records and makes rollback fail closed;
 - at most one compact extension evacuation and one compact general-container handoff per room across
   64 records;
-- exact general-container evacuation is energy-only and capped by the official 2,000 capacity;
-- at most 64 extension and 64 general-container evacuation edges, each with two nodes; the common
-  logistics node/edge caps reject an oversized composed graph before traversal;
+- general-container evacuation is capped by the official 2,000 capacity and either one legacy energy
+  pair or two to eight compact mixed-resource tuples; fresh replacement evidence is capped at 64
+  Store rows;
+- at most 64 extension edges and 64 general-container resource edges, each with two nodes; mixed
+  projection overflow rejects the complete migration graph before the common logistics caps;
 - empty general-container handoffs add only bounded sink-suppression IDs;
 - 150-tick exclusive evacuation and general-container handoff timeouts;
 - current global and room site headroom required before removal;
@@ -96,11 +104,13 @@ variants fail closed, and next observation emits no repeated removal. The genera
 continuation proves spare-allowance site-first replacement, persisted one-tick suppression, active-
 target retirement, unavailable-contract refusal, source-adjacent-placement refusal, reset/reorder
 identity, one exact destroy call, preserved source service, and one final committed site. Its
-stocked continuation proves paired exact energy/baseline persistence, a funded specialized flow,
-mixed-stock and insufficient-capacity refusal, active/incomplete removal blocking, observed
-replacement gain, endpoint retirement, one exact destroy call, and legacy empty-handoff parsing.
-Existing mandatory runtime-tail and mature-build tests remain green. `npm run check` supplies
-repository-wide format, lint, type, test, documentation, bundle, and package evidence.
+stocked continuation proves paired exact energy/baseline persistence and legacy empty-handoff
+parsing. The mixed continuation proves canonical two-kind persistence under Store/structure reorder
+and JSON reconstruction, distinct funded resource flows sharing aggregate replacement capacity,
+complete-projection overflow refusal, active/incomplete removal blocking, every observed replacement
+gain, endpoint retirement, and one exact destroy call. Existing mandatory runtime-tail and mature-
+build tests remain green. `npm run check` supplies repository-wide format, lint, type, test,
+documentation, bundle, and package evidence.
 
 ## Mechanics sources
 

@@ -1,18 +1,18 @@
 import type {
   ConstructionSiteExecutionResult,
   ConstructionSiteAttemptReceipt,
-  LayoutsOwnerV1,
+  LayoutsOwnerV2,
 } from "./contracts";
 import { deriveConstructionSiteAttemptReceipt } from "./construction-site-arbiter";
 import { persistConstructionSiteReceipt } from "./persistence";
 
 export interface ConstructionSiteReconciliationResult {
-  readonly owner: LayoutsOwnerV1;
+  readonly owner: LayoutsOwnerV2;
   readonly receipts: readonly ConstructionSiteAttemptReceipt[];
 }
 
 export function reconcileConstructionSiteExecution(
-  owner: LayoutsOwnerV1,
+  owner: LayoutsOwnerV2,
   execution: readonly ConstructionSiteExecutionResult[],
   tick: number,
 ): ConstructionSiteReconciliationResult {

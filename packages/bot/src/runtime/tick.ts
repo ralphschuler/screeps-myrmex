@@ -149,7 +149,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV1,
+  type LayoutsOwnerV2,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -443,7 +443,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV1 | null;
+  owner: LayoutsOwnerV2 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   status: LayoutRuntimeResult["status"];
   linkEvidence: readonly LinkRoomLayoutEvidence[];
@@ -1988,14 +1988,14 @@ function layoutPlanningSystem(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV1 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV2 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV1["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV2["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
