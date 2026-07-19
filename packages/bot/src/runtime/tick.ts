@@ -174,6 +174,7 @@ import type { TickPhase } from "./phases";
 import { deriveRuntimeColonyDomainHealth } from "./colony-domain-health";
 import { createLocalPathTravelEstimateView, localPathSearchAllowance } from "./local-path-travel";
 import {
+  currentlyExecutableLogisticsFlowIds,
   emptyLogisticsRuntimeProjection,
   executableLogisticsView,
   planLogisticsRuntime,
@@ -2593,15 +2594,13 @@ function colonyDirectorSystem(
           (action !== "transfer" || !logisticsActorIds.has(actorId)) &&
           (action !== "pickup" || !logisticsPickupTargetIds.has(targetId)),
       );
-      const executableLabEvacuationFlowIds = new Set(
-        layoutLabEvacuations.demands.edges.flatMap(({ id }) =>
-          logistics.graph.edges.some((edge) => edge.id === id) ? [id] : [],
-        ),
+      const executableLabEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
+        new Set(layoutLabEvacuations.demands.edges.map(({ id }) => id)),
+        logistics,
       );
-      const executableLinkEvacuationFlowIds = new Set(
-        layoutLinkEvacuations.demands.edges.flatMap(({ id }) =>
-          logistics.graph.edges.some((edge) => edge.id === id) ? [id] : [],
-        ),
+      const executableLinkEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
+        new Set(layoutLinkEvacuations.demands.edges.map(({ id }) => id)),
+        logistics,
       );
       publishCandidates(
         economyCandidates,

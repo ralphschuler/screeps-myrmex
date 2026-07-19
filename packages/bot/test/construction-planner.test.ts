@@ -6,6 +6,7 @@ import {
   STRUCTURE_REMOVAL_LIMITS,
   StructureDestroyExecutor,
   arbitrateStructureRemovals,
+  diffOwnedRoomLayout,
   emptyLayoutsOwner,
   layoutLabEvacuationFlowId,
   layoutLinkEvacuationFlowId,
@@ -24,6 +25,7 @@ import {
   type LinkRoomRuntimeResult,
 } from "../src/links";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
+import { projectLayoutLabEvacuations } from "../src/logistics/lab-evacuation";
 import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
 import type { RoomSnapshot, StructureSnapshot, WorldSnapshot } from "../src/world/snapshot";
 
@@ -596,16 +598,34 @@ describe("ConstructionPlanner", () => {
     });
     const evacuation = staged.labEvacuation;
     if (evacuation === null) throw new Error("expected lab evacuation");
-    const flowId = layoutLabEvacuationFlowId("W1N1", evacuation);
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", migrationCommitment);
+    owner = persistLayoutLabEvacuation(owner, "W1N1", evacuation);
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const persistedEvacuation = owner.records[0]?.labEvacuation;
+    if (persistedEvacuation === undefined) throw new Error("expected persisted lab evacuation");
+    const following = labEvacuationFixture(750, 250, 101, fixture.replacementId);
+    const logistics = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [following.labMigration],
+      records: owner.records,
+      snapshot: { rooms: [following.room] } as unknown as WorldSnapshot,
+      tick: 101,
+    });
+    const flowId = layoutLabEvacuationFlowId("W1N1", persistedEvacuation);
     if (flowId === null) throw new Error("expected bounded lab flow identity");
+    expect(logistics).toMatchObject({
+      authorizedFlowIds: [flowId],
+      budgets: [expect.objectContaining({ category: "optional-growth" })],
+      demands: { edges: [expect.objectContaining({ id: flowId, maximumAmount: 750 })] },
+    });
 
-    const partial = labEvacuationFixture(300, 700, 101, fixture.replacementId);
+    const partial = labEvacuationFixture(300, 700, 102, fixture.replacementId);
     expect(
       planMigration({
         activeLogisticsFlowIds: new Set([flowId]),
         activeLogisticsTargetIds: new Set(["lab-external", fixture.replacementId]),
         colony: partial.colony,
-        labEvacuation: JSON.parse(JSON.stringify(evacuation)) as typeof evacuation,
+        labEvacuation: JSON.parse(JSON.stringify(persistedEvacuation)) as typeof evacuation,
         labMigration: partial.labMigration,
         logisticsEvidenceReady: true,
         placements: [...partial.placements].reverse(),
@@ -617,7 +637,7 @@ describe("ConstructionPlanner", () => {
       }),
     ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
 
-    const completeFixture = labEvacuationFixture(0, 1_000, 102, fixture.replacementId);
+    const completeFixture = labEvacuationFixture(0, 1_000, 103, fixture.replacementId);
     const complete = planMigration({
       activeLogisticsFlowIds: new Set(),
       activeLogisticsTargetIds: new Set(),
@@ -673,16 +693,14 @@ describe("ConstructionPlanner", () => {
         } as unknown as Structure;
       },
     });
-    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", migrationCommitment);
-    owner = persistLayoutLabEvacuation(owner, "W1N1", evacuation);
-    owner = reconcileStructureDestroyExecution(owner, execution, 102).owner;
+    owner = reconcileStructureDestroyExecution(owner, execution, 103).owner;
     owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
     const receipt = owner.records[0]?.removalReceipt ?? null;
     expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
     expect(destroy).toHaveBeenCalledOnce();
     expect(owner.records[0]?.labEvacuation).toEqual(evacuation);
 
-    const pendingFixture = labEvacuationFixture(0, 1_000, 103, fixture.replacementId);
+    const pendingFixture = labEvacuationFixture(0, 1_000, 104, fixture.replacementId);
     expect(
       planMigration({
         activeLogisticsFlowIds: new Set(),
@@ -703,7 +721,7 @@ describe("ConstructionPlanner", () => {
 
     const disappearedRoom = {
       ...pendingFixture.room,
-      observedAt: 104,
+      observedAt: 105,
       ownedLabs: (pendingFixture.room.ownedLabs ?? []).filter(({ id }) => id !== "lab-external"),
       structures: (pendingFixture.room.structures ?? []).filter(({ id }) => id !== "lab-external"),
     } as RoomSnapshot;
@@ -713,13 +731,35 @@ describe("ConstructionPlanner", () => {
         activeLogisticsTargetIds: new Set(),
         colony: pendingFixture.colony,
         labEvacuation: evacuation,
-        labMigration: pendingFixture.labMigration,
+        labMigration: { ...pendingFixture.labMigration, observedAt: 105 },
         logisticsEvidenceReady: true,
         placements: pendingFixture.placements,
         removalReceipt: receipt,
         room: disappearedRoom,
       }),
     ).toMatchObject({ labEvacuation: null, proposals: [], removalReceipt: null });
+    expect(
+      diffOwnedRoomLayout({
+        colonyId: "W1N1",
+        commitment: migrationCommitment,
+        commitmentConflicted: false,
+        constructionSites: [],
+        observationFingerprint: "observation-final",
+        placements: pendingFixture.placements.map((placement) =>
+          (disappearedRoom.structures ?? []).some(
+            ({ pos }) => pos.x === placement.pos.x && pos.y === placement.pos.y,
+          )
+            ? placement
+            : { ...placement, adoption: "planned" as const },
+        ),
+        policy: pendingFixture.colony.rclPolicy,
+        policyEnabled: true,
+        policyFingerprint: "policy-a",
+        roomName: "W1N1",
+        roomStatus: "owned",
+        structures: disappearedRoom.structures ?? [],
+      }).proposals,
+    ).toEqual([expect.objectContaining({ structureType: "lab" })]);
 
     const overCapacity = labEvacuationFixture(1_000, 1_001, 100, fixture.replacementId);
     expect(

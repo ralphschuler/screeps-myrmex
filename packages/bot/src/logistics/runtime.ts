@@ -366,6 +366,19 @@ export function executableLogisticsView(
   });
 }
 
+/** Retains managed flows only when the current logistics contract projection can execute them. */
+export function currentlyExecutableLogisticsFlowIds(
+  managedFlowIds: ReadonlySet<string>,
+  projection: Pick<LogisticsRuntimeProjection, "contracts">,
+): ReadonlySet<string> {
+  const executable = new Set(
+    projection.contracts.commitments.flatMap(({ flowId, request }) =>
+      request === null ? [] : [flowId],
+    ),
+  );
+  return new Set([...managedFlowIds].filter((flowId) => executable.has(flowId)));
+}
+
 export function renewLogisticsBudgets(
   projection: LogisticsRuntimeProjection,
   existing: readonly {
