@@ -96,6 +96,26 @@ describe("StructureRemovalArbiter", () => {
       }),
     ]);
 
+    const tower = {
+      ...proposal("tower-obsolete"),
+      replacementId: "tower-replacement",
+      replacementStructureType: "tower",
+      stableId: "remove-tower/tower-obsolete",
+      targetStructureType: "tower",
+    } as const satisfies LayoutMigrationProposal;
+    expect(
+      arbitrateStructureRemovals({
+        authorizations: [authorization(tower)],
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals: [tower],
+      }).intents,
+    ).toEqual([
+      expect.objectContaining({
+        replacementStructureType: "tower",
+        targetStructureType: "tower",
+      }),
+    ]);
+
     const mismatched = {
       ...candidate,
       replacementStructureType: "extension",

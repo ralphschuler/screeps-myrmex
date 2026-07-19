@@ -107,6 +107,7 @@ function snapshot(
     ],
     ownedTowers: [
       {
+        active: true,
         id: "tower",
         pos: pos(roomName),
         hits: 3_000,

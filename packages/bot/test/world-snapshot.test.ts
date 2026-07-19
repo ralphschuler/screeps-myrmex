@@ -65,6 +65,7 @@ describe("WorldSnapshot", () => {
     ]);
     expect(forward.rooms[0]?.ownedSpawns[0]?.active).toBe(true);
     expect(forward.rooms[0]?.ownedExtensions[0]?.active).toBe(true);
+    expect(forward.rooms[0]?.ownedTowers[0]?.active).toBe(true);
     const ownedLink = forward.rooms[0]?.ownedLinks?.[0];
     expect(ownedLink).toMatchObject({ active: true, cooldown: 3, id: "link-d" });
     expect(ownedLink?.store.usedCapacity).toBe(400);
@@ -423,6 +424,7 @@ function makeOwnedRoom(
       hits: 5_000,
       hitsMax: 5_000,
       id: "tower-c",
+      isActive: () => true,
       my: true,
       owner: { username: "Myrmex" },
       pos: new LivePosition(25, 25, "W1N1"),

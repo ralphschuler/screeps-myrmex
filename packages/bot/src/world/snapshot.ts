@@ -108,6 +108,8 @@ export interface OwnedExtensionSnapshot {
 }
 
 export interface OwnedTowerSnapshot {
+  /** Current-tick controller/RCL activation, detached from the live structure. */
+  readonly active: boolean;
   readonly hits: number;
   readonly hitsMax: number;
   readonly id: string;
