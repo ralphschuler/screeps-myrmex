@@ -125,8 +125,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   sequence. Issue #306 reuses that atomic path when a different existing exact container strictly
   outranks the selected exact service; worse/equal candidates cannot oscillate the selection. Issue
   #310 gives every current extension/container destroy path one compact identity-bound receipt with
-  capped reset-safe retry, so a failed room cannot repeatedly consume the global removal slot. Other
-  structure types, general multi-step migration, and creep dismantling remain issue #99.
+  capped reset-safe retry, so a failed room cannot repeatedly consume the global removal slot. Issue
+  #312 restores committed tower geometry while allowance is available, then removes at most one
+  active empty obsolete tower only after an exact active committed replacement retains one action's
+  energy; the same bounded receipt and one-command authority apply. Other structure types, general
+  multi-step migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

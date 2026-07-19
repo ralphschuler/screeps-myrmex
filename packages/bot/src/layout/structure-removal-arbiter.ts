@@ -80,7 +80,7 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
     readonly targetStructureType: string;
   } = proposal;
   const validMigrationTerms =
-    ["container", "extension"].includes(terms.targetStructureType) &&
+    ["container", "extension", "tower"].includes(terms.targetStructureType) &&
     terms.replacementStructureType === terms.targetStructureType &&
     typeof terms.replacementId === "string" &&
     terms.replacementId.length > 0 &&
@@ -118,12 +118,20 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
       targetRequiresEmptyStore: true,
       targetStructureType: "container",
     };
+  if (proposal.targetStructureType === "extension")
+    return {
+      ...envelope,
+      replacementId: proposal.replacementId,
+      replacementStructureType: "extension",
+      targetRequiresEmptyStore: true,
+      targetStructureType: "extension",
+    };
   return {
     ...envelope,
     replacementId: proposal.replacementId,
-    replacementStructureType: "extension",
+    replacementStructureType: "tower",
     targetRequiresEmptyStore: true,
-    targetStructureType: "extension",
+    targetStructureType: "tower",
   };
 }
 function record(

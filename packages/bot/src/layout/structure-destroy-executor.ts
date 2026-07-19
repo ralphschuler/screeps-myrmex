@@ -1,7 +1,8 @@
-import type {
-  DestroyOwnedStructureIntent,
-  StructureDestroyExecutionCode,
-  StructureDestroyExecutionResult,
+import {
+  MINIMUM_OPERATIONAL_TOWER_ENERGY,
+  type DestroyOwnedStructureIntent,
+  type StructureDestroyExecutionCode,
+  type StructureDestroyExecutionResult,
 } from "./contracts";
 
 export interface StructureDestroyExecutionAdapter {
@@ -46,6 +47,8 @@ export class StructureDestroyExecutor {
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-absent");
       if (!matchesReplacement(intent, replacement))
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-mismatch");
+      if (!hasOperationalReplacementEnergy(intent, replacement))
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-underfunded");
     } catch {
       return result(intent, false, "UNEXPECTED", "adapter-fault");
     }
@@ -96,6 +99,23 @@ function matchesReplacement(intent: DestroyOwnedStructureIntent, replacement: St
     candidate.isActive() &&
     candidate.room.name === intent.roomName &&
     candidate.pos.roomName === intent.roomName
+  );
+}
+function hasOperationalReplacementEnergy(
+  intent: DestroyOwnedStructureIntent,
+  replacement: Structure,
+): boolean {
+  if (intent.replacementStructureType !== "tower") return true;
+  const store = (
+    replacement as Structure & {
+      readonly store?: { getUsedCapacity(resource?: string): number | null };
+    }
+  ).store;
+  const energy = store?.getUsedCapacity("energy");
+  return (
+    typeof energy === "number" &&
+    Number.isSafeInteger(energy) &&
+    energy >= MINIMUM_OPERATIONAL_TOWER_ENERGY
   );
 }
 function normalizeReturnCode(code: number): StructureDestroyExecutionCode {

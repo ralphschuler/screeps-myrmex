@@ -44,7 +44,7 @@ describe("layout persistence and cache", () => {
       structureType: "container",
     } as const;
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
-    expect(owner.schemaVersion).toBe(5);
+    expect(owner.schemaVersion).toBe(6);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const { issuerSequence: _sequence, ...legacyService } = placement.service;
@@ -61,7 +61,7 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(legacy)).toEqual({
       ...legacy,
-      schemaVersion: 5,
+      schemaVersion: 6,
       revision: owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
@@ -295,7 +295,7 @@ describe("layout persistence and cache", () => {
     });
     expect(migrated).toMatchObject({
       revision: owner.revision + 1,
-      schemaVersion: 5,
+      schemaVersion: 6,
       records: [
         {
           removalReceipt: {
@@ -425,6 +425,31 @@ describe("layout persistence and cache", () => {
         fingerprint: "layout-v2:changed",
       }).records[0]?.removalReceipt,
     ).toBeUndefined();
+    expect(parseLayoutsOwner({ ...extension.owner, schemaVersion: 5 })).toEqual({
+      ...extension.owner,
+      revision: extension.owner.revision + 1,
+    });
+
+    const towerIntent = {
+      ...intent,
+      replacementId: "tower-replacement",
+      replacementStructureType: "tower",
+      stableId: "remove-tower-v1:test",
+      targetId: "tower-obsolete",
+      targetStructureType: "tower",
+    } as const satisfies DestroyOwnedStructureIntent;
+    const tower = reconcileStructureDestroyExecution(
+      persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment),
+      [{ called: true, code: "ERR_BUSY", fault: null, intent: towerIntent }],
+      11,
+    );
+    expect(tower.owner.records[0]?.removalReceipt).toMatchObject({
+      replacementId: "tower-replacement",
+      targetId: "tower-obsolete",
+      targetStructureType: "tower",
+    });
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(tower.owner)))).toEqual(tower.owner);
+    expect(parseLayoutsOwner({ ...tower.owner, schemaVersion: 5 })).toBeNull();
   });
 
   it("persists 32 canonical receipts and drops them on layout revision", () => {

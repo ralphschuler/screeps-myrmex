@@ -89,8 +89,11 @@ different exact selected service and static-mining identity; at most 2,000 total
 fresh empty-target, every delivered replacement gain, and retired-flow evidence remain mandatory.
 Issue #310 persists one compact exact receipt for every current extension/container destroy result;
 `OK` waits for fresh disappearance, failures back off and stop after three attempts, and a blocked
-room emits no proposal that could consume the global slot. `StructureRemovalArbiter` alone
-authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
+room emits no proposal that could consume the global slot. Issue #312 reuses that authority for one
+active empty obsolete tower only after committed replacement-first geometry leaves an exact active
+committed tower with at least one action's energy. Sole, stocked, inactive, underfunded, unsafe, or
+pressured tower removals fail closed. `StructureRemovalArbiter` alone authorizes removal and
+`StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1423,7 +1426,7 @@ detached create-site intent data only. Live API execution and reconciliation rem
 PR C completes the chain with `layout.plan` after colony publication, mandatory-tail
 `layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V5 layouts owner; degraded,
+commitments and bounded receipts stage through the owner-local schema V6 layouts owner; degraded,
 unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
 command. Every observed owned layout site enters the existing funded survival-growth build flow,
 while controller risk, recovery, maintenance, and protected reserves retain precedence.
@@ -1553,6 +1556,16 @@ and stop after attempt three. A blocked room publishes no removal proposal, allo
 use the unchanged global one-command slot. V1-V4 migrate deterministically, no live-API scan or
 unbounded history exists, and rollback to V4 preserves future-owner bytes.
 [ADR 0045](adr/0045-bounded-structure-destroy-receipts.md) records the boundary.
+
+Issue #312 adds one replacement-first tower step. The convergence projection restores committed
+primary tower geometry through the existing site/funding/build chain while current adopted towers
+remain usable observation. Removal requires current full allowance of at least two, exactly
+allowance minus one active committed towers, one active empty unshared obsolete target, and one
+exact active committed replacement retaining at least the official 10-energy action cost. The
+executor freshly rechecks those target and replacement terms before the sole destroy call. Layouts
+owner V6 adds only `tower` to the existing fixed receipt discriminator; V1-V5 migrate without
+inventing tower evidence, rollback preserves future-owner bytes, and retry/backoff limits do not
+change. [ADR 0046](adr/0046-replacement-first-empty-tower-removal.md) records the boundary.
 
 Other structure stock evacuation, defensive migration, general multi-step migration, and creep
 dismantling remain issue #99 and fail closed.
@@ -2116,6 +2129,9 @@ Required architecture assertions include:
 - a stocked obsolete extension persists at most one bounded layout-owned evacuation, uses the sole
   funded logistics/lease path, suppresses ordinary target refill, and cannot authorize removal
   before fresh delivered/empty evidence and flow retirement;
+- obsolete-tower removal requires full allowance of at least two, allowance-minus-one active
+  committed towers, an active empty unshared target, an exact active committed replacement with at
+  least 10 energy, current safety, and the same global one-command ceiling;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;
@@ -2128,9 +2144,10 @@ Required architecture assertions include:
   sole-authority funded logistics flows, and requires fresh empty-target, every delivered
   replacement gain, and retired flow/endpoint evidence before removal; a source-specific handoff
   additionally preserves one different exact selected service and static-mining identity;
-- every extension/container destroy result persists at most one exact receipt per room, `OK` waits
-  for fresh disappearance, failures retry only at capped eligibility ticks and stop after three
-  attempts, reset/reorder preserves evidence, and a blocked room leaves the global slot available;
+- every extension/container/tower destroy result persists at most one exact receipt per room, `OK`
+  waits for fresh disappearance, failures retry only at capped eligibility ticks and stop after
+  three attempts, reset/reorder preserves evidence, and a blocked room leaves the global slot
+  available;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

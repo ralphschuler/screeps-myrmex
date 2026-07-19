@@ -15,20 +15,21 @@ import {
   type LayoutRecord,
   type LayoutPlacement,
   type LayoutStructureRemovalReceipt,
-  type LayoutsOwnerV5,
+  type LayoutsOwnerV6,
 } from "./contracts";
 import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
 
-export function emptyLayoutsOwner(): LayoutsOwnerV5 {
+export function emptyLayoutsOwner(): LayoutsOwnerV6 {
   return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
 }
-export function parseLayoutsOwner(value: unknown): LayoutsOwnerV5 | null {
+export function parseLayoutsOwner(value: unknown): LayoutsOwnerV6 | null {
   if (
     !record(value) ||
     (value.schemaVersion !== 1 &&
       value.schemaVersion !== 2 &&
       value.schemaVersion !== 3 &&
       value.schemaVersion !== 4 &&
+      value.schemaVersion !== 5 &&
       value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION) ||
     !integer(value.revision) ||
     !Array.isArray(value.records) ||
@@ -39,8 +40,9 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV5 | null {
   let staleRecords = 0;
   const migratingV1 = value.schemaVersion === 1;
   const migratingBeforeV3 = value.schemaVersion === 1 || value.schemaVersion === 2;
-  const migratingBeforeV4 = value.schemaVersion !== 4 && value.schemaVersion !== 5;
-  const migratingBeforeV5 = value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION;
+  const migratingBeforeV4 = value.schemaVersion < 4;
+  const migratingBeforeV5 = value.schemaVersion < 5;
+  const migratingBeforeV6 = value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION;
   for (const rawItem of value.records) {
     if (record(rawItem) && record(rawItem.containerMigration)) {
       if (migratingV1 && rawItem.containerMigration.resourceManifest !== undefined) return null;
@@ -54,6 +56,13 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV5 | null {
         return null;
     }
     if (migratingBeforeV5 && record(rawItem) && rawItem.removalReceipt !== undefined) return null;
+    if (
+      migratingBeforeV6 &&
+      record(rawItem) &&
+      record(rawItem.removalReceipt) &&
+      rawItem.removalReceipt.targetStructureType === "tower"
+    )
+      return null;
     if (
       migratingBeforeV4 &&
       record(rawItem) &&
@@ -79,7 +88,7 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV5 | null {
   if (new Set(records.map((r) => r.roomName)).size !== records.length) return null;
   return freeze({
     schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
-    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingBeforeV5 ? 1 : 0),
+    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingBeforeV6 ? 1 : 0),
     records,
   });
 }
@@ -104,11 +113,11 @@ function migrateRemovalReceipt(value: unknown, migrating: boolean): unknown {
   };
 }
 export function persistLayoutCommitment(
-  owner: LayoutsOwnerV5,
+  owner: LayoutsOwnerV6,
   roomName: string,
   commitment: LayoutCommitment,
   placements: readonly LayoutPlacement[] = [],
-): LayoutsOwnerV5 {
+): LayoutsOwnerV6 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   const records = owner.records.filter((r) => r.roomName !== roomName);
   const sourceServices = placements.filter(
@@ -144,10 +153,10 @@ export function persistLayoutCommitment(
   });
 }
 export function persistLayoutContainerMigration(
-  owner: LayoutsOwnerV5,
+  owner: LayoutsOwnerV6,
   roomName: string,
   migration: LayoutContainerMigration | null,
-): LayoutsOwnerV5 {
+): LayoutsOwnerV6 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -167,10 +176,10 @@ export function persistLayoutContainerMigration(
 }
 
 export function persistLayoutExtensionEvacuation(
-  owner: LayoutsOwnerV5,
+  owner: LayoutsOwnerV6,
   roomName: string,
   evacuation: LayoutExtensionEvacuation | null,
-): LayoutsOwnerV5 {
+): LayoutsOwnerV6 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -191,10 +200,10 @@ export function persistLayoutExtensionEvacuation(
 }
 
 export function persistLayoutRemovalReceipt(
-  owner: LayoutsOwnerV5,
+  owner: LayoutsOwnerV6,
   roomName: string,
   receipt: LayoutStructureRemovalReceipt | null,
-): LayoutsOwnerV5 {
+): LayoutsOwnerV6 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -214,7 +223,7 @@ export function persistLayoutRemovalReceipt(
 }
 
 export function freshSourceServicePlacements(
-  owner: LayoutsOwnerV5,
+  owner: LayoutsOwnerV6,
   roomName: string,
 ): readonly LayoutPlacement[] {
   const record = owner.records.find((item) => item.roomName === roomName);
@@ -231,9 +240,9 @@ export function freshSourceServicePlacements(
   );
 }
 export function reconcileOwnedLayouts(
-  owner: LayoutsOwnerV5,
+  owner: LayoutsOwnerV6,
   ownedRoomNames: readonly string[],
-): LayoutsOwnerV5 {
+): LayoutsOwnerV6 {
   const owned = new Set(ownedRoomNames);
   const records = owner.records.filter((r) => owned.has(r.roomName));
   return records.length === owner.records.length
@@ -241,10 +250,10 @@ export function reconcileOwnedLayouts(
     : freeze({ ...owner, revision: owner.revision + 1, records });
 }
 export function persistConstructionSiteReceipt(
-  owner: LayoutsOwnerV5,
+  owner: LayoutsOwnerV6,
   roomName: string,
   receipt: ConstructionSiteAttemptReceipt,
-): LayoutsOwnerV5 {
+): LayoutsOwnerV6 {
   const records = owner.records.map((item) =>
     item.roomName === roomName
       ? {
@@ -336,7 +345,7 @@ function validRemovalReceipt(value: unknown): value is LayoutStructureRemovalRec
     identity(value.targetId, 128) &&
     identity(value.replacementId, 128) &&
     value.targetId !== value.replacementId &&
-    ["container", "extension"].includes(String(value.targetStructureType))
+    ["container", "extension", "tower"].includes(String(value.targetStructureType))
   );
 }
 function validContainerResourceManifest(value: unknown): boolean {

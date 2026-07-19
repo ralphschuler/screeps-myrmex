@@ -78,9 +78,14 @@ and require fresh empty-target, every delivered replacement gain, and retired fl
 before removal. Canonical general positions adjacent to a source, over-eight-kind or malformed
 stock, selected source-service targets, capacity loss, and unavailable contract evidence fail
 closed. Other stocked structures and rooms without exact replacement evidence remain untouched.
-Every authorized extension/container destroy result persists one exact per-room receipt: success
-waits for fresh target disappearance, failures back off and stop after three attempts, and a blocked
-room leaves the global removal slot available to another eligible room.
+Every authorized extension/container/tower destroy result persists one exact per-room receipt:
+success waits for fresh target disappearance, failures back off and stop after three attempts, and a
+blocked room leaves the global removal slot available to another eligible room. Tower convergence
+first uses spare allowance to build committed geometry. An active empty obsolete tower may be
+removed only at full allowance of at least two, with exactly allowance minus one active committed
+towers and one exact active committed replacement retaining at least the 10 energy required for an
+immediate defense action. A sole, stocked, inactive, underfunded, threatened, or pressured tower
+remains.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

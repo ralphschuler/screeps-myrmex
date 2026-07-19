@@ -57,6 +57,7 @@ describe("tick lifecycle", () => {
       hits: 3_000,
       hitsMax: 3_000,
       id: "tower-1",
+      isActive: () => true,
       my: true,
       owner: { username: "Myrmex" },
       pos: { roomName: "W1N1", x: 25, y: 25 },

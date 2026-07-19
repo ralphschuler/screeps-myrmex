@@ -462,6 +462,7 @@ function snapshotExtension(extension: StructureExtension): OwnedExtensionSnapsho
 
 function snapshotTower(tower: StructureTower): OwnedTowerSnapshot {
   return {
+    active: tower.isActive(),
     hits: tower.hits,
     hitsMax: tower.hitsMax,
     id: String(tower.id),

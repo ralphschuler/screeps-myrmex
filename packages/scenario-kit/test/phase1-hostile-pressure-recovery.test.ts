@@ -178,7 +178,14 @@ function pressureSnapshot(tick: number, input: PressureInput): WorldSnapshot {
       },
     ],
     ownedTowers: [
-      { id: "tower-1", pos: pos("W1N1", 25, 25), hits: 3_000, hitsMax: 3_000, store: store(800) },
+      {
+        active: true,
+        id: "tower-1",
+        pos: pos("W1N1", 25, 25),
+        hits: 3_000,
+        hitsMax: 3_000,
+        store: store(800),
+      },
     ],
     constructionSites: [],
     droppedResources: [],

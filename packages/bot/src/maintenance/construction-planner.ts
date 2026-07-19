@@ -7,6 +7,8 @@ import {
   MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
   MAX_LAYOUT_CONTAINER_STORE_RESOURCES,
   MAX_LAYOUT_EXTENSION_ENERGY,
+  MAX_LAYOUT_TOWER_ENERGY,
+  MINIMUM_OPERATIONAL_TOWER_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
   layoutContainerMigrationBudgetIssuer,
   layoutContainerMigrationFlowId,
@@ -235,11 +237,20 @@ export class ConstructionPlanner {
         (placement) => placement.layer === "primary" && placement.structureType === "extension",
       )
       .sort(comparePlacement);
+    const desiredTowers = input.placements
+      .filter((placement) => placement.layer === "primary" && placement.structureType === "tower")
+      .sort(comparePlacement);
     const extensionCandidates = (input.room.structures ?? []).filter(
       (structure) =>
         structure.ownership === "owned" &&
         structure.structureType === "extension" &&
         !desiredExtensions.some(({ pos }) => samePosition(pos, structure.pos)),
+    );
+    const towerCandidates = (input.room.structures ?? []).filter(
+      (structure) =>
+        structure.ownership === "owned" &&
+        structure.structureType === "tower" &&
+        !desiredTowers.some(({ pos }) => samePosition(pos, structure.pos)),
     );
     const sourceServices = input.placements.filter(
       (placement) =>
@@ -279,6 +290,7 @@ export class ConstructionPlanner {
         target,
       })),
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
+      ...towerCandidates.map((target) => ({ kind: "tower" as const, target })),
     ].sort((left, right) => {
       const activeSourceId = input.extensionEvacuation?.sourceId;
       const leftActive = left.kind === "extension" && left.target.id === activeSourceId;
@@ -687,6 +699,43 @@ export class ConstructionPlanner {
         break;
       }
 
+      if (candidate.kind === "tower") {
+        const tower = towerMigrationEvidence(
+          input.room,
+          candidate.target,
+          desiredTowers,
+          input.colony.rclPolicy.unlocks?.towers ?? 0,
+        );
+        if (tower.replacement === null) {
+          pushMigrationBlocker(blockers, {
+            reason: tower.reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          continue;
+        }
+        admitRemoval({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementId: tower.replacement.id,
+          replacementStructureType: "tower",
+          stableId: [
+            "remove-tower-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            candidate.target.id,
+            tower.replacement.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetStructureType: "tower",
+        });
+        break;
+      }
+
       const priorEvacuation = input.extensionEvacuation ?? null;
       if (priorEvacuation !== null && priorEvacuation.sourceId !== candidate.target.id) continue;
       const extension = extensionMigrationEvidence(
@@ -825,7 +874,8 @@ export class ConstructionPlanner {
 type MigrationCandidate =
   | { readonly kind: "source-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "general-container"; readonly target: StoredStructureSnapshot }
-  | { readonly kind: "extension"; readonly target: StructureSnapshot };
+  | { readonly kind: "extension"; readonly target: StructureSnapshot }
+  | { readonly kind: "tower"; readonly target: StructureSnapshot };
 
 function assessRemovalReceipt(
   receipt: LayoutStructureRemovalReceipt | null,
@@ -1269,6 +1319,62 @@ function planSourceContainerEvacuation(input: {
   )
     return { blocker: "logistics-active", migration };
   return { blocker: null, migration };
+}
+
+function towerMigrationEvidence(
+  room: RoomSnapshot,
+  target: StructureSnapshot,
+  desiredTowers: readonly LayoutPlacement[],
+  allowance: number,
+):
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
+  | { readonly reason: null; readonly replacement: RoomSnapshot["ownedTowers"][number] } {
+  const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
+  if (
+    occupying.length !== 1 ||
+    occupying[0]?.id !== target.id ||
+    room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
+  )
+    return { reason: "target-shared", replacement: null };
+  const observedTarget = room.ownedTowers.find(({ id }) => id === target.id);
+  const targetEnergy = observedTarget === undefined ? null : exactTowerEnergy(observedTarget);
+  if (observedTarget === undefined || !observedTarget.active || targetEnergy === null)
+    return { reason: "target-unavailable", replacement: null };
+  if (targetEnergy > 0) return { reason: "target-stocked", replacement: null };
+  const exact = room.ownedTowers
+    .filter(
+      (tower) =>
+        tower.active &&
+        tower.id !== target.id &&
+        desiredTowers.some(({ pos }) => samePosition(pos, tower.pos)),
+    )
+    .sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x || a.id.localeCompare(b.id));
+  if (
+    allowance < 2 ||
+    room.ownedTowers.length !== allowance ||
+    exact.length !== allowance - 1 ||
+    desiredTowers.length < allowance
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const replacement = exact.find((tower) => {
+    const energy = exactTowerEnergy(tower);
+    return energy !== null && energy >= MINIMUM_OPERATIONAL_TOWER_ENERGY;
+  });
+  return replacement === undefined
+    ? { reason: "replacement-pending", replacement: null }
+    : { reason: null, replacement };
+}
+
+function exactTowerEnergy(tower: RoomSnapshot["ownedTowers"][number]): number | null {
+  const energy = tower.store.resources
+    .filter(({ resourceType }) => resourceType === "energy")
+    .reduce((total, resource) => total + resource.amount, 0);
+  return energy === tower.store.usedCapacity &&
+    Number.isSafeInteger(energy) &&
+    energy >= 0 &&
+    energy <= MAX_LAYOUT_TOWER_ENERGY
+    ? energy
+    : null;
 }
 
 function extensionMigrationEvidence(

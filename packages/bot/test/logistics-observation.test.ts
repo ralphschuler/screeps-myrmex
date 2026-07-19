@@ -90,6 +90,7 @@ describe("LogisticsObservation", () => {
           ],
           ownedTowers: [
             {
+              active: true,
               hits: 3_000,
               hitsMax: 3_000,
               id: "tower",

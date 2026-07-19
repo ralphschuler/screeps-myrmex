@@ -146,6 +146,7 @@ export function projectLayoutConvergencePlacements(input: {
       ...input.current.filter(
         ({ adoption, service, structureType }) =>
           structureType !== "extension" &&
+          structureType !== "tower" &&
           (structureType !== "container" ||
             service?.kind === "source-container" ||
             (!containerConvergenceSafe && adoption !== "planned")),
@@ -154,6 +155,7 @@ export function projectLayoutConvergencePlacements(input: {
         ({ layer, structureType }) =>
           layer === "primary" &&
           (structureType === "extension" ||
+            structureType === "tower" ||
             (structureType === "container" && containerConvergenceSafe)),
       ),
     ].sort(placementOrder),

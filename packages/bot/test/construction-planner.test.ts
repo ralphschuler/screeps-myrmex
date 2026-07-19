@@ -114,6 +114,71 @@ describe("ConstructionPlanner", () => {
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(first));
   });
 
+  it("keeps an operational committed tower before proposing one empty obsolete tower", () => {
+    const towerPolicy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 5,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 1_800,
+      energyCapacityAvailable: 1_800,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "developing",
+      visibility: "visible",
+    });
+    const colony = { ...migrationColony(), rclPolicy: towerPolicy } as ColonyView;
+    const placements = [placement("tower", 15, 15), placement("tower", 16, 15)];
+    const tower = (id: string, x: number, energy: number, active = true) => ({
+      active,
+      hits: 3_000,
+      hitsMax: 3_000,
+      id,
+      pos: { roomName: "W1N1", x, y: 15 },
+      store: {
+        capacity: 1_000,
+        freeCapacity: 1_000 - energy,
+        resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+        usedCapacity: energy,
+      },
+    });
+    const exact = tower("tower-exact", 15, 10);
+    const obsolete = tower("tower-obsolete", 30, 0);
+    const room = (towers: readonly ReturnType<typeof tower>[]) =>
+      ({
+        ...migrationRoom(),
+        controller: { level: 5, ownership: "owned" as const },
+        ownedTowers: towers,
+        structures: towers.map((value) =>
+          structure(value.id, "tower", 3_000, 3_000, value.pos.x, value.pos.y),
+        ),
+      }) as unknown as RoomSnapshot;
+    const ready = planMigration({ colony, placements, room: room([exact, obsolete]) });
+    const reordered = planMigration({
+      colony,
+      placements: [...placements].reverse(),
+      room: room([obsolete, exact]),
+    });
+
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "tower-exact",
+        replacementStructureType: "tower",
+        targetId: "tower-obsolete",
+        targetRequiresEmptyStore: true,
+        targetStructureType: "tower",
+      }),
+    ]);
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(ready));
+    for (const blocked of [
+      room([tower("tower-exact", 15, 9), obsolete]),
+      room([exact, tower("tower-obsolete", 30, 1)]),
+      room([tower("tower-exact", 15, 10, false), obsolete]),
+      room([obsolete]),
+    ])
+      expect(planMigration({ colony, placements, room: blocked }).proposals).toEqual([]);
+  });
+
   it("preserves the exact source service while proposing one empty redundant container", () => {
     const { placements, room } = sourceContainerMigrationFixture();
     const first = planMigration({ placements, room });

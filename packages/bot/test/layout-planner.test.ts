@@ -82,6 +82,38 @@ describe("owned-room-layout-v1", () => {
       );
   });
 
+  it("restores committed tower geometry for replacement-first defensive convergence", () => {
+    const input = fixture(5);
+    const external = structure("tower", 35, 35, "owned");
+    const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
+    if (planned.status !== "complete") throw new Error("expected complete layout");
+    const unlocks = input.policy.unlocks;
+    if (unlocks === null) throw new Error("expected RCL unlocks");
+    const convergent = projectLayoutConvergencePlacements({
+      commitment: planned.commitment,
+      current: planned.placements,
+      roomName: input.roomName,
+      sourceCount: input.sources.length,
+      sources: input.sources,
+      unlocks,
+    });
+
+    expect(planned.placements).toContainEqual(
+      expect.objectContaining({
+        adoption: "compatible-external",
+        pos: external.pos,
+        structureType: "tower",
+      }),
+    );
+    expect(convergent.filter(({ structureType }) => structureType === "tower")).toHaveLength(2);
+    expect(
+      convergent.some(
+        ({ pos, structureType }) =>
+          structureType === "tower" && pos.x === external.pos.x && pos.y === external.pos.y,
+      ),
+    ).toBe(false);
+  });
+
   it("uses committed extension geometry only for replacement-first convergence", () => {
     const input = fixture(3);
     const external = structure("extension", 35, 35, "owned");

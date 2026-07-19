@@ -643,6 +643,215 @@ describe("composed layout runtime", () => {
     ]);
   });
 
+  it("builds an operational replacement before removing one empty obsolete tower", () => {
+    const towerPolicy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 5,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 1_800,
+      energyCapacityAvailable: 1_800,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "developing",
+      visibility: "visible",
+    });
+    const towerColony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: towerPolicy,
+      roomName,
+      state: "developing",
+      visibility: "visible",
+    } as ColonyView;
+    const idealTowers: readonly LayoutPlacement[] = [
+      {
+        adoption: "planned",
+        layer: "primary",
+        minimumRcl: 3,
+        pos: pos(15, 15),
+        structureType: "tower",
+      },
+      {
+        adoption: "planned",
+        layer: "primary",
+        minimumRcl: 5,
+        pos: pos(16, 15),
+        structureType: "tower",
+      },
+    ];
+    const commitment = { ...complete().commitment, fingerprint: "layout-tower-migration-a" };
+    const tower = (id: string, position: ReturnType<typeof pos>, energy: number) => ({
+      active: true,
+      hits: 3_000,
+      hitsMax: 3_000,
+      id,
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: position,
+      store: {
+        capacity: 1_000,
+        freeCapacity: 1_000 - energy,
+        resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+        usedCapacity: energy,
+      },
+      structureType: "tower",
+    });
+    const room = (towers: readonly ReturnType<typeof tower>[], observedAt: number) =>
+      ({
+        constructionSites: [],
+        controller: { level: 5, ownership: "owned" as const },
+        hostileCreeps: [],
+        name: roomName,
+        observedAt,
+        ownedCreeps: [],
+        ownedExtensions: [],
+        ownedSpawns: [],
+        ownedTowers: towers,
+        roads: [],
+        sources: [],
+        storedStructures: [],
+        structures: towers,
+      }) as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
+    const operational = (value: ReturnType<typeof room>) =>
+      value.ownedTowers.some(
+        ({ active, store }) =>
+          active &&
+          store.resources.some(
+            ({ amount, resourceType }) => resourceType === "energy" && amount >= 10,
+          ),
+      );
+    const obsoleteStocked = tower("tower-obsolete", pos(30, 30), 10);
+    const initialRoom = room([obsoleteStocked], 100);
+    const initialDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "tower-before",
+      placements: idealTowers,
+      policy: towerPolicy,
+      policyEnabled: true,
+      policyFingerprint: "policy-tower",
+      roomName,
+      roomStatus: "owned",
+      structures: initialRoom.structures ?? [],
+    });
+    const siteArbitration = arbitrateConstructionSites({
+      globalOwnedSiteCount: 0,
+      limits: CONSTRUCTION_SITE_LIMITS,
+      perRoomSiteCounts: [{ count: 0, roomName }],
+      priorReceipts: [],
+      progressionAuthorizations: [{ authorized: true, colonyId: roomName, roomName }],
+      proposals: initialDiff.proposals,
+      tick: 100,
+    });
+    const siteIntent = siteArbitration.intents[0];
+    if (siteIntent === undefined) throw new Error("expected committed tower site");
+    expect(siteIntent.structureType).toBe("tower");
+    expect(operational(initialRoom)).toBe(true);
+
+    const replacement = tower("tower-replacement", pos(siteIntent.x, siteIntent.y), 10);
+    const obsoleteEmpty = tower("tower-obsolete", obsoleteStocked.pos, 0);
+    const readyRoom = room([replacement, obsoleteEmpty], 101);
+    const plan = (
+      value: ReturnType<typeof room>,
+      removalReceipt: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"] = null,
+    ) =>
+      new ConstructionPlanner().planMigration({
+        colony: towerColony,
+        commitment,
+        globalOwnedSiteCount: 0,
+        observationFingerprint: `tower-${String(value.observedAt)}`,
+        placements: idealTowers,
+        policyFingerprint: "policy-tower",
+        removalReceipt,
+        room: value,
+      });
+    const ready = plan(readyRoom);
+    const resetReady = plan(
+      JSON.parse(
+        JSON.stringify({
+          ...readyRoom,
+          ownedTowers: [...readyRoom.ownedTowers].reverse(),
+          structures: [...(readyRoom.structures ?? [])].reverse(),
+        }),
+      ) as typeof readyRoom,
+    );
+    expect(JSON.stringify(resetReady)).toBe(JSON.stringify(ready));
+    expect(operational(readyRoom)).toBe(true);
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "tower-replacement",
+        targetId: "tower-obsolete",
+        targetStructureType: "tower",
+      }),
+    ]);
+    if (ready.authorization === null) throw new Error("expected tower removal authorization");
+    const removal = arbitrateStructureRemovals({
+      authorizations: [ready.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: ready.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveTower = (value: ReturnType<typeof tower>, command = vi.fn(() => 0)) => ({
+      destroy: command,
+      id: value.id,
+      isActive: () => value.active,
+      my: true,
+      pos: value.pos,
+      room: liveRoom,
+      store: {
+        getUsedCapacity: (resource?: string) =>
+          resource === undefined || resource === "energy" ? value.store.usedCapacity : 0,
+      },
+      structureType: "tower",
+    });
+    const execution = new StructureDestroyExecutor().execute(removal.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) =>
+        id === obsoleteEmpty.id
+          ? (liveTower(obsoleteEmpty, destroy) as unknown as Structure)
+          : id === replacement.id
+            ? (liveTower(replacement) as unknown as Structure)
+            : null,
+    });
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment, idealTowers);
+    owner = reconcileStructureDestroyExecution(owner, execution, 101).owner;
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const receipt = owner.records[0]?.removalReceipt ?? null;
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(plan(room([replacement, obsoleteEmpty], 102), receipt)).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-pending" })],
+      proposals: [],
+    });
+
+    const followingRoom = room([replacement], 103);
+    expect(operational(followingRoom)).toBe(true);
+    expect(plan(followingRoom, receipt).removalReceipt).toBeNull();
+    const followingDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "tower-following",
+      placements: idealTowers,
+      policy: towerPolicy,
+      policyEnabled: true,
+      policyFingerprint: "policy-tower",
+      roomName,
+      roomStatus: "owned",
+      structures: followingRoom.structures ?? [],
+    });
+    expect(followingDiff.proposals).toEqual([expect.objectContaining({ structureType: "tower" })]);
+  });
+
   it("builds, evacuates one non-energy stock, and removes one obsolete general container", () => {
     const baseline = complete();
     const unlocks = policy.unlocks;

@@ -38,6 +38,22 @@ const containerIntent: DestroyOwnedStructureIntent = {
   x: 10,
   y: 11,
 };
+const towerIntent: DestroyOwnedStructureIntent = {
+  colonyId: "W1N1",
+  kind: "destroy-owned-structure",
+  layoutFingerprint: "layout-a",
+  observationFingerprint: "observation-a",
+  policyFingerprint: "policy-a",
+  replacementId: "tower-replacement",
+  replacementStructureType: "tower",
+  roomName: "W1N1",
+  stableId: "remove-tower/tower-obsolete",
+  targetId: "tower-obsolete",
+  targetRequiresEmptyStore: true,
+  targetStructureType: "tower",
+  x: 10,
+  y: 11,
+};
 
 function fixture(code = 0) {
   const destroy = vi.fn(() => code);
@@ -205,6 +221,52 @@ describe("StructureDestroyExecutor", () => {
         called: false,
         fault,
       });
+  });
+
+  it("revalidates an empty active tower and one immediately operational replacement", () => {
+    const room = { controller: { my: true }, name: "W1N1" } as unknown as Room;
+    const destroy = vi.fn(() => 0);
+    const tower = (
+      id: string,
+      energy: number,
+      options: { readonly active?: boolean; readonly my?: boolean } = {},
+    ) =>
+      ({
+        destroy: id === towerIntent.targetId ? destroy : vi.fn(() => 0),
+        id,
+        isActive: () => options.active ?? true,
+        my: options.my ?? true,
+        pos: { roomName: "W1N1", x: id === towerIntent.targetId ? 10 : 12, y: 11 },
+        room,
+        store: {
+          getUsedCapacity: (resource?: string) =>
+            resource === undefined || resource === "energy" ? energy : 0,
+        },
+        structureType: "tower",
+      }) as unknown as Structure;
+    const adapter = (target = tower("tower-obsolete", 0), replacementEnergy = 10) => ({
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => room,
+      resolveStructure: (id: string) =>
+        id === towerIntent.targetId
+          ? target
+          : id === towerIntent.replacementId
+            ? tower("tower-replacement", replacementEnergy)
+            : null,
+    });
+
+    expect(new StructureDestroyExecutor().execute([towerIntent], adapter())[0]).toMatchObject({
+      called: true,
+      code: "OK",
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(
+      new StructureDestroyExecutor().execute([towerIntent], adapter(undefined, 9))[0],
+    ).toMatchObject({ called: false, fault: "replacement-underfunded" });
+    expect(
+      new StructureDestroyExecutor().execute([towerIntent], adapter(tower("tower-obsolete", 1)))[0],
+    ).toMatchObject({ called: false, fault: "target-not-empty" });
   });
 
   it("revalidates an empty room container and its exact current service replacement", () => {
