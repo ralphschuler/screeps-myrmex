@@ -4,7 +4,7 @@ Status: **Normative target architecture**
 
 Applies to: `packages/bot`
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 This document defines the core systems of MYRMEX, the authority each system owns, and the only
 supported ways those systems integrate. It is deliberately specific so that human and AI
@@ -76,9 +76,11 @@ for the same source. Issue #292 permits one empty compatible-external general co
 committed replacement capacity exists; one compact layout-owned handoff suppresses its refill and
 waits for active logistics endpoints to retire. Issue #294 extends that handoff to exact energy-only
 stock. Issue #296 permits a compact binary-ordered manifest of two to eight resource kinds and one
-distinct funded flow per kind; at most 2,000 total units move, and fresh empty-target, every
-delivered replacement gain, and retired-flow evidence remain mandatory. `StructureRemovalArbiter`
-alone authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
+distinct funded flow per kind. Issue #298 permits the same manifest for one non-energy kind while
+preserving the legacy energy-only identity; at most 2,000 total units move, and fresh empty-target,
+every delivered replacement gain, and retired-flow evidence remain mandatory.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1292,14 +1294,15 @@ flow, and contract bounds. Logistics owns admission and execution terms; layout 
 migration commitment and consumes only fresh completion evidence.
 
 General-container stock migration uses the same authority. An energy-only record keeps one legacy
-flow identity. A mixed record carries two to eight compact binary-ordered tuples and projects one
-resource-specific flow and distinct `optional-growth` budget binding per tuple. Every sink node uses
-the same aggregate replacement-capacity key. The specialized sources replace the ordinary target
-source, and both endpoint refill sinks are suppressed, so one physical Store cannot publish
-duplicate stock or competing capacity. Source/sink suppression IDs are each capped at 128; the
-complete projection admits at most 64 resource flows and 128 nodes, otherwise it publishes nothing.
-V3 contracts, leases, and executors remain Logistics-owned; layout consumes only fresh target,
-replacement, flow, and endpoint evidence.
+flow identity. A resource-specific record carries one to eight compact binary-ordered tuples and
+projects one resource-specific flow and distinct `optional-growth` budget binding per tuple; a
+one-tuple record must not contain energy. Every sink node uses the same aggregate
+replacement-capacity key. The specialized sources replace the ordinary target source, and both
+endpoint refill sinks are suppressed, so one physical Store cannot publish duplicate stock or
+competing capacity. Source/sink suppression IDs are each capped at 128; the complete projection
+admits at most 64 resource flows and 128 nodes, otherwise it publishes nothing. V3 contracts,
+leases, and executors remain Logistics-owned; layout consumes only fresh target, replacement, flow,
+and endpoint evidence.
 
 ### 12.4 MovementArbiter
 
@@ -1479,9 +1482,14 @@ threatened, expired, or over-64-flow input fails closed without a prefix. Existi
 energy-only records remain valid. [ADR 0041](adr/0041-mixed-general-container-stock-evacuation.md)
 records this extension.
 
-Other structure stock evacuation, single non-energy and selected/stocked source-service migration,
-defensive migration, general multi-step migration, and creep dismantling remain issue #99 and fail
-closed.
+Issue #298 permits the same V2 manifest to carry one exact positive non-energy resource while a
+one-row energy manifest remains invalid and ADR 0040's legacy energy identity stays unchanged. The
+same resource-specific budget, flow, suppression, delivery, retirement, and removal checks apply; no
+owner schema version or runtime authority changes.
+[ADR 0042](adr/0042-single-non-energy-general-container-evacuation.md) records this extension.
+
+Other structure stock evacuation, selected/stocked source-service migration, defensive migration,
+general multi-step migration, and creep dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2048,10 +2056,11 @@ Required architecture assertions include:
 - obsolete general-container removal requires committed replacement-first capacity, one bounded
   layout-owned handoff, ordinary-refill suppression, retirement of active V3 target endpoints,
   preserved source services, and the existing one-command ceiling;
-- a stocked general-container handoff accepts exact energy or a canonical two-to-eight-kind manifest
-  that fits aggregate replacement capacity, replaces its ordinary source projection, uses distinct
-  sole-authority funded logistics flows, and requires fresh empty-target, every delivered
-  replacement gain, and retired flow/endpoint evidence before removal;
+- a stocked general-container handoff accepts exact legacy energy or a canonical one-to-eight-kind
+  resource manifest, forbids energy as the only manifest row, fits aggregate replacement capacity,
+  replaces its ordinary source projection, uses distinct sole-authority funded logistics flows, and
+  requires fresh empty-target, every delivered replacement gain, and retired flow/endpoint evidence
+  before removal;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

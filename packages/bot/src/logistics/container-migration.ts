@@ -211,14 +211,15 @@ export function projectLayoutContainerMigrations(input: {
 }
 
 function migrationTerms(migration: LayoutContainerMigration): readonly ResourceTerm[] | null {
-  const manifest = migration.resourceManifest;
+  const manifest: unknown = migration.resourceManifest;
   const hasEnergy = migration.energyAmount !== undefined;
   const hasEnergyBaseline = migration.replacementInitialEnergy !== undefined;
   if (manifest !== undefined) {
     if (
       hasEnergy ||
       hasEnergyBaseline ||
-      manifest.length < 2 ||
+      !Array.isArray(manifest) ||
+      manifest.length < 1 ||
       manifest.length > MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES
     )
       return null;
@@ -227,25 +228,29 @@ function migrationTerms(migration: LayoutContainerMigration): readonly ResourceT
     let replacementTotal = 0;
     const terms: ResourceTerm[] = [];
     for (const row of manifest) {
+      if (!Array.isArray(row) || row.length !== 3) return null;
+      const resourceType: unknown = row[0];
+      const amount: unknown = row[1];
+      const replacementAmount: unknown = row[2];
       if (
-        !Array.isArray(row) ||
-        !identity(row[0], 64) ||
-        (prior !== "" && compare(prior, row[0]) >= 0) ||
-        !positiveInteger(row[1]) ||
-        !nonnegativeInteger(row[2])
+        !identity(resourceType, 64) ||
+        (prior !== "" && compare(prior, resourceType) >= 0) ||
+        !positiveInteger(amount) ||
+        !nonnegativeInteger(replacementAmount)
       )
         return null;
-      prior = row[0];
-      amountTotal += row[1];
-      replacementTotal += row[2];
+      prior = resourceType;
+      amountTotal += amount;
+      replacementTotal += replacementAmount;
       terms.push({
-        amount: row[1],
+        amount,
         legacyEnergy: false,
-        replacementInitialAmount: row[2],
-        resourceType: row[0],
+        replacementInitialAmount: replacementAmount,
+        resourceType,
       });
     }
-    return amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY &&
+    return !(manifest.length === 1 && prior === "energy") &&
+      amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY &&
       replacementTotal + amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY
       ? terms
       : null;

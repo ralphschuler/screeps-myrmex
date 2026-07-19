@@ -828,6 +828,113 @@ describe("logistics runtime adapter", () => {
       { resourceType: "energy", version: 3 },
     ]);
 
+    const singletonTarget = stored("container-obsolete", 12, [{ amount: 50, resourceType: "U" }]);
+    const singletonSnapshot = {
+      ...migrationSnapshot,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          storedStructures: [...room.storedStructures, singletonTarget, replacement],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const singletonRecord = {
+      ...record,
+      containerMigration: {
+        ...migration,
+        resourceManifest: [["U", 50, 0]],
+      },
+    } as const;
+    const singletonProjection = projectLayoutContainerMigrations({
+      records: [singletonRecord],
+      snapshot: singletonSnapshot,
+      tick: 11,
+    });
+    expect(singletonProjection.edges).toEqual([
+      expect.objectContaining({
+        id: "layout-container-evacuation:W1N1:container-obsolete:container-replacement:1:U",
+        maximumAmount: 50,
+      }),
+    ]);
+    expect(singletonProjection.budgets).toHaveLength(1);
+    expect(singletonProjection.nodes).toEqual([
+      expect.objectContaining({ kind: "source", observedAmount: 50, resourceType: "U" }),
+      expect.objectContaining({
+        capacityReservationKey: "container:W1N1:container-replacement:aggregate-capacity",
+        kind: "sink",
+        resourceType: "U",
+      }),
+    ]);
+    expect(singletonProjection.suppressedSinkTargetIds).toEqual([
+      "container-obsolete",
+      "container-replacement",
+    ]);
+    expect(singletonProjection.suppressedSourceTargetIds).toEqual(["container-obsolete"]);
+    const singletonRuntime = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: singletonProjection,
+      snapshot: singletonSnapshot,
+      tick: 11,
+    });
+    expect(
+      singletonRuntime.contracts.commitments
+        .filter(({ flowId }) => flowId.startsWith("layout-container-evacuation:"))
+        .map(({ request, resourceType }) =>
+          request?.execution?.version === 3
+            ? {
+                executionResourceType: request.execution.resourceType,
+                resourceType,
+                version: request.execution.version,
+              }
+            : null,
+        ),
+    ).toEqual([{ executionResourceType: "U", resourceType: "U", version: 3 }]);
+    const singletonEnergyTarget = stored("container-obsolete", 12, [
+      { amount: 50, resourceType: "energy" },
+    ]);
+    expect(
+      projectLayoutContainerMigrations({
+        records: [
+          {
+            ...record,
+            containerMigration: {
+              ...migration,
+              resourceManifest: [["energy", 50, 0]],
+            },
+          },
+        ],
+        snapshot: {
+          ...migrationSnapshot,
+          rooms: [
+            {
+              ...room,
+              observedAt: 11,
+              storedStructures: [...room.storedStructures, singletonEnergyTarget, replacement],
+            },
+          ],
+        },
+        tick: 11,
+      }).edges,
+    ).toEqual([]);
+    expect(
+      projectLayoutContainerMigrations({
+        records: [
+          {
+            ...singletonRecord,
+            containerMigration: {
+              ...singletonRecord.containerMigration,
+              resourceManifest: [["U", 50, 0, "unexpected"]],
+            } as never,
+          },
+        ],
+        snapshot: singletonSnapshot,
+        tick: 11,
+      }).edges,
+    ).toEqual([]);
+
     const overflowRecords: LayoutRecord[] = [];
     const overflowRooms: WorldSnapshot["rooms"][number][] = [];
     for (let index = 0; index < 33; index += 1) {

@@ -97,7 +97,7 @@ export interface LayoutContainerMigration {
   readonly expiresAt: number;
   readonly replacementId: string;
   readonly replacementInitialEnergy?: number;
-  /** Canonical binary-ordered tuples for bounded mixed-resource evacuation. */
+  /** Canonical binary-ordered tuples for one non-energy or bounded multi-resource evacuation. */
   readonly resourceManifest?: readonly LayoutContainerMigrationResource[];
   readonly startedAt: number;
   readonly targetId: string;
