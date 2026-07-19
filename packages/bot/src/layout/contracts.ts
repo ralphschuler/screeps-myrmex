@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 4 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 5 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -93,11 +93,14 @@ export type LayoutContainerMigrationResource = readonly [
   amount: number,
   replacementInitialAmount: number,
 ];
-export interface LayoutContainerRemovalReceipt {
+export interface LayoutStructureRemovalReceipt {
   readonly attempt: number;
   readonly code: StructureDestroyExecutionCode;
   readonly nextEligibleTick: number;
   readonly observedAt: number;
+  readonly replacementId: string;
+  readonly targetId: string;
+  readonly targetStructureType: "container" | "extension";
 }
 export interface LayoutContainerMigration {
   /** Legacy paired fields remain valid for one exact energy transfer. */
@@ -107,8 +110,6 @@ export interface LayoutContainerMigration {
   readonly replacementInitialEnergy?: number;
   /** Canonical binary-ordered tuples for one non-energy or bounded multi-resource evacuation. */
   readonly resourceManifest?: readonly LayoutContainerMigrationResource[];
-  /** Bounded destroy retry evidence; valid only for a source-specific evacuation. */
-  readonly removalReceipt?: LayoutContainerRemovalReceipt;
   /** Present only when the target is an unselected redundant container for this source. */
   readonly sourceId?: string;
   readonly startedAt: number;
@@ -118,6 +119,8 @@ export interface LayoutContainerMigration {
 export interface LayoutRecord extends LayoutCommitment {
   readonly containerMigration?: LayoutContainerMigration;
   readonly extensionEvacuation?: LayoutExtensionEvacuation;
+  /** One exact bounded receipt for the latest irreversible removal attempt in this room. */
+  readonly removalReceipt?: LayoutStructureRemovalReceipt;
   readonly roomName: string;
   readonly sourceServices?: readonly LayoutPlacement[];
   readonly siteReceipts?: readonly ConstructionSiteAttemptReceipt[];
@@ -404,6 +407,7 @@ export interface LayoutMigrationPlanningResult {
   readonly containerMigration: LayoutContainerMigration | null;
   readonly extensionEvacuation: LayoutExtensionEvacuation | null;
   readonly proposals: readonly LayoutMigrationProposal[];
+  readonly removalReceipt: LayoutStructureRemovalReceipt | null;
   readonly scannedCandidates: number;
   readonly truncatedCandidates: number;
 }
@@ -494,7 +498,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV4 {
+export interface LayoutsOwnerV5 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

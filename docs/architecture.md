@@ -87,8 +87,10 @@ one non-energy kind while preserving the legacy energy-only identity. Issue #300
 evacuation for one stocked, unselected redundant source-adjacent container while preserving its
 different exact selected service and static-mining identity; at most 2,000 total units move, and
 fresh empty-target, every delivered replacement gain, and retired-flow evidence remain mandatory.
-`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
-`Structure.destroy`.
+Issue #310 persists one compact exact receipt for every current extension/container destroy result;
+`OK` waits for fresh disappearance, failures back off and stop after three attempts, and a blocked
+room emits no proposal that could consume the global slot. `StructureRemovalArbiter` alone
+authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1411,17 +1413,17 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V4
-`layouts` owner. V3's optional source-migration identity remains unchanged; V4 adds only one
-optional source-service issuance coordinate. `OK` waits for observed world change; full and
-unexpected faults back off; RCL, target, and ownership failures wait for the relevant fresh
-fingerprint; invalid arguments stay failed closed until layout revision. PR B emits detached
-create-site intent data only. Live API execution and reconciliation remain PR C.
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V5
+`layouts` owner. V3 adds the optional source-migration identity, V4 adds one optional source-service
+issuance coordinate, and V5 adds one generic bounded removal receipt. Site `OK` waits for observed
+world change; full and unexpected faults back off; RCL, target, and ownership failures wait for the
+relevant fresh fingerprint; invalid arguments stay failed closed until layout revision. PR B emits
+detached create-site intent data only. Live API execution and reconciliation remain PR C.
 
 PR C completes the chain with `layout.plan` after colony publication, mandatory-tail
 `layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V4 layouts owner; degraded,
+commitments and bounded receipts stage through the owner-local schema V5 layouts owner; degraded,
 unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
 command. Every observed owned layout site enters the existing funded survival-growth build flow,
 while controller risk, recovery, maintenance, and protected reserves retain precedence.
@@ -1542,6 +1544,15 @@ creating the successor. Rejection restores byte-identical predecessor state.
 commit. The current predecessor remains executable; on the following tick, the successor can be
 funded and assigned during the same Reconcile that atomically retires it.
 [ADR 0044](adr/0044-selected-source-service-handoff.md) records the boundary.
+
+Issue #310 advances the layouts owner to V5 and moves ADR 0043's nested source-specific destroy
+receipt to one generic fixed-shape per-room field. Every current extension/container removal result
+binds exact target, replacement, type, layout, attempt, code, and eligibility evidence. `OK` and
+`TARGET_ABSENT` wait for fresh target disappearance; other results use capped exponential backoff
+and stop after attempt three. A blocked room publishes no removal proposal, allowing another room to
+use the unchanged global one-command slot. V1-V4 migrate deterministically, no live-API scan or
+unbounded history exists, and rollback to V4 preserves future-owner bytes.
+[ADR 0045](adr/0045-bounded-structure-destroy-receipts.md) records the boundary.
 
 Other structure stock evacuation, defensive migration, general multi-step migration, and creep
 dismantling remain issue #99 and fail closed.
@@ -2116,8 +2127,10 @@ Required architecture assertions include:
   aggregate replacement capacity, replaces its ordinary source projection, uses distinct
   sole-authority funded logistics flows, and requires fresh empty-target, every delivered
   replacement gain, and retired flow/endpoint evidence before removal; a source-specific handoff
-  additionally preserves one different exact selected service and static-mining identity, and its
-  bounded destroy receipt prevents an every-tick command loop after failure;
+  additionally preserves one different exact selected service and static-mining identity;
+- every extension/container destroy result persists at most one exact receipt per room, `OK` waits
+  for fresh disappearance, failures retry only at capped eligibility ticks and stop after three
+  attempts, reset/reorder preserves evidence, and a blocked room leaves the global slot available;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

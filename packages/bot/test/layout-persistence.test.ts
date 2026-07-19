@@ -44,7 +44,7 @@ describe("layout persistence and cache", () => {
       structureType: "container",
     } as const;
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
-    expect(owner.schemaVersion).toBe(4);
+    expect(owner.schemaVersion).toBe(5);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const { issuerSequence: _sequence, ...legacyService } = placement.service;
@@ -61,7 +61,7 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(legacy)).toEqual({
       ...legacy,
-      schemaVersion: 4,
+      schemaVersion: 5,
       revision: owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
@@ -256,7 +256,7 @@ describe("layout persistence and cache", () => {
     ).toBeNull();
   });
 
-  it("persists bounded source-container destroy backoff and ignores general migrations", () => {
+  it("persists identity-bound destroy backoff for every current removal path", () => {
     const sourceMigration = {
       energyAmount: 50,
       expiresAt: 160,
@@ -271,6 +271,76 @@ describe("layout persistence and cache", () => {
       "W1N1",
       sourceMigration,
     );
+    const legacyReceipt = {
+      attempt: 1,
+      code: "ERR_BUSY",
+      nextEligibleTick: 13,
+      observedAt: 11,
+    } as const;
+    const legacyRecord = owner.records[0];
+    if (legacyRecord?.containerMigration === undefined)
+      throw new Error("expected source migration record");
+    const migrated = parseLayoutsOwner({
+      ...owner,
+      schemaVersion: 4,
+      records: [
+        {
+          ...legacyRecord,
+          containerMigration: {
+            ...legacyRecord.containerMigration,
+            removalReceipt: legacyReceipt,
+          },
+        },
+      ],
+    });
+    expect(migrated).toMatchObject({
+      revision: owner.revision + 1,
+      schemaVersion: 5,
+      records: [
+        {
+          removalReceipt: {
+            ...legacyReceipt,
+            replacementId: sourceMigration.replacementId,
+            targetId: sourceMigration.targetId,
+            targetStructureType: "container",
+          },
+        },
+      ],
+    });
+    expect(migrated?.records[0]?.containerMigration).not.toHaveProperty("removalReceipt");
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        schemaVersion: 4,
+        records: [
+          {
+            ...legacyRecord,
+            removalReceipt: {
+              ...legacyReceipt,
+              replacementId: sourceMigration.replacementId,
+              targetId: sourceMigration.targetId,
+              targetStructureType: "container",
+            },
+          },
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [
+          {
+            ...legacyRecord,
+            removalReceipt: {
+              ...legacyReceipt,
+              replacementId: sourceMigration.replacementId,
+              targetId: "",
+              targetStructureType: "container",
+            },
+          },
+        ],
+      }),
+    ).toBeNull();
     const intent = {
       colonyId: "W1N1",
       kind: "destroy-owned-structure",
@@ -290,23 +360,71 @@ describe("layout persistence and cache", () => {
     const failure = { called: true, code: "ERR_BUSY", fault: null, intent } as const;
     const first = reconcileStructureDestroyExecution(owner, [failure], 11);
     expect(first.receipts).toEqual([
-      { attempt: 1, code: "ERR_BUSY", nextEligibleTick: 13, observedAt: 11 },
+      {
+        attempt: 1,
+        code: "ERR_BUSY",
+        nextEligibleTick: 13,
+        observedAt: 11,
+        replacementId: "container-replacement",
+        targetId: "container-obsolete",
+        targetStructureType: "container",
+      },
     ]);
     expect(reconcileStructureDestroyExecution(first.owner, [failure], 11).owner).toBe(first.owner);
     const second = reconcileStructureDestroyExecution(first.owner, [failure], 13);
     const third = reconcileStructureDestroyExecution(second.owner, [failure], 17);
-    expect(third.owner.records[0]?.containerMigration?.removalReceipt).toEqual({
+    expect(third.owner.records[0]?.removalReceipt).toEqual({
       attempt: 3,
       code: "ERR_BUSY",
-      nextEligibleTick: 160,
+      nextEligibleTick: Number.MAX_SAFE_INTEGER,
       observedAt: 17,
+      replacementId: "container-replacement",
+      targetId: "container-obsolete",
+      targetStructureType: "container",
     });
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(third.owner)))).toEqual(third.owner);
 
     const { sourceId: _sourceId, ...generalMigration } = sourceMigration;
     void _sourceId;
-    owner = persistLayoutContainerMigration(owner, "W1N1", generalMigration);
-    expect(reconcileStructureDestroyExecution(owner, [failure], 11).receipts).toEqual([]);
+    owner = persistLayoutContainerMigration(
+      persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment),
+      "W1N1",
+      generalMigration,
+    );
+    const general = reconcileStructureDestroyExecution(owner, [failure], 11);
+    expect(general.receipts).toHaveLength(1);
+    expect(general.owner.records[0]?.removalReceipt).toMatchObject({
+      targetId: "container-obsolete",
+      targetStructureType: "container",
+    });
+
+    const extensionIntent = {
+      ...intent,
+      replacementId: "extension-replacement",
+      replacementStructureType: "extension",
+      stableId: "remove-extension-v1:test",
+      targetId: "extension-obsolete",
+      targetStructureType: "extension",
+    } as const satisfies DestroyOwnedStructureIntent;
+    const extension = reconcileStructureDestroyExecution(
+      persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment),
+      [{ called: true, code: "UNEXPECTED", fault: "adapter-fault", intent: extensionIntent }],
+      11,
+    );
+    expect(extension.owner.records[0]?.removalReceipt).toMatchObject({
+      replacementId: "extension-replacement",
+      targetId: "extension-obsolete",
+      targetStructureType: "extension",
+    });
+    expect(
+      persistLayoutCommitment(extension.owner, "W1N1", commitment).records[0]?.removalReceipt,
+    ).toEqual(extension.owner.records[0]?.removalReceipt);
+    expect(
+      persistLayoutCommitment(extension.owner, "W1N1", {
+        ...commitment,
+        fingerprint: "layout-v2:changed",
+      }).records[0]?.removalReceipt,
+    ).toBeUndefined();
   });
 
   it("persists 32 canonical receipts and drops them on layout revision", () => {

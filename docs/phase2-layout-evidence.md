@@ -23,7 +23,9 @@ source-service position until an explicit handoff exists. Issue
 [#304](https://github.com/ralphschuler/screeps-myrmex/issues/304) advances one lost selected service
 to one exact replacement. Issue [#306](https://github.com/ralphschuler/screeps-myrmex/issues/306)
 reuses that handoff when a different existing exact container strictly outranks the selected exact
-service. Parent issue #99 still owns other structure migration and dismantling.
+service. Issue [#310](https://github.com/ralphschuler/screeps-myrmex/issues/310) gives every current
+extension/container destroy path one bounded reset-safe receipt. Parent issue #99 still owns other
+structure migration and dismantling.
 
 ## Runtime order
 
@@ -74,16 +76,18 @@ service. Parent issue #99 still owns other structure migration and dismantling.
    removal rechecks the target's empty Store and exact active same-room semantic-service
    replacement; room control supplies destruction authority because containers are neutral.
 7. On a selected-service switch only, `layout.handoff-reconcile` reconciles the complete layout
-   draft and stages layouts-owner V4 before the root commit. The predecessor remains executable. On
+   draft and stages layouts-owner V5 before the root commit. The predecessor remains executable. On
    the following tick, StaticMiningPlanner consumes the durable coordinate; Reconcile atomically
    cancels the predecessor, creates/funds its exact next sequence, and leaves exactly one
    commitment.
-8. Ordinary `layout.reconcile` converts site results to bounded fingerprinted receipts and stages
-   `layouts`; on the handoff path it publishes the already-reconciled draft without a second write.
-9. `state.reconcile` atomically commits layouts with the other staged owners. Ordinary removals add
-   no persistent state. A stocked redundant-source removal retains one compact result receipt in its
-   existing handoff for bounded backoff; only following observation proves that the target
-   disappeared.
+8. Ordinary `layout.reconcile` converts site results and every extension/container destroy result to
+   bounded fingerprinted receipts and stages `layouts`; on the handoff path it publishes the
+   already-reconciled draft without a second write. The generic removal receipt binds exact target,
+   replacement, type, attempt, code, and next eligibility. `OK`/`TARGET_ABSENT` waits for fresh
+   disappearance; other results back off and stop after three attempts. A blocked room emits no
+   proposal, so another room may use the unchanged global removal slot.
+9. `state.reconcile` atomically commits layouts with the other staged owners. Fresh target absence
+   clears the receipt and is the only proof of removal.
 10. A following tick's `growth.contracts` turns each visible owned site into at most one funded
     build contract under existing controller, maintenance, recovery, and reserve precedence.
 
@@ -102,12 +106,11 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - at most 128 container/extension-removal candidates and authorizations; over-cap batches fail
   before traversal;
 - one accepted removal globally per tick;
-- layouts owner-local schema V4 migrates V1-V3 records, preserves V3's optional bounded source
-  identity, adds one optional safe-integer source-service issuance coordinate, and makes rollback to
-  older code fail closed;
-- at most one compact extension evacuation and one compact container handoff per room across 64
-  records; a source-specific handoff retains at most one three-attempt destroy receipt with capped
-  exponential backoff;
+- layouts owner-local schema V5 migrates V1-V4 records, preserves V3's optional bounded source
+  identity and V4's optional source-service issuance coordinate, moves a valid legacy nested receipt
+  to the generic field, and makes rollback to older code fail closed;
+- at most one compact extension evacuation, one compact container handoff, and one fixed-shape
+  three-attempt destroy receipt per room across 64 records; retry matching adds no unbounded scan;
 - container evacuation is capped by the official 2,000 capacity and either one legacy energy pair or
   one to eight compact resource tuples, with a one-row energy manifest forbidden; fresh replacement
   evidence is capped at 64 Store rows;
@@ -142,21 +145,24 @@ service, and one final committed site. Its stocked continuation proves paired ex
 persistence and legacy empty-handoff parsing. The stocked redundant-source continuation proves
 canonical energy and mixed manifests, source/selected-replacement validation, funded projection and
 suppression, flow/endpoint retirement, delivery, unchanged static-mining identity/work position,
-expiry-without-delivery blocking, and three-attempt destroy backoff. The source-service continuity
-outcome proves that a better exact alternate and selected-container loss preserve the prior legal
-tile, one byte-stable mining contract, and dropped-energy fallback; malformed, ambiguous,
-conflicting, blocked, reordered, and reconstructed prior inputs cannot override bounded legal
-selection. The selected-service handoff outcome proves a vanished container plus exact replacement
-advances one coordinate only under explicit safety. It also proves one strictly better existing
-exact candidate advances once, while a worse candidate and the still-existing predecessor cannot
-cause oscillation, while overlapping source candidates cannot steal another source's persisted exact
-service. Layouts V1-V3 migrate without invented history, and one current-tick predecessor atomically
-becomes one funded/assigned next-sequence commitment after reset/reorder without an idempotency or
-binding conflict. The resource-manifest continuations prove canonical one-non-energy and two-kind
-persistence under Store/structure reorder and JSON reconstruction, distinct funded resource flows
-sharing aggregate replacement capacity, singleton-energy refusal, complete-projection overflow
-refusal, active/incomplete removal blocking, every observed replacement gain, endpoint retirement,
-and one exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
+expiry-without-delivery blocking. Generic removal evidence proves empty and stocked source/general
+containers plus extensions share exact identity binding, pending-success observation, capped
+three-attempt backoff, reset/reorder equivalence, fresh drift clearing, and another room's progress
+between eligibility ticks. The source-service continuity outcome proves that a better exact
+alternate and selected-container loss preserve the prior legal tile, one byte-stable mining
+contract, and dropped-energy fallback; malformed, ambiguous, conflicting, blocked, reordered, and
+reconstructed prior inputs cannot override bounded legal selection. The selected-service handoff
+outcome proves a vanished container plus exact replacement advances one coordinate only under
+explicit safety. It also proves one strictly better existing exact candidate advances once, while a
+worse candidate and the still-existing predecessor cannot cause oscillation, while overlapping
+source candidates cannot steal another source's persisted exact service. Layouts V1-V3 migrate
+without invented history, and one current-tick predecessor atomically becomes one funded/assigned
+next-sequence commitment after reset/reorder without an idempotency or binding conflict. The
+resource-manifest continuations prove canonical one-non-energy and two-kind persistence under
+Store/structure reorder and JSON reconstruction, distinct funded resource flows sharing aggregate
+replacement capacity, singleton-energy refusal, complete-projection overflow refusal,
+active/incomplete removal blocking, every observed replacement gain, endpoint retirement, and one
+exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
 `npm run check` supplies repository-wide format, lint, type, test, documentation, bundle, and
 package evidence.
 

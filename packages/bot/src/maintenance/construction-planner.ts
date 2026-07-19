@@ -22,6 +22,7 @@ import {
   type LayoutMigrationPlanningResult,
   type LayoutMigrationProposal,
   type LayoutPlacement,
+  type LayoutStructureRemovalReceipt,
 } from "../layout";
 import type {
   PositionSnapshot,
@@ -215,10 +216,20 @@ export class ConstructionPlanner {
     readonly observationFingerprint: string;
     readonly placements: readonly LayoutPlacement[];
     readonly policyFingerprint: string;
+    readonly removalReceipt?: LayoutStructureRemovalReceipt | null;
     readonly room: RoomSnapshot;
   }): LayoutMigrationPlanningResult {
     const blockers: LayoutMigrationBlockerRecord[] = [];
     const proposals: LayoutMigrationProposal[] = [];
+    let removalReceipt = input.removalReceipt ?? null;
+    if (
+      removalReceipt !== null &&
+      !(input.room.structures ?? []).some(
+        ({ id, structureType }) =>
+          id === removalReceipt?.targetId && structureType === removalReceipt.targetStructureType,
+      )
+    )
+      removalReceipt = null;
     const desiredExtensions = input.placements
       .filter(
         (placement) => placement.layer === "primary" && placement.structureType === "extension",
@@ -307,6 +318,7 @@ export class ConstructionPlanner {
         containerMigration,
         extensionEvacuation: null,
         proposals,
+        removalReceipt,
         scannedCandidates: 0,
         truncatedCandidates,
       });
@@ -324,6 +336,7 @@ export class ConstructionPlanner {
         containerMigration,
         extensionEvacuation: input.extensionEvacuation ?? null,
         proposals,
+        removalReceipt,
         scannedCandidates: considered.length,
         truncatedCandidates,
       });
@@ -336,6 +349,20 @@ export class ConstructionPlanner {
       roomName: input.room.name,
     } as const;
     let extensionEvacuation: LayoutExtensionEvacuation | null = null;
+    const admitRemoval = (proposal: LayoutMigrationProposal): boolean => {
+      const assessment = assessRemovalReceipt(removalReceipt, proposal, input.room.observedAt);
+      removalReceipt = assessment.receipt;
+      if (assessment.blocker === null) {
+        proposals.push(proposal);
+        return true;
+      }
+      pushMigrationBlocker(blockers, {
+        reason: assessment.blocker,
+        roomName: input.room.name,
+        targetId: proposal.targetId,
+      });
+      return false;
+    };
     for (const candidate of considered) {
       if (candidate.kind === "source-container") {
         if (containerMigration !== null && containerMigration.targetId !== candidate.target.id)
@@ -371,26 +398,29 @@ export class ConstructionPlanner {
           });
           break;
         }
-        proposals.push({
-          colonyId: input.colony.id,
-          layoutFingerprint: input.commitment.fingerprint,
-          observationFingerprint: input.observationFingerprint,
-          policyFingerprint: input.policyFingerprint,
-          pos: candidate.target.pos,
-          replacementId: evidence.replacement.id,
-          replacementStructureType: "container",
-          stableId: [
-            "remove-source-container-v1",
-            input.colony.id,
-            input.commitment.fingerprint,
-            evidence.sourceId,
-            candidate.target.id,
-            evidence.replacement.id,
-          ].join(":"),
-          targetId: candidate.target.id,
-          targetRequiresEmptyStore: true,
-          targetStructureType: "container",
-        });
+        if (
+          !admitRemoval({
+            colonyId: input.colony.id,
+            layoutFingerprint: input.commitment.fingerprint,
+            observationFingerprint: input.observationFingerprint,
+            policyFingerprint: input.policyFingerprint,
+            pos: candidate.target.pos,
+            replacementId: evidence.replacement.id,
+            replacementStructureType: "container",
+            stableId: [
+              "remove-source-container-v1",
+              input.colony.id,
+              input.commitment.fingerprint,
+              evidence.sourceId,
+              candidate.target.id,
+              evidence.replacement.id,
+            ].join(":"),
+            targetId: candidate.target.id,
+            targetRequiresEmptyStore: true,
+            targetStructureType: "container",
+          })
+        )
+          break;
         if (containerMigration !== null) break;
         continue;
       }
@@ -635,7 +665,7 @@ export class ConstructionPlanner {
           });
           break;
         }
-        proposals.push({
+        admitRemoval({
           colonyId: input.colony.id,
           layoutFingerprint: input.commitment.fingerprint,
           observationFingerprint: input.observationFingerprint,
@@ -755,25 +785,28 @@ export class ConstructionPlanner {
           break;
         }
       }
-      proposals.push({
-        colonyId: input.colony.id,
-        layoutFingerprint: input.commitment.fingerprint,
-        observationFingerprint: input.observationFingerprint,
-        policyFingerprint: input.policyFingerprint,
-        pos: candidate.target.pos,
-        replacementId: extension.replacement.id,
-        replacementStructureType: "extension",
-        stableId: [
-          "remove-extension-v1",
-          input.colony.id,
-          input.commitment.fingerprint,
-          candidate.target.id,
-          extension.replacement.id,
-        ].join(":"),
-        targetId: candidate.target.id,
-        targetRequiresEmptyStore: true,
-        targetStructureType: "extension",
-      });
+      if (
+        !admitRemoval({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementId: extension.replacement.id,
+          replacementStructureType: "extension",
+          stableId: [
+            "remove-extension-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            candidate.target.id,
+            extension.replacement.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetStructureType: "extension",
+        })
+      )
+        break;
       if (extensionEvacuation !== null) break;
     }
     return freeze({
@@ -782,6 +815,7 @@ export class ConstructionPlanner {
       containerMigration,
       extensionEvacuation,
       proposals: proposals.sort((a, b) => a.stableId.localeCompare(b.stableId)),
+      removalReceipt,
       scannedCandidates: considered.length,
       truncatedCandidates,
     });
@@ -792,6 +826,40 @@ type MigrationCandidate =
   | { readonly kind: "source-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "general-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "extension"; readonly target: StructureSnapshot };
+
+function assessRemovalReceipt(
+  receipt: LayoutStructureRemovalReceipt | null,
+  proposal: LayoutMigrationProposal,
+  tick: number,
+): {
+  readonly blocker: Extract<
+    LayoutMigrationBlocker,
+    "removal-backoff" | "removal-failed" | "removal-pending"
+  > | null;
+  readonly receipt: LayoutStructureRemovalReceipt | null;
+} {
+  if (receipt === null) return { blocker: null, receipt: null };
+  if (
+    receipt.targetId !== proposal.targetId ||
+    receipt.replacementId !== proposal.replacementId ||
+    receipt.targetStructureType !== proposal.targetStructureType
+  )
+    return { blocker: null, receipt: null };
+  if (
+    !Number.isSafeInteger(receipt.attempt) ||
+    receipt.attempt < 1 ||
+    receipt.attempt > 3 ||
+    !Number.isSafeInteger(receipt.observedAt) ||
+    !Number.isSafeInteger(receipt.nextEligibleTick) ||
+    receipt.nextEligibleTick <= receipt.observedAt
+  )
+    return { blocker: "removal-failed", receipt };
+  if (receipt.code === "OK" || receipt.code === "TARGET_ABSENT")
+    return { blocker: "removal-pending", receipt };
+  if (receipt.attempt >= 3) return { blocker: "removal-failed", receipt };
+  if (tick < receipt.nextEligibleTick) return { blocker: "removal-backoff", receipt };
+  return { blocker: null, receipt };
+}
 
 function generalContainerMigrationEvidence(
   room: RoomSnapshot,
@@ -1200,22 +1268,6 @@ function planSourceContainerEvacuation(input: {
     input.activeLogisticsTargetIds.has(migration.replacementId)
   )
     return { blocker: "logistics-active", migration };
-  const receipt = migration.removalReceipt;
-  if (receipt !== undefined) {
-    if (
-      !Number.isSafeInteger(receipt.attempt) ||
-      receipt.attempt < 1 ||
-      receipt.attempt > 3 ||
-      !Number.isSafeInteger(receipt.observedAt) ||
-      !Number.isSafeInteger(receipt.nextEligibleTick) ||
-      receipt.nextEligibleTick <= receipt.observedAt
-    )
-      return { blocker: "removal-failed", migration };
-    if (receipt.code === "OK" || receipt.code === "TARGET_ABSENT")
-      return { blocker: "removal-pending", migration };
-    if (receipt.attempt >= 3) return { blocker: "removal-failed", migration };
-    if (input.tick < receipt.nextEligibleTick) return { blocker: "removal-backoff", migration };
-  }
   return { blocker: null, migration };
 }
 

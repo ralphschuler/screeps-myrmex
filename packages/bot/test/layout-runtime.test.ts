@@ -13,10 +13,12 @@ import {
   arbitrateStructureRemovals,
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
+  parseLayoutsOwner,
   persistLayoutCommitment,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
+  reconcileStructureDestroyExecution,
   type LayoutPlacement,
 } from "../src/layout";
 
@@ -270,6 +272,7 @@ describe("composed layout runtime", () => {
         ConstructionPlanner["planMigration"]
       >[0]["extensionEvacuation"] = null,
       activeLogisticsFlowIds: ReadonlySet<string> = new Set(),
+      removalReceipt: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"] = null,
     ) =>
       new ConstructionPlanner().planMigration({
         activeLogisticsFlowIds,
@@ -280,6 +283,7 @@ describe("composed layout runtime", () => {
         observationFingerprint: "obs-ready",
         placements: idealExtensions,
         policyFingerprint: "policy-a",
+        removalReceipt,
         room: value,
       });
     const ready = planReady(readyRoom);
@@ -358,12 +362,149 @@ describe("composed layout runtime", () => {
       extension("extension-replacement", 18, 20, 50),
       extension("extension-obsolete", 30, 30),
     ]);
-    expect(planReady(deliveredRoom, evacuation.extensionEvacuation).proposals).toEqual([
+    const delivered = planReady(deliveredRoom, evacuation.extensionEvacuation);
+    expect(delivered.proposals).toEqual([
       expect.objectContaining({
         replacementId: "extension-replacement",
         targetId: "extension-obsolete",
       }),
     ]);
+    const removalReceipt = {
+      attempt: 1,
+      code: "ERR_BUSY" as const,
+      nextEligibleTick: 104,
+      observedAt: 102,
+      replacementId: "extension-replacement",
+      targetId: "extension-obsolete",
+      targetStructureType: "extension" as const,
+    };
+    const blocked = planReady(
+      { ...deliveredRoom, observedAt: 103 },
+      evacuation.extensionEvacuation,
+      new Set(),
+      removalReceipt,
+    );
+    expect(blocked).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-backoff" })],
+      proposals: [],
+      removalReceipt,
+    });
+    const sourceContainer = (id: string, x: number, y: number) => ({
+      hits: 250_000,
+      hitsMax: 250_000,
+      id,
+      ownerUsername: null,
+      ownership: "unowned" as const,
+      pos: pos(x, y),
+      store: { capacity: 2_000, freeCapacity: 2_000, resources: [], usedCapacity: 0 },
+      structureType: "container",
+      ticksToDecay: 5_000,
+    });
+    const laterReplacement = sourceContainer("container-later-service", 41, 40);
+    const laterTarget = sourceContainer("container-later-target", 40, 41);
+    const blockedWithLaterCandidate = new ConstructionPlanner().planMigration({
+      colony,
+      commitment,
+      globalOwnedSiteCount: 0,
+      observationFingerprint: "obs-ready",
+      placements: [
+        ...idealExtensions,
+        {
+          adoption: "exact",
+          layer: "primary",
+          minimumRcl: 2,
+          pos: laterReplacement.pos,
+          service: { kind: "source-container", sourceId: "source-later" },
+          structureType: "container",
+        },
+      ],
+      policyFingerprint: "policy-a",
+      removalReceipt,
+      room: {
+        ...deliveredRoom,
+        observedAt: 103,
+        sources: [
+          {
+            energy: 3_000,
+            energyCapacity: 3_000,
+            id: "source-later",
+            pos: pos(40, 40),
+            ticksToRegeneration: null,
+          },
+        ],
+        storedStructures: [laterReplacement, laterTarget],
+        structures: [...(deliveredRoom.structures ?? []), laterReplacement, laterTarget],
+      },
+    });
+    expect(blockedWithLaterCandidate).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-backoff" })],
+      proposals: [],
+      removalReceipt,
+    });
+    expect(
+      planReady(
+        { ...deliveredRoom, observedAt: 104 },
+        evacuation.extensionEvacuation,
+        new Set(),
+        removalReceipt,
+      ).proposals,
+    ).toHaveLength(1);
+    expect(
+      planReady({ ...deliveredRoom, observedAt: 104 }, evacuation.extensionEvacuation, new Set(), {
+        ...removalReceipt,
+        code: "OK",
+        nextEligibleTick: Number.MAX_SAFE_INTEGER,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-pending" })],
+      proposals: [],
+    });
+    expect(
+      planReady({ ...deliveredRoom, observedAt: 104 }, evacuation.extensionEvacuation, new Set(), {
+        ...removalReceipt,
+        replacementId: "extension-stale",
+      }),
+    ).toMatchObject({ proposals: [expect.anything()], removalReceipt: null });
+    expect(
+      planReady(
+        {
+          ...deliveredRoom,
+          observedAt: 104,
+          ownedExtensions: deliveredRoom.ownedExtensions.filter(
+            ({ id }) => id !== "extension-obsolete",
+          ),
+          structures: (deliveredRoom.structures ?? []).filter(
+            ({ id }) => id !== "extension-obsolete",
+          ),
+        },
+        evacuation.extensionEvacuation,
+        new Set(),
+        { ...removalReceipt, code: "OK", nextEligibleTick: Number.MAX_SAFE_INTEGER },
+      ).removalReceipt,
+    ).toBeNull();
+    if (delivered.authorization === null) throw new Error("expected delivered authorization");
+    const deliveredProposal = delivered.proposals[0];
+    if (deliveredProposal === undefined) throw new Error("expected delivered proposal");
+    const otherProposal = {
+      ...deliveredProposal,
+      colonyId: "W2N2",
+      pos: { roomName: "W2N2", x: 30, y: 30 },
+      stableId: "remove-extension-v1:other-room",
+    };
+    expect(
+      arbitrateStructureRemovals({
+        authorizations: [
+          delivered.authorization,
+          {
+            ...delivered.authorization,
+            colonyId: "W2N2",
+            roomName: "W2N2",
+          },
+        ],
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals: [...blocked.proposals, otherProposal],
+      }).intents,
+    ).toEqual([expect.objectContaining({ colonyId: "W2N2" })]);
     expect(planReady(sharedRoom).proposals).toEqual([]);
     if (ready.authorization === null) throw new Error("expected extension migration authorization");
     const arbitration = arbitrateStructureRemovals({
@@ -405,6 +546,82 @@ describe("composed layout runtime", () => {
     ]);
     expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
     expect(destroy).toHaveBeenCalledOnce();
+
+    const executeBusy = (intents: typeof arbitration.intents) =>
+      new StructureDestroyExecutor().execute(intents, {
+        hasCurrentHostiles: () => false,
+        isCurrentCommitment: () => true,
+        resolveRoom: () => liveRoom,
+        resolveStructure: (id) =>
+          id === obsolete.id
+            ? liveExtension(obsolete, () => -4)
+            : id === replacement.id
+              ? liveExtension(replacement)
+              : null,
+      });
+    const failAttempt = (
+      planned: ReturnType<typeof planReady>,
+      owner: ReturnType<typeof emptyLayoutsOwner>,
+      tick: number,
+    ) => {
+      if (planned.authorization === null) throw new Error("expected retry authorization");
+      const retryArbitration = arbitrateStructureRemovals({
+        authorizations: [planned.authorization],
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals: planned.proposals,
+      });
+      expect(retryArbitration.intents).toHaveLength(1);
+      return reconcileStructureDestroyExecution(owner, executeBusy(retryArbitration.intents), tick)
+        .owner;
+    };
+    let retryOwner = persistLayoutCommitment(
+      emptyLayoutsOwner(),
+      roomName,
+      commitment,
+      idealExtensions,
+    );
+    retryOwner = failAttempt(ready, retryOwner, 100);
+    retryOwner = parseLayoutsOwner(JSON.parse(JSON.stringify(retryOwner))) ?? emptyLayoutsOwner();
+    const retryReceiptOne = retryOwner.records[0]?.removalReceipt;
+    expect(retryReceiptOne).toMatchObject({ attempt: 1, nextEligibleTick: 102 });
+    expect(
+      planReady({ ...readyRoom, observedAt: 101 }, null, new Set(), retryReceiptOne),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-backoff" })],
+      proposals: [],
+    });
+    const reorderedRetryRoom = JSON.parse(
+      JSON.stringify({
+        ...readyRoom,
+        observedAt: 102,
+        ownedExtensions: [...readyRoom.ownedExtensions].reverse(),
+        structures: [...(readyRoom.structures ?? [])].reverse(),
+      }),
+    ) as typeof readyRoom;
+    retryOwner = failAttempt(
+      planReady(reorderedRetryRoom, null, new Set(), retryReceiptOne),
+      retryOwner,
+      102,
+    );
+    retryOwner = parseLayoutsOwner(JSON.parse(JSON.stringify(retryOwner))) ?? emptyLayoutsOwner();
+    const retryReceiptTwo = retryOwner.records[0]?.removalReceipt;
+    expect(retryReceiptTwo).toMatchObject({ attempt: 2, nextEligibleTick: 106 });
+    retryOwner = failAttempt(
+      planReady({ ...readyRoom, observedAt: 106 }, null, new Set(), retryReceiptTwo),
+      retryOwner,
+      106,
+    );
+    const retryReceiptThree = retryOwner.records[0]?.removalReceipt;
+    expect(retryReceiptThree).toMatchObject({
+      attempt: 3,
+      nextEligibleTick: Number.MAX_SAFE_INTEGER,
+    });
+    expect(
+      planReady({ ...readyRoom, observedAt: 107 }, null, new Set(), retryReceiptThree),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-failed" })],
+      proposals: [],
+    });
 
     const followingRoom = room([...exactBefore, replacement]);
     const following = diffOwnedRoomLayout({
