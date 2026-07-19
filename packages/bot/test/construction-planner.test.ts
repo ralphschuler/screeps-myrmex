@@ -6,6 +6,12 @@ import {
   type LayoutCommitment,
   type LayoutPlacement,
 } from "../src/layout";
+import {
+  arbitrateLinkTransfers,
+  classifyLinks,
+  deriveLinkRoleAnchors,
+  type LinkRoomRuntimeResult,
+} from "../src/links";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
 import type { RoomSnapshot, StructureSnapshot, WorldSnapshot } from "../src/world/snapshot";
@@ -116,6 +122,136 @@ describe("ConstructionPlanner", () => {
     expect(first.proposals).toEqual([]);
     expect(first.scannedCandidates).toBe(0);
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(first));
+  });
+
+  it("admits one canonical empty reserve-link replacement and fails closed on role or activity drift", () => {
+    const fixture = reserveLinkMigrationFixture();
+    const ready = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      currentPlacements: fixture.currentPlacements,
+      linkRuntime: fixture.linkRuntime,
+      logisticsEvidenceReady: true,
+      placements: fixture.idealPlacements,
+      room: fixture.room,
+    });
+    const reordered = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      currentPlacements: [...fixture.currentPlacements].reverse(),
+      linkRuntime: JSON.parse(JSON.stringify(fixture.linkRuntime)) as LinkRoomRuntimeResult,
+      logisticsEvidenceReady: true,
+      placements: [...fixture.idealPlacements].reverse(),
+      room: {
+        ...fixture.room,
+        ownedLinks: [...(fixture.room.ownedLinks ?? [])].reverse(),
+        structures: [...(fixture.room.structures ?? [])].reverse(),
+      },
+    });
+
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "link-reserve-exact",
+        replacementStructureType: "link",
+        targetId: "link-reserve-external",
+        targetRequiresEmptyStore: true,
+        targetStructureType: "link",
+      }),
+    ]);
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(ready));
+
+    const ownedLinks = fixture.room.ownedLinks;
+    const target = ownedLinks?.find(({ id }) => id === "link-reserve-external");
+    const replacement = ownedLinks?.find(({ id }) => id === "link-reserve-exact");
+    const duplicatePlacement = fixture.currentPlacements.find(
+      ({ structureType }) => structureType === "link",
+    );
+    if (
+      target === undefined ||
+      replacement === undefined ||
+      ownedLinks === undefined ||
+      duplicatePlacement === undefined
+    )
+      throw new Error("expected complete reserve-link fixture");
+    const withChangedLink = (id: string, change: Partial<typeof target>) => ({
+      ...fixture.room,
+      ownedLinks: ownedLinks.map((link) => (link.id === id ? { ...link, ...change } : link)),
+    });
+    const activeTransfer: LinkRoomRuntimeResult = {
+      ...fixture.linkRuntime,
+      arbitration: {
+        ...fixture.linkRuntime.arbitration,
+        accepted: [
+          {
+            budget: { cost: 1, id: "link-budget" },
+            deliveredAmount: 1,
+            flowId: "flow-a",
+            layoutRevision: fixture.linkRuntime.layoutRevision,
+            lostAmount: 0,
+            proposalId: "transfer-a",
+            sentAmount: 1,
+            sourceLinkId: target.id,
+            targetLinkId: "link-hub",
+          },
+        ],
+      },
+    };
+    for (const overrides of [
+      { linkRuntime: null },
+      { logisticsEvidenceReady: false },
+      { activeLogisticsTargetIds: new Set([target.id]) },
+      { activeLogisticsTargetIds: new Set([replacement.id]) },
+      { linkRuntime: activeTransfer },
+      { room: withChangedLink(target.id, { active: false }) },
+      { room: withChangedLink(target.id, { cooldown: 1 }) },
+      { room: withChangedLink(replacement.id, { active: false }) },
+      { room: withChangedLink(replacement.id, { cooldown: 1 }) },
+      {
+        room: withChangedLink(target.id, {
+          store: {
+            capacity: 800,
+            freeCapacity: 799,
+            resources: [{ amount: 1, resourceType: "energy" }],
+            usedCapacity: 1,
+          },
+        }),
+      },
+      {
+        room: withChangedLink(replacement.id, {
+          store: {
+            capacity: 800,
+            freeCapacity: 799,
+            resources: [{ amount: 1, resourceType: "energy" }],
+            usedCapacity: 1,
+          },
+        }),
+      },
+      {
+        linkRuntime: {
+          ...fixture.linkRuntime,
+          classification: {
+            ...fixture.linkRuntime.classification,
+            blockers: [{ id: target.id, reason: "stale-link" as const }],
+          },
+        },
+      },
+      { linkRuntime: { ...fixture.linkRuntime, layoutRevision: "stale-layout" } },
+      {
+        currentPlacements: [...fixture.currentPlacements, duplicatePlacement],
+      },
+    ])
+      expect(
+        planMigration({
+          activeLogisticsTargetIds: new Set(),
+          colony: fixture.colony,
+          currentPlacements: fixture.currentPlacements,
+          linkRuntime: fixture.linkRuntime,
+          logisticsEvidenceReady: true,
+          placements: fixture.idealPlacements,
+          room: fixture.room,
+          ...overrides,
+        }).proposals,
+      ).toEqual([]);
   });
 
   it("keeps an operational committed tower before proposing one empty obsolete tower", () => {
@@ -1512,6 +1648,160 @@ function sourceContainerMigrationFixture(): {
       storedStructures: [target, replacement],
       structures: [target, replacement],
     },
+  };
+}
+
+function reserveLinkMigrationFixture() {
+  const sourceServices: LayoutPlacement[] = [
+    {
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: { roomName: "W1N1", x: 10, y: 10 },
+      service: { kind: "source-container", sourceId: "source-a" },
+      structureType: "container",
+    },
+    {
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: { roomName: "W1N1", x: 40, y: 10 },
+      service: { kind: "source-container", sourceId: "source-b" },
+      structureType: "container",
+    },
+  ];
+  const linkPlacement = (
+    x: number,
+    y: number,
+    adoption: LayoutPlacement["adoption"] = "exact",
+  ): LayoutPlacement => ({
+    adoption,
+    layer: "primary",
+    minimumRcl: 5,
+    pos: { roomName: "W1N1", x, y },
+    structureType: "link",
+  });
+  const currentLinks = [
+    linkPlacement(11, 10),
+    linkPlacement(41, 10),
+    linkPlacement(20, 21),
+    linkPlacement(25, 25),
+    linkPlacement(30, 30, "compatible-external"),
+    linkPlacement(39, 40),
+  ];
+  const idealLinks = [
+    linkPlacement(11, 10),
+    linkPlacement(41, 10),
+    linkPlacement(20, 21),
+    linkPlacement(25, 25),
+    linkPlacement(26, 25, "planned"),
+    linkPlacement(39, 40),
+  ];
+  const link = (id: string, x: number, y: number) => ({
+    active: true,
+    cooldown: 0,
+    hits: 1_000,
+    hitsMax: 1_000,
+    id,
+    pos: { roomName: "W1N1", x, y },
+    store: { capacity: 800, freeCapacity: 800, resources: [], usedCapacity: 0 },
+  });
+  const ownedLinks = [
+    link("link-source-a", 11, 10),
+    link("link-source-b", 41, 10),
+    link("link-hub", 20, 21),
+    link("link-reserve-exact", 25, 25),
+    link("link-reserve-external", 30, 30),
+    link("link-controller", 39, 40),
+  ];
+  const storage = {
+    ...sourceContainer("storage-a", 20, 20, 0),
+    ownership: "owned" as const,
+    structureType: "storage",
+    store: { capacity: 1_000_000, freeCapacity: 1_000_000, resources: [], usedCapacity: 0 },
+  };
+  const room = {
+    ...migrationRoom(),
+    controller: {
+      ...migrationRoom().controller,
+      level: 8,
+      pos: { roomName: "W1N1", x: 40, y: 40 },
+    },
+    ownedLinks,
+    sources: [
+      { id: "source-a", pos: { roomName: "W1N1", x: 10, y: 10 } },
+      { id: "source-b", pos: { roomName: "W1N1", x: 40, y: 10 } },
+    ],
+    storedStructures: [storage],
+    structures: [
+      ...ownedLinks.map(({ id, pos }) => structure(id, "link", 1_000, 1_000, pos.x, pos.y)),
+      storage,
+    ],
+  } as unknown as RoomSnapshot;
+  const currentPlacements = [...sourceServices, ...currentLinks];
+  const idealPlacements = [...sourceServices, ...idealLinks];
+  const layoutRevision = `${migrationCommitment.algorithmRevision}:${migrationCommitment.fingerprint}`;
+  const anchors = deriveLinkRoleAnchors({
+    algorithmRevision: migrationCommitment.algorithmRevision,
+    controller: { roomName: "W1N1", x: 40, y: 40 },
+    fingerprint: migrationCommitment.fingerprint,
+    linkPlacements: currentLinks.map(({ pos }) => pos),
+    sourceServices: sourceServices.map((placement) => ({
+      pos: placement.pos,
+      sourceId: placement.service?.sourceId ?? "",
+    })),
+    storage: storage.pos,
+  });
+  const classification = classifyLinks({
+    anchors,
+    layoutRevision,
+    links: ownedLinks.map((item) => ({
+      active: item.active,
+      cooldown: item.cooldown,
+      energy: item.store.usedCapacity,
+      freeCapacity: item.store.freeCapacity,
+      id: item.id,
+      observedAt: room.observedAt,
+      owned: true,
+      pos: item.pos,
+    })),
+    tick: room.observedAt,
+  });
+  const linkRuntime: LinkRoomRuntimeResult = {
+    arbitration: arbitrateLinkTransfers({
+      layoutRevision,
+      links: classification.links,
+      proposals: [],
+      tick: room.observedAt,
+    }),
+    classification,
+    layoutRevision,
+    roomName: room.name,
+  };
+  const rclPolicy = projectColonyRclPolicy({
+    activeThreat: false,
+    controllerLevel: 8,
+    controllerRisk: false,
+    cpuMode: "normal",
+    energyAvailable: 12_900,
+    energyCapacityAvailable: 12_900,
+    protectedSpawnEnergy: 300,
+    rcl8Health: null,
+    state: "mature",
+    visibility: "visible",
+  });
+  return {
+    colony: {
+      ...migrationColony({ state: "mature" }),
+      rclPolicy: {
+        ...rclPolicy,
+        progression: { authorized: true, reasonCode: "sustaining", status: "sustaining" },
+      },
+    } as ColonyView,
+    currentPlacements,
+    idealPlacements,
+    linkRuntime,
+    room,
   };
 }
 

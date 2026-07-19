@@ -45,7 +45,7 @@ describe("layout persistence and cache", () => {
       structureType: "container",
     } as const;
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
-    expect(owner.schemaVersion).toBe(7);
+    expect(owner.schemaVersion).toBe(8);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const { issuerSequence: _sequence, ...legacyService } = placement.service;
@@ -62,7 +62,7 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(legacy)).toEqual({
       ...legacy,
-      schemaVersion: 7,
+      schemaVersion: 8,
       revision: owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
@@ -112,7 +112,7 @@ describe("layout persistence and cache", () => {
     ).toBeNull();
   });
 
-  it("migrates V6 and persists one bounded tower evacuation in V7", () => {
+  it("migrates V6 through V7 and persists one bounded tower evacuation in V8", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
     const legacy = { ...owner, schemaVersion: 6 };
     expect(parseLayoutsOwner(legacy)).toEqual({
@@ -130,8 +130,12 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutTowerEvacuation(owner, "W1N1", evacuation);
 
-    expect(owner.schemaVersion).toBe(7);
+    expect(owner.schemaVersion).toBe(8);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 7 })).toEqual({
+      ...owner,
+      revision: owner.revision + 1,
+    });
     expect(persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.towerEvacuation).toEqual(
       evacuation,
     );
@@ -342,7 +346,7 @@ describe("layout persistence and cache", () => {
     });
     expect(migrated).toMatchObject({
       revision: owner.revision + 1,
-      schemaVersion: 7,
+      schemaVersion: 8,
       records: [
         {
           removalReceipt: {
@@ -501,6 +505,29 @@ describe("layout persistence and cache", () => {
       revision: tower.owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...tower.owner, schemaVersion: 5 })).toBeNull();
+
+    const linkIntent = {
+      ...intent,
+      replacementId: "link-reserve-exact",
+      replacementRequiresZeroCooldown: true,
+      replacementStructureType: "link",
+      stableId: "remove-reserve-link-v1:test",
+      targetId: "link-reserve-external",
+      targetRequiresZeroCooldown: true,
+      targetStructureType: "link",
+    } as const satisfies DestroyOwnedStructureIntent;
+    const link = reconcileStructureDestroyExecution(
+      persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment),
+      [{ called: true, code: "ERR_BUSY", fault: null, intent: linkIntent }],
+      11,
+    );
+    expect(link.owner.records[0]?.removalReceipt).toMatchObject({
+      replacementId: "link-reserve-exact",
+      targetId: "link-reserve-external",
+      targetStructureType: "link",
+    });
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(link.owner)))).toEqual(link.owner);
+    expect(parseLayoutsOwner({ ...link.owner, schemaVersion: 7 })).toBeNull();
   });
 
   it("persists 32 canonical receipts and drops them on layout revision", () => {

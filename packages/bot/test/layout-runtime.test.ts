@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { planStaticMining } from "../src/economy";
+import { planLinkRuntime } from "../src/links";
 import { ConstructionPlanner } from "../src/maintenance";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { projectLayoutTowerEvacuations } from "../src/logistics/tower-evacuation";
@@ -642,6 +643,331 @@ describe("composed layout runtime", () => {
     });
     expect(following.proposals).toEqual([
       expect.objectContaining({ pos: pos(19, 20), structureType: "extension" }),
+    ]);
+  });
+
+  it("builds reserve capacity and removes one empty obsolete reserve link without flow loss", () => {
+    const projectedPolicy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 8,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 12_900,
+      energyCapacityAvailable: 12_900,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "mature",
+      visibility: "visible",
+    });
+    const linkPolicy = {
+      ...projectedPolicy,
+      progression: { authorized: true, reasonCode: "sustaining", status: "sustaining" },
+    } as const;
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: linkPolicy,
+      roomName,
+      state: "mature",
+      visibility: "visible",
+    } as ColonyView;
+    const placement = (
+      x: number,
+      y: number,
+      adoption: LayoutPlacement["adoption"] = "planned",
+    ): LayoutPlacement => ({
+      adoption,
+      layer: "primary",
+      minimumRcl: 8,
+      pos: pos(x, y),
+      structureType: "link",
+    });
+    const sourceServices: readonly LayoutPlacement[] = [
+      {
+        adoption: "exact",
+        layer: "primary",
+        minimumRcl: 2,
+        pos: pos(10, 10),
+        service: { kind: "source-container", sourceId: "source-a" },
+        structureType: "container",
+      },
+      {
+        adoption: "exact",
+        layer: "primary",
+        minimumRcl: 2,
+        pos: pos(40, 10),
+        service: { kind: "source-container", sourceId: "source-b" },
+        structureType: "container",
+      },
+    ];
+    const idealLinks = [
+      placement(11, 10),
+      placement(41, 10),
+      placement(20, 21),
+      placement(25, 25),
+      placement(26, 25),
+      placement(39, 40),
+    ];
+    const desiredPlacements = [...sourceServices, ...idealLinks];
+    const commitment = { ...complete().commitment, fingerprint: "layout-reserve-link-a" };
+    const link = (id: string, position: ReturnType<typeof pos>, energy = 0) => ({
+      active: true,
+      cooldown: 0,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      pos: position,
+      store: {
+        capacity: 800,
+        freeCapacity: 800 - energy,
+        resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+        usedCapacity: energy,
+      },
+    });
+    const storage = {
+      hits: 10_000,
+      hitsMax: 10_000,
+      id: "storage-a",
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: pos(20, 20),
+      store: { capacity: 1_000_000, freeCapacity: 1_000_000, resources: [], usedCapacity: 0 },
+      structureType: "storage",
+    };
+    const external = link("link-reserve-external", pos(30, 30));
+    const critical = [
+      link("link-source-a", pos(11, 10), 800),
+      link("link-source-b", pos(41, 10)),
+      link("link-hub", pos(20, 21)),
+      link("link-controller", pos(39, 40)),
+    ];
+    const structureFacts = (links: readonly ReturnType<typeof link>[]) => [
+      ...links.map((value) => ({
+        hits: value.hits,
+        hitsMax: value.hitsMax,
+        id: value.id,
+        ownerUsername: "me",
+        ownership: "owned" as const,
+        pos: value.pos,
+        structureType: "link",
+      })),
+      storage,
+    ];
+    const room = (links: readonly ReturnType<typeof link>[], observedAt: number) =>
+      ({
+        constructionSites: [],
+        controller: { level: 8, ownership: "owned" as const, pos: pos(40, 40) },
+        hostileCreeps: [],
+        name: roomName,
+        observedAt,
+        ownedCreeps: [],
+        ownedExtensions: [],
+        ownedLinks: links,
+        ownedSpawns: [],
+        ownedTowers: [],
+        roads: [],
+        sources: [
+          { id: "source-a", pos: pos(10, 10) },
+          { id: "source-b", pos: pos(40, 10) },
+        ],
+        storedStructures: [storage],
+        structures: structureFacts(links),
+      }) as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
+
+    const initialRoom = room([...critical, external], 100);
+    const initialDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "link-before",
+      placements: idealLinks,
+      policy: linkPolicy,
+      policyEnabled: true,
+      policyFingerprint: "policy-link",
+      roomName,
+      roomStatus: "owned",
+      structures: initialRoom.structures ?? [],
+    });
+    const siteArbitration = arbitrateConstructionSites({
+      globalOwnedSiteCount: 0,
+      limits: CONSTRUCTION_SITE_LIMITS,
+      perRoomSiteCounts: [{ count: 0, roomName }],
+      priorReceipts: [],
+      progressionAuthorizations: [{ authorized: true, colonyId: roomName, roomName }],
+      proposals: initialDiff.proposals,
+      tick: 100,
+    });
+    const siteIntent = siteArbitration.intents[0];
+    if (siteIntent === undefined) throw new Error("expected committed reserve-link site");
+    expect(siteIntent.structureType).toBe("link");
+    const reservePositions = new Set(["25,25", "26,25"]);
+    expect(reservePositions.has(`${String(siteIntent.x)},${String(siteIntent.y)}`)).toBe(true);
+
+    const replacement = link("link-reserve-exact", pos(siteIntent.x, siteIntent.y));
+    const missingReserve = idealLinks.find(
+      ({ pos: desired }) =>
+        reservePositions.has(`${String(desired.x)},${String(desired.y)}`) &&
+        (desired.x !== siteIntent.x || desired.y !== siteIntent.y),
+    );
+    if (missingReserve === undefined) throw new Error("expected the final reserve-link position");
+    const currentLinks = idealLinks.map((value) =>
+      value.pos.x === missingReserve.pos.x && value.pos.y === missingReserve.pos.y
+        ? { ...value, adoption: "compatible-external" as const, pos: external.pos }
+        : { ...value, adoption: "exact" as const },
+    );
+    const readyRoom = room([...critical, replacement, external], 101);
+    type MigrationInput = Parameters<ConstructionPlanner["planMigration"]>[0];
+    const plan = (
+      value: ReturnType<typeof room>,
+      removalReceipt: MigrationInput["removalReceipt"] = null,
+      orderedCurrent: readonly LayoutPlacement[] = [...sourceServices, ...currentLinks],
+      orderedDesired: readonly LayoutPlacement[] = desiredPlacements,
+    ) => {
+      const linkRuntime = planLinkRuntime({
+        growth: [],
+        layouts: [
+          {
+            evidence: {
+              algorithmRevision: commitment.algorithmRevision,
+              controller: pos(40, 40),
+              fingerprint: commitment.fingerprint,
+              linkPlacements: orderedCurrent
+                .filter(({ structureType }) => structureType === "link")
+                .map(({ pos: position }) => position),
+              sourceServices: orderedCurrent.flatMap((current) =>
+                current.service?.kind === "source-container"
+                  ? [{ pos: current.pos, sourceId: current.service.sourceId }]
+                  : [],
+              ),
+              storage: storage.pos,
+            },
+            roomName,
+          },
+        ],
+        logistics: {
+          budgets: [],
+          contracts: { commitments: [], retirements: [] },
+          graph: { edges: [], endpoints: [], nodes: [] },
+          health: [],
+          plan: { blockers: [], projections: [], recommendations: [], reservations: [] },
+        },
+        mining: { projections: [], replacements: [], requests: [], transitions: [] },
+        reservations: [],
+        rooms: [value],
+        tick: value.observedAt,
+      }).rooms[0];
+      if (linkRuntime === undefined) throw new Error("expected public link-runtime evidence");
+      expect(linkRuntime.arbitration.accepted).toEqual([]);
+      return new ConstructionPlanner().planMigration({
+        activeLogisticsTargetIds: new Set(),
+        colony,
+        commitment,
+        currentPlacements: orderedCurrent,
+        globalOwnedSiteCount: 0,
+        linkRuntime,
+        logisticsEvidenceReady: true,
+        observationFingerprint: `link-${String(value.observedAt)}`,
+        placements: orderedDesired,
+        policyFingerprint: "policy-link",
+        removalReceipt,
+        room: value,
+      });
+    };
+    const ready = plan(readyRoom);
+    const resetReadyRoom = JSON.parse(
+      JSON.stringify({
+        ...readyRoom,
+        ownedLinks: [...(readyRoom.ownedLinks ?? [])].reverse(),
+        structures: [...(readyRoom.structures ?? [])].reverse(),
+      }),
+    ) as typeof readyRoom;
+    const resetReady = plan(
+      resetReadyRoom,
+      null,
+      [...sourceServices, ...currentLinks].reverse(),
+      [...desiredPlacements].reverse(),
+    );
+    expect(JSON.stringify(resetReady)).toBe(JSON.stringify(ready));
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: replacement.id,
+        targetId: external.id,
+        targetStructureType: "link",
+      }),
+    ]);
+    if (ready.authorization === null) throw new Error("expected reserve-link authorization");
+    const removal = arbitrateStructureRemovals({
+      authorizations: [ready.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: ready.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveLink = (value: ReturnType<typeof link>, command = vi.fn(() => 0)) => ({
+      cooldown: value.cooldown,
+      destroy: command,
+      id: value.id,
+      isActive: () => value.active,
+      my: true,
+      pos: value.pos,
+      room: liveRoom,
+      store: {
+        getCapacity: () => value.store.capacity,
+        getFreeCapacity: () => value.store.freeCapacity,
+        getUsedCapacity: (resource?: string) =>
+          resource === undefined || resource === "energy" ? value.store.usedCapacity : 0,
+      },
+      structureType: "link",
+    });
+    const execution = new StructureDestroyExecutor().execute(removal.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) =>
+        id === external.id
+          ? (liveLink(external, destroy) as unknown as Structure)
+          : id === replacement.id
+            ? (liveLink(replacement) as unknown as Structure)
+            : null,
+    });
+    let owner = persistLayoutCommitment(
+      emptyLayoutsOwner(),
+      roomName,
+      commitment,
+      desiredPlacements,
+    );
+    owner = reconcileStructureDestroyExecution(owner, execution, 101).owner;
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const receipt = owner.records[0]?.removalReceipt ?? null;
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(plan(room([...critical, replacement, external], 102), receipt)).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-pending" })],
+      proposals: [],
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+
+    const followingRoom = room([...critical, replacement], 103);
+    expect(plan(followingRoom, receipt)).toMatchObject({ removalReceipt: null });
+    const followingDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "link-following",
+      placements: idealLinks,
+      policy: linkPolicy,
+      policyEnabled: true,
+      policyFingerprint: "policy-link",
+      roomName,
+      roomStatus: "owned",
+      structures: followingRoom.structures ?? [],
+    });
+    expect(followingDiff.proposals).toEqual([
+      expect.objectContaining({ pos: missingReserve.pos, structureType: "link" }),
     ]);
   });
 

@@ -131,7 +131,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   energy; the same bounded receipt and one-command authority apply. Issue #314 persists one bounded
   stocked-tower evacuation only when that operational replacement has exact capacity, routes its
   energy through funded logistics, and keeps removal blocked until fresh delivered/empty and
-  retired- flow evidence. Other structure types, general multi-step migration, and creep dismantling
+  retired-flow evidence. Issue #316 restores RCL8 committed link geometry, then removes one active
+  empty idle external link only when canonical current/ideal role evidence classifies the target,
+  missing anchor, and exact replacement as reserve capacity while every source, hub, and controller
+  link remains active. Other structure types, general multi-step migration, and creep dismantling
   remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).

@@ -38,6 +38,24 @@ const containerIntent: DestroyOwnedStructureIntent = {
   x: 10,
   y: 11,
 };
+const linkIntent: DestroyOwnedStructureIntent = {
+  colonyId: "W1N1",
+  kind: "destroy-owned-structure",
+  layoutFingerprint: "layout-a",
+  observationFingerprint: "observation-a",
+  policyFingerprint: "policy-a",
+  replacementId: "link-reserve-exact",
+  replacementRequiresZeroCooldown: true,
+  replacementStructureType: "link",
+  roomName: "W1N1",
+  stableId: "remove-reserve-link/link-reserve-external",
+  targetId: "link-reserve-external",
+  targetRequiresEmptyStore: true,
+  targetRequiresZeroCooldown: true,
+  targetStructureType: "link",
+  x: 10,
+  y: 11,
+};
 const towerIntent: DestroyOwnedStructureIntent = {
   colonyId: "W1N1",
   kind: "destroy-owned-structure",
@@ -267,6 +285,71 @@ describe("StructureDestroyExecutor", () => {
     expect(
       new StructureDestroyExecutor().execute([towerIntent], adapter(tower("tower-obsolete", 1)))[0],
     ).toMatchObject({ called: false, fault: "target-not-empty" });
+  });
+
+  it("revalidates active owned empty 800-capacity idle links immediately before destroy", () => {
+    const room = { controller: { my: true }, name: "W1N1" } as unknown as Room;
+    const destroy = vi.fn(() => 0);
+    const link = (
+      id: string,
+      options: {
+        readonly active?: boolean;
+        readonly capacity?: number;
+        readonly cooldown?: number;
+        readonly my?: boolean;
+        readonly used?: number;
+      } = {},
+    ) => {
+      const capacity = options.capacity ?? 800;
+      const used = options.used ?? 0;
+      return {
+        cooldown: options.cooldown ?? 0,
+        destroy: id === linkIntent.targetId ? destroy : vi.fn(() => 0),
+        id,
+        isActive: () => options.active ?? true,
+        my: options.my ?? true,
+        pos: { roomName: "W1N1", x: id === linkIntent.targetId ? 10 : 12, y: 11 },
+        room,
+        store: {
+          getCapacity: () => capacity,
+          getFreeCapacity: () => capacity - used,
+          getUsedCapacity: () => used,
+        },
+        structureType: "link",
+      } as unknown as Structure;
+    };
+    const adapter = (
+      target = link("link-reserve-external"),
+      replacement = link("link-reserve-exact"),
+    ) => ({
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => room,
+      resolveStructure: (id: string) =>
+        id === linkIntent.targetId ? target : id === linkIntent.replacementId ? replacement : null,
+    });
+
+    expect(new StructureDestroyExecutor().execute([linkIntent], adapter())[0]).toMatchObject({
+      called: true,
+      code: "OK",
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+    for (const [value, fault] of [
+      [adapter(link("link-reserve-external", { active: false })), "target-not-empty"],
+      [adapter(link("link-reserve-external", { my: false })), "target-not-empty"],
+      [adapter(link("link-reserve-external", { used: 1 })), "target-not-empty"],
+      [adapter(link("link-reserve-external", { capacity: 799 })), "target-not-empty"],
+      [adapter(link("link-reserve-external", { cooldown: 1 })), "target-cooldown"],
+      [adapter(undefined, link("link-reserve-exact", { active: false })), "replacement-mismatch"],
+      [adapter(undefined, link("link-reserve-exact", { used: 1 })), "replacement-not-empty"],
+      [adapter(undefined, link("link-reserve-exact", { capacity: 799 })), "replacement-not-empty"],
+      [adapter(undefined, link("link-reserve-exact", { cooldown: 1 })), "replacement-cooldown"],
+    ] as const)
+      expect(new StructureDestroyExecutor().execute([linkIntent], value)[0]).toMatchObject({
+        called: false,
+        fault,
+      });
+    expect(destroy).toHaveBeenCalledOnce();
   });
 
   it("revalidates an empty room container and its exact current service replacement", () => {

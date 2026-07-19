@@ -78,7 +78,7 @@ and require fresh empty-target, every delivered replacement gain, and retired fl
 before removal. Canonical general positions adjacent to a source, over-eight-kind or malformed
 stock, selected source-service targets, capacity loss, and unavailable contract evidence fail
 closed. Other stocked structures and rooms without exact replacement evidence remain untouched.
-Every authorized extension/container/tower destroy result persists one exact per-room receipt:
+Every authorized extension/container/tower/link destroy result persists one exact per-room receipt:
 success waits for fresh target disappearance, failures back off and stop after three attempts, and a
 blocked room leaves the global removal slot available to another eligible room. Tower convergence
 first uses spare allowance to build committed geometry. An active empty obsolete tower may be
@@ -88,7 +88,13 @@ immediate defense action. A stocked target first persists one exact 150-tick eva
 that replacement can hold all target energy. The sole logistics authority moves it under funded
 optional growth; target refill is suppressed, replacement capacity is reserved once, and removal
 waits for fresh empty-target, delivered-replacement, and retired-flow/endpoint evidence. A sole,
-over-capacity, inactive, underfunded, threatened, or pressured tower remains.
+over-capacity, inactive, underfunded, threatened, or pressured tower remains. At RCL8, link
+convergence similarly spends spare allowance through the ordinary build chain. It may remove only
+one active external reserve link after canonical current/ideal role evidence proves all source, hub,
+and controller anchors remain exact and active, the missing anchor plus target and exact replacement
+are reserve capacity, both reserve links are empty 800-capacity stores at zero cooldown, and no
+active logistics endpoint names either. Stocked, cooling, productive-role, incomplete, or pressured
+links remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

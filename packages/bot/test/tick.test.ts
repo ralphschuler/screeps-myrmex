@@ -36,6 +36,25 @@ describe("tick lifecycle", () => {
   afterAll(() => {
     vi.unstubAllGlobals();
   });
+
+  it("runs layout and link planning before the layout-migration continuation", () => {
+    const outcome = runTick({
+      game: {
+        cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+        creeps: {},
+        rooms: {},
+        shard: { name: "shard3" },
+        time: 99,
+      },
+      memory: {} as Memory,
+    });
+    const planOrder = outcome.kernel.systems
+      .map(({ systemId }) => systemId)
+      .filter((systemId) => ["layout.plan", "links.plan", "migration.layout"].includes(systemId));
+
+    expect(planOrder).toEqual(["layout.plan", "links.plan", "migration.layout"]);
+  });
+
   it("executes one fail-closed tower command from the mandatory safety phase", () => {
     const attack = vi.fn(() => 0);
     const activateSafeMode = vi.fn(() => 0);
