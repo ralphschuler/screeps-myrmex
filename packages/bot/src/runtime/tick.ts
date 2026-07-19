@@ -137,6 +137,7 @@ import {
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
+  reconcileStructureDestroyExecution,
   reconstructCommittedLayout,
   registerLayoutCompiledCache,
   selectLayoutPlanningWindow,
@@ -149,7 +150,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV2,
+  type LayoutsOwnerV3,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -443,7 +444,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV2 | null;
+  owner: LayoutsOwnerV3 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   status: LayoutRuntimeResult["status"];
   linkEvidence: readonly LinkRoomLayoutEvidence[];
@@ -1448,7 +1449,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         mandatoryTail: true,
       },
       run: ({ context }) => {
-        const reconciled =
+        const siteReconciled =
           layoutDraft.owner === null
             ? null
             : reconcileConstructionSiteExecution(
@@ -1456,23 +1457,34 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 layoutDraft.execution,
                 context.tick,
               );
+        const destroyReconciled =
+          siteReconciled === null
+            ? null
+            : layoutDraft.migrationExecution.length === 0
+              ? { owner: siteReconciled.owner, receipts: [] as const }
+              : reconcileStructureDestroyExecution(
+                  siteReconciled.owner,
+                  layoutDraft.migrationExecution,
+                  context.tick,
+                );
         return staged(
           () => {
-            if (input.manager !== null && reconciled !== null) {
+            if (input.manager !== null && destroyReconciled !== null) {
               const changed =
-                layoutDraft.changed || reconciled.owner.revision !== layoutDraft.owner?.revision;
-              layoutDraft.owner = reconciled.owner;
+                layoutDraft.changed ||
+                destroyReconciled.owner.revision !== layoutDraft.owner?.revision;
+              layoutDraft.owner = destroyReconciled.owner;
               layoutDraft.changed = changed;
               if (changed) {
                 const transaction = input.manager.transaction("layouts");
-                transaction.replace(reconciled.owner);
+                transaction.replace(destroyReconciled.owner);
                 const stagedResult = transaction.stage();
                 if (!stagedResult.staged)
                   throw new Error(stagedResult.fault?.message ?? "layout state staging failed");
               }
             }
             input.runtime.publishLayout(
-              layoutRuntimeResult(layoutDraft, reconciled?.receipts.length ?? 0),
+              layoutRuntimeResult(layoutDraft, siteReconciled?.receipts.length ?? 0),
             );
           },
           () => input.manager?.discard("layouts"),
@@ -1988,14 +2000,14 @@ function layoutPlanningSystem(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV2 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV3 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV2["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV3["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,

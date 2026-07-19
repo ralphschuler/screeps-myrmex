@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 2 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 3 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -91,6 +91,12 @@ export type LayoutContainerMigrationResource = readonly [
   amount: number,
   replacementInitialAmount: number,
 ];
+export interface LayoutContainerRemovalReceipt {
+  readonly attempt: number;
+  readonly code: StructureDestroyExecutionCode;
+  readonly nextEligibleTick: number;
+  readonly observedAt: number;
+}
 export interface LayoutContainerMigration {
   /** Legacy paired fields remain valid for one exact energy transfer. */
   readonly energyAmount?: number;
@@ -99,6 +105,10 @@ export interface LayoutContainerMigration {
   readonly replacementInitialEnergy?: number;
   /** Canonical binary-ordered tuples for one non-energy or bounded multi-resource evacuation. */
   readonly resourceManifest?: readonly LayoutContainerMigrationResource[];
+  /** Bounded destroy retry evidence; valid only for a source-specific evacuation. */
+  readonly removalReceipt?: LayoutContainerRemovalReceipt;
+  /** Present only when the target is an unselected redundant container for this source. */
+  readonly sourceId?: string;
   readonly startedAt: number;
   readonly targetId: string;
 }
@@ -341,6 +351,9 @@ export type LayoutMigrationBlocker =
   | "migration-pending"
   | "progression-blocked"
   | "replacement-pending"
+  | "removal-backoff"
+  | "removal-failed"
+  | "removal-pending"
   | "reserve-unrestored"
   | "room-site-cap"
   | "site-conflict"
@@ -491,7 +504,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV2 {
+export interface LayoutsOwnerV3 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

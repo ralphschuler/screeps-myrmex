@@ -10,7 +10,9 @@ import {
   persistLayoutContainerMigration,
   persistLayoutExtensionEvacuation,
   reconcileOwnedLayouts,
+  reconcileStructureDestroyExecution,
   registerLayoutCompiledCache,
+  type DestroyOwnedStructureIntent,
 } from "../src/layout";
 
 describe("layout persistence and cache", () => {
@@ -88,10 +90,11 @@ describe("layout persistence and cache", () => {
     owner = persistLayoutContainerMigration(owner, "W1N1", migration);
 
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
-    expect(parseLayoutsOwner({ ...owner, schemaVersion: 1 })).toEqual({
-      ...owner,
-      revision: owner.revision + 1,
-    });
+    for (const schemaVersion of [1, 2])
+      expect(parseLayoutsOwner({ ...owner, schemaVersion })).toEqual({
+        ...owner,
+        revision: owner.revision + 1,
+      });
     expect(
       persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.containerMigration,
     ).toEqual(migration);
@@ -159,6 +162,10 @@ describe("layout persistence and cache", () => {
     owner = persistLayoutContainerMigration(owner, "W1N1", singletonNonEnergy);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 1 })).toBeNull();
+    const sourceMigration = { ...singletonNonEnergy, sourceId: "source-a" } as const;
+    owner = persistLayoutContainerMigration(owner, "W1N1", sourceMigration);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 2 })).toBeNull();
     expect(
       parseLayoutsOwner({
         ...owner,
@@ -213,6 +220,59 @@ describe("layout persistence and cache", () => {
         "resource".repeat(8),
       ),
     ).toBeNull();
+  });
+
+  it("persists bounded source-container destroy backoff and ignores general migrations", () => {
+    const sourceMigration = {
+      energyAmount: 50,
+      expiresAt: 160,
+      replacementId: "container-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "source-a",
+      startedAt: 10,
+      targetId: "container-obsolete",
+    } as const;
+    let owner = persistLayoutContainerMigration(
+      persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment),
+      "W1N1",
+      sourceMigration,
+    );
+    const intent = {
+      colonyId: "W1N1",
+      kind: "destroy-owned-structure",
+      layoutFingerprint: commitment.fingerprint,
+      observationFingerprint: "observation-a",
+      policyFingerprint: "policy-a",
+      replacementId: sourceMigration.replacementId,
+      replacementStructureType: "container",
+      roomName: "W1N1",
+      stableId: "remove-source-container-v1:test",
+      targetId: sourceMigration.targetId,
+      targetRequiresEmptyStore: true,
+      targetStructureType: "container",
+      x: 10,
+      y: 11,
+    } as const satisfies DestroyOwnedStructureIntent;
+    const failure = { called: true, code: "ERR_BUSY", fault: null, intent } as const;
+    const first = reconcileStructureDestroyExecution(owner, [failure], 11);
+    expect(first.receipts).toEqual([
+      { attempt: 1, code: "ERR_BUSY", nextEligibleTick: 13, observedAt: 11 },
+    ]);
+    expect(reconcileStructureDestroyExecution(first.owner, [failure], 11).owner).toBe(first.owner);
+    const second = reconcileStructureDestroyExecution(first.owner, [failure], 13);
+    const third = reconcileStructureDestroyExecution(second.owner, [failure], 17);
+    expect(third.owner.records[0]?.containerMigration?.removalReceipt).toEqual({
+      attempt: 3,
+      code: "ERR_BUSY",
+      nextEligibleTick: 160,
+      observedAt: 17,
+    });
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(third.owner)))).toEqual(third.owner);
+
+    const { sourceId: _sourceId, ...generalMigration } = sourceMigration;
+    void _sourceId;
+    owner = persistLayoutContainerMigration(owner, "W1N1", generalMigration);
+    expect(reconcileStructureDestroyExecution(owner, [failure], 11).receipts).toEqual([]);
   });
 
   it("persists 32 canonical receipts and drops them on layout revision", () => {

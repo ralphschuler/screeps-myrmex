@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
-import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
+import { planStaticMining } from "../src/economy";
 import type { LayoutCommitment, LayoutPlacement } from "../src/layout";
+import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
+import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
 import type { RoomSnapshot, StructureSnapshot, WorldSnapshot } from "../src/world/snapshot";
 
 describe("ConstructionPlanner", () => {
@@ -228,6 +230,295 @@ describe("ConstructionPlanner", () => {
     ]);
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(first));
     expect(JSON.stringify(reset)).toBe(JSON.stringify(first));
+  });
+
+  it("evacuates one stocked redundant source container before removal", () => {
+    const fixture = sourceContainerMigrationFixture();
+    const target = sourceContainer("container-redundant", 10, 11, 50);
+    const stockedRoom = {
+      ...fixture.room,
+      storedStructures: fixture.room.storedStructures.map((value) =>
+        value.id === target.id ? target : value,
+      ),
+      structures: (fixture.room.structures ?? []).map((value) =>
+        value.id === target.id ? target : value,
+      ),
+    };
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: stockedRoom,
+    });
+
+    expect(staged.proposals).toEqual([]);
+    expect(staged.containerMigration).toEqual({
+      energyAmount: 50,
+      expiresAt: 250,
+      replacementId: "container-service",
+      replacementInitialEnergy: 500,
+      sourceId: "source-a",
+      startedAt: 100,
+      targetId: "container-redundant",
+    });
+    if (staged.containerMigration === null) throw new Error("expected source evacuation");
+    const nextRoom = { ...stockedRoom, observedAt: 101 };
+    const snapshot = {
+      observation: { age: 0, shard: "shard0", status: "observed", tick: 101 },
+      rooms: [nextRoom],
+    } as unknown as WorldSnapshot;
+    const projection = projectLayoutContainerMigrations({
+      records: [
+        {
+          ...migrationCommitment,
+          containerMigration: staged.containerMigration,
+          roomName: "W1N1",
+          sourceServices: fixture.placements,
+        },
+      ],
+      snapshot,
+      tick: 101,
+    });
+    expect(projection.edges).toEqual([
+      expect.objectContaining({
+        id: "layout-container-evacuation:W1N1:container-redundant:container-service",
+        maximumAmount: 50,
+      }),
+    ]);
+    expect(projection.suppressedSinkTargetIds).toEqual([
+      "container-redundant",
+      "container-service",
+    ]);
+    expect(projection.suppressedSourceTargetIds).toEqual(["container-redundant"]);
+    expect(
+      projectLayoutContainerMigrations({
+        records: [
+          {
+            ...migrationCommitment,
+            containerMigration: staged.containerMigration,
+            roomName: "W1N1",
+          },
+        ],
+        snapshot,
+        tick: 101,
+      }).edges,
+    ).toEqual([]);
+    const staticBefore = planStaticMining({
+      layouts: new Map([["W1N1", fixture.placements]]),
+      snapshot,
+      tick: 101,
+    });
+
+    const emptiedTarget = sourceContainer("container-redundant", 10, 11, 0);
+    const deliveredReplacement = sourceContainer("container-service", 11, 10, 550);
+    const deliveredRoom = {
+      ...stockedRoom,
+      observedAt: 102,
+      storedStructures: [emptiedTarget, deliveredReplacement],
+      structures: [emptiedTarget, deliveredReplacement],
+    };
+    const activeFlowId = projection.edges[0]?.id;
+    if (activeFlowId === undefined) throw new Error("expected source evacuation flow");
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set([activeFlowId]),
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: staged.containerMigration,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: deliveredRoom,
+      }).proposals,
+    ).toEqual([]);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set([deliveredReplacement.id]),
+        containerMigration: staged.containerMigration,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: deliveredRoom,
+      }).proposals,
+    ).toEqual([]);
+    const expiredUndeliveredRoom = {
+      ...deliveredRoom,
+      observedAt: staged.containerMigration.expiresAt,
+      storedStructures: [emptiedTarget, sourceContainer("container-service", 11, 10, 500)],
+      structures: [emptiedTarget, sourceContainer("container-service", 11, 10, 500)],
+    };
+    const expired = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      containerMigration: staged.containerMigration,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: expiredUndeliveredRoom,
+    });
+    expect(expired).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "migration-expired" })],
+      containerMigration: staged.containerMigration,
+      proposals: [],
+    });
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: expired.containerMigration,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: { ...expiredUndeliveredRoom, observedAt: staged.containerMigration.expiresAt + 1 },
+      }).proposals,
+    ).toEqual([]);
+
+    const failedMigration = {
+      ...staged.containerMigration,
+      removalReceipt: {
+        attempt: 1,
+        code: "ERR_BUSY" as const,
+        nextEligibleTick: 104,
+        observedAt: 102,
+      },
+    };
+    const backoff = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      containerMigration: failedMigration,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: deliveredRoom,
+    });
+    expect(backoff).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-backoff" })],
+      proposals: [],
+    });
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: failedMigration,
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: { ...deliveredRoom, observedAt: 104 },
+      }).proposals,
+    ).toHaveLength(1);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        containerMigration: {
+          ...failedMigration,
+          removalReceipt: { ...failedMigration.removalReceipt, attempt: 3 },
+        },
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: { ...deliveredRoom, observedAt: 104 },
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-failed" })],
+      proposals: [],
+    });
+
+    const ready = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      containerMigration: staged.containerMigration,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: deliveredRoom,
+    });
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "container-service",
+        targetId: "container-redundant",
+      }),
+    ]);
+    const staticAfter = planStaticMining({
+      layouts: new Map([["W1N1", [...fixture.placements].reverse()]]),
+      snapshot: {
+        ...snapshot,
+        observation: { ...snapshot.observation, tick: 102 },
+        rooms: [{ ...deliveredRoom, storedStructures: [deliveredReplacement] }],
+      },
+      tick: 102,
+    });
+    expect(staticAfter.projections[0]).toMatchObject({
+      identity: staticBefore.projections[0]?.identity,
+      workPosition: staticBefore.projections[0]?.workPosition,
+    });
+  });
+
+  it("persists canonical mixed stock and rejects insufficient source-service capacity", () => {
+    const fixture = sourceContainerMigrationFixture();
+    const target = {
+      ...sourceContainer("container-redundant", 10, 11, 50),
+      store: {
+        capacity: 2_000,
+        freeCapacity: 1_950,
+        resources: [
+          { amount: 25, resourceType: "energy" },
+          { amount: 25, resourceType: "U" },
+        ],
+        usedCapacity: 50,
+      },
+    };
+    const room = {
+      ...fixture.room,
+      storedStructures: fixture.room.storedStructures.map((value) =>
+        value.id === target.id ? target : value,
+      ),
+      structures: (fixture.room.structures ?? []).map((value) =>
+        value.id === target.id ? target : value,
+      ),
+    };
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      logisticsEvidenceReady: true,
+      placements: [...fixture.placements].reverse(),
+      room,
+    });
+    expect(staged.containerMigration).toMatchObject({
+      replacementId: "container-service",
+      resourceManifest: [
+        ["U", 25, 0],
+        ["energy", 25, 500],
+      ],
+      sourceId: "source-a",
+      targetId: "container-redundant",
+    });
+    expect(
+      JSON.stringify(
+        planMigration({
+          activeLogisticsFlowIds: new Set(),
+          activeLogisticsTargetIds: new Set(),
+          logisticsEvidenceReady: true,
+          placements: fixture.placements,
+          room: {
+            ...room,
+            storedStructures: [...room.storedStructures].reverse(),
+            structures: [...room.structures].reverse(),
+          },
+        }),
+      ),
+    ).toBe(JSON.stringify(staged));
+
+    const fullReplacement = sourceContainer("container-service", 11, 10, 1_980);
+    const capacityLost = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: {
+        ...room,
+        storedStructures: [target, fullReplacement],
+        structures: [target, fullReplacement],
+      },
+    });
+    expect(capacityLost.containerMigration).toBeNull();
+    expect(capacityLost.blockers).toContainEqual(
+      expect.objectContaining({ reason: "evacuation-capacity" }),
+    );
+    expect(capacityLost.proposals).toEqual([]);
   });
 
   it("stages one general-container replacement and waits for active logistics to retire", () => {

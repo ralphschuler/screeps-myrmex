@@ -77,7 +77,9 @@ committed replacement capacity exists; one compact layout-owned handoff suppress
 waits for active logistics endpoints to retire. Issue #294 extends that handoff to exact energy-only
 stock. Issue #296 permits a compact binary-ordered manifest of two to eight resource kinds and one
 distinct funded flow per kind. Issue #298 permits the same manifest for one non-energy kind while
-preserving the legacy energy-only identity; at most 2,000 total units move, and fresh empty-target,
+preserving the legacy energy-only identity. Issue #300 reuses that bounded evacuation for one
+stocked, unselected redundant source-adjacent container while preserving its different exact
+selected service and static-mining identity; at most 2,000 total units move, and fresh empty-target,
 every delivered replacement gain, and retired-flow evidence remain mandatory.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`.
@@ -1293,13 +1295,15 @@ evidence after spawn use. The fixed 64-record projection remains inside the exis
 flow, and contract bounds. Logistics owns admission and execution terms; layout owns only the
 migration commitment and consumes only fresh completion evidence.
 
-General-container stock migration uses the same authority. An energy-only record keeps one legacy
-flow identity. A resource-specific record carries one to eight compact binary-ordered tuples and
-projects one resource-specific flow and distinct `optional-growth` budget binding per tuple; a
-one-tuple record must not contain energy. Every sink node uses the same aggregate
-replacement-capacity key. The specialized sources replace the ordinary target source, and both
-endpoint refill sinks are suppressed, so one physical Store cannot publish duplicate stock or
-competing capacity. Source/sink suppression IDs are each capped at 128; the complete projection
+Container stock migration uses the same authority. An energy-only record keeps one legacy flow
+identity. A resource-specific record carries one to eight compact binary-ordered tuples and projects
+one resource-specific flow and distinct `optional-growth` budget binding per tuple; a one-tuple
+record must not contain energy. Every sink node uses the same aggregate replacement-capacity key.
+The specialized sources replace the ordinary target source, and both endpoint refill sinks are
+suppressed, so one physical Store cannot publish duplicate stock or competing capacity. A
+source-specific record additionally names one bounded source identity; projection requires the
+target beside that exact source and a different persisted `exact` selected service at the
+replacement position. Source/sink suppression IDs are each capped at 128; the complete projection
 admits at most 64 resource flows and 128 nodes, otherwise it publishes nothing. V3 contracts,
 leases, and executors remain Logistics-owned; layout consumes only fresh target, replacement, flow,
 and endpoint evidence.
@@ -1384,10 +1388,11 @@ cells per candidate, and publishes only complete `owned-room-layout-v1` plans.
 
 The distinct `layouts` persistent owner stores only algorithm revision, anchor/transform,
 fingerprint, bounded blocker/commitment metadata, at most one compact extension evacuation, and at
-most one compact general-container handoff per room; reconstructible placements remain heap data.
-`layout.compiled.v1` is a `CacheManager` namespace stamped by exact algorithm, terrain, policy, and
-normalized-facts revisions. Failed or exhausted planning preserves the prior commitment and emits no
-partial plan, command, construction-site intent, or dismantle suggestion.
+most one compact container handoff per room; the latter may identify a general target or one
+redundant source target. Reconstructible placements remain heap data. `layout.compiled.v1` is a
+`CacheManager` namespace stamped by exact algorithm, terrain, policy, and normalized-facts
+revisions. Failed or exhausted planning preserves the prior commitment and emits no partial plan,
+command, construction-site intent, or dismantle suggestion.
 
 PR B adds a pure layout diff and makes `ConstructionSiteArbiter` the sole site-slot authority.
 Exact/adopted structures and matching owned sites suppress duplicates; stale observation, lost
@@ -1396,15 +1401,16 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room live with the owner-local schema V2 `layouts` owner. `OK` waits
-for observed world change; full and unexpected faults back off; RCL, target, and ownership failures
-wait for the relevant fresh fingerprint; invalid arguments stay failed closed until layout revision.
-PR B emits detached create-site intent data only. Live API execution and reconciliation remain PR C.
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V3
+`layouts` owner. `OK` waits for observed world change; full and unexpected faults back off; RCL,
+target, and ownership failures wait for the relevant fresh fingerprint; invalid arguments stay
+failed closed until layout revision. PR B emits detached create-site intent data only. Live API
+execution and reconciliation remain PR C.
 
 PR C completes the chain with `layout.plan` after colony publication, mandatory-tail
 `layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V2 layouts owner; degraded,
+commitments and bounded receipts stage through the owner-local schema V3 layouts owner; degraded,
 unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
 command. Every observed owned layout site enters the existing funded survival-growth build flow,
 while controller risk, recovery, maintenance, and protected reserves retain precedence.
@@ -1488,8 +1494,20 @@ same resource-specific budget, flow, suppression, delivery, retirement, and remo
 owner schema version or runtime authority changes.
 [ADR 0042](adr/0042-single-non-energy-general-container-evacuation.md) records this extension.
 
-Other structure stock evacuation, selected/stocked source-service migration, defensive migration,
-general multi-step migration, and creep dismantling remain issue #99 and fail closed.
+Issue #300 extends that evacuation to one stocked, unselected redundant container beside exactly one
+source. A different current `exact` source-service container for the same source remains the
+static-mining work position and exact replacement. Layouts-owner schema V3 adds one optional bounded
+source identity; V1/V2 general commitments migrate unchanged and older code sees V3 as future.
+Runtime projection revalidates target adjacency and the persisted selected replacement before the
+sole logistics graph suppresses the redundant target source and both refill sinks. Removal still
+requires fresh empty-target, every replacement gain, and retired flow/endpoint evidence under the
+existing one-command authority. A compact source-migration result receipt permits at most three
+destroy attempts under capped exponential backoff; `OK` or exhausted attempts wait fail-closed for
+fresh disappearance evidence. [ADR 0043](adr/0043-stocked-redundant-source-container-evacuation.md)
+records this extension.
+
+Other structure stock evacuation, selected source-service migration, defensive migration, general
+multi-step migration, and creep dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2056,11 +2074,13 @@ Required architecture assertions include:
 - obsolete general-container removal requires committed replacement-first capacity, one bounded
   layout-owned handoff, ordinary-refill suppression, retirement of active V3 target endpoints,
   preserved source services, and the existing one-command ceiling;
-- a stocked general-container handoff accepts exact legacy energy or a canonical one-to-eight-kind
-  resource manifest, forbids energy as the only manifest row, fits aggregate replacement capacity,
-  replaces its ordinary source projection, uses distinct sole-authority funded logistics flows, and
-  requires fresh empty-target, every delivered replacement gain, and retired flow/endpoint evidence
-  before removal;
+- a stocked general- or redundant-source-container handoff accepts exact legacy energy or a
+  canonical one-to-eight-kind resource manifest, forbids energy as the only manifest row, fits
+  aggregate replacement capacity, replaces its ordinary source projection, uses distinct
+  sole-authority funded logistics flows, and requires fresh empty-target, every delivered
+  replacement gain, and retired flow/endpoint evidence before removal; a source-specific handoff
+  additionally preserves one different exact selected service and static-mining identity, and its
+  bounded destroy receipt prevents an every-tick command loop after failure;
 - observer selection admits at most one intent per observer and `OK` settles only from exact
   next-tick visibility;
 - executor batches target each spawn ID at most once and validate complete body cost/duration before

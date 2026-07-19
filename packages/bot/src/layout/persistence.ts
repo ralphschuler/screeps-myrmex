@@ -14,17 +14,19 @@ import {
   type LayoutExtensionEvacuation,
   type LayoutRecord,
   type LayoutPlacement,
-  type LayoutsOwnerV2,
+  type LayoutsOwnerV3,
 } from "./contracts";
 import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
 
-export function emptyLayoutsOwner(): LayoutsOwnerV2 {
+export function emptyLayoutsOwner(): LayoutsOwnerV3 {
   return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
 }
-export function parseLayoutsOwner(value: unknown): LayoutsOwnerV2 | null {
+export function parseLayoutsOwner(value: unknown): LayoutsOwnerV3 | null {
   if (
     !record(value) ||
-    (value.schemaVersion !== 1 && value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION) ||
+    (value.schemaVersion !== 1 &&
+      value.schemaVersion !== 2 &&
+      value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION) ||
     !integer(value.revision) ||
     !Array.isArray(value.records) ||
     value.records.length > MAX_LAYOUT_RECORDS
@@ -33,14 +35,17 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV2 | null {
   const records: LayoutRecord[] = [];
   let staleRecords = 0;
   const migratingV1 = value.schemaVersion === 1;
+  const migratingLegacy = value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION;
   for (const item of value.records) {
-    if (
-      migratingV1 &&
-      record(item) &&
-      record(item.containerMigration) &&
-      item.containerMigration.resourceManifest !== undefined
-    )
-      return null;
+    if (record(item) && record(item.containerMigration)) {
+      if (migratingV1 && item.containerMigration.resourceManifest !== undefined) return null;
+      if (
+        migratingLegacy &&
+        (item.containerMigration.sourceId !== undefined ||
+          item.containerMigration.removalReceipt !== undefined)
+      )
+        return null;
+    }
     if (staleRecord(item)) {
       staleRecords += 1;
       continue;
@@ -52,16 +57,16 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV2 | null {
   if (new Set(records.map((r) => r.roomName)).size !== records.length) return null;
   return freeze({
     schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
-    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingV1 ? 1 : 0),
+    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingLegacy ? 1 : 0),
     records,
   });
 }
 export function persistLayoutCommitment(
-  owner: LayoutsOwnerV2,
+  owner: LayoutsOwnerV3,
   roomName: string,
   commitment: LayoutCommitment,
   placements: readonly LayoutPlacement[] = [],
-): LayoutsOwnerV2 {
+): LayoutsOwnerV3 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   const records = owner.records.filter((r) => r.roomName !== roomName);
   const sourceServices = placements.filter(
@@ -94,10 +99,10 @@ export function persistLayoutCommitment(
   });
 }
 export function persistLayoutContainerMigration(
-  owner: LayoutsOwnerV2,
+  owner: LayoutsOwnerV3,
   roomName: string,
   migration: LayoutContainerMigration | null,
-): LayoutsOwnerV2 {
+): LayoutsOwnerV3 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -117,10 +122,10 @@ export function persistLayoutContainerMigration(
 }
 
 export function persistLayoutExtensionEvacuation(
-  owner: LayoutsOwnerV2,
+  owner: LayoutsOwnerV3,
   roomName: string,
   evacuation: LayoutExtensionEvacuation | null,
-): LayoutsOwnerV2 {
+): LayoutsOwnerV3 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -141,7 +146,7 @@ export function persistLayoutExtensionEvacuation(
 }
 
 export function freshSourceServicePlacements(
-  owner: LayoutsOwnerV2,
+  owner: LayoutsOwnerV3,
   roomName: string,
 ): readonly LayoutPlacement[] {
   const record = owner.records.find((item) => item.roomName === roomName);
@@ -158,9 +163,9 @@ export function freshSourceServicePlacements(
   );
 }
 export function reconcileOwnedLayouts(
-  owner: LayoutsOwnerV2,
+  owner: LayoutsOwnerV3,
   ownedRoomNames: readonly string[],
-): LayoutsOwnerV2 {
+): LayoutsOwnerV3 {
   const owned = new Set(ownedRoomNames);
   const records = owner.records.filter((r) => owned.has(r.roomName));
   return records.length === owner.records.length
@@ -168,10 +173,10 @@ export function reconcileOwnedLayouts(
     : freeze({ ...owner, revision: owner.revision + 1, records });
 }
 export function persistConstructionSiteReceipt(
-  owner: LayoutsOwnerV2,
+  owner: LayoutsOwnerV3,
   roomName: string,
   receipt: ConstructionSiteAttemptReceipt,
-): LayoutsOwnerV2 {
+): LayoutsOwnerV3 {
   const records = owner.records.map((item) =>
     item.roomName === roomName
       ? {
@@ -218,7 +223,8 @@ function validContainerMigration(value: unknown): value is LayoutContainerMigrat
     value.expiresAt - value.startedAt !== LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS ||
     !identity(value.targetId, 128) ||
     !identity(value.replacementId, 128) ||
-    value.targetId === value.replacementId
+    value.targetId === value.replacementId ||
+    (value.sourceId !== undefined && !identity(value.sourceId, 128))
   )
     return false;
   const hasEnergyAmount = value.energyAmount !== undefined;
@@ -226,13 +232,35 @@ function validContainerMigration(value: unknown): value is LayoutContainerMigrat
   const hasResourceManifest = value.resourceManifest !== undefined;
   if (hasEnergyAmount !== hasReplacementBaseline || (hasEnergyAmount && hasResourceManifest))
     return false;
-  if (hasResourceManifest) return validContainerResourceManifest(value.resourceManifest);
+  const validTerms = hasResourceManifest
+    ? validContainerResourceManifest(value.resourceManifest)
+    : !hasEnergyAmount ||
+      (positiveInteger(value.energyAmount) &&
+        value.energyAmount <= MAX_LAYOUT_CONTAINER_ENERGY &&
+        integer(value.replacementInitialEnergy) &&
+        value.replacementInitialEnergy + value.energyAmount <= MAX_LAYOUT_CONTAINER_ENERGY);
   return (
-    !hasEnergyAmount ||
-    (positiveInteger(value.energyAmount) &&
-      value.energyAmount <= MAX_LAYOUT_CONTAINER_ENERGY &&
-      integer(value.replacementInitialEnergy) &&
-      value.replacementInitialEnergy + value.energyAmount <= MAX_LAYOUT_CONTAINER_ENERGY)
+    validTerms &&
+    (value.removalReceipt === undefined ||
+      (value.sourceId !== undefined && validContainerRemovalReceipt(value.removalReceipt)))
+  );
+}
+function validContainerRemovalReceipt(value: unknown): boolean {
+  return (
+    record(value) &&
+    positiveInteger(value.attempt) &&
+    value.attempt <= 3 &&
+    [
+      "OK",
+      "ERR_NOT_OWNER",
+      "ERR_BUSY",
+      "TARGET_ABSENT",
+      "ERR_INVALID_TARGET",
+      "UNEXPECTED",
+    ].includes(String(value.code)) &&
+    integer(value.observedAt) &&
+    integer(value.nextEligibleTick) &&
+    value.nextEligibleTick > value.observedAt
   );
 }
 function validContainerResourceManifest(value: unknown): boolean {

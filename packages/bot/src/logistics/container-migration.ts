@@ -73,7 +73,8 @@ export function projectLayoutContainerMigrations(input: {
       replacement === undefined ||
       !currentContainer(target) ||
       !currentContainer(replacement) ||
-      target.id === replacement.id
+      target.id === replacement.id ||
+      !currentSourceMigration(record, migration, room, target, replacement)
     )
       continue;
 
@@ -337,8 +338,46 @@ function renewedRevision(
     : Math.max(proposed, prior.revision + 1);
 }
 
+function currentSourceMigration(
+  record: LayoutRecord,
+  migration: LayoutContainerMigration,
+  room: WorldSnapshot["rooms"][number],
+  target: StoredStructureSnapshot,
+  replacement: StoredStructureSnapshot,
+): boolean {
+  if (migration.sourceId === undefined) return true;
+  if (!identity(migration.sourceId, 128)) return false;
+  const sources = room.sources.filter(({ id, pos }) =>
+    id === migration.sourceId ? inRangeOne(pos, target.pos) : false,
+  );
+  const services = (record.sourceServices ?? []).filter(
+    ({ adoption, pos, service, structureType }) =>
+      adoption === "exact" &&
+      structureType === "container" &&
+      service?.kind === "source-container" &&
+      service.sourceId === migration.sourceId &&
+      samePosition(pos, replacement.pos) &&
+      !samePosition(pos, target.pos),
+  );
+  return sources.length === 1 && services.length === 1;
+}
 function currentContainer(structure: StoredStructureSnapshot): boolean {
   return structure.structureType === "container" && structure.ownership !== "foreign";
+}
+function inRangeOne(
+  left: StoredStructureSnapshot["pos"],
+  right: StoredStructureSnapshot["pos"],
+): boolean {
+  return (
+    left.roomName === right.roomName &&
+    Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y)) <= 1
+  );
+}
+function samePosition(
+  left: StoredStructureSnapshot["pos"],
+  right: StoredStructureSnapshot["pos"],
+): boolean {
+  return left.roomName === right.roomName && left.x === right.x && left.y === right.y;
 }
 function emptyStore(structure: StoredStructureSnapshot): boolean {
   return (
