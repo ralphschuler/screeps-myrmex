@@ -99,22 +99,22 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
 - Extend the existing colony authority from the survival lifecycle to complete RCL policy; do not
   create a second per-room kernel or state machine.
 - Static mining, logistics contracts, links, storage, terminal, and layouts.
-- Issue #284 adds one deterministic, road-only layout convergence step: under fresh safe colony,
-  layout, RCL, allowance, and site-headroom evidence, the sole removal arbiter/executor may destroy
-  one road that solely blocks a planned tower. Issue #286 adds one extension-only replacement-first
-  step: spare allowance builds canonical committed capacity before the same authority may remove one
-  empty, unshared, obsolete extension under exact current replacement evidence. Issue #288 persists
-  at most one compact extension evacuation per room, routes its exact energy to that replacement
-  through funded logistics, suppresses target refill, and keeps removal blocked until fresh
-  delivered/empty evidence. Issue #290 removes at most one empty, unshared source-adjacent container
-  only while a different exact committed container remains the selected reachable service for that
-  same source; mining identity and work position stay unchanged. Issue #292 restores committed
-  geometry for general non-service containers, builds one replacement under spare allowance, then
-  suppresses obsolete-target refill and waits for active logistics endpoints before removing the
-  empty adopted target. Issue #294 extends that handoff to an exact energy-only target, routing at
-  most 2,000 energy through funded logistics and requiring fresh delivered/empty plus retired-flow
-  evidence. Issue #296 extends it to a binary-ordered manifest of two to eight resource kinds, with
-  one distinct funded flow per kind and an atomic 64-flow projection ceiling. Issue #298 extends the
+- Issue #308 supersedes #284's road-removal step after current engine verification: compatible
+  roads/ramparts use the ordinary construction-site chain and never require destruction merely to
+  build a planned structure. Issue #286 adds one extension-only replacement-first step: spare
+  allowance builds canonical committed capacity before the same authority may remove one empty,
+  unshared, obsolete extension under exact current replacement evidence. Issue #288 persists at most
+  one compact extension evacuation per room, routes its exact energy to that replacement through
+  funded logistics, suppresses target refill, and keeps removal blocked until fresh delivered/empty
+  evidence. Issue #290 removes at most one empty, unshared source-adjacent container only while a
+  different exact committed container remains the selected reachable service for that same source;
+  mining identity and work position stay unchanged. Issue #292 restores committed geometry for
+  general non-service containers, builds one replacement under spare allowance, then suppresses
+  obsolete-target refill and waits for active logistics endpoints before removing the empty adopted
+  target. Issue #294 extends that handoff to an exact energy-only target, routing at most 2,000
+  energy through funded logistics and requiring fresh delivered/empty plus retired-flow evidence.
+  Issue #296 extends it to a binary-ordered manifest of two to eight resource kinds, with one
+  distinct funded flow per kind and an atomic 64-flow projection ceiling. Issue #298 extends the
   same manifest to exactly one non-energy kind while preserving the legacy energy-only identity.
   Issue #300 reuses that evacuation for one stocked, unselected redundant source-adjacent container
   while preserving the different exact selected service, mining identity, and work position. Issue

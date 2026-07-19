@@ -893,7 +893,7 @@ describe("composed layout runtime", () => {
     });
   });
 
-  it("removes one temporary road then makes the planned tower eligible next observation", () => {
+  it("creates compatible layered sites without destroying an existing road", () => {
     const tower = {
       adoption: "planned",
       layer: "primary",
@@ -901,17 +901,43 @@ describe("composed layout runtime", () => {
       pos: pos(15, 15),
       structureType: "tower",
     } as const satisfies LayoutPlacement;
+    const protectiveRampart = {
+      adoption: "planned",
+      layer: "rampart",
+      minimumRcl: 3,
+      pos: pos(16, 15),
+      structureType: "rampart",
+    } as const satisfies LayoutPlacement;
     const road = {
       hits: 5_000,
       hitsMax: 5_000,
-      id: "road-blocker",
+      id: "road-compatible",
       ownerUsername: null,
       ownership: "unowned" as const,
       pos: pos(15, 15),
       structureType: "road",
       ticksToDecay: 1_000,
     };
-    const commitment = { ...complete().commitment, fingerprint: "layout-migration-a" };
+    const existingRampart = {
+      hits: 1,
+      hitsMax: 1_000_000,
+      id: "rampart-compatible",
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: pos(15, 15),
+      structureType: "rampart",
+    };
+    const protectedSpawn = {
+      hits: 5_000,
+      hitsMax: 5_000,
+      id: "spawn-protected",
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: pos(16, 15),
+      structureType: "spawn",
+    };
+    const commitment = { ...complete().commitment, fingerprint: "layout-layering-a" };
+    const currentStructures = [road, existingRampart, protectedSpawn];
     const room = {
       constructionSites: [],
       controller: { level: 3, ownership: "owned" as const },
@@ -925,7 +951,7 @@ describe("composed layout runtime", () => {
       roads: [road],
       sources: [],
       storedStructures: [],
-      structures: [road],
+      structures: currentStructures,
     } as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
     const colony = {
       activeThreat: false,
@@ -937,48 +963,98 @@ describe("composed layout runtime", () => {
       state: "developing",
       visibility: "visible",
     } as ColonyView;
-    const planning = new ConstructionPlanner().planMigration({
-      colony,
-      commitment,
-      globalOwnedSiteCount: 0,
-      observationFingerprint: "obs-road",
-      placements: [tower],
-      policyFingerprint: "policy-a",
-      room,
-    });
-    if (planning.authorization === null) throw new Error("expected migration authorization");
-    const arbitration = arbitrateStructureRemovals({
-      authorizations: [planning.authorization],
-      limits: STRUCTURE_REMOVAL_LIMITS,
-      proposals: planning.proposals,
-    });
-    const destroy = vi.fn(() => 0);
-    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
-      hasCurrentHostiles: () => false,
-      isCurrentCommitment: () => true,
-      resolveRoom: () => ({ controller: { my: true }, name: roomName }) as unknown as Room,
-      resolveStructure: () =>
-        ({ ...road, destroy, room: { name: roomName } }) as unknown as Structure,
-    });
+    const placements = [tower, protectiveRampart];
+    const project = (structures: readonly (typeof currentStructures)[number][]) => {
+      const migration = new ConstructionPlanner().planMigration({
+        colony,
+        commitment,
+        globalOwnedSiteCount: 0,
+        observationFingerprint: "obs-road",
+        placements,
+        policyFingerprint: "policy-a",
+        room: { ...room, structures },
+      });
+      const diff = diffOwnedRoomLayout({
+        colonyId: roomName,
+        commitment,
+        commitmentConflicted: false,
+        constructionSites: [],
+        observationFingerprint: "obs-road",
+        placements,
+        policy,
+        policyEnabled: true,
+        policyFingerprint: "policy-a",
+        roomName,
+        roomStatus: "owned",
+        structures,
+      });
+      const arbitration = arbitrateConstructionSites({
+        globalOwnedSiteCount: 0,
+        limits: CONSTRUCTION_SITE_LIMITS,
+        perRoomSiteCounts: [{ count: 0, roomName }],
+        priorReceipts: [],
+        progressionAuthorizations: [{ authorized: true, colonyId: roomName, roomName }],
+        proposals: diff.proposals,
+        tick: 100,
+      });
+      return { arbitration, diff, migration };
+    };
+    const projected = project(currentStructures);
+    const reordered = project([...currentStructures].reverse());
+    const reconstructed = project(
+      JSON.parse(JSON.stringify(currentStructures)) as typeof currentStructures,
+    );
+    expect(projected.migration.proposals).toEqual([]);
+    expect(projected.diff.proposals.map(({ structureType }) => structureType)).toEqual([
+      "tower",
+      "rampart",
+    ]);
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(projected));
+    expect(JSON.stringify(reconstructed)).toBe(JSON.stringify(projected));
 
+    const createConstructionSite = vi.fn(() => 0);
+    const execution = new ConstructionSiteExecutor().execute(projected.arbitration.intents, {
+      isCurrentCommitment: () => true,
+      resolveRoom: () => ({ controller: { my: true }, createConstructionSite }) as unknown as Room,
+    });
     expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
-    expect(destroy).toHaveBeenCalledOnce();
-    const following = diffOwnedRoomLayout({
+    expect(createConstructionSite).toHaveBeenCalledWith(15, 15, "tower");
+
+    const builtTower = {
+      hits: 3_000,
+      hitsMax: 3_000,
+      id: "tower-built",
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: pos(15, 15),
+      structureType: "tower",
+    };
+    const followingInput = {
       colonyId: roomName,
       commitment,
       commitmentConflicted: false,
       constructionSites: [],
-      observationFingerprint: "obs-cleared",
-      placements: [tower],
+      observationFingerprint: "obs-built",
+      placements,
       policy,
       policyEnabled: true,
       policyFingerprint: "policy-a",
       roomName,
-      roomStatus: "owned",
-      structures: [],
+      roomStatus: "owned" as const,
+      structures: [road, existingRampart, builtTower, protectedSpawn],
+    };
+    const following = diffOwnedRoomLayout(followingInput);
+    const followingReordered = diffOwnedRoomLayout({
+      ...followingInput,
+      placements: [...placements].reverse(),
+      structures: [...followingInput.structures].reverse(),
     });
     expect(following.proposals).toEqual([
-      expect.objectContaining({ structureType: "tower", pos: pos(15, 15) }),
+      expect.objectContaining({ structureType: "rampart", pos: pos(16, 15) }),
     ]);
+    expect(following.suppressed).toEqual([
+      expect.objectContaining({ reason: "existing-structure", placement: tower }),
+    ]);
+    expect(JSON.stringify(followingReordered)).toBe(JSON.stringify(following));
   });
 });

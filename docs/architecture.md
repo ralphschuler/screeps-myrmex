@@ -70,22 +70,23 @@ actual flow and loss attribution. Command errors never consume or release anothe
 policy owner. It derives bounded road, container, ordinary-structure, wall, and rampart targets from
 current observation, layout, traffic consequence, reserve posture, RCL, and threat presence. It
 emits data only; ContractLedger owns funded creep work, while defense arbitration exclusively owns
-tower attack, heal, and repair. Issue #284 additionally permits one road that solely blocks a
-planned tower; issue #286 permits one empty obsolete extension only after current full allowance and
-an exact completed committed replacement are observed. Issue #288 lets the same policy persist one
-bounded stocked-extension evacuation, while `LogisticsPlanner` alone routes its exact energy to the
-replacement and suppresses refill competition. Removal still requires fresh delivered/empty
-observation and no active evacuation flow. Issue #290 permits one empty, unselected source-adjacent
-container only while a different exact committed container remains the reachable semantic service
-for the same source. Issue #292 permits one empty compatible-external general container only after
-committed replacement capacity exists; one compact layout-owned handoff suppresses its refill and
-waits for active logistics endpoints to retire. Issue #294 extends that handoff to exact energy-only
-stock. Issue #296 permits a compact binary-ordered manifest of two to eight resource kinds and one
-distinct funded flow per kind. Issue #298 permits the same manifest for one non-energy kind while
-preserving the legacy energy-only identity. Issue #300 reuses that bounded evacuation for one
-stocked, unselected redundant source-adjacent container while preserving its different exact
-selected service and static-mining identity; at most 2,000 total units move, and fresh empty-target,
-every delivered replacement gain, and retired-flow evidence remain mandatory.
+tower attack, heal, and repair. Issue #308 supersedes #284's temporary-road removal: the layout diff
+uses current engine-compatible road/rampart co-location, and roads never enter removal merely to
+build a planned structure. Issue #286 permits one empty obsolete extension only after current full
+allowance and an exact completed committed replacement are observed. Issue #288 lets the same policy
+persist one bounded stocked-extension evacuation, while `LogisticsPlanner` alone routes its exact
+energy to the replacement and suppresses refill competition. Removal still requires fresh
+delivered/empty observation and no active evacuation flow. Issue #290 permits one empty, unselected
+source-adjacent container only while a different exact committed container remains the reachable
+semantic service for the same source. Issue #292 permits one empty compatible-external general
+container only after committed replacement capacity exists; one compact layout-owned handoff
+suppresses its refill and waits for active logistics endpoints to retire. Issue #294 extends that
+handoff to exact energy-only stock. Issue #296 permits a compact binary-ordered manifest of two to
+eight resource kinds and one distinct funded flow per kind. Issue #298 permits the same manifest for
+one non-energy kind while preserving the legacy energy-only identity. Issue #300 reuses that bounded
+evacuation for one stocked, unselected redundant source-adjacent container while preserving its
+different exact selected service and static-mining identity; at most 2,000 total units move, and
+fresh empty-target, every delivered replacement gain, and retired-flow evidence remain mandatory.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`.
 
@@ -1425,14 +1426,14 @@ unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments an
 command. Every observed owned layout site enters the existing funded survival-growth build flow,
 while controller risk, recovery, maintenance, and protected reserves retain precedence.
 
-Issue #284 adds one narrow convergence exception without changing the layout owner schema.
-`ConstructionPlanner` may propose only a road that solely occupies an unlocked, below-allowance
-planned tower tile while the complete current layout, safe colony posture, workforce, reserve, and
-current construction-site headroom all pass. `StructureRemovalArbiter` requires one exact current
-colony/room/layout/observation/policy authorization, rejects over-cap batches before traversal, and
-accepts at most one globally. `StructureDestroyExecutor` revalidates current commitment, owned room,
-no hostiles, and exact road identity/position before the sole `Structure.destroy` call. The next
-observation proves disappearance; no migration queue, receipt, or success state is persisted.
+Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
+`diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
+planned road/rampart over another buildable structure. A matching structure still suppresses a site;
+any current construction site or incompatible different primary structure remains blocked. The
+existing site arbiter/executor, receipt, funding, and build chain retain authority and all
+visibility, policy, RCL, allowance, and site-cap guards. `ConstructionPlanner` emits no road-removal
+proposal, and the removal proposal/intent contracts contain no road variant. No owner schema or
+persistent state changes.
 
 Issue #286 adds one extension-only replacement-first step. Compatible external extensions remain in
 the current usable layout, while a pure convergence projection gives only primary extensions their
@@ -2096,8 +2097,8 @@ Required architecture assertions include:
 - direct or aliased `spawnCreep` calls occur only in `SpawnExecutor`;
 - direct or aliased `observeRoom` calls occur only in `ObserverExecutor`;
 - direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
-- temporary road removal requires exact current authorization, bounded input, and current site
-  headroom before accepting at most one road;
+- engine-compatible road/rampart layering uses the ordinary construction-site chain, while current
+  sites and incompatible primary occupants block and no road-removal intent exists;
 - obsolete-extension removal requires current full allowance, allowance-minus-one active committed
   extensions, an exact owned replacement, an empty unshared target, and the same global one-command
   ceiling;

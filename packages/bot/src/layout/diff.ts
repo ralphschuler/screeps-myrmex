@@ -10,6 +10,24 @@ import type {
 } from "./contracts";
 
 const LAYER_PRIORITY = Object.freeze({ primary: 0, rampart: 1, road: 2 });
+const ENGINE_BUILDABLE_STRUCTURE_TYPES: readonly string[] = Object.freeze([
+  "spawn",
+  "extension",
+  "road",
+  "constructedWall",
+  "rampart",
+  "link",
+  "storage",
+  "tower",
+  "observer",
+  "powerSpawn",
+  "extractor",
+  "lab",
+  "terminal",
+  "container",
+  "nuker",
+  "factory",
+]);
 
 export function diffOwnedRoomLayout(input: LayoutDiffInput): LayoutDiffResult {
   const proposals: LayoutSiteProposal[] = [],
@@ -34,7 +52,12 @@ export function diffOwnedRoomLayout(input: LayoutDiffInput): LayoutDiffResult {
       suppressed.push(decision(placement, stableId, "existing-structure", "suppressed"));
       continue;
     }
-    if (structures.length > 0) {
+    if (
+      structures.some(
+        ({ structureType }) =>
+          !structureTypesCanSharePosition(placement.structureType, structureType),
+      )
+    ) {
       rejected.push(decision(placement, stableId, "different-structure", "rejected"));
       continue;
     }
@@ -98,6 +121,13 @@ function observedCounts(input: LayoutDiffInput): Map<string, number> {
     if (item.ownership === "owned")
       counts.set(item.structureType, (counts.get(item.structureType) ?? 0) + 1);
   return counts;
+}
+function structureTypesCanSharePosition(planned: string, existing: string): boolean {
+  if (existing === "road" || existing === "rampart") return true;
+  return (
+    (planned === "road" || planned === "rampart") &&
+    ENGINE_BUILDABLE_STRUCTURE_TYPES.includes(existing)
+  );
 }
 function structureAllowance(unlocks: ColonyRclUnlockAllowances | null, type: string): number {
   if (!unlocks) return 0;

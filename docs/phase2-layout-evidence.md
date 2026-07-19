@@ -2,11 +2,12 @@
 
 Issue [#45](https://github.com/ralphschuler/screeps-myrmex/issues/45) establishes the complete
 layout-to-construction authority chain. Issue
-[#284](https://github.com/ralphschuler/screeps-myrmex/issues/284) adds one narrow temporary-road
-removal path. Issue [#286](https://github.com/ralphschuler/screeps-myrmex/issues/286) adds one empty
-extension-only replacement-first path. Issue
-[#288](https://github.com/ralphschuler/screeps-myrmex/issues/288) adds one stocked-extension
-energy-evacuation continuation. Issue
+[#308](https://github.com/ralphschuler/screeps-myrmex/issues/308) supersedes #284's temporary-road
+removal after current engine verification and routes compatible layered geometry through the
+ordinary construction-site chain. Issue
+[#286](https://github.com/ralphschuler/screeps-myrmex/issues/286) adds one empty extension-only
+replacement-first path. Issue [#288](https://github.com/ralphschuler/screeps-myrmex/issues/288) adds
+one stocked-extension energy-evacuation continuation. Issue
 [#290](https://github.com/ralphschuler/screeps-myrmex/issues/290) adds one empty redundant
 source-container removal while preserving the exact selected service. Issue
 [#292](https://github.com/ralphschuler/screeps-myrmex/issues/292) adds one replacement-first empty
@@ -31,24 +32,26 @@ service. Parent issue #99 still owns other structure migration and dismantling.
 3. `layout.plan` plans at most two visible owned rooms and persists only complete commitments. A
    pure projection restores committed geometry only for compatible external extensions, allowing the
    ordinary diff/site chain to spend spare extension allowance without changing current layout
-   usability. `ConstructionPlanner` may then project the temporary-road case, one active empty
-   external extension after exact current replacement evidence, one compact stocked-extension
-   evacuation commitment, one unselected source container with a different exact selected service
-   for the same source, or one compact general-container handoff after exact committed replacement
-   capacity exists. Before that migration policy, source-service selection gives one valid persisted
-   position continuity precedence over newly observed exact containers and sites; current offload
-   quality may degrade without moving static-mining terms. If the selected container is absent, one
-   different exact legal/reachable replacement may advance its issuance coordinate only under fresh
-   no-threat, no-controller-risk, legal-workforce, and restored-reserve evidence. Under the same
-   safety evidence, a current exact selected container may advance only to a different exact
-   candidate that strictly precedes it under the existing canonical ordering; worse/equal candidates
-   cannot oscillate the selection, and every persisted position remains reserved to its own source
-   across overlapping candidate sets. An empty redundant source target remains directly removable; a
-   stocked one persists the same bounded handoff plus its source identity. An energy-only target
-   persists its exact amount and the replacement's current energy. A target with one non-energy kind
-   or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline
-   tuples; energy as the only manifest row, malformed stock, or insufficient aggregate capacity
-   fails closed.
+   usability. The diff also follows current engine co-location: planned primary geometry may retain
+   existing roads/ramparts, and planned road/rampart layers may share another buildable structure;
+   current sites and incompatible primary occupancy still block. `ConstructionPlanner` may then
+   project one active empty external extension after exact current replacement evidence, one compact
+   stocked-extension evacuation commitment, one unselected source container with a different exact
+   selected service for the same source, or one compact general-container handoff after exact
+   committed replacement capacity exists. Before that migration policy, source-service selection
+   gives one valid persisted position continuity precedence over newly observed exact containers and
+   sites; current offload quality may degrade without moving static-mining terms. If the selected
+   container is absent, one different exact legal/reachable replacement may advance its issuance
+   coordinate only under fresh no-threat, no-controller-risk, legal-workforce, and restored-reserve
+   evidence. Under the same safety evidence, a current exact selected container may advance only to
+   a different exact candidate that strictly precedes it under the existing canonical ordering;
+   worse/equal candidates cannot oscillate the selection, and every persisted position remains
+   reserved to its own source across overlapping candidate sets. An empty redundant source target
+   remains directly removable; a stocked one persists the same bounded handoff plus its source
+   identity. An energy-only target persists its exact amount and the replacement's current energy. A
+   target with one non-energy kind or two to eight kinds persists binary-ordered compact
+   resource/amount/replacement-baseline tuples; energy as the only manifest row, malformed stock, or
+   insufficient aggregate capacity fails closed.
 4. On the following tick, runtime composition validates each stocked commitment from fresh
    observation, requests one distinct `optional-growth` reservation per resource kind, and injects
    exact source/replacement projections into `LogisticsPlanner`. Specialized sources replace the
@@ -61,8 +64,8 @@ service. Parent issue #99 still owns other structure migration and dismantling.
    refill sinks. Removal waits for fresh empty-target, every delivered replacement gain, and retired
    exact-flow/endpoint evidence. Unavailable contract views, capacity loss, refill, threat, timeout,
    drift, or a projection above 64 flows fail closed without a prefix. `StructureRemovalArbiter`
-   then requires one exact current planner authorization and accepts at most one deterministic road,
-   container, or extension removal after proving current global/room site headroom. The following
+   then requires one exact current planner authorization and accepts at most one deterministic
+   container or extension removal after proving current global/room site headroom. The following
    observation re-enters ordinary site arbitration.
 6. `layout.execute` alone resolves live rooms and targets. `ConstructionSiteExecutor` calls
    `Room.createConstructionSite`; `StructureDestroyExecutor` calls `Structure.destroy` after fresh
@@ -96,7 +99,7 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - two accepted globally and one per room per tick;
 - 64 inspected proposals and ten active sites per room;
 - 32 receipts per room;
-- at most 128 road/container/extension-removal candidates and authorizations; over-cap batches fail
+- at most 128 container/extension-removal candidates and authorizations; over-cap batches fail
   before traversal;
 - one accepted removal globally per tick;
 - layouts owner-local schema V4 migrates V1-V3 records, preserves V3's optional bounded source
@@ -119,39 +122,41 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 
 Focused tests cover one-call execution, next-tick duplicate suppression, every documented return
 code, adapter isolation, stale/ownership/loss guards, cap pressure, complete/degraded commitments,
-durable reset-safe receipts, and reorder equivalence. Composed outcomes prove both the exact
-road-removed-to-tower-eligible path and extension site-first convergence: nine RCL3 extensions
-produce one canonical desired site and no removal; observing the tenth desired extension authorizes
-one empty obsolete target; stocked/shared targets remain; executor replacement/Store drift fails
-closed; the next observation exposes only committed capacity and the final desired site. The stocked
-continuation proves one exact persisted amount, reset/reorder identity, obsolete-target refill
-suppression, externally funded acquire/deliver terms, active-flow removal blocking, observed
-replacement gain, and final one-command removal. The container continuation proves one exact
-selected source service survives removal of one empty unshared adjacent container, static-mining
-identity/work position remain unchanged, reordered/reset input is byte-identical, unsafe or stocked
-variants fail closed, and next observation emits no repeated removal. The general-container
-continuation proves spare-allowance site-first replacement, persisted one-tick suppression, active-
-target retirement, unavailable-contract refusal, source-adjacent-placement refusal, reset/reorder
-identity, one exact destroy call, preserved source service, and one final committed site. Its
-stocked continuation proves paired exact energy/baseline persistence and legacy empty-handoff
-parsing. The stocked redundant-source continuation proves canonical energy and mixed manifests,
-source/selected-replacement validation, funded projection and suppression, flow/endpoint retirement,
-delivery, unchanged static-mining identity/work position, expiry-without-delivery blocking, and
-three-attempt destroy backoff. The source-service continuity outcome proves that a better exact
-alternate and selected-container loss preserve the prior legal tile, one byte-stable mining
-contract, and dropped-energy fallback; malformed, ambiguous, conflicting, blocked, reordered, and
-reconstructed prior inputs cannot override bounded legal selection. The selected-service handoff
-outcome proves a vanished container plus exact replacement advances one coordinate only under
-explicit safety. It also proves one strictly better existing exact candidate advances once, while a
-worse candidate and the still-existing predecessor cannot cause oscillation, while overlapping
-source candidates cannot steal another source's persisted exact service. Layouts V1-V3 migrate
-without invented history, and one current-tick predecessor atomically becomes one funded/assigned
-next-sequence commitment after reset/reorder without an idempotency or binding conflict. The
-resource-manifest continuations prove canonical one-non-energy and two-kind persistence under
-Store/structure reorder and JSON reconstruction, distinct funded resource flows sharing aggregate
-replacement capacity, singleton-energy refusal, complete-projection overflow refusal,
-active/incomplete removal blocking, every observed replacement gain, endpoint retirement, and one
-exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
+durable reset-safe receipts, and reorder equivalence. The compatible-layering outcome proves a
+planned tower site is created directly over an existing road, no road-removal proposal or intent is
+available, the road remains after the tower is observed, and canonical ramparts can be proposed over
+protected structures under reset/reorder equivalence. Extension site-first convergence proves nine
+RCL3 extensions produce one canonical desired site and no removal; observing the tenth desired
+extension authorizes one empty obsolete target; stocked/shared targets remain; executor
+replacement/Store drift fails closed; the next observation exposes only committed capacity and the
+final desired site. The stocked continuation proves one exact persisted amount, reset/reorder
+identity, obsolete-target refill suppression, externally funded acquire/deliver terms, active-flow
+removal blocking, observed replacement gain, and final one-command removal. The container
+continuation proves one exact selected source service survives removal of one empty unshared
+adjacent container, static-mining identity/work position remain unchanged, reordered/reset input is
+byte-identical, unsafe or stocked variants fail closed, and next observation emits no repeated
+removal. The general-container continuation proves spare-allowance site-first replacement, persisted
+one-tick suppression, active-target retirement, unavailable-contract refusal,
+source-adjacent-placement refusal, reset/reorder identity, one exact destroy call, preserved source
+service, and one final committed site. Its stocked continuation proves paired exact energy/baseline
+persistence and legacy empty-handoff parsing. The stocked redundant-source continuation proves
+canonical energy and mixed manifests, source/selected-replacement validation, funded projection and
+suppression, flow/endpoint retirement, delivery, unchanged static-mining identity/work position,
+expiry-without-delivery blocking, and three-attempt destroy backoff. The source-service continuity
+outcome proves that a better exact alternate and selected-container loss preserve the prior legal
+tile, one byte-stable mining contract, and dropped-energy fallback; malformed, ambiguous,
+conflicting, blocked, reordered, and reconstructed prior inputs cannot override bounded legal
+selection. The selected-service handoff outcome proves a vanished container plus exact replacement
+advances one coordinate only under explicit safety. It also proves one strictly better existing
+exact candidate advances once, while a worse candidate and the still-existing predecessor cannot
+cause oscillation, while overlapping source candidates cannot steal another source's persisted exact
+service. Layouts V1-V3 migrate without invented history, and one current-tick predecessor atomically
+becomes one funded/assigned next-sequence commitment after reset/reorder without an idempotency or
+binding conflict. The resource-manifest continuations prove canonical one-non-energy and two-kind
+persistence under Store/structure reorder and JSON reconstruction, distinct funded resource flows
+sharing aggregate replacement capacity, singleton-energy refusal, complete-projection overflow
+refusal, active/incomplete removal blocking, every observed replacement gain, endpoint retirement,
+and one exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
 `npm run check` supplies repository-wide format, lint, type, test, documentation, bundle, and
 package evidence.
 
@@ -177,6 +182,12 @@ package evidence.
   [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define the existing scheduled
   acquire/deliver command boundary used by evacuation.
 - Official [Control guide](https://docs.screeps.com/control.html) constrains RCL structure access.
+- Screeps engine 4.3.2
+  [`checkConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/utils.js#L128-L189),
+  [`Creep.build` processing](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/creeps/build.js),
+  and current common
+  [`OBSTACLE_OBJECT_TYPES`](https://github.com/screeps/common/blob/2fb779b26eef9b4b0f412584f6bd47c897949766/lib/constants.js#L85)
+  prove road/rampart co-location without a preceding destroy command.
 - Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/)
   provides community extension-layout/reachability context only; MYRMEX remains clean-room and
   source-defined.

@@ -339,7 +339,7 @@ describe("Phase 2 telemetry reducer", () => {
     });
   });
 
-  it("counts temporary-road arbitration and exact destroy results in the fixed layout row", () => {
+  it("counts structure-removal arbitration and exact destroy results in the fixed layout row", () => {
     const outcome = runTick({
       game: establishedRcl2World().game(100),
       memory: {} as Memory,
@@ -354,12 +354,12 @@ describe("Phase 2 telemetry reducer", () => {
       observationFingerprint: "observation-a",
       policyFingerprint: "policy-a",
       pos: { roomName: "W1N1", x: 10, y: 11 },
-      replacementId: null,
-      replacementStructureType: "tower" as const,
-      stableId: "remove-road/road-a",
-      targetId: "road-a",
-      targetRequiresEmptyStore: false as const,
-      targetStructureType: "road" as const,
+      replacementId: "extension-replacement",
+      replacementStructureType: "extension" as const,
+      stableId: "remove-extension/extension-obsolete",
+      targetId: "extension-obsolete",
+      targetRequiresEmptyStore: true as const,
+      targetStructureType: "extension" as const,
     };
     const arbitration = arbitrateStructureRemovals({
       authorizations: [

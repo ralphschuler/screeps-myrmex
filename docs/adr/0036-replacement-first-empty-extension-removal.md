@@ -52,7 +52,7 @@ tick.
 
 The narrow path does not evacuate stock, migrate another structure type, preserve a multi-step
 migration record, use `Creep.dismantle`, or complete issue #99. Rollback removes the extension
-convergence projection and proposal branch while retaining temporary-road convergence.
+convergence projection and proposal branch while retaining engine-compatible road/rampart layering.
 
 ## Mechanics sources
 

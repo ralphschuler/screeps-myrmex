@@ -375,12 +375,6 @@ interface LayoutMigrationProposalBase {
 }
 export type LayoutMigrationProposal =
   | (LayoutMigrationProposalBase & {
-      readonly replacementId: null;
-      readonly replacementStructureType: "tower";
-      readonly targetRequiresEmptyStore: false;
-      readonly targetStructureType: "road";
-    })
-  | (LayoutMigrationProposalBase & {
       readonly replacementId: string;
       readonly replacementStructureType: "container";
       readonly targetRequiresEmptyStore: true;
@@ -441,12 +435,6 @@ interface DestroyOwnedStructureIntentBase {
   readonly y: number;
 }
 export type DestroyOwnedStructureIntent =
-  | (DestroyOwnedStructureIntentBase & {
-      readonly replacementId: null;
-      readonly replacementStructureType: "tower";
-      readonly targetRequiresEmptyStore: false;
-      readonly targetStructureType: "road";
-    })
   | (DestroyOwnedStructureIntentBase & {
       readonly replacementId: string;
       readonly replacementStructureType: "container";

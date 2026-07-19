@@ -48,27 +48,28 @@ to recovery while an incomplete room remains developing; telemetry never authori
 Recovery may rebuild committed owned sites through the existing layout, budget, contract, and
 executor chain, but it cannot reopen controller upgrading or unrelated optional growth.
 
-Layout convergence is destructive only under explicit narrow authority. During Phase 2, MYRMEX may
-remove one road that solely blocks an unlocked planned tower when current colony, threat,
-controller, reserve, workforce, layout, allowance, and construction-slot evidence is safe. It may
-also use spare extension allowance to build committed capacity, then remove one active obsolete
-extension only after the room reaches full allowance with exactly allowance minus one active
-extensions on committed geometry and an exact owned replacement remains. A stocked target first
-persists one bounded evacuation, reserves exact source/replacement capacity in the sole logistics
-graph, and suppresses ordinary refill of both targets during acquisition. Empty-source suppression
-continues through delivery. Removal waits for fresh empty-source, delivered-replacement, and
-retired-flow evidence. Current site headroom is required; the executor rechecks target stock and
-replacement identity; only fresh observation proves removal. Stored structures other than this one
-extension, defensive, critical, foreign, unknown, and multiply occupied structures remain excluded.
-General migration remains fail-closed. One source-container exception removes an unshared,
-unselected container beside exactly one source only while a different exact committed
-source-container remains the selected reachable service for that source. An empty target is directly
-eligible; a stocked target persists one bounded source-specific handoff and reuses the exact
-resource-manifest logistics path before removal. The stationary mining identity and work position do
-not change; selected, sole, ambiguous, or replacementless containers remain. A separate
-general-container exception first spends spare allowance on committed non-service capacity, then
-persists one bounded target handoff. An empty target suppresses refill and waits for every active
-logistics endpoint naming it to retire. An exact energy-only target whose amount fits the
+Layout convergence is destructive only under explicit narrow authority. Current engine-compatible
+roads and ramparts use the ordinary construction-site chain: a planned primary structure can retain
+a co-located road/rampart, and planned road/rampart layers can cover another buildable structure.
+Any current site or incompatible primary occupancy remains blocked, and no road is destroyed merely
+to build planned geometry. Phase 2 may use spare extension allowance to build committed capacity,
+then remove one active obsolete extension only after the room reaches full allowance with exactly
+allowance minus one active extensions on committed geometry and an exact owned replacement remains.
+A stocked target first persists one bounded evacuation, reserves exact source/replacement capacity
+in the sole logistics graph, and suppresses ordinary refill of both targets during acquisition.
+Empty-source suppression continues through delivery. Removal waits for fresh empty-source,
+delivered-replacement, and retired-flow evidence. Current site headroom is required; the executor
+rechecks target stock and replacement identity; only fresh observation proves removal. Stored
+structures other than this one extension, defensive, critical, foreign, unknown, and multiply
+occupied structures remain excluded. General migration remains fail-closed. One source-container
+exception removes an unshared, unselected container beside exactly one source only while a different
+exact committed source-container remains the selected reachable service for that source. An empty
+target is directly eligible; a stocked target persists one bounded source-specific handoff and
+reuses the exact resource-manifest logistics path before removal. The stationary mining identity and
+work position do not change; selected, sole, ambiguous, or replacementless containers remain. A
+separate general-container exception first spends spare allowance on committed non-service capacity,
+then persists one bounded target handoff. An empty target suppresses refill and waits for every
+active logistics endpoint naming it to retire. An exact energy-only target whose amount fits the
 replacement additionally uses the sole funded logistics flow. A target containing one non-energy
 kind or two to eight resource kinds instead persists one compact binary-ordered manifest and uses
 one distinct funded flow per kind; energy as the only manifest row remains invalid so its legacy
