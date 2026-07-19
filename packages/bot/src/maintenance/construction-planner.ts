@@ -461,7 +461,12 @@ export class ConstructionPlanner {
         };
         const prospectiveManifest =
           containerMigration?.resourceManifest ??
-          (evidence.resourceManifest.length > 1 ? evidence.resourceManifest : undefined);
+          (evidence.targetAmount > 0 &&
+          !(
+            evidence.resourceManifest.length === 1 && evidence.resourceManifest[0]?.[0] === "energy"
+          )
+            ? evidence.resourceManifest
+            : undefined);
         const budgetIdentityAvailable =
           prospectiveManifest === undefined
             ? layoutContainerMigrationBudgetIssuer(input.room.name, migrationIdentity) !== null
@@ -492,18 +497,6 @@ export class ConstructionPlanner {
           break;
         }
         if (containerMigration === null) {
-          if (
-            evidence.targetAmount > 0 &&
-            evidence.resourceManifest.length === 1 &&
-            evidence.resourceManifest[0]?.[0] !== "energy"
-          ) {
-            pushMigrationBlocker(blockers, {
-              reason: "target-stocked",
-              roomName: input.room.name,
-              targetId: candidate.target.id,
-            });
-            break;
-          }
           const energyOnly =
             evidence.resourceManifest.length === 1 && evidence.resourceManifest[0]?.[0] === "energy"
               ? evidence.resourceManifest[0]
@@ -569,12 +562,16 @@ export class ConstructionPlanner {
             });
             break;
           }
-          const mixedMigration = containerMigration;
+          const resourceMigration = containerMigration;
           const terms = validContainerMigrationResourceManifest(resourceManifest);
           const targetByResource = new Map(evidence.targetResources);
           const replacementByResource = new Map(evidence.replacementResources);
           const flowIds = terms?.map(([resourceType]) =>
-            layoutContainerMigrationResourceFlowId(input.room.name, mixedMigration, resourceType),
+            layoutContainerMigrationResourceFlowId(
+              input.room.name,
+              resourceMigration,
+              resourceType,
+            ),
           );
           const flowActive = flowIds?.some(
             (flowId) => flowId !== null && input.activeLogisticsFlowIds?.has(flowId),
@@ -923,31 +920,44 @@ function generalContainerMigrationEvidence(
 }
 
 function validContainerMigrationResourceManifest(
-  manifest: readonly LayoutContainerMigrationResource[],
+  value: unknown,
 ): readonly LayoutContainerMigrationResource[] | null {
-  if (manifest.length < 2 || manifest.length > MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES)
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES
+  )
     return null;
   let prior = "";
   let amountTotal = 0;
   let replacementTotal = 0;
-  for (const row of manifest) {
+  const manifest: LayoutContainerMigrationResource[] = [];
+  for (const row of value) {
+    if (!Array.isArray(row) || row.length !== 3) return null;
+    const resourceType: unknown = row[0];
+    const amount: unknown = row[1];
+    const replacementAmount: unknown = row[2];
     if (
-      !Array.isArray(row) ||
-      row[0].length === 0 ||
-      row[0].length > 64 ||
-      row[0] !== row[0].trim() ||
-      (prior !== "" && compareText(prior, row[0]) >= 0) ||
-      !Number.isSafeInteger(row[1]) ||
-      row[1] <= 0 ||
-      !Number.isSafeInteger(row[2]) ||
-      row[2] < 0
+      typeof resourceType !== "string" ||
+      resourceType.length === 0 ||
+      resourceType.length > 64 ||
+      resourceType !== resourceType.trim() ||
+      (prior !== "" && compareText(prior, resourceType) >= 0) ||
+      typeof amount !== "number" ||
+      !Number.isSafeInteger(amount) ||
+      amount <= 0 ||
+      typeof replacementAmount !== "number" ||
+      !Number.isSafeInteger(replacementAmount) ||
+      replacementAmount < 0
     )
       return null;
-    prior = row[0];
-    amountTotal += row[1];
-    replacementTotal += row[2];
+    prior = resourceType;
+    amountTotal += amount;
+    replacementTotal += replacementAmount;
+    manifest.push([resourceType, amount, replacementAmount]);
   }
-  return amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY &&
+  return !(manifest.length === 1 && prior === "energy") &&
+    amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY &&
     replacementTotal + amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY
     ? manifest
     : null;

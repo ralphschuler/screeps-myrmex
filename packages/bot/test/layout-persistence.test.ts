@@ -151,9 +151,30 @@ describe("layout persistence and cache", () => {
     owner = persistLayoutContainerMigration(owner, "W1N1", mixed);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 1 })).toBeNull();
+
+    const singletonNonEnergy = {
+      ...mixed,
+      resourceManifest: [["U", 25, 5]],
+    } as const;
+    owner = persistLayoutContainerMigration(owner, "W1N1", singletonNonEnergy);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 1 })).toBeNull();
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [
+          {
+            ...owner.records[0],
+            containerMigration: { ...singletonNonEnergy, resourceManifest: [["energy", 25, 5]] },
+          },
+        ],
+      }),
+    ).toBeNull();
+
     for (const resourceManifest of [
       [...mixed.resourceManifest].reverse(),
       [mixed.resourceManifest[0], mixed.resourceManifest[0]],
+      [["U", 25, 5, "unexpected"]],
       Array.from({ length: 9 }, (_, index) => [`r${String(index)}`, 1, 0] as const),
       [
         ["U", 1_500, 0],

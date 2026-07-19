@@ -426,7 +426,7 @@ describe("composed layout runtime", () => {
     ]);
   });
 
-  it("builds, evacuates mixed stock, and removes one obsolete general container", () => {
+  it("builds, evacuates one non-energy stock, and removes one obsolete general container", () => {
     const baseline = complete();
     const unlocks = policy.unlocks;
     if (unlocks === null) throw new Error("expected RCL unlocks");
@@ -465,10 +465,7 @@ describe("composed layout runtime", () => {
       store: {
         capacity: 2_000,
         freeCapacity: 1_950,
-        resources: [
-          { amount: 25, resourceType: "energy" },
-          { amount: 25, resourceType: "U" },
-        ],
+        resources: [{ amount: 50, resourceType: "U" }],
         usedCapacity: 50,
       },
     };
@@ -501,7 +498,15 @@ describe("composed layout runtime", () => {
       ({ structureType }) => structureType === "container",
     );
     if (replacementSite === undefined) throw new Error("expected committed container site");
-    const replacement = container("container-general-replacement", replacementSite.pos);
+    const replacement = {
+      ...container("container-general-replacement", replacementSite.pos, 10),
+      store: {
+        capacity: 2_000,
+        freeCapacity: 1_990,
+        resources: [{ amount: 10, resourceType: "U" }],
+        usedCapacity: 10,
+      },
+    };
     const currentStructures = [...initialStructures, replacement];
     const current = planOwnedRoomLayout({ ...planningInput, structures: currentStructures });
     if (current.status !== "complete") throw new Error("expected replacement layout");
@@ -563,10 +568,7 @@ describe("composed layout runtime", () => {
     if (stage.containerMigration === null) throw new Error("expected container handoff");
     expect(stage.proposals).toEqual([]);
     expect(stage.containerMigration).toMatchObject({
-      resourceManifest: [
-        ["U", 25, 0],
-        ["energy", 25, 0],
-      ],
+      resourceManifest: [["U", 50, 10]],
     });
     const nextRoom = { ...room, observedAt: 101 };
     const migrationProjection = projectLayoutContainerMigrations({
@@ -586,15 +588,10 @@ describe("composed layout runtime", () => {
     });
     expect(migrationProjection.budgets).toEqual([
       expect.objectContaining({ category: "optional-growth" }),
-      expect.objectContaining({ category: "optional-growth" }),
     ]);
-    expect(migrationProjection.edges).toEqual([
-      expect.objectContaining({ maximumAmount: 25 }),
-      expect.objectContaining({ maximumAmount: 25 }),
-    ]);
+    expect(migrationProjection.edges).toEqual([expect.objectContaining({ maximumAmount: 50 })]);
     const migrationFlowIds = [
       "layout-container-evacuation:W1N1:container-obsolete:container-general-replacement:1:U",
-      "layout-container-evacuation:W1N1:container-obsolete:container-general-replacement:6:energy",
     ];
     expect(
       new ConstructionPlanner().planMigration({
@@ -614,15 +611,12 @@ describe("composed layout runtime", () => {
     ).toEqual([]);
     const emptiedObsolete = container(obsolete.id, obsolete.pos);
     const stockedReplacement = {
-      ...container(replacement.id, replacement.pos, 50),
+      ...container(replacement.id, replacement.pos, 60),
       store: {
         capacity: 2_000,
-        freeCapacity: 1_950,
-        resources: [
-          { amount: 25, resourceType: "energy" },
-          { amount: 25, resourceType: "U" },
-        ],
-        usedCapacity: 50,
+        freeCapacity: 1_940,
+        resources: [{ amount: 60, resourceType: "U" }],
+        usedCapacity: 60,
       },
     };
     const deliveredRoom = {

@@ -238,7 +238,7 @@ function validContainerMigration(value: unknown): value is LayoutContainerMigrat
 function validContainerResourceManifest(value: unknown): boolean {
   if (
     !Array.isArray(value) ||
-    value.length < 2 ||
+    value.length < 1 ||
     value.length > MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES
   )
     return false;
@@ -261,6 +261,7 @@ function validContainerResourceManifest(value: unknown): boolean {
     replacementTotal += row[2];
   }
   return (
+    !(value.length === 1 && prior === "energy") &&
     amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY &&
     replacementTotal + amountTotal <= MAX_LAYOUT_CONTAINER_ENERGY
   );

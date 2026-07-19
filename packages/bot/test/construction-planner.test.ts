@@ -445,6 +445,66 @@ describe("ConstructionPlanner", () => {
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(staged));
     expect(JSON.stringify(reset)).toBe(JSON.stringify(staged));
     if (staged.containerMigration === null) throw new Error("expected stocked migration");
+
+    const singleNonEnergyTarget = {
+      ...stockedTarget,
+      store: {
+        ...stockedTarget.store,
+        resources: [{ amount: 50, resourceType: "U" }],
+      },
+    };
+    const singleNonEnergyRoom = {
+      ...fixture.room,
+      storedStructures: fixture.room.storedStructures.map((value) =>
+        value.id === singleNonEnergyTarget.id ? singleNonEnergyTarget : value,
+      ),
+      structures: (fixture.room.structures ?? []).map((value) =>
+        value.id === singleNonEnergyTarget.id ? singleNonEnergyTarget : value,
+      ),
+    };
+    const singleNonEnergy = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      currentPlacements: fixture.currentPlacements,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: singleNonEnergyRoom,
+    });
+    expect(singleNonEnergy.containerMigration).toMatchObject({
+      replacementId: "container-general-b",
+      resourceManifest: [["U", 50, 0]],
+      targetId: "container-obsolete",
+    });
+    expect(singleNonEnergy.containerMigration).not.toHaveProperty("energyAmount");
+    if (singleNonEnergy.containerMigration === null)
+      throw new Error("expected single-resource migration");
+    const malformedSingleNonEnergy = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      containerMigration: {
+        ...singleNonEnergy.containerMigration,
+        resourceManifest: [["U", 50, 0, "unexpected"]],
+      } as never,
+      currentPlacements: fixture.currentPlacements,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: { ...singleNonEnergyRoom, observedAt: 101 },
+    });
+    expect(malformedSingleNonEnergy.blockers).toContainEqual(
+      expect.objectContaining({ reason: "evacuation-incomplete" }),
+    );
+    const reorderedSingleNonEnergy = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      currentPlacements: [...fixture.currentPlacements].reverse(),
+      logisticsEvidenceReady: true,
+      placements: [...fixture.placements].reverse(),
+      room: {
+        ...singleNonEnergyRoom,
+        storedStructures: [...singleNonEnergyRoom.storedStructures].reverse(),
+        structures: [...singleNonEnergyRoom.structures].reverse(),
+      },
+    });
+    expect(JSON.stringify(reorderedSingleNonEnergy)).toBe(JSON.stringify(singleNonEnergy));
+
     const mixedTarget = {
       ...stockedTarget,
       store: {

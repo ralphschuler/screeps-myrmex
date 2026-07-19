@@ -13,8 +13,10 @@ source-container removal while preserving the exact selected service. Issue
 general-container handoff with logistics-target retirement. Issue
 [#294](https://github.com/ralphschuler/screeps-myrmex/issues/294) extends it with one exact
 energy-only evacuation. Issue [#296](https://github.com/ralphschuler/screeps-myrmex/issues/296)
-extends the same handoff to a bounded mixed-resource manifest; parent issue #99 still owns other
-structure migration, single non-energy stock, source-service switching, and dismantling.
+extends the same handoff to a bounded mixed-resource manifest. Issue
+[#298](https://github.com/ralphschuler/screeps-myrmex/issues/298) admits exactly one non-energy
+manifest row; parent issue #99 still owns other structure migration, source-service switching, and
+dismantling.
 
 ## Runtime order
 
@@ -28,9 +30,9 @@ structure migration, single non-energy stock, source-service switching, and dism
    evacuation commitment, one empty unselected source container with a different exact selected
    service for the same source, or one compact general-container handoff after exact committed
    replacement capacity exists. An energy-only general target persists its exact amount and the
-   replacement's current energy. A target with two to eight kinds persists binary-ordered compact
-   resource/amount/replacement-baseline tuples; a single non-energy kind, malformed stock, or
-   insufficient aggregate capacity fails closed.
+   replacement's current energy. A target with one non-energy kind or two to eight kinds persists
+   binary-ordered compact resource/amount/replacement-baseline tuples; energy as the only manifest
+   row, malformed stock, or insufficient aggregate capacity fails closed.
 4. On the following tick, runtime composition validates each stocked commitment from fresh
    observation, requests one distinct `optional-growth` reservation per resource kind, and injects
    exact source/replacement projections into `LogisticsPlanner`. Specialized sources replace the
@@ -77,8 +79,8 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - at most one compact extension evacuation and one compact general-container handoff per room across
   64 records;
 - general-container evacuation is capped by the official 2,000 capacity and either one legacy energy
-  pair or two to eight compact mixed-resource tuples; fresh replacement evidence is capped at 64
-  Store rows;
+  pair or one to eight compact resource tuples, with a one-row energy manifest forbidden; fresh
+  replacement evidence is capped at 64 Store rows;
 - at most 64 extension edges and 64 general-container resource edges, each with two nodes; mixed
   projection overflow rejects the complete migration graph before the common logistics caps;
 - empty general-container handoffs add only bounded sink-suppression IDs;
@@ -105,12 +107,13 @@ continuation proves spare-allowance site-first replacement, persisted one-tick s
 target retirement, unavailable-contract refusal, source-adjacent-placement refusal, reset/reorder
 identity, one exact destroy call, preserved source service, and one final committed site. Its
 stocked continuation proves paired exact energy/baseline persistence and legacy empty-handoff
-parsing. The mixed continuation proves canonical two-kind persistence under Store/structure reorder
-and JSON reconstruction, distinct funded resource flows sharing aggregate replacement capacity,
-complete-projection overflow refusal, active/incomplete removal blocking, every observed replacement
-gain, endpoint retirement, and one exact destroy call. Existing mandatory runtime-tail and mature-
-build tests remain green. `npm run check` supplies repository-wide format, lint, type, test,
-documentation, bundle, and package evidence.
+parsing. The resource-manifest continuations prove canonical one-non-energy and two-kind persistence
+under Store/structure reorder and JSON reconstruction, distinct funded resource flows sharing
+aggregate replacement capacity, singleton-energy refusal, complete-projection overflow refusal,
+active/incomplete removal blocking, every observed replacement gain, endpoint retirement, and one
+exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
+`npm run check` supplies repository-wide format, lint, type, test, documentation, bundle, and
+package evidence.
 
 ## Mechanics sources
 
