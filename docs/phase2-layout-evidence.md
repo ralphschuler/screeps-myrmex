@@ -37,8 +37,10 @@ exact reserve-replacement continuity. Issue
 evacuation continuation for a stocked reserve link whose exact replacement has complete capacity.
 Issue [#320](https://github.com/ralphschuler/screeps-myrmex/issues/320) restores committed RCL8 lab
 geometry and removes one empty idle external lab only while industry and logistics are quiescent and
-the remaining exact labs preserve a valid cluster. Parent issue #99 still owns other structure
-migration and dismantling.
+the remaining exact labs preserve a valid cluster. Issue
+[#322](https://github.com/ralphschuler/screeps-myrmex/issues/322) adds one funded energy-only
+quiescent-lab evacuation before that removal. Parent issue #99 still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -85,10 +87,12 @@ migration and dismantling.
    stale, revision-mismatched, unclassified, malformed, cooling, shared, site-occupied, pressured,
    or incomplete evidence emits no proposal. Lab removal is RCL8-only: all ten owned labs must be
    observed, exactly nine active labs must occupy distinct committed positions, the external target
-   must be active, empty, zero-cooldown, unshared, and site-free, and the current industry view must
-   have no commitment, pending attempt, intent, staging demand, or demand endpoint. No active
+   must be active, zero-cooldown, unshared, and site-free, and the current industry view must have
+   no commitment, pending attempt, intent, staging demand, or demand endpoint. No unrelated active
    logistics endpoint may name any room lab, and deterministic post-removal assignment over the nine
-   exact labs must succeed.
+   exact labs must succeed. An empty target remains directly eligible. A positive target must
+   contain energy only and persists one 150-tick evacuation only when the canonical exact
+   replacement has complete independent energy capacity.
 5. On the following tick, runtime composition validates each stocked commitment from fresh
    observation. A reserve-link commitment additionally reuses canonical ideal-link classification to
    prove every productive anchor remains exact and the target/replacement remain reserve capacity;
@@ -97,10 +101,11 @@ migration and dismantling.
    reservation per resource kind and injects exact source/replacement projections into
    `LogisticsPlanner`. Specialized sources replace the target's ordinary source nodes, all
    replacement sinks share one aggregate-capacity key, and ordinary refill sinks cannot compete.
-   Tower and reserve-link evacuations each contribute exactly one energy flow, suppress their
-   obsolete target and replacement from competing refill, and reserve the exact replacement's
-   physical capacity once. Existing V3 haul contracts and lease agents perform only the funded
-   withdraw/transfer path.
+   Tower, reserve-link, and quiescent-lab evacuations each contribute exactly one energy flow and
+   reserve the exact replacement's physical capacity once. The lab path suppresses both labs'
+   ordinary source and refill projections and requires a current matching quiescent industry view;
+   lost quiescence or graph admission excludes its persisted flow from same-tick agent execution.
+   Existing V3 haul contracts and lease agents perform only the funded withdraw/transfer path.
 6. An empty general-container handoff suppresses the obsolete target's ordinary refill and retires
    assigned/active V3 work that still names it. A stocked general or redundant-source handoff
    instead supplies one exact flow per resource and suppresses the target source plus both endpoint
@@ -109,13 +114,15 @@ migration and dismantling.
    amount replacement gain, and retired exact-flow/endpoint gate while preserving at least 10 energy
    in the active committed replacement. A stocked reserve link additionally requires exact target
    emptiness, exact baseline-plus-amount replacement energy, retired flow/endpoints, unchanged
-   reserve roles, zero cooldown, and no accepted native link transfer. Unavailable contract views,
-   capacity loss, refill, threat, timeout, drift, or a projection above 64 flows fail closed without
-   a prefix. Public link-runtime arbitration uses source, hub, and controller roles only; neither
-   reserve link can become a transfer endpoint in the removal tick. `StructureRemovalArbiter` then
-   requires one exact current planner authorization and accepts at most one deterministic container,
-   extension, tower, link, or lab removal after proving current global/room site headroom. The
-   following observation re-enters ordinary site arbitration.
+   reserve roles, zero cooldown, and no accepted native link transfer. An energy-only lab requires
+   fresh zero energy/mineral, baseline-plus-amount replacement energy, retired flow/endpoints, and
+   unchanged quiescence, assignment, post-removal cluster, and safety evidence. Unavailable contract
+   views, capacity loss, refill, threat, timeout, drift, or a projection above 64 flows fail closed
+   without a prefix. Public link-runtime arbitration uses source, hub, and controller roles only;
+   neither reserve link can become a transfer endpoint in the removal tick.
+   `StructureRemovalArbiter` then requires one exact current planner authorization and accepts at
+   most one deterministic container, extension, tower, link, or lab removal after proving current
+   global/room site headroom. The following observation re-enters ordinary site arbitration.
 7. `layout.execute` alone resolves live rooms and targets. `ConstructionSiteExecutor` calls
    `Room.createConstructionSite`; `StructureDestroyExecutor` calls `Structure.destroy` after fresh
    ownership, threat, commitment, ID, type, room, and position checks. Extension removal also
@@ -129,7 +136,7 @@ migration and dismantling.
    rechecks exact 2,000-energy and 3,000-mineral empty capacity, null mineral type, zero cooldown,
    ownership/activity, and one exact active same-room lab.
 8. On a selected-service switch only, `layout.handoff-reconcile` reconciles the complete layout
-   draft and stages layouts-owner V10 before the root commit. The predecessor remains executable. On
+   draft and stages layouts-owner V11 before the root commit. The predecessor remains executable. On
    the following tick, StaticMiningPlanner consumes the durable coordinate; Reconcile atomically
    cancels the predecessor, creates/funds its exact next sequence, and leaves exactly one
    commitment.
@@ -159,25 +166,26 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - at most 128 container/extension/tower/link/lab-removal candidates and authorizations; over-cap
   batches fail before traversal;
 - one accepted removal globally per tick;
-- layouts owner-local schema V10 migrates V1-V9 records, preserves V3's optional bounded source
+- layouts owner-local schema V11 migrates V1-V10 records, preserves V3's optional bounded source
   identity and V4's optional source-service issuance coordinate, moves a valid legacy nested receipt
-  to the generic field, preserves V6 tower receipts, V7 tower evacuations, V8 link receipts, and V9
-  reserve-link evacuations, invents no lab evidence while migrating, and makes rollback to older
-  code fail closed;
+  to the generic field, preserves V6 tower receipts, V7 tower evacuations, V8 link receipts, V9
+  reserve-link evacuations, and V10 lab receipts, invents no lab evacuation while migrating, and
+  makes rollback to older code fail closed;
 - reserve-link role proof stays within the existing 16-link classification cap and persists no role
   map, transfer receipt, or migration queue;
-- at most one compact extension evacuation, one compact tower evacuation, one compact reserve-link
-  evacuation, one compact container handoff, and one fixed-shape three-attempt destroy receipt per
-  room across 64 records; retry matching adds no unbounded scan;
+- at most one compact extension, tower, reserve-link, and lab-energy evacuation, one compact
+  container handoff, and one fixed-shape three-attempt destroy receipt per room across 64 records;
+  retry matching adds no unbounded scan;
 - container evacuation is capped by the official 2,000 capacity and either one legacy energy pair or
   one to eight compact resource tuples, with a one-row energy manifest forbidden; fresh replacement
   evidence is capped at 64 Store rows;
-- at most 64 extension edges, 64 tower edges, 64 reserve-link edges, and 64 general-container
-  resource edges, each with two nodes; mixed projection overflow rejects the complete migration
-  graph before the common logistics caps, and any merged optional-demand overflow preserves the
-  observed graph rather than displacing survival nodes;
+- at most 64 extension edges, 64 tower edges, 64 reserve-link edges, 64 lab-energy edges, and 64
+  general-container resource edges, each with two nodes; mixed projection overflow rejects the
+  complete migration graph before the common logistics caps, and any merged optional-demand overflow
+  preserves the observed graph rather than displacing survival nodes;
 - empty general-container handoffs add only bounded sink-suppression IDs;
-- 150-tick exclusive evacuation and general-container handoff timeouts;
+- 150-tick exclusive evacuation and general-container handoff timeouts; lab energy is capped at the
+  official 2,000 capacity;
 - current global and room site headroom required before removal;
 - `OK` expectation retry capped at 32 ticks, `ERR_FULL` at 100, and unexpected faults at 64.
 
@@ -201,49 +209,51 @@ produce one ordinary committed lab site; observing ten labs with nine exact comm
 matching idle industry evidence, no logistics endpoint, and a valid post-removal cluster admits one
 destroy. Exact Store/cooldown checks, JSON reset/reordering, pending-success duplicate suppression,
 observed disappearance, and final canonical site eligibility pass while active work and drift fail
-closed. Partial delivery plus JSON reset/reordering preserves terms, active flow and endpoints block
-removal, fresh empty-target and replacement gain admit one destroy, pending success emits no
-duplicate, and target disappearance exposes the final committed site. Reserve-link replacement-first
-convergence proves one ordinary committed site is built under spare allowance, then complete
-canonical current/ideal role evidence retains all source, hub, and controller anchors while naming
-only zero-cooldown reserve target/replacement IDs. Public link-runtime evidence keeps both IDs out
-of native funded transfers. Fresh canonical continuity authorization gates every following-tick
-projection, while oversized optional demand cannot displace observed logistics. The stocked
-continuation persists one exact 300-energy commitment, projects one funded V3 creep flow, preserves
-terms through partial delivery plus JSON reset/reordering, and blocks removal until exact target
-emptiness, replacement gain, retired flow and endpoints, zero cooldown, and no accepted native
-transfer. The executor revalidates exact delivered replacement energy; the V9 receipt suppresses a
-duplicate after `OK`, and observed disappearance exposes the final committed site. The container
-continuation proves one exact selected source service survives removal of one empty unshared
-adjacent container, static-mining identity/work position remain unchanged, reordered/reset input is
-byte-identical, unsafe or stocked variants fail closed, and next observation emits no repeated
-removal. The general-container continuation proves spare-allowance site-first replacement, persisted
-one-tick suppression, active-target retirement, unavailable-contract refusal,
-source-adjacent-placement refusal, reset/reorder identity, one exact destroy call, preserved source
-service, and one final committed site. Its stocked continuation proves paired exact energy/baseline
-persistence and legacy empty-handoff parsing. The stocked redundant-source continuation proves
-canonical energy and mixed manifests, source/selected-replacement validation, funded projection and
-suppression, flow/endpoint retirement, delivery, unchanged static-mining identity/work position,
-expiry-without-delivery blocking. Generic removal evidence proves empty and stocked source/general
-containers plus extensions share exact identity binding, pending-success observation, capped
-three-attempt backoff, reset/reorder equivalence, fresh drift clearing, and another room's progress
-between eligibility ticks. The source-service continuity outcome proves that a better exact
-alternate and selected-container loss preserve the prior legal tile, one byte-stable mining
-contract, and dropped-energy fallback; malformed, ambiguous, conflicting, blocked, reordered, and
-reconstructed prior inputs cannot override bounded legal selection. The selected-service handoff
-outcome proves a vanished container plus exact replacement advances one coordinate only under
-explicit safety. It also proves one strictly better existing exact candidate advances once, while a
-worse candidate and the still-existing predecessor cannot cause oscillation, while overlapping
-source candidates cannot steal another source's persisted exact service. Layouts V1-V3 migrate
-without invented history, and one current-tick predecessor atomically becomes one funded/assigned
-next-sequence commitment after reset/reorder without an idempotency or binding conflict. The
-resource-manifest continuations prove canonical one-non-energy and two-kind persistence under
-Store/structure reorder and JSON reconstruction, distinct funded resource flows sharing aggregate
-replacement capacity, singleton-energy refusal, complete-projection overflow refusal,
-active/incomplete removal blocking, every observed replacement gain, endpoint retirement, and one
-exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
-`npm run check` supplies repository-wide format, lint, type, test, documentation, bundle, and
-package evidence.
+closed. The energy-only lab continuation persists one exact amount/baseline, publishes one funded V3
+flow only under current quiescence, survives partial delivery plus JSON reset/reordering, and blocks
+removal on mineral stock, refill/consumption, capacity loss, timeout, active industry, or unretired
+work. Fresh target emptiness, replacement gain, and retired endpoints admit the unchanged
+one-command removal path. Partial tower delivery likewise preserves terms until fresh empty-target
+and replacement gain admit removal. Reserve-link replacement-first convergence proves one ordinary
+committed site is built under spare allowance, then complete canonical current/ideal role evidence
+retains all source, hub, and controller anchors while naming only zero-cooldown reserve
+target/replacement IDs. Public link-runtime evidence keeps both IDs out of native funded transfers.
+Fresh canonical continuity authorization gates every following-tick projection, while oversized
+optional demand cannot displace observed logistics. The stocked continuation persists one exact
+300-energy commitment, projects one funded V3 creep flow, preserves terms through partial delivery
+plus JSON reset/reordering, and blocks removal until exact target emptiness, replacement gain,
+retired flow and endpoints, zero cooldown, and no accepted native transfer. The executor revalidates
+exact delivered replacement energy; the V9 receipt suppresses a duplicate after `OK`, and observed
+disappearance exposes the final committed site. The container continuation proves one exact selected
+source service survives removal of one empty unshared adjacent container, static-mining
+identity/work position remain unchanged, reordered/reset input is byte-identical, unsafe or stocked
+variants fail closed, and next observation emits no repeated removal. The general-container
+continuation proves spare-allowance site-first replacement, persisted one-tick suppression,
+active-target retirement, unavailable-contract refusal, source-adjacent-placement refusal,
+reset/reorder identity, one exact destroy call, preserved source service, and one final committed
+site. Its stocked continuation proves paired exact energy/baseline persistence and legacy
+empty-handoff parsing. The stocked redundant-source continuation proves canonical energy and mixed
+manifests, source/selected-replacement validation, funded projection and suppression, flow/endpoint
+retirement, delivery, unchanged static-mining identity/work position, expiry-without-delivery
+blocking. Generic removal evidence proves empty and stocked source/general containers plus
+extensions share exact identity binding, pending-success observation, capped three-attempt backoff,
+reset/reorder equivalence, fresh drift clearing, and another room's progress between eligibility
+ticks. The source-service continuity outcome proves that a better exact alternate and
+selected-container loss preserve the prior legal tile, one byte-stable mining contract, and
+dropped-energy fallback; malformed, ambiguous, conflicting, blocked, reordered, and reconstructed
+prior inputs cannot override bounded legal selection. The selected-service handoff outcome proves a
+vanished container plus exact replacement advances one coordinate only under explicit safety. It
+also proves one strictly better existing exact candidate advances once, while a worse candidate and
+the still-existing predecessor cannot cause oscillation, while overlapping source candidates cannot
+steal another source's persisted exact service. Layouts V1-V3 migrate without invented history, and
+one current-tick predecessor atomically becomes one funded/assigned next-sequence commitment after
+reset/reorder without an idempotency or binding conflict. The resource-manifest continuations prove
+canonical one-non-energy and two-kind persistence under Store/structure reorder and JSON
+reconstruction, distinct funded resource flows sharing aggregate replacement capacity,
+singleton-energy refusal, complete-projection overflow refusal, active/incomplete removal blocking,
+every observed replacement gain, endpoint retirement, and one exact destroy call. Existing mandatory
+runtime-tail and mature-build tests remain green. `npm run check` supplies repository-wide format,
+lint, type, test, documentation, bundle, and package evidence.
 
 ## Mechanics sources
 

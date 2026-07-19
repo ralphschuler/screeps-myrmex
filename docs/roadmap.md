@@ -140,7 +140,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   cooldown, unchanged reserve roles, and no accepted native transfer before removal. Issue #320
   restores committed RCL8 lab geometry, then removes one active empty zero-cooldown external lab
   only while current industry work is quiescent, no logistics endpoint names any room lab, and the
-  remaining nine exact committed labs still derive a valid cluster. Other structure types,
+  remaining nine exact committed labs still derive a valid cluster. Issue #322 extends only that
+  quiescent path to one energy-only target, persisting a 150-tick funded creep-logistics evacuation
+  and requiring fresh target-empty, baseline-plus-amount replacement energy, retired work, and
+  unchanged cluster/safety evidence before removal. Other structure types, mineral-bearing or
   active-work-preserving lab handoff, general multi-step migration, and creep dismantling remain
   issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed

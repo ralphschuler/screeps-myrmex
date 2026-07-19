@@ -101,9 +101,14 @@ roles, and zero cooldown. Cooling, malformed, productive-role, incomplete, or pr
 remain. RCL8 lab convergence also spends spare allowance through the ordinary build chain. One
 active empty zero-cooldown external lab may be removed only when nine active labs already occupy
 distinct committed positions, the current industry projection has no commitment, pending attempt,
-intent, or staging demand, no logistics endpoint names any room lab, and those nine exact labs still
-form a valid reaction cluster. Stocked, contaminated, cooling, active-work, stale, malformed,
-cluster-breaking, or pressured labs remain.
+intent, or staging demand, no unrelated logistics endpoint names any room lab, and those nine exact
+labs still form a valid reaction cluster. An otherwise eligible energy-only target first persists
+one 150-tick evacuation when the canonical exact replacement has complete independent energy
+capacity. The sole funded creep-logistics path suppresses both labs' ordinary source/refill
+publication; removal waits for fresh target emptiness, baseline-plus-amount replacement energy,
+retired flow/endpoints, and unchanged quiescence, cluster, and safety evidence. Mineral-bearing,
+contaminated, cooling, active-work, stale, malformed, capacity-lost, cluster-breaking, or pressured
+labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
