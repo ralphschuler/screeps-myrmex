@@ -20,8 +20,9 @@ bounded evacuation for one stocked, unselected redundant source-adjacent contain
 [#302](https://github.com/ralphschuler/screeps-myrmex/issues/302) pins a persisted legal/reachable
 source-service position until an explicit handoff exists. Issue
 [#304](https://github.com/ralphschuler/screeps-myrmex/issues/304) advances one lost selected service
-to one exact replacement; parent issue #99 still owns other structure migration, optimization while
-an existing selected container remains, and dismantling.
+to one exact replacement. Issue [#306](https://github.com/ralphschuler/screeps-myrmex/issues/306)
+reuses that handoff when a different existing exact container strictly outranks the selected exact
+service. Parent issue #99 still owns other structure migration and dismantling.
 
 ## Runtime order
 
@@ -38,12 +39,16 @@ an existing selected container remains, and dismantling.
    position continuity precedence over newly observed exact containers and sites; current offload
    quality may degrade without moving static-mining terms. If the selected container is absent, one
    different exact legal/reachable replacement may advance its issuance coordinate only under fresh
-   no-threat, no-controller-risk, legal-workforce, and restored-reserve evidence. An empty redundant
-   source target remains directly removable; a stocked one persists the same bounded handoff plus
-   its source identity. An energy-only target persists its exact amount and the replacement's
-   current energy. A target with one non-energy kind or two to eight kinds persists binary-ordered
-   compact resource/amount/replacement-baseline tuples; energy as the only manifest row, malformed
-   stock, or insufficient aggregate capacity fails closed.
+   no-threat, no-controller-risk, legal-workforce, and restored-reserve evidence. Under the same
+   safety evidence, a current exact selected container may advance only to a different exact
+   candidate that strictly precedes it under the existing canonical ordering; worse/equal candidates
+   cannot oscillate the selection, and every persisted position remains reserved to its own source
+   across overlapping candidate sets. An empty redundant source target remains directly removable; a
+   stocked one persists the same bounded handoff plus its source identity. An energy-only target
+   persists its exact amount and the replacement's current energy. A target with one non-energy kind
+   or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline
+   tuples; energy as the only manifest row, malformed stock, or insufficient aggregate capacity
+   fails closed.
 4. On the following tick, runtime composition validates each stocked commitment from fresh
    observation, requests one distinct `optional-growth` reservation per resource kind, and injects
    exact source/replacement projections into `LogisticsPlanner`. Specialized sources replace the
@@ -136,16 +141,19 @@ three-attempt destroy backoff. The source-service continuity outcome proves that
 alternate and selected-container loss preserve the prior legal tile, one byte-stable mining
 contract, and dropped-energy fallback; malformed, ambiguous, conflicting, blocked, reordered, and
 reconstructed prior inputs cannot override bounded legal selection. The selected-service handoff
-outcome proves an existing exact container stays pinned, a vanished container plus exact replacement
-advances one coordinate only under explicit safety, layouts V1-V3 migrate without invented history,
-and one current-tick predecessor atomically becomes one funded/assigned next-sequence commitment
-after reset/reorder without an idempotency or binding conflict. The resource-manifest continuations
-prove canonical one-non-energy and two-kind persistence under Store/structure reorder and JSON
-reconstruction, distinct funded resource flows sharing aggregate replacement capacity,
-singleton-energy refusal, complete-projection overflow refusal, active/incomplete removal blocking,
-every observed replacement gain, endpoint retirement, and one exact destroy call. Existing mandatory
-runtime-tail and mature-build tests remain green. `npm run check` supplies repository-wide format,
-lint, type, test, documentation, bundle, and package evidence.
+outcome proves a vanished container plus exact replacement advances one coordinate only under
+explicit safety. It also proves one strictly better existing exact candidate advances once, while a
+worse candidate and the still-existing predecessor cannot cause oscillation, while overlapping
+source candidates cannot steal another source's persisted exact service. Layouts V1-V3 migrate
+without invented history, and one current-tick predecessor atomically becomes one funded/assigned
+next-sequence commitment after reset/reorder without an idempotency or binding conflict. The
+resource-manifest continuations prove canonical one-non-energy and two-kind persistence under
+Store/structure reorder and JSON reconstruction, distinct funded resource flows sharing aggregate
+replacement capacity, singleton-energy refusal, complete-projection overflow refusal,
+active/incomplete removal blocking, every observed replacement gain, endpoint retirement, and one
+exact destroy call. Existing mandatory runtime-tail and mature-build tests remain green.
+`npm run check` supplies repository-wide format, lint, type, test, documentation, bundle, and
+package evidence.
 
 ## Mechanics sources
 

@@ -29,6 +29,7 @@ export function selectSourceServices(
   const blockers: SourceServiceBlocker[] = [];
   const assigned = new Set<string>();
   const priorServices = priorServicePositions(input);
+  const reservedPriorPositions = new Set([...priorServices.values()].map(({ pos }) => key(pos)));
   const sources = [...input.sources].sort((a, b) => compare(sourceId(a), sourceId(b)));
   const origin = committedOrigin(input.placements);
   let candidatesInspected = 0;
@@ -41,13 +42,20 @@ export function selectSourceServices(
       blockers.push(blocker(id, source, "missing-source-id"));
       continue;
     }
+    const prior = priorServices.get(id);
     const ranked = candidates
-      .filter((candidate) => !assigned.has(key(candidate)))
+      .filter((candidate) => {
+        const candidateKey = key(candidate);
+        return (
+          !assigned.has(candidateKey) &&
+          (!reservedPriorPositions.has(candidateKey) ||
+            (prior !== undefined && candidateKey === key(prior.pos)))
+        );
+      })
       .filter((candidate) => legalCandidate(input, candidate))
       .map((candidate) => rankCandidate(input, candidate, origin))
       .filter((candidate): candidate is RankedCandidate => candidate !== null)
       .sort(compareCandidate);
-    const prior = priorServices.get(id);
     const priorCandidate =
       prior === undefined ? undefined : ranked.find(({ pos }) => key(pos) === key(prior.pos));
     const exactReplacement = ranked.find(
@@ -57,8 +65,11 @@ export function selectSourceServices(
       input.sourceServiceHandoffAuthorized === true &&
       prior !== undefined &&
       prior.issuerSequence < Number.MAX_SAFE_INTEGER &&
-      (priorCandidate === undefined || priorCandidate.adoption === "planned") &&
-      exactReplacement !== undefined;
+      exactReplacement !== undefined &&
+      (priorCandidate === undefined ||
+        priorCandidate.adoption === "planned" ||
+        (priorCandidate.adoption === "exact" &&
+          compareCandidate(exactReplacement, priorCandidate) < 0));
     const selected = handoff ? exactReplacement : (priorCandidate ?? ranked[0]);
     if (selected === undefined) {
       blockers.push(blocker(id, source, "no-legal-position"));

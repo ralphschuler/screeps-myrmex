@@ -51,12 +51,12 @@ one bundle, one composition root, one tick loop, and internal modules with stric
 `StaticMiningPlanner` is the sole owned-source extraction projection. It consumes visible source
 facts and fresh semantic source-service placements, emits stable `mining/{colonyId}/{sourceId}`
 contracts, and owns neither commands nor persistent mining state. A persisted source-service
-position has continuity precedence while its container or matching site remains current; a newer
-exact container cannot silently change executable mining terms. After selected-container loss, one
-fresh safe exact replacement advances a bounded layout-owned issuance coordinate, and
-`ContractLedger` atomically retires the predecessor and admits only its exact next sequence.
-Population policy, SpawnBroker, movement arbitration, and executors retain their existing
-authorities.
+position has continuity precedence; a newer container cannot silently change executable mining
+terms. After selected-container loss, or when a different existing exact container strictly outranks
+the selected exact container under the canonical source-service ordering, one fresh safe replacement
+advances a bounded layout-owned issuance coordinate. `ContractLedger` atomically retires the
+predecessor and admits only its exact next sequence. Population policy, SpawnBroker, movement
+arbitration, and executors retain their existing authorities.
 
 `LinkArbiter` is the sole link-transfer admission authority. Mining, logistics, and controller
 policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
@@ -1525,21 +1525,25 @@ energy without changing issuer sequence, request signature, or work position. In
 conflicting, or unreachable continuity evidence is ignored; source and structure reorder plus heap
 reconstruction remain deterministic.
 
-Issue #304 adds the explicit successor path. Only after the selected container is absent may a
-different exact legal/reachable container advance the optional source-service issuance coordinate,
-and only under fresh owned-room, no-threat, no-controller-risk, legal-workforce, and
-restored-reserve evidence. Layouts-owner V4 migrates V1-V3 records without inventing that
-coordinate. Static mining emits one bounded replacement request; `ContractLedger` validates the same
-issuer, source, owner, kind, target, and funding binding plus the exact next sequence before
-atomically cancelling the predecessor and creating the successor. Rejection restores byte-identical
-predecessor state. `layout.handoff-reconcile` stages only this complete layout continuation before
-the sole root commit. The current predecessor remains executable; on the following tick, the
-successor can be funded and assigned during the same Reconcile that atomically retires it.
+Issue #304 adds the explicit successor path after selected-container loss. Issue #306 extends that
+same path to a still-existing selected exact container only when a different current exact
+legal/reachable candidate strictly precedes it under the existing adoption, route-distance, terrain,
+y, and x ordering. Worse/equal alternates and matching sites stay pinned, so repeated observation
+cannot oscillate the selection. Persisted positions remain reserved to their own source throughout
+the bounded selection pass, preventing overlapping source candidate sets from stealing another
+source's executable service. Both paths require fresh owned-room, no-threat, no-controller-risk,
+legal-workforce, and restored-reserve evidence. Layouts-owner V4 migrates V1-V3 records without
+inventing the optional source-service issuance coordinate. Static mining emits one bounded
+replacement request; `ContractLedger` validates the same issuer, source, owner, kind, target, and
+funding binding plus the exact next sequence before atomically cancelling the predecessor and
+creating the successor. Rejection restores byte-identical predecessor state.
+`layout.handoff-reconcile` stages only this complete layout continuation before the sole root
+commit. The current predecessor remains executable; on the following tick, the successor can be
+funded and assigned during the same Reconcile that atomically retires it.
 [ADR 0044](adr/0044-selected-source-service-handoff.md) records the boundary.
 
-Other structure stock evacuation, selected-service optimization while the old container exists,
-defensive migration, general multi-step migration, and creep dismantling remain issue #99 and fail
-closed.
+Other structure stock evacuation, defensive migration, general multi-step migration, and creep
+dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
