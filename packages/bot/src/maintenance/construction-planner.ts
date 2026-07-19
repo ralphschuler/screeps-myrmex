@@ -201,7 +201,7 @@ export class ConstructionPlanner {
     });
   }
 
-  /** Plans bounded road, container, and extension convergence. */
+  /** Plans bounded container and extension convergence. */
   planMigration(input: {
     readonly activeLogisticsFlowIds?: ReadonlySet<string>;
     readonly activeLogisticsTargetIds?: ReadonlySet<string>;
@@ -219,12 +219,6 @@ export class ConstructionPlanner {
   }): LayoutMigrationPlanningResult {
     const blockers: LayoutMigrationBlockerRecord[] = [];
     const proposals: LayoutMigrationProposal[] = [];
-    const towerCandidates = input.placements.filter(
-      (placement) =>
-        placement.adoption === "planned" &&
-        placement.layer === "primary" &&
-        placement.structureType === "tower",
-    );
     const desiredExtensions = input.placements
       .filter(
         (placement) => placement.layer === "primary" && placement.structureType === "extension",
@@ -265,7 +259,6 @@ export class ConstructionPlanner {
       );
     });
     const candidates = [
-      ...towerCandidates.map((placement) => ({ kind: "road" as const, placement })),
       ...sourceContainerCandidates.map((target) => ({
         kind: "source-container" as const,
         target,
@@ -342,58 +335,8 @@ export class ConstructionPlanner {
       policyFingerprint: input.policyFingerprint,
       roomName: input.room.name,
     } as const;
-    const towerCount = observedStructureCount(input.room, "tower");
-    const towerAllowance = input.colony.rclPolicy.unlocks?.towers ?? 0;
     let extensionEvacuation: LayoutExtensionEvacuation | null = null;
     for (const candidate of considered) {
-      if (candidate.kind === "road") {
-        const occupying = [...(input.room.structures ?? [])]
-          .filter(({ pos }) => samePosition(pos, candidate.placement.pos))
-          .sort((a, b) => a.id.localeCompare(b.id));
-        const road = occupying[0];
-        if (
-          occupying.length !== 1 ||
-          road?.structureType !== "road" ||
-          road.ownership === "foreign"
-        )
-          continue;
-        const reason = migrationCandidateBlocker(
-          input.room,
-          candidate.placement,
-          towerCount,
-          towerAllowance,
-        );
-        if (reason !== null) {
-          pushMigrationBlocker(blockers, {
-            reason,
-            roomName: input.room.name,
-            targetId: road.id,
-          });
-          continue;
-        }
-        proposals.push({
-          colonyId: input.colony.id,
-          layoutFingerprint: input.commitment.fingerprint,
-          observationFingerprint: input.observationFingerprint,
-          policyFingerprint: input.policyFingerprint,
-          pos: candidate.placement.pos,
-          replacementId: null,
-          replacementStructureType: "tower",
-          stableId: [
-            "remove-road-v1",
-            input.colony.id,
-            input.commitment.fingerprint,
-            road.id,
-            candidate.placement.pos.y,
-            candidate.placement.pos.x,
-          ].join(":"),
-          targetId: road.id,
-          targetRequiresEmptyStore: false,
-          targetStructureType: "road",
-        });
-        continue;
-      }
-
       if (candidate.kind === "source-container") {
         if (containerMigration !== null && containerMigration.targetId !== candidate.target.id)
           continue;
@@ -846,7 +789,6 @@ export class ConstructionPlanner {
 }
 
 type MigrationCandidate =
-  | { readonly kind: "road"; readonly placement: LayoutPlacement }
   | { readonly kind: "source-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "general-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "extension"; readonly target: StructureSnapshot };
@@ -1331,12 +1273,11 @@ function exactExtensionEnergy(extension: RoomSnapshot["ownedExtensions"][number]
     : null;
 }
 function compareMigrationCandidate(a: MigrationCandidate, b: MigrationCandidate): number {
-  const aPos = a.kind === "road" ? a.placement.pos : a.target.pos;
-  const bPos = b.kind === "road" ? b.placement.pos : b.target.pos;
-  const aId = a.kind === "road" ? a.placement.structureType : a.target.id;
-  const bId = b.kind === "road" ? b.placement.structureType : b.target.id;
   return (
-    aPos.y - bPos.y || aPos.x - bPos.x || a.kind.localeCompare(b.kind) || aId.localeCompare(bId)
+    a.target.pos.y - b.target.pos.y ||
+    a.target.pos.x - b.target.pos.x ||
+    a.kind.localeCompare(b.kind) ||
+    a.target.id.localeCompare(b.target.id)
   );
 }
 function comparePlacement(a: LayoutPlacement, b: LayoutPlacement): number {
@@ -1385,29 +1326,6 @@ function migrationGlobalBlocker(input: {
   ).length;
   if (activeSites >= CONSTRUCTION_SITE_LIMITS.activeSitesPerRoom) return "room-site-cap";
   return null;
-}
-function migrationCandidateBlocker(
-  room: RoomSnapshot,
-  placement: LayoutPlacement,
-  towerCount: number,
-  towerAllowance: number,
-): LayoutMigrationBlocker | null {
-  if (room.constructionSites.some(({ pos }) => samePosition(pos, placement.pos)))
-    return "site-conflict";
-  if (placement.minimumRcl > (room.controller?.level ?? 0)) return "progression-blocked";
-  if (towerCount >= towerAllowance) return "allowance-full";
-  return null;
-}
-function observedStructureCount(room: RoomSnapshot, structureType: string): number {
-  const structures = new Set(
-    (room.structures ?? [])
-      .filter((structure) => structure.structureType === structureType)
-      .map(({ id }) => id),
-  );
-  for (const site of room.constructionSites)
-    if (site.ownership === "owned" && site.structureType === structureType)
-      structures.add(`site/${site.id}`);
-  return structures.size;
 }
 function pushMigrationBlocker(
   blockers: LayoutMigrationBlockerRecord[],

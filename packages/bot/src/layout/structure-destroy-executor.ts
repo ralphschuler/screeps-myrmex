@@ -39,18 +39,13 @@ export class StructureDestroyExecutor {
       target = resolved;
       if (!matches(intent, target))
         return result(intent, false, "ERR_INVALID_TARGET", "target-mismatch");
-      if (
-        intent.targetRequiresEmptyStore &&
-        !hasEmptyCurrentStore(target, intent.targetStructureType)
-      )
+      if (!hasEmptyCurrentStore(target, intent.targetStructureType))
         return result(intent, false, "ERR_INVALID_TARGET", "target-not-empty");
-      if (intent.replacementId !== null) {
-        const replacement = adapter.resolveStructure(intent.replacementId);
-        if (replacement === null)
-          return result(intent, false, "ERR_INVALID_TARGET", "replacement-absent");
-        if (!matchesReplacement(intent, replacement))
-          return result(intent, false, "ERR_INVALID_TARGET", "replacement-mismatch");
-      }
+      const replacement = adapter.resolveStructure(intent.replacementId);
+      if (replacement === null)
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-absent");
+      if (!matchesReplacement(intent, replacement))
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-mismatch");
     } catch {
       return result(intent, false, "UNEXPECTED", "adapter-fault");
     }
@@ -95,7 +90,6 @@ function matchesReplacement(intent: DestroyOwnedStructureIntent, replacement: St
   const currentInOwnedRoom =
     intent.replacementStructureType === "container" || candidate.my === true;
   return (
-    intent.replacementId !== null &&
     String(candidate.id) === intent.replacementId &&
     candidate.structureType === intent.replacementStructureType &&
     currentInOwnedRoom &&

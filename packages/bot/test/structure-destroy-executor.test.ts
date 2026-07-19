@@ -5,22 +5,6 @@ import {
   type StructureDestroyExecutionAdapter,
 } from "../src/layout";
 
-const intent: DestroyOwnedStructureIntent = {
-  colonyId: "W1N1",
-  kind: "destroy-owned-structure",
-  layoutFingerprint: "layout-a",
-  observationFingerprint: "observation-a",
-  policyFingerprint: "policy-a",
-  replacementId: null,
-  replacementStructureType: "tower",
-  roomName: "W1N1",
-  stableId: "remove-road/road-a",
-  targetId: "road-a",
-  targetRequiresEmptyStore: false,
-  targetStructureType: "road",
-  x: 10,
-  y: 11,
-};
 const extensionIntent: DestroyOwnedStructureIntent = {
   colonyId: "W1N1",
   kind: "destroy-owned-structure",
@@ -37,6 +21,7 @@ const extensionIntent: DestroyOwnedStructureIntent = {
   x: 10,
   y: 11,
 };
+const intent = extensionIntent;
 const containerIntent: DestroyOwnedStructureIntent = {
   colonyId: "W1N1",
   kind: "destroy-owned-structure",
@@ -59,17 +44,28 @@ function fixture(code = 0) {
   const room = { controller: { my: true }, name: "W1N1" } as unknown as Room;
   const target = {
     destroy,
-    id: "road-a",
+    id: intent.targetId,
+    isActive: () => true,
+    my: true,
     pos: { roomName: "W1N1", x: 10, y: 11 },
     room,
-    structureType: "road",
+    store: { getUsedCapacity: () => 0 },
+    structureType: "extension",
+  } as unknown as Structure;
+  const replacement = {
+    id: intent.replacementId,
+    isActive: () => true,
+    my: true,
+    pos: { roomName: "W1N1", x: 12, y: 11 },
+    room,
+    structureType: "extension",
   } as unknown as Structure;
   return {
     adapter: {
       hasCurrentHostiles: () => false,
       isCurrentCommitment: (_roomName: string, fingerprint: string) => fingerprint === "layout-a",
       resolveRoom: () => room,
-      resolveStructure: () => target,
+      resolveStructure: (id: string) => (id === intent.targetId ? target : replacement),
     },
     destroy,
     target,
@@ -83,12 +79,19 @@ function changedTarget(
     readonly structureType?: string;
   },
 ): Structure {
+  const original = value.target as Structure & {
+    readonly my?: boolean;
+    readonly store?: { getUsedCapacity(): number | null };
+  };
   return {
     destroy: change.destroy ?? value.destroy,
-    id: value.target.id,
-    pos: change.pos ?? value.target.pos,
-    room: value.target.room,
-    structureType: change.structureType ?? value.target.structureType,
+    id: original.id,
+    isActive: () => original.isActive(),
+    my: original.my,
+    pos: change.pos ?? original.pos,
+    room: original.room,
+    store: original.store,
+    structureType: change.structureType ?? original.structureType,
   } as unknown as Structure;
 }
 
@@ -281,10 +284,12 @@ describe("StructureDestroyExecutor", () => {
         },
       })[0],
     ).toMatchObject({ called: false, code: "UNEXPECTED", fault: "adapter-fault" });
+    const commandFaultTarget = changedTarget(value, { destroy: () => void 0 });
     expect(
       new StructureDestroyExecutor().execute([intent], {
         ...value.adapter,
-        resolveStructure: () => changedTarget(value, { destroy: () => void 0 }),
+        resolveStructure: (id) =>
+          id === intent.targetId ? commandFaultTarget : value.adapter.resolveStructure(id),
       })[0],
     ).toMatchObject({ called: true, code: "UNEXPECTED", fault: "adapter-fault" });
   });

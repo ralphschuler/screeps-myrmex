@@ -90,6 +90,52 @@ describe("layout diff", () => {
     expect(result.proposals.map((item) => item.structureType)).toEqual(["tower"]);
     expect(JSON.stringify(result)).not.toContain("dismantle");
   });
+  it("proposes engine-compatible layered sites without removing existing structures", () => {
+    for (const [planned, existing] of [
+      ["tower", ["road"]],
+      ["extension", ["road", "rampart"]],
+      ["rampart", ["spawn"]],
+      ["rampart", ["storage"]],
+      ["rampart", ["tower"]],
+      ["road", ["extension"]],
+    ] as const) {
+      const placements = [placement(planned, 20, 20, planned === "tower" ? 3 : 2)];
+      const structures = existing.map((type) => structure(type, 20, 20));
+      const result = diffOwnedRoomLayout(input({ placements, structures }));
+      const reordered = diffOwnedRoomLayout(
+        input({ placements: [...placements].reverse(), structures: [...structures].reverse() }),
+      );
+      const reconstructed = diffOwnedRoomLayout(
+        JSON.parse(JSON.stringify(input({ placements, structures }))) as LayoutDiffInput,
+      );
+      expect(result.proposals, `${planned} over ${existing.join("+")}`).toEqual([
+        expect.objectContaining({ structureType: planned, pos: pos(20, 20) }),
+      ]);
+      expect(result.rejected).toEqual([]);
+      expect(JSON.stringify(reordered)).toBe(JSON.stringify(result));
+      expect(JSON.stringify(reconstructed)).toBe(JSON.stringify(result));
+    }
+
+    const compatibleStructure = structure("road", 20, 20);
+    const matchingSite = diffOwnedRoomLayout(
+      input({
+        constructionSites: [site("tower", 20, 20)],
+        placements: [placement("tower", 20, 20, 3)],
+        structures: [compatibleStructure],
+      }),
+    );
+    expect(matchingSite.proposals).toEqual([]);
+    expect(matchingSite.suppressed[0]?.reason).toBe("existing-owned-site");
+    expect(
+      diffOwnedRoomLayout(
+        input({
+          constructionSites: [site("extension", 20, 20)],
+          placements: [placement("tower", 20, 20, 3)],
+          structures: [compatibleStructure],
+        }),
+      ).rejected[0]?.reason,
+    ).toBe("different-site");
+  });
   it.each([
     ["unknown", "room-unknown"],
     ["lost", "room-lost"],
@@ -107,6 +153,14 @@ describe("layout diff", () => {
     );
     expect(
       diffOwnedRoomLayout(input({ structures: [structure("tower", 20, 20)] })).rejected[0]?.reason,
+    ).toBe("different-structure");
+    expect(
+      diffOwnedRoomLayout(
+        input({
+          placements: [placement("road", 20, 20)],
+          structures: [structure("future-structure", 20, 20)],
+        }),
+      ).rejected[0]?.reason,
     ).toBe("different-structure");
     expect(
       diffOwnedRoomLayout(input({ constructionSites: [site("extension", 20, 20, "foreign")] }))

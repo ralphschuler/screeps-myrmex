@@ -80,15 +80,11 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
     readonly targetStructureType: string;
   } = proposal;
   const validMigrationTerms =
-    (terms.targetStructureType === "road" &&
-      terms.replacementStructureType === "tower" &&
-      terms.replacementId === null &&
-      !terms.targetRequiresEmptyStore) ||
-    (["container", "extension"].includes(terms.targetStructureType) &&
-      terms.replacementStructureType === terms.targetStructureType &&
-      typeof terms.replacementId === "string" &&
-      terms.replacementId.length > 0 &&
-      terms.targetRequiresEmptyStore);
+    ["container", "extension"].includes(terms.targetStructureType) &&
+    terms.replacementStructureType === terms.targetStructureType &&
+    typeof terms.replacementId === "string" &&
+    terms.replacementId.length > 0 &&
+    terms.targetRequiresEmptyStore;
   return (
     validMigrationTerms &&
     proposal.pos.roomName.length > 0 &&
@@ -114,14 +110,6 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
     x: proposal.pos.x,
     y: proposal.pos.y,
   };
-  if (proposal.targetStructureType === "road")
-    return {
-      ...envelope,
-      replacementId: null,
-      replacementStructureType: "tower",
-      targetRequiresEmptyStore: false,
-      targetStructureType: "road",
-    };
   if (proposal.targetStructureType === "container")
     return {
       ...envelope,

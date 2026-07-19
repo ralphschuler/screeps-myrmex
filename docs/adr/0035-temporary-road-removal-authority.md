@@ -2,62 +2,68 @@
 
 ## Status
 
-Accepted
+Superseded by issue #308 after current engine verification.
 
 ## Context
 
-A complete layout may place an unlocked tower on a tile currently occupied by a road. The existing
-fail-closed layout diff correctly rejects the construction site, but without a removal path the
-colony can never converge. General automated dismantling remains unsafe: stored, defensive,
-critical, replacement-dependent, and path-critical structures require evacuation and build-before-
-remove evidence that issue #99 still owns.
+Issue #284 treated a road on a planned tower tile as an occupancy blocker. MYRMEX therefore added a
+bounded `Structure.destroy` path so the ordinary layout diff could propose the tower on a later
+observation.
 
-A road has no store and removing it does not make its terrain unwalkable. This permits one smaller
-outcome without weakening the general migration gate.
+Current Screeps engine 4.3.2 evidence disproves that premise. `checkConstructionSite()` permits a
+road or rampart to share a tile with another buildable structure. The build processor likewise
+allows the new obstacle structure to complete while a road or rampart is present. Destroying the
+road is unnecessary, loses movement efficiency, and creates an irreversible command where the normal
+construction-site chain is sufficient. The same blanket occupancy rejection also prevents the
+source-defined rampart layer from being built over its spawn, storage, and towers.
 
-## Decision
+## Superseding decision
 
-- `ConstructionPlanner` remains the sole build, repair, and migration-priority policy owner. Its
-  bounded migration projection considers only a road that solely occupies a source-planned tower
-  tile under the current complete layout commitment and emits one exact current authorization.
-- Current visible ownership, safe developing/mature posture, legal workforce, no threat, no
-  controller risk, restored protected spawn reserve, progression authorization, RCL allowance, and
-  global/room construction-site headroom are mandatory. Any second structure or site on the tile
-  blocks removal.
-- `StructureRemovalArbiter` is the sole final authority for irreversible owned-structure removal. It
-  accepts a proposal only with one exact colony, room, layout, observation, and policy
-  authorization. More than 128 proposals or authorizations rejects the complete batch before
-  traversal; otherwise canonical ordering admits at most one globally per tick. Current global and
-  room construction-site headroom is a removal precondition; this narrow slice does not persist or
-  reserve a following-tick site slot.
-- Only `StructureDestroyExecutor` may call `Structure.destroy`. It revalidates the current layout
-  fingerprint, currently owned room, absence of current hostile creeps, and exact target ID, type,
-  room, and position before one call. `OK`, `ERR_NOT_OWNER`, `ERR_BUSY`, unexpected values, vanished
-  targets, and adapter faults remain typed tick-local evidence.
-- No migration state is persisted. `Structure.destroy` schedules immediate removal; the next fresh
-  observation is the only success evidence. If the road remains, all safety inputs are recomputed
-  before another authorization.
-- The existing site diff, arbiter, executor, receipt reconciliation, and funded build path create
-  and complete the tower after the observed road disappears.
+- `LayoutPlanner` remains the sole desired-position authority. Its source-defined geometry is
+  unchanged.
+- `diffOwnedRoomLayout()` follows the engine co-location rule. A planned primary structure may share
+  its position with an existing road or rampart. A planned road or rampart may share its position
+  with another buildable structure.
+- A matching existing structure still satisfies the placement. Any current construction site, or a
+  different primary structure that is not a road/rampart, remains a fail-closed conflict.
+- Existing ownership, visibility, policy, RCL, allowance, deterministic ordering, and site-cap
+  checks remain unchanged. `ConstructionSiteArbiter` and `ConstructionSiteExecutor` retain the only
+  site-slot and `Room.createConstructionSite` authorities.
+- `ConstructionPlanner` no longer classifies a compatible road as a migration candidate.
+  `LayoutMigrationProposal` and `DestroyOwnedStructureIntent` no longer contain road-to-tower
+  variants, so `StructureRemovalArbiter` cannot authorize this obsolete command path.
+- Container and extension migration retain the existing bounded removal arbiter and sole
+  `StructureDestroyExecutor` command boundary.
+- No persistent state or schema changes.
 
 ## Consequences
 
-One temporary road can no longer deadlock an otherwise valid layout. Reordered observations and heap
-reconstruction produce byte-identical selection, and rollback simply removes this narrow path.
+A tower can be built directly over a road while retaining that road, and canonical ramparts can
+converge over their protected structures. Reordered observation and heap reconstruction remain
+byte-identical. A current site still serializes same-tile construction, so MYRMEX never submits two
+site commands for one tile in the same observed state.
 
-The slice intentionally does not authorize non-road removal, stocked-resource evacuation,
-replacement-first migration, creep dismantling, defensive migration, or general layout revision
-churn. Issue #99 remains open for those outcomes.
+Rollback requires no state migration, but it restores unnecessary road destruction and blocks
+canonical rampart layering. General obsolete-road retirement, non-road dismantling, defensive
+migration, layout revision replacement, and creep dismantling remain issue #99.
 
 ## Mechanics sources
 
-- Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy): destruction is
-  immediate after scheduling; documented results are `OK`, `ERR_NOT_OWNER`, and `ERR_BUSY` when
-  hostile creeps are present.
-- Official [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite): a replacement must
-  exist as a site before creep build work can complete it.
-- Official [Screeps documentation index](https://docs.screeps.com/).
-- Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/):
-  community stamp/layout and access considerations informed terminology only.
-- Screeps Wiki [Structure](https://wiki.screepspl.us/Structure/): structures originate as
-  construction sites and are completed through creep build work.
+- Official
+  [`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite) and
+  [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite) define the existing site
+  command and observed build boundary.
+- Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) confirms that the
+  removed path was an immediate irreversible command.
+- Official [Control guide](https://docs.screeps.com/control.html) defines RCL structure allowances;
+  this decision does not change them.
+- Screeps engine 4.3.2
+  [`checkConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/utils.js#L128-L189),
+  [`Room.createConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/game/rooms.js#L1029-L1096),
+  [`Creep.build` processing](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/creeps/build.js),
+  and current common
+  [`OBSTACLE_OBJECT_TYPES`](https://github.com/screeps/common/blob/2fb779b26eef9b4b0f412584f6bd47c897949766/lib/constants.js#L85)
+  are the authoritative co-location evidence.
+- Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/) and
+  [Structure](https://wiki.screepspl.us/Structure/) provide layout and construction terminology
+  only. MYRMEX policy remains independently source-defined.

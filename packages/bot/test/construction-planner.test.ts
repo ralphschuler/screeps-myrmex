@@ -92,112 +92,26 @@ describe("ConstructionPlanner", () => {
     expect(reset.proposals.some(({ structureClass }) => structureClass === "road")).toBe(false);
   });
 
-  it("proposes only the road solely blocking an unlocked planned tower", () => {
-    const first = planMigration();
+  it("never classifies engine-compatible roads as structure-removal candidates", () => {
+    const roadOnlyRoom = {
+      ...migrationRoom(),
+      structures: (migrationRoom().structures ?? []).filter(
+        ({ structureType }) => structureType === "road",
+      ),
+    } as RoomSnapshot;
+    const first = planMigration({ room: roadOnlyRoom });
     const reordered = planMigration({
       placements: [...migrationPlacements()].reverse(),
       room: {
-        ...migrationRoom(),
-        structures: [...(migrationRoom().structures ?? [])].reverse(),
+        ...roadOnlyRoom,
+        structures: [...(roadOnlyRoom.structures ?? [])].reverse(),
       },
     });
 
-    expect(first.authorization).toMatchObject({
-      colonyId: "W1N1",
-      layoutFingerprint: "layout-migration-a",
-      observationFingerprint: "observation-a",
-      policyFingerprint: "policy-a",
-      roomName: "W1N1",
-    });
-    expect(first.proposals).toEqual([
-      expect.objectContaining({
-        replacementStructureType: "tower",
-        targetId: "road-blocker",
-        targetStructureType: "road",
-      }),
-    ]);
+    expect(first.authorization).toBeNull();
+    expect(first.proposals).toEqual([]);
+    expect(first.scannedCandidates).toBe(0);
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(first));
-  });
-
-  it("fails temporary-road migration closed under colony, threat, reserve, and site pressure", () => {
-    const unsafeColonies: ColonyView[] = [
-      migrationColony({ state: "recovering" }),
-      migrationColony({ activeThreat: true }),
-      migrationColony({ controllerRisk: true }),
-      migrationColony({ legalWorkforce: false }),
-      migrationColony({ visibility: "unknown" }),
-      migrationColony({ reserveState: "unrestored" }),
-    ];
-    for (const colony of unsafeColonies) {
-      const result = planMigration({ colony });
-      expect(result.authorization, colony.state).toBeNull();
-      expect(result.proposals, colony.state).toEqual([]);
-    }
-    expect(
-      planMigration({
-        room: { ...migrationRoom(), hostileCreeps: [{}] } as unknown as RoomSnapshot,
-      }).proposals,
-    ).toEqual([]);
-    expect(planMigration({ globalOwnedSiteCount: 95 }).proposals).toEqual([]);
-    expect(
-      planMigration({
-        room: {
-          ...migrationRoom(),
-          constructionSites: Array.from({ length: 10 }, (_, index) => ({
-            id: `site-${String(index)}`,
-            ownerUsername: "me",
-            ownership: "owned" as const,
-            pos: { roomName: "W1N1", x: index, y: 1 },
-            progress: 0,
-            progressTotal: 100,
-            structureType: "road",
-          })),
-        },
-      }).proposals,
-    ).toEqual([]);
-  });
-
-  it("never proposes non-road, multiply occupied, site-conflicted, or over-allowance removal", () => {
-    const base = migrationRoom();
-    for (const structures of [
-      [structure("spawn-blocker", "spawn", 5_000, 5_000, 15, 15)],
-      [
-        structure("road-blocker", "road", 5_000, 5_000, 15, 15),
-        structure("rampart-blocker", "rampart", 5_000, 5_000, 15, 15),
-      ],
-    ])
-      expect(planMigration({ room: { ...base, structures } as RoomSnapshot }).proposals).toEqual(
-        [],
-      );
-    expect(
-      planMigration({
-        room: {
-          ...base,
-          constructionSites: [
-            {
-              id: "site-blocker",
-              ownerUsername: "me",
-              ownership: "owned",
-              pos: { roomName: "W1N1", x: 15, y: 15 },
-              progress: 0,
-              progressTotal: 100,
-              structureType: "road",
-            },
-          ],
-        },
-      }).proposals,
-    ).toEqual([]);
-    expect(
-      planMigration({
-        room: {
-          ...base,
-          structures: [
-            ...(base.structures ?? []),
-            structure("tower-existing", "tower", 3_000, 3_000, 1, 2),
-          ],
-        } as RoomSnapshot,
-      }).proposals,
-    ).toEqual([]);
   });
 
   it("preserves the exact source service while proposing one empty redundant container", () => {
