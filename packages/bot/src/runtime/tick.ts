@@ -76,6 +76,7 @@ import {
 import { RuntimeConfigAuthority, type RuntimeConfigResolution } from "../config/authority";
 import {
   ContractLedger,
+  contractIdFor,
   createContractRequestChannel,
   emptyContractExecutionView,
   emptyContractPlanningView,
@@ -150,7 +151,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV3,
+  type LayoutsOwnerV4,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -444,8 +445,11 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV3 | null;
+  owner: LayoutsOwnerV4 | null;
   planning: readonly LayoutRuntimePlanRecord[];
+  receiptsWritten: number;
+  reconciledEarly: boolean;
+  sourceServiceHandoffChanged: boolean;
   status: LayoutRuntimeResult["status"];
   linkEvidence: readonly LinkRoomLayoutEvidence[];
   maintenanceLayouts: readonly {
@@ -493,6 +497,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     migrationTruncatedCandidates: 0,
     owner: null,
     planning: Object.freeze([]),
+    receiptsWritten: 0,
+    reconciledEarly: false,
+    sourceServiceHandoffChanged: false,
     status: "not-run",
     linkEvidence: Object.freeze([]),
     maintenanceLayouts: Object.freeze([]),
@@ -649,6 +656,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         const reconciliation = opened.ledger.reconcile({
           actors,
           funding,
+          replacements: batch.replacements,
           requests: batch.requests,
           tick: context.tick,
           transitions: batch.transitions,
@@ -849,6 +857,21 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           if (funded.has(`${request.owner.id}\u0000${request.budgetBinding.issuer}`)) {
             scope.producer.submit(request);
           }
+        }
+        for (const replacement of staticMiningPlan.replacements) {
+          const successor = replacement.successor;
+          if (!funded.has(`${successor.owner.id}\u0000${successor.budgetBinding.issuer}`)) continue;
+          scope.producer.replace(replacement);
+          scope.producer.transition({
+            contractId: contractIdFor(
+              successor.issuer,
+              successor.issuerKey,
+              successor.issuerSequence,
+            ),
+            reason: "static-mining-successor-funded",
+            tick: context.tick,
+            to: "funded",
+          });
         }
         for (const contract of context.contractPlanning.contracts) {
           if (
@@ -1440,6 +1463,45 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     },
     {
       descriptor: {
+        id: "layout.handoff-reconcile",
+        phase: "reconcile",
+        criticality: "mandatory",
+        cadence: 1,
+        estimate: 0.1,
+        admitInRecovery: true,
+        mandatoryTail: false,
+      },
+      run: ({ context }) => {
+        if (!layoutDraft.sourceServiceHandoffChanged || layoutDraft.reconciledEarly)
+          return staged(() => undefined);
+        const reconciled = reconcileLayoutDraft(layoutDraft, context.tick);
+        return staged(
+          () => {
+            if (input.manager !== null && reconciled.owner !== null) {
+              const changed =
+                layoutDraft.changed || reconciled.owner.revision !== layoutDraft.owner?.revision;
+              if (changed) {
+                const transaction = input.manager.transaction("layouts");
+                transaction.replace(reconciled.owner);
+                const stagedResult = transaction.stage();
+                if (!stagedResult.staged)
+                  throw new Error(stagedResult.fault?.message ?? "layout state staging failed");
+              }
+            }
+            layoutDraft.owner = reconciled.owner;
+            layoutDraft.changed = false;
+            layoutDraft.receiptsWritten = reconciled.receiptsWritten;
+            layoutDraft.reconciledEarly = true;
+            input.runtime.publishLayout(
+              layoutRuntimeResult(layoutDraft, layoutDraft.receiptsWritten),
+            );
+          },
+          () => input.manager?.discard("layouts"),
+        );
+      },
+    },
+    {
+      descriptor: {
         id: "layout.reconcile",
         phase: "reconcile",
         criticality: "mandatory",
@@ -1449,42 +1511,31 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         mandatoryTail: true,
       },
       run: ({ context }) => {
-        const siteReconciled =
-          layoutDraft.owner === null
-            ? null
-            : reconcileConstructionSiteExecution(
-                layoutDraft.owner,
-                layoutDraft.execution,
-                context.tick,
-              );
-        const destroyReconciled =
-          siteReconciled === null
-            ? null
-            : layoutDraft.migrationExecution.length === 0
-              ? { owner: siteReconciled.owner, receipts: [] as const }
-              : reconcileStructureDestroyExecution(
-                  siteReconciled.owner,
-                  layoutDraft.migrationExecution,
-                  context.tick,
-                );
+        if (layoutDraft.reconciledEarly)
+          return staged(() => {
+            input.runtime.publishLayout(
+              layoutRuntimeResult(layoutDraft, layoutDraft.receiptsWritten),
+            );
+          });
+        const reconciled = reconcileLayoutDraft(layoutDraft, context.tick);
         return staged(
           () => {
-            if (input.manager !== null && destroyReconciled !== null) {
+            if (input.manager !== null && reconciled.owner !== null) {
               const changed =
-                layoutDraft.changed ||
-                destroyReconciled.owner.revision !== layoutDraft.owner?.revision;
-              layoutDraft.owner = destroyReconciled.owner;
+                layoutDraft.changed || reconciled.owner.revision !== layoutDraft.owner?.revision;
+              layoutDraft.owner = reconciled.owner;
               layoutDraft.changed = changed;
               if (changed) {
                 const transaction = input.manager.transaction("layouts");
-                transaction.replace(destroyReconciled.owner);
+                transaction.replace(reconciled.owner);
                 const stagedResult = transaction.stage();
                 if (!stagedResult.staged)
                   throw new Error(stagedResult.fault?.message ?? "layout state staging failed");
               }
             }
+            layoutDraft.receiptsWritten = reconciled.receiptsWritten;
             input.runtime.publishLayout(
-              layoutRuntimeResult(layoutDraft, siteReconciled?.receipts.length ?? 0),
+              layoutRuntimeResult(layoutDraft, layoutDraft.receiptsWritten),
             );
           },
           () => input.manager?.discard("layouts"),
@@ -1774,6 +1825,7 @@ function layoutPlanningSystem(
       }
       let owner = initialOwner;
       let changed = false;
+      let sourceServiceHandoffChanged = false;
       const planning: LayoutRuntimePlanRecord[] = [];
       const linkEvidence: LinkRoomLayoutEvidence[] = [];
       const maintenanceLayouts: { placements: readonly LayoutPlacement[]; roomName: string }[] = [];
@@ -1826,6 +1878,11 @@ function layoutPlanningSystem(
             ? {}
             : { priorSourceServices: priorRecord.sourceServices }),
           roomName: room.name,
+          sourceServiceHandoffAuthorized:
+            colony.activeThreat === false &&
+            colony.controllerRisk === false &&
+            colony.legalWorkforce === true &&
+            colony.rclPolicy.protectedSpawnReserve.state === "restored",
           sources: room.sources.map(({ pos }) => pos),
           structures: room.structures ?? [],
           terrain: room.terrain,
@@ -1847,9 +1904,19 @@ function layoutPlanningSystem(
         const sourceServices = result.placements.filter(
           (placement) => placement.service?.kind === "source-container",
         );
+        const priorSourceServices = freshSourceServicePlacements(owner, room.name);
         const sourceServicesChanged =
-          JSON.stringify(freshSourceServicePlacements(owner, room.name)) !==
-          JSON.stringify(sourceServices);
+          JSON.stringify(priorSourceServices) !== JSON.stringify(sourceServices);
+        sourceServiceHandoffChanged ||= sourceServices.some((service) => {
+          const sourceId = service.service?.sourceId;
+          const prior = priorSourceServices.find(
+            (candidate) => candidate.service?.sourceId === sourceId,
+          );
+          return (
+            service.service?.issuerSequence !== undefined &&
+            service.service.issuerSequence > (prior?.service?.issuerSequence ?? 1)
+          );
+        });
         if (priorCommitment?.fingerprint !== commitment.fingerprint || sourceServicesChanged) {
           owner = persistLayoutCommitment(owner, room.name, commitment, result.placements);
           changed = true;
@@ -1994,6 +2061,7 @@ function layoutPlanningSystem(
         draft.migrationTruncatedCandidates = migrationTruncatedCandidates;
         draft.owner = owner;
         draft.planning = Object.freeze(planning);
+        draft.sourceServiceHandoffChanged = sourceServiceHandoffChanged;
         draft.linkEvidence = Object.freeze(linkEvidence);
         draft.maintenanceLayouts = Object.freeze(maintenanceLayouts);
         draft.status = "planned";
@@ -2003,14 +2071,27 @@ function layoutPlanningSystem(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV3 {
+function reconcileLayoutDraft(
+  draft: LayoutTickDraft,
+  tick: number,
+): { readonly owner: LayoutsOwnerV4 | null; readonly receiptsWritten: number } {
+  if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
+  const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
+  const destroy =
+    draft.migrationExecution.length === 0
+      ? { owner: site.owner, receipts: [] as const }
+      : reconcileStructureDestroyExecution(site.owner, draft.migrationExecution, tick);
+  return { owner: destroy.owner, receiptsWritten: site.receipts.length };
+}
+
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV4 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV3["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV4["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,

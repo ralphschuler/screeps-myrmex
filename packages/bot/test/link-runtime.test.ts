@@ -134,6 +134,7 @@ function plan(
           workPosition: pos(10, 10),
         },
       ],
+      replacements: [],
       requests: [],
       transitions: [],
     },

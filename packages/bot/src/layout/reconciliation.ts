@@ -2,24 +2,24 @@ import type {
   ConstructionSiteExecutionResult,
   ConstructionSiteAttemptReceipt,
   LayoutContainerRemovalReceipt,
-  LayoutsOwnerV3,
+  LayoutsOwnerV4,
   StructureDestroyExecutionResult,
 } from "./contracts";
 import { deriveConstructionSiteAttemptReceipt } from "./construction-site-arbiter";
 import { persistConstructionSiteReceipt, persistLayoutContainerMigration } from "./persistence";
 
 export interface ConstructionSiteReconciliationResult {
-  readonly owner: LayoutsOwnerV3;
+  readonly owner: LayoutsOwnerV4;
   readonly receipts: readonly ConstructionSiteAttemptReceipt[];
 }
 
 export interface StructureDestroyReconciliationResult {
-  readonly owner: LayoutsOwnerV3;
+  readonly owner: LayoutsOwnerV4;
   readonly receipts: readonly LayoutContainerRemovalReceipt[];
 }
 
 export function reconcileStructureDestroyExecution(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   execution: readonly StructureDestroyExecutionResult[],
   tick: number,
 ): StructureDestroyReconciliationResult {
@@ -58,7 +58,7 @@ export function reconcileStructureDestroyExecution(
 }
 
 export function reconcileConstructionSiteExecution(
-  owner: LayoutsOwnerV3,
+  owner: LayoutsOwnerV4,
   execution: readonly ConstructionSiteExecutionResult[],
   tick: number,
 ): ConstructionSiteReconciliationResult {

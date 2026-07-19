@@ -33,6 +33,40 @@ describe("layout persistence and cache", () => {
       parseLayoutsOwner({ ...owner, records: Array.from({ length: 65 }, () => owner.records[0]) }),
     ).toBeNull();
   });
+
+  it("persists bounded source-service issuance and migrates legacy owners without inventing it", () => {
+    const placement = {
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: { roomName: "W1N1", x: 11, y: 11 },
+      service: { issuerSequence: 2, kind: "source-container", sourceId: "source-a" },
+      structureType: "container",
+    } as const;
+    const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
+    expect(owner.schemaVersion).toBe(4);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+
+    const { issuerSequence: _sequence, ...legacyService } = placement.service;
+    void _sequence;
+    const legacy = {
+      ...owner,
+      schemaVersion: 3,
+      records: [
+        {
+          ...owner.records[0],
+          sourceServices: [{ ...placement, service: legacyService }],
+        },
+      ],
+    };
+    expect(parseLayoutsOwner(legacy)).toEqual({
+      ...legacy,
+      schemaVersion: 4,
+      revision: owner.revision + 1,
+    });
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
+  });
+
   it("drops an old algorithm commitment as stale rebuild work instead of rejecting the owner", () => {
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
     const stale = {

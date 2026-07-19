@@ -147,6 +147,132 @@ describe("ContractLedger", () => {
     expect(ledger.submit(second, 2)).toMatchObject({ accepted: true, outcome: "created" });
   });
 
+  it("atomically replaces one funded binding with its exact next issuer sequence", () => {
+    const predecessor = makeRequest({
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 2,
+        workPosition: { roomName: "W1N1", x: 9, y: 9 },
+      },
+    });
+    const { id: predecessorId, ledger } = createAssignedLedger(predecessor);
+    const successor = makeRequest({
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 2,
+        workPosition: { roomName: "W1N1", x: 11, y: 11 },
+      },
+      issuerSequence: 2,
+    });
+    const successorId = contractIdFor(
+      successor.issuer,
+      successor.issuerKey,
+      successor.issuerSequence,
+    );
+    const beforeExecute = ledger.executionView();
+    const result = ledger.reconcile({
+      actors: [makeActor("incumbent")],
+      funding: activeFunding(),
+      replacements: [
+        {
+          predecessorContractId: predecessorId,
+          reason: "source-service-handoff",
+          successor,
+          tick: 4,
+        },
+      ],
+      requests: [],
+      tick: 4,
+      transitions: [{ contractId: successorId, reason: "successor-funded", tick: 4, to: "funded" }],
+      travel: ZERO_TRAVEL,
+    });
+
+    expect(beforeExecute.leases).toEqual([
+      expect.objectContaining({ contractId: predecessorId, actorId: "incumbent" }),
+    ]);
+    expect(result.replacements).toEqual([
+      { accepted: true, predecessorContractId: predecessorId, successorContractId: successorId },
+    ]);
+    expect(ledger.view().active).toEqual([
+      expect.objectContaining({
+        id: successorId,
+        issuerSequence: 2,
+        state: "assigned",
+      }),
+    ]);
+    expect(ledger.view().active[0]?.lease).toMatchObject({ actorId: "incumbent" });
+    expect(ledger.view().outcomes).toEqual([
+      expect.objectContaining({
+        id: predecessorId,
+        reason: "source-service-handoff",
+        state: "cancelled",
+      }),
+    ]);
+
+    const rejected = createAssignedLedger(predecessor);
+    const beforeRejected = JSON.stringify(rejected.ledger.view());
+    const invalidSuccessor = { ...successor, issuerSequence: 3 };
+    expect(
+      rejected.ledger.reconcile({
+        actors: [makeActor("incumbent")],
+        funding: activeFunding(),
+        replacements: [
+          {
+            predecessorContractId: rejected.id,
+            reason: "invalid-handoff",
+            successor: invalidSuccessor,
+            tick: 4,
+          },
+        ],
+        requests: [],
+        tick: 4,
+        transitions: [],
+        travel: ZERO_TRAVEL,
+      }).replacements,
+    ).toEqual([
+      {
+        accepted: false,
+        predecessorContractId: rejected.id,
+        reason: "relationship-mismatch",
+      },
+    ]);
+    expect(JSON.stringify(rejected.ledger.view())).toBe(beforeRejected);
+
+    const wrongTick = createAssignedLedger(predecessor);
+    const beforeWrongTick = JSON.stringify(wrongTick.ledger.view());
+    expect(
+      wrongTick.ledger.reconcile({
+        actors: [makeActor("incumbent")],
+        funding: activeFunding(),
+        replacements: [
+          {
+            predecessorContractId: wrongTick.id,
+            reason: "future-handoff",
+            successor,
+            tick: 5,
+          },
+        ],
+        requests: [],
+        tick: 4,
+        transitions: [],
+        travel: ZERO_TRAVEL,
+      }).replacements,
+    ).toEqual([
+      {
+        accepted: false,
+        predecessorContractId: wrongTick.id,
+        reason: "invalid-replacement",
+      },
+    ]);
+    expect(JSON.stringify(wrongTick.ledger.view())).toBe(beforeWrongTick);
+  });
+
   it("publishes the legal transition matrix and leaves state byte-identical after rejection", () => {
     for (const from of ACTIVE_STATES) {
       for (const to of WORK_CONTRACT_STATES) {

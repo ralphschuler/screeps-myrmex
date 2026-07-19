@@ -28,6 +28,7 @@ import {
   type ContractLedgerStateV1,
   type LeasedWorkExecution,
   type ContractOutcome,
+  type ContractReplacementRequest,
   type ContractTransitionRequest,
   type TerminalWorkContractState,
   type WorkforceActor,
@@ -118,6 +119,25 @@ export type ContractTransitionResult =
         | "transition-limit";
     };
 
+export type ContractReplacementResult =
+  | {
+      readonly accepted: true;
+      readonly predecessorContractId: string;
+      readonly successorContractId: string;
+    }
+  | {
+      readonly accepted: false;
+      readonly predecessorContractId: string;
+      readonly reason:
+        | "invalid-replacement"
+        | "predecessor-not-found"
+        | "relationship-mismatch"
+        | "request-limit"
+        | "request-rejected"
+        | "transition-limit"
+        | "transition-rejected";
+    };
+
 export interface LeaseReleaseRecord {
   readonly contractId: string;
   readonly reason: LeaseReleaseReason;
@@ -139,6 +159,7 @@ export interface ContractReconciliationResult {
   readonly allocation: WorkforceAllocationResult;
   readonly funding: readonly ContractFundingDecision[];
   readonly releases: readonly LeaseReleaseRecord[];
+  readonly replacements: readonly ContractReplacementResult[];
   readonly submissions: readonly ContractSubmissionResult[];
   readonly transitions: readonly ContractTransitionResult[];
 }
@@ -234,6 +255,7 @@ export class ContractLedger {
             contractId: record.id,
             execution: { ...record.execution },
             issuer: record.issuer,
+            issuerSequence: record.issuerSequence,
             owner: { ...record.owner },
             repairRetry: repairRetryEvidence(record),
             state: record.state,
@@ -408,6 +430,97 @@ export class ContractLedger {
     return this.transitionWithFunding(request, null);
   }
 
+  /** Retires one predecessor and creates its exact successor without exposing an empty binding. */
+  public replace(request: ContractReplacementRequest): ContractReplacementResult {
+    let successor: WorkContractRequest;
+    try {
+      validateTick(request.tick);
+      if (
+        !boundedIdentity(request.predecessorContractId, 512) ||
+        !boundedIdentity(request.reason, 128)
+      ) {
+        return rejectedReplacement(request.predecessorContractId, "invalid-replacement");
+      }
+      successor = normalizeContractRequest(request.successor);
+    } catch (error: unknown) {
+      if (
+        error instanceof ContractValidationError ||
+        error instanceof RangeError ||
+        error instanceof TypeError
+      ) {
+        return rejectedReplacement(request.predecessorContractId, "invalid-replacement");
+      }
+      throw error;
+    }
+
+    if (!this.prepareQuotaTick(request.tick)) {
+      return rejectedReplacement(request.predecessorContractId, "invalid-replacement");
+    }
+    if (this.#requestCount >= MAX_CONTRACT_REQUESTS_PER_TICK) {
+      return rejectedReplacement(request.predecessorContractId, "request-limit");
+    }
+    if (this.#transitionCount >= MAX_CONTRACT_TRANSITIONS_PER_TICK) {
+      return rejectedReplacement(request.predecessorContractId, "transition-limit");
+    }
+    const predecessor = this.#active.find(({ id }) => id === request.predecessorContractId);
+    if (predecessor === undefined) {
+      return rejectedReplacement(request.predecessorContractId, "predecessor-not-found");
+    }
+    if (!replacementRelationshipMatches(predecessor, successor)) {
+      return rejectedReplacement(request.predecessorContractId, "relationship-mismatch");
+    }
+
+    const snapshot = {
+      active: [...this.#active],
+      changed: this.#changed,
+      issuerFrontiers: [...this.#issuerFrontiers],
+      outcomes: [...this.#outcomes],
+      requestCount: this.#requestCount,
+      transitionCount: this.#transitionCount,
+    };
+    try {
+      const transition = this.transition({
+        contractId: predecessor.id,
+        reason: request.reason,
+        tick: request.tick,
+        to: "cancelled",
+      });
+      if (!transition.accepted) {
+        this.restoreReplacementSnapshot(snapshot);
+        return rejectedReplacement(request.predecessorContractId, "transition-rejected");
+      }
+      const submission = this.submit(successor, request.tick);
+      if (!submission.accepted || submission.outcome !== "created") {
+        this.restoreReplacementSnapshot(snapshot);
+        return rejectedReplacement(request.predecessorContractId, "request-rejected");
+      }
+      return deepFreeze({
+        accepted: true,
+        predecessorContractId: predecessor.id,
+        successorContractId: submission.contractId,
+      });
+    } catch (error: unknown) {
+      this.restoreReplacementSnapshot(snapshot);
+      throw error;
+    }
+  }
+
+  private restoreReplacementSnapshot(snapshot: {
+    readonly active: WorkContractRecord[];
+    readonly changed: boolean;
+    readonly issuerFrontiers: ContractIssuerFrontier[];
+    readonly outcomes: ContractOutcome[];
+    readonly requestCount: number;
+    readonly transitionCount: number;
+  }): void {
+    this.#active = snapshot.active;
+    this.#changed = snapshot.changed;
+    this.#issuerFrontiers = snapshot.issuerFrontiers;
+    this.#outcomes = snapshot.outcomes;
+    this.#requestCount = snapshot.requestCount;
+    this.#transitionCount = snapshot.transitionCount;
+  }
+
   private transitionWithFunding(
     request: ContractTransitionRequest,
     funding: ContractFundingView | null,
@@ -468,6 +581,7 @@ export class ContractLedger {
   public reconcile(input: {
     readonly actors: readonly WorkforceActor[];
     readonly funding: ContractFundingView;
+    readonly replacements?: readonly ContractReplacementRequest[];
     readonly requests: readonly WorkContractRequest[];
     readonly tick: number;
     readonly transitions: readonly ContractTransitionRequest[];
@@ -478,12 +592,20 @@ export class ContractLedger {
       throw new RangeError("Contract reconciliation tick must not move backwards");
     }
     const fundingView = normalizeFundingView(input.funding);
-    if (input.requests.length > MAX_CONTRACT_REQUESTS_PER_TICK) {
+    const replacementRequests = input.replacements ?? [];
+    if (input.requests.length + replacementRequests.length > MAX_CONTRACT_REQUESTS_PER_TICK) {
       throw new RangeError("Contract reconciliation request batch exceeds its hard limit");
     }
-    if (input.transitions.length > MAX_CONTRACT_TRANSITIONS_PER_TICK) {
+    if (input.transitions.length + replacementRequests.length > MAX_CONTRACT_TRANSITIONS_PER_TICK) {
       throw new RangeError("Contract reconciliation transition batch exceeds its hard limit");
     }
+    const replacements = [...replacementRequests]
+      .sort(compareReplacementRequests)
+      .map((request) =>
+        request.tick === input.tick
+          ? this.replace(request)
+          : rejectedReplacement(request.predecessorContractId, "invalid-replacement"),
+      );
     const submissions = [...input.requests]
       .sort(compareSubmissionRequests)
       .map((request) => this.submit(request, input.tick));
@@ -572,7 +694,7 @@ export class ContractLedger {
       }
     }
 
-    return deepFreeze({ allocation, funding, releases, submissions, transitions });
+    return deepFreeze({ allocation, funding, releases, replacements, submissions, transitions });
   }
 
   /** Stages this authority's complete validated draft; only MemoryManager commits the root. */
@@ -1073,12 +1195,56 @@ function snapshotState(
   });
 }
 
+function compareReplacementRequests(
+  left: ContractReplacementRequest,
+  right: ContractReplacementRequest,
+): number {
+  return (
+    left.tick - right.tick ||
+    compareStrings(left.predecessorContractId, right.predecessorContractId) ||
+    compareSubmissionRequests(left.successor, right.successor) ||
+    compareStrings(left.reason, right.reason)
+  );
+}
+
 function compareSubmissionRequests(left: WorkContractRequest, right: WorkContractRequest): number {
   return (
     compareStrings(left.issuer, right.issuer) ||
     left.issuerSequence - right.issuerSequence ||
     compareStrings(left.issuerKey, right.issuerKey) ||
     compareStrings(requestSignature(left), requestSignature(right))
+  );
+}
+
+function replacementRelationshipMatches(
+  predecessor: WorkContractRecord,
+  successor: WorkContractRequest,
+): boolean {
+  return (
+    successor.issuer === predecessor.issuer &&
+    successor.issuerKey === predecessor.issuerKey &&
+    successor.issuerSequence === predecessor.issuerSequence + 1 &&
+    successor.kind === predecessor.kind &&
+    successor.targetId === predecessor.targetId &&
+    successor.owner.kind === predecessor.owner.kind &&
+    successor.owner.id === predecessor.owner.id &&
+    contractFundingBindingKey(successor) === contractFundingBindingKey(predecessor)
+  );
+}
+
+function rejectedReplacement(
+  predecessorContractId: string,
+  reason: Extract<ContractReplacementResult, { readonly accepted: false }>["reason"],
+): ContractReplacementResult {
+  return deepFreeze({ accepted: false, predecessorContractId, reason });
+}
+
+function boundedIdentity(value: unknown, maximumLength: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximumLength &&
+    value === value.trim()
   );
 }
 

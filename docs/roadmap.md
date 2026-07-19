@@ -119,9 +119,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   Issue #300 reuses that evacuation for one stocked, unselected redundant source-adjacent container
   while preserving the different exact selected service, mining identity, and work position. Issue
   #302 pins each persisted legal/reachable source-service position when an alternate appears or its
-  container vanishes, preserving the executable mining terms until an explicit handoff exists. Other
-  structure types, selected source-service switching, general multi-step migration, and creep
-  dismantling remain issue #99.
+  container vanishes, preserving executable mining terms until an explicit handoff exists. Issue
+  #304 advances one lost selected service to a different exact legal/reachable replacement under
+  fresh safety evidence and atomically replaces the mining contract with its exact next issuance
+  sequence. Other structure types, optimization while the selected container exists, general
+  multi-step migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

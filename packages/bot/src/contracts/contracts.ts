@@ -322,6 +322,8 @@ export interface ContractPlanningRecord {
   readonly contractId: string;
   readonly execution: ContractExecutionTerms;
   readonly issuer: string;
+  /** Present for current ContractLedger records; optional only for legacy detached fixtures. */
+  readonly issuerSequence?: number;
   readonly owner: ContractOwnerScope;
   /** Retry evidence derived by ContractLedger from bounded durable transition history. */
   readonly repairRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
@@ -376,6 +378,14 @@ export interface ContractTransitionRequest {
   readonly reason: string;
   readonly tick: number;
   readonly to: WorkContractState;
+}
+
+/** One all-or-nothing retirement and successor issuance owned by ContractLedger. */
+export interface ContractReplacementRequest {
+  readonly predecessorContractId: string;
+  readonly reason: string;
+  readonly successor: WorkContractRequest;
+  readonly tick: number;
 }
 
 export interface WorkforceActor {
