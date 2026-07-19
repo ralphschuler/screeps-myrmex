@@ -153,7 +153,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV7,
+  type LayoutsOwnerV8,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -445,10 +445,11 @@ interface LayoutTickDraft {
   migrationArbitration: StructureRemovalArbitrationResult | null;
   migrationBlockers: readonly LayoutMigrationBlockerRecord[];
   migrationExecution: readonly StructureDestroyExecutionResult[];
+  migrationInputs: readonly Parameters<ConstructionPlanner["planMigration"]>[0][];
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV7 | null;
+  owner: LayoutsOwnerV8 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -495,6 +496,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     migrationArbitration: null,
     migrationBlockers: Object.freeze([]),
     migrationExecution: Object.freeze([]),
+    migrationInputs: Object.freeze([]),
     migrationProposals: Object.freeze([]),
     migrationScannedCandidates: 0,
     migrationTruncatedCandidates: 0,
@@ -834,6 +836,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
       },
     },
+    layoutMigrationPlanningSystem(input, layoutDraft, () => linkDraft),
     {
       descriptor: {
         id: "mining.contracts",
@@ -1793,7 +1796,7 @@ function layoutPlanningSystem(
       phase: "plan",
       criticality: "economic",
       cadence: 1,
-      estimate: 2,
+      estimate: 1.5,
       admitInRecovery: false,
       mandatoryTail: false,
     },
@@ -1832,11 +1835,7 @@ function layoutPlanningSystem(
       const planning: LayoutRuntimePlanRecord[] = [];
       const linkEvidence: LinkRoomLayoutEvidence[] = [];
       const maintenanceLayouts: { placements: readonly LayoutPlacement[]; roomName: string }[] = [];
-      const migrationAuthorizations: LayoutMigrationAuthorization[] = [];
-      const migrationBlockers: LayoutMigrationBlockerRecord[] = [];
-      const migrationProposals: LayoutMigrationProposal[] = [];
-      let migrationScannedCandidates = 0;
-      let migrationTruncatedCandidates = 0;
+      const migrationInputs: Parameters<ConstructionPlanner["planMigration"]>[0][] = [];
       const proposals = [] as ReturnType<typeof diffOwnedRoomLayout>["proposals"][number][];
       const authorizations: {
         authorized: boolean;
@@ -1972,7 +1971,7 @@ function layoutPlanningSystem(
                 sources: room.sources.map(({ pos }) => pos),
                 unlocks: colony.rclPolicy.unlocks,
               });
-        const migration = constructionPlanner.planMigration({
+        migrationInputs.push({
           activeLogisticsFlowIds,
           activeLogisticsTargetIds,
           colony,
@@ -1997,35 +1996,6 @@ function layoutPlanningSystem(
             owner.records.find(({ roomName }) => roomName === room.name)?.removalReceipt ?? null,
           room,
         });
-        if (migration.authorization !== null) migrationAuthorizations.push(migration.authorization);
-        let migrationOwner = persistLayoutContainerMigration(
-          owner,
-          room.name,
-          migration.containerMigration,
-        );
-        migrationOwner = persistLayoutExtensionEvacuation(
-          migrationOwner,
-          room.name,
-          migration.extensionEvacuation,
-        );
-        migrationOwner = persistLayoutTowerEvacuation(
-          migrationOwner,
-          room.name,
-          migration.towerEvacuation,
-        );
-        migrationOwner = persistLayoutRemovalReceipt(
-          migrationOwner,
-          room.name,
-          migration.removalReceipt,
-        );
-        if (migrationOwner !== owner) {
-          owner = migrationOwner;
-          changed = true;
-        }
-        migrationBlockers.push(...migration.blockers);
-        migrationProposals.push(...migration.proposals);
-        migrationScannedCandidates += migration.scannedCandidates;
-        migrationTruncatedCandidates += migration.truncatedCandidates;
         proposals.push(
           ...diffOwnedRoomLayout({
             colonyId: colony.id,
@@ -2049,11 +2019,6 @@ function layoutPlanningSystem(
           status: "complete",
         });
       }
-      const migrationArbitration = arbitrateStructureRemovals({
-        authorizations: migrationAuthorizations,
-        limits: STRUCTURE_REMOVAL_LIMITS,
-        proposals: migrationProposals,
-      });
       const arbitration = arbitrateConstructionSites({
         globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
         limits: CONSTRUCTION_SITE_LIMITS,
@@ -2070,12 +2035,13 @@ function layoutPlanningSystem(
         draft.arbitration = arbitration;
         draft.changed = changed;
         draft.execution = Object.freeze([]);
-        draft.migrationArbitration = migrationArbitration;
-        draft.migrationBlockers = Object.freeze(migrationBlockers);
+        draft.migrationArbitration = null;
+        draft.migrationBlockers = Object.freeze([]);
         draft.migrationExecution = Object.freeze([]);
-        draft.migrationProposals = Object.freeze(migrationProposals);
-        draft.migrationScannedCandidates = migrationScannedCandidates;
-        draft.migrationTruncatedCandidates = migrationTruncatedCandidates;
+        draft.migrationInputs = Object.freeze(migrationInputs);
+        draft.migrationProposals = Object.freeze([]);
+        draft.migrationScannedCandidates = 0;
+        draft.migrationTruncatedCandidates = 0;
         draft.owner = owner;
         draft.planning = Object.freeze(planning);
         draft.sourceServiceHandoffChanged = sourceServiceHandoffChanged;
@@ -2088,10 +2054,89 @@ function layoutPlanningSystem(
   };
 }
 
+function layoutMigrationPlanningSystem(
+  input: CompositionInput,
+  draft: LayoutTickDraft,
+  currentLinks: () => LinkRuntimeResult,
+): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "migration.layout",
+      phase: "plan",
+      criticality: "economic",
+      cadence: 1,
+      estimate: 0.5,
+      admitInRecovery: false,
+      mandatoryTail: false,
+    },
+    run: () => {
+      if (draft.status !== "planned" || draft.owner === null) return staged(() => undefined);
+      const initialOwner = draft.owner;
+      let owner = initialOwner;
+      const authorizations: LayoutMigrationAuthorization[] = [];
+      const blockers: LayoutMigrationBlockerRecord[] = [];
+      const proposals: LayoutMigrationProposal[] = [];
+      let scannedCandidates = 0;
+      let truncatedCandidates = 0;
+      for (const migrationInput of draft.migrationInputs) {
+        const linkRuntime =
+          currentLinks().rooms.find(({ roomName }) => roomName === migrationInput.room.name) ??
+          null;
+        const migration = constructionPlanner.planMigration({
+          ...migrationInput,
+          linkRuntime,
+        });
+        if (migration.authorization !== null) authorizations.push(migration.authorization);
+        let migrationOwner = persistLayoutContainerMigration(
+          owner,
+          migrationInput.room.name,
+          migration.containerMigration,
+        );
+        migrationOwner = persistLayoutExtensionEvacuation(
+          migrationOwner,
+          migrationInput.room.name,
+          migration.extensionEvacuation,
+        );
+        migrationOwner = persistLayoutTowerEvacuation(
+          migrationOwner,
+          migrationInput.room.name,
+          migration.towerEvacuation,
+        );
+        migrationOwner = persistLayoutRemovalReceipt(
+          migrationOwner,
+          migrationInput.room.name,
+          migration.removalReceipt,
+        );
+        owner = migrationOwner;
+        blockers.push(...migration.blockers);
+        proposals.push(...migration.proposals);
+        scannedCandidates += migration.scannedCandidates;
+        truncatedCandidates += migration.truncatedCandidates;
+      }
+      const arbitration = arbitrateStructureRemovals({
+        authorizations,
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals,
+      });
+      return staged(() => {
+        draft.changed ||= owner !== initialOwner;
+        draft.migrationArbitration = arbitration;
+        draft.migrationBlockers = Object.freeze(blockers);
+        draft.migrationExecution = Object.freeze([]);
+        draft.migrationProposals = Object.freeze(proposals);
+        draft.migrationScannedCandidates = scannedCandidates;
+        draft.migrationTruncatedCandidates = truncatedCandidates;
+        draft.owner = owner;
+        input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
+      });
+    },
+  };
+}
+
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV7 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV8 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2104,14 +2149,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV7 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV8 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV7["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV8["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,

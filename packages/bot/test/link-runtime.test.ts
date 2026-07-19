@@ -50,6 +50,54 @@ describe("link runtime projection", () => {
     );
   });
 
+  it("keeps current empty reserve links out of funded transfer arbitration", () => {
+    const reserveLayout: LinkRoomLayoutEvidence = {
+      roomName: "W1N1",
+      evidence: {
+        algorithmRevision: "layout-v2",
+        controller: pos(40, 40),
+        fingerprint: "reserve-migration",
+        linkPlacements: [
+          pos(11, 10),
+          pos(20, 20),
+          pos(25, 25),
+          pos(26, 25),
+          pos(30, 30),
+          pos(39, 40),
+        ],
+        sourceServices: [{ pos: pos(10, 10), sourceId: "source-a" }],
+        storage: pos(20, 21),
+      },
+    };
+    const result = plan({
+      layouts: [reserveLayout],
+      links: [
+        link("source", 11, 10, 800),
+        link("hub", 20, 20, 0),
+        link("reserve-exact", 25, 25, 0),
+        link("reserve-other", 26, 25, 0),
+        link("reserve-external", 30, 30, 0),
+        link("controller", 39, 40, 0),
+      ],
+    }).rooms[0];
+
+    expect(
+      result?.classification.links
+        .filter(({ role }) => role === "reserve")
+        .map(({ id }) => id)
+        .sort(),
+    ).toEqual(["reserve-exact", "reserve-external", "reserve-other"]);
+    expect(result?.arbitration.accepted).toContainEqual(
+      expect.objectContaining({ sourceLinkId: "source", targetLinkId: "hub" }),
+    );
+    expect(
+      result?.arbitration.accepted.some(
+        ({ sourceLinkId, targetLinkId }) =>
+          sourceLinkId.startsWith("reserve-") || targetLinkId.startsWith("reserve-"),
+      ),
+    ).toBe(false);
+  });
+
   it("publishes direct health only for complete current role classification", () => {
     const room = {
       controller: { level: 8, ownership: "owned" },

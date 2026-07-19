@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 7 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 8 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -17,6 +17,7 @@ export const MAX_LAYOUT_RECORDS = 64 as const;
 export const MAX_LAYOUT_BLOCKERS = 8 as const;
 export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
 export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
+export const MAX_LAYOUT_LINK_ENERGY = 800 as const;
 export const MAX_LAYOUT_TOWER_ENERGY = 1_000 as const;
 /** Official energy cost of one tower attack, heal, or repair action. */
 export const MINIMUM_OPERATIONAL_TOWER_ENERGY = 10 as const;
@@ -112,7 +113,7 @@ export interface LayoutStructureRemovalReceipt {
   readonly observedAt: number;
   readonly replacementId: string;
   readonly targetId: string;
-  readonly targetStructureType: "container" | "extension" | "tower";
+  readonly targetStructureType: "container" | "extension" | "link" | "tower";
 }
 export interface LayoutContainerMigration {
   /** Legacy paired fields remain valid for one exact energy transfer. */
@@ -428,6 +429,14 @@ export type LayoutMigrationProposal =
       readonly replacementStructureType: "tower";
       readonly targetRequiresEmptyStore: true;
       readonly targetStructureType: "tower";
+    })
+  | (LayoutMigrationProposalBase & {
+      readonly replacementId: string;
+      readonly replacementRequiresZeroCooldown: true;
+      readonly replacementStructureType: "link";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetRequiresZeroCooldown: true;
+      readonly targetStructureType: "link";
     });
 export interface LayoutMigrationBlockerRecord {
   readonly reason: LayoutMigrationBlocker;
@@ -497,6 +506,14 @@ export type DestroyOwnedStructureIntent =
       readonly replacementStructureType: "tower";
       readonly targetRequiresEmptyStore: true;
       readonly targetStructureType: "tower";
+    })
+  | (DestroyOwnedStructureIntentBase & {
+      readonly replacementId: string;
+      readonly replacementRequiresZeroCooldown: true;
+      readonly replacementStructureType: "link";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetRequiresZeroCooldown: true;
+      readonly targetStructureType: "link";
     });
 export interface StructureRemovalArbitrationInput {
   readonly authorizations: readonly LayoutMigrationAuthorization[];
@@ -520,11 +537,14 @@ export interface StructureDestroyExecutionResult {
     | "hostiles-present"
     | "room-not-owned"
     | "replacement-absent"
+    | "replacement-cooldown"
     | "replacement-mismatch"
+    | "replacement-not-empty"
     | "replacement-underfunded"
     | "room-unavailable"
     | "stale-commitment"
     | "target-absent"
+    | "target-cooldown"
     | "target-mismatch"
     | "target-not-empty"
     | null;
@@ -546,7 +566,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV7 {
+export interface LayoutsOwnerV8 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

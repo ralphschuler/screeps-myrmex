@@ -62,7 +62,8 @@ arbitration, and executors retain their existing authorities.
 policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
 Roles are ephemeral derivatives of owned-link observation and one versioned layout commitment.
 `links.plan` follows layout planning, consumes only active reservations owned by existing planners,
-and performs canonical classification and arbitration. `links.execute` revalidates the layout
+and performs canonical classification and arbitration. Optional `migration.layout` then consumes
+that public current-tick result before removal arbitration. `links.execute` revalidates the layout
 dependency, issues at most one command per source, and publishes typed command settlement with
 actual flow and loss attribution. Command errors never consume or release another owner's budget.
 
@@ -94,9 +95,14 @@ active empty obsolete tower only after committed replacement-first geometry leav
 committed tower with at least one action's energy. Issue #314 lets one stocked obsolete tower
 persist an exact bounded evacuation only when that operational replacement has complete free
 capacity; `LogisticsPlanner` alone routes the energy, and removal waits for fresh empty-target,
-delivered- replacement, and retired-flow/endpoint evidence. Sole, over-capacity, inactive,
-underfunded, unsafe, or pressured tower removals fail closed. `StructureRemovalArbiter` alone
-authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`.
+delivered-replacement, and retired-flow/endpoint evidence. Sole, over-capacity, inactive,
+underfunded, unsafe, or pressured tower removals fail closed. Issue #316 restores committed RCL8
+link geometry, then permits one empty idle external reserve link only while canonical current/ideal
+role evidence retains exact active source, hub, and controller links plus an empty idle exact
+reserve replacement. Active logistics endpoints, productive roles, stock, cooldown, drift, or
+pressure fail closed. `StructureRemovalArbiter` alone authorizes removal and
+`StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, tower, and
+link result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1427,12 +1433,16 @@ relevant fresh fingerprint; invalid arguments stay failed closed until layout re
 detached create-site intent data only. Live API execution and reconciliation remain PR C.
 
 PR C completes the chain with `layout.plan` after colony publication, mandatory-tail
-`layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`. Only
+`layout.execute`, mandatory-tail `layout.reconcile`, and the existing atomic `state.reconcile`.
+Optional `migration.layout` follows public `links.plan` evidence before Execute; its stable system
+ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
+reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V7 layouts owner; degraded,
-unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
-command. Every observed owned layout site enters the existing funded survival-growth build flow,
-while controller risk, recovery, maintenance, and protected reserves retain precedence.
+commitments and bounded receipts stage through the owner-local schema V8 layouts owner; V8 adds only
+`link` to the existing removal-receipt discriminator. Degraded, unknown, lost, stale, denied, or
+CPU-skipped work preserves prior commitments and authorizes no command. Every observed owned layout
+site enters the existing funded survival-growth build flow, while controller risk, recovery,
+maintenance, and protected reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -1580,6 +1590,18 @@ unchanged operational-replacement and colony-safety evidence. Layouts owner V7 a
 fixed-shape tower evacuation; V1-V6 migrate without invented terms and older code preserves V7
 bytes. [ADR 0047](adr/0047-stocked-obsolete-tower-evacuation.md) records the boundary.
 
+Issue #316 adds one replacement-first reserve-link step. At RCL8, the convergence projection
+restores all six committed primary link positions through the ordinary site/funding/build chain. At
+full allowance, `ConstructionPlanner` reuses canonical `LinkArbiter` role derivation and
+classification to require five active exact links, one reserve-only missing ideal anchor, an active
+external reserve target, and one active exact reserve replacement while every source, hub, and
+controller anchor remains exact. Both reserve structures must have an exact empty 800-capacity Store
+and zero cooldown; assigned/active V3 logistics endpoints may name neither. The executor rechecks
+the same live structure facts before the sole destroy call. Layouts owner V8 adds only `link` to the
+existing fixed receipt discriminator; V1-V7 migrate without invented link evidence, and rollback
+preserves future owner bytes. [ADR 0048](adr/0048-replacement-first-empty-reserve-link-removal.md)
+records the boundary.
+
 Other structure stock evacuation, defensive migration, general multi-step migration, and creep
 dismantling remain issue #99 and fail closed.
 
@@ -1612,7 +1634,12 @@ Mechanics grounding: official
 [Control guide](https://docs.screeps.com/control.html) (May 29, 2026), and the Screeps Wiki
 [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/) guidance. Community
 stamp/bunker terminology informed only the problem framing; the MYRMEX layout is source-defined and
-clean-room.
+clean-room. Reserve-link convergence additionally follows official
+[`StructureLink`](https://docs.screeps.com/api/#StructureLink),
+[`StructureLink.transferEnergy`](https://docs.screeps.com/api/#StructureLink.transferEnergy),
+[`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy), and
+[`Structure.isActive`](https://docs.screeps.com/api/#Structure.isActive) contracts. The Screeps Wiki
+[`StructureLink`](https://wiki.screepspl.us/StructureLink/) role names are terminology only.
 
 Source-service mechanics additionally follow the official
 [`Source`](https://docs.screeps.com/api/#Source),
@@ -2147,6 +2174,10 @@ Required architecture assertions include:
   least 10 energy, current safety, and the same global one-command ceiling; stocked targets first
   use one exact bounded funded logistics evacuation and require fresh delivery plus flow/endpoint
   retirement;
+- obsolete reserve-link removal requires RCL8 full allowance, five active exact committed links,
+  complete canonical source/hub/controller continuity, one reserve missing ideal anchor, an active
+  external reserve target and exact reserve replacement with empty 800-capacity Stores and zero
+  cooldown, no active logistics endpoint, current safety, and the same global one-command ceiling;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;

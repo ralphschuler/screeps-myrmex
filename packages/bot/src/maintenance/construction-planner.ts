@@ -1,5 +1,12 @@
 import type { ColonyView } from "../colony";
 import {
+  classifyLinks,
+  deriveLinkRoleAnchors,
+  type LinkLayoutEvidence,
+  type LinkRoomRuntimeResult,
+  type ObservedLink,
+} from "../links";
+import {
   CONSTRUCTION_SITE_LIMITS,
   LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS,
   LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
@@ -8,6 +15,7 @@ import {
   MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
   MAX_LAYOUT_CONTAINER_STORE_RESOURCES,
   MAX_LAYOUT_EXTENSION_ENERGY,
+  MAX_LAYOUT_LINK_ENERGY,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
@@ -219,6 +227,7 @@ export class ConstructionPlanner {
     readonly extensionEvacuation?: LayoutExtensionEvacuation | null;
     readonly towerEvacuation?: LayoutTowerEvacuation | null;
     readonly globalOwnedSiteCount: number;
+    readonly linkRuntime?: LinkRoomRuntimeResult | null;
     readonly logisticsEvidenceReady?: boolean;
     readonly observationFingerprint: string;
     readonly placements: readonly LayoutPlacement[];
@@ -245,6 +254,9 @@ export class ConstructionPlanner {
     const desiredTowers = input.placements
       .filter((placement) => placement.layer === "primary" && placement.structureType === "tower")
       .sort(comparePlacement);
+    const desiredLinks = input.placements
+      .filter((placement) => placement.layer === "primary" && placement.structureType === "link")
+      .sort(comparePlacement);
     const extensionCandidates = (input.room.structures ?? []).filter(
       (structure) =>
         structure.ownership === "owned" &&
@@ -256,6 +268,12 @@ export class ConstructionPlanner {
         structure.ownership === "owned" &&
         structure.structureType === "tower" &&
         !desiredTowers.some(({ pos }) => samePosition(pos, structure.pos)),
+    );
+    const linkCandidates = (input.room.structures ?? []).filter(
+      (structure) =>
+        structure.ownership === "owned" &&
+        structure.structureType === "link" &&
+        !desiredLinks.some(({ pos }) => samePosition(pos, structure.pos)),
     );
     const sourceServices = input.placements.filter(
       (placement) =>
@@ -295,6 +313,7 @@ export class ConstructionPlanner {
         target,
       })),
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
+      ...linkCandidates.map((target) => ({ kind: "link" as const, target })),
       ...towerCandidates.map((target) => ({ kind: "tower" as const, target })),
     ].sort((left, right) => {
       const leftActive =
@@ -710,6 +729,50 @@ export class ConstructionPlanner {
         break;
       }
 
+      if (candidate.kind === "link") {
+        const link = reserveLinkMigrationEvidence({
+          activeLogisticsTargetIds: input.activeLogisticsTargetIds,
+          commitment: input.commitment,
+          currentPlacements: input.currentPlacements ?? [],
+          desiredLinks,
+          linkRuntime: input.linkRuntime,
+          logisticsEvidenceReady: input.logisticsEvidenceReady === true,
+          room: input.room,
+          target: candidate.target,
+          allowance: input.colony.rclPolicy.unlocks?.links ?? 0,
+        });
+        if (link.replacement === null) {
+          pushMigrationBlocker(blockers, {
+            reason: link.reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          continue;
+        }
+        admitRemoval({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementId: link.replacement.id,
+          replacementRequiresZeroCooldown: true,
+          replacementStructureType: "link",
+          stableId: [
+            "remove-reserve-link-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            candidate.target.id,
+            link.replacement.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetRequiresZeroCooldown: true,
+          targetStructureType: "link",
+        });
+        break;
+      }
+
       if (candidate.kind === "tower") {
         if (towerEvacuation !== null && towerEvacuation.sourceId !== candidate.target.id) continue;
         const tower = towerMigrationEvidence(
@@ -978,6 +1041,7 @@ type MigrationCandidate =
   | { readonly kind: "source-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "general-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "extension"; readonly target: StructureSnapshot }
+  | { readonly kind: "link"; readonly target: StructureSnapshot }
   | { readonly kind: "tower"; readonly target: StructureSnapshot };
 
 function assessRemovalReceipt(
@@ -1422,6 +1486,214 @@ function planSourceContainerEvacuation(input: {
   )
     return { blocker: "logistics-active", migration };
   return { blocker: null, migration };
+}
+
+function reserveLinkMigrationEvidence(input: {
+  readonly activeLogisticsTargetIds: ReadonlySet<string> | undefined;
+  readonly allowance: number;
+  readonly commitment: LayoutCommitment;
+  readonly currentPlacements: readonly LayoutPlacement[];
+  readonly desiredLinks: readonly LayoutPlacement[];
+  readonly linkRuntime: LinkRoomRuntimeResult | null | undefined;
+  readonly logisticsEvidenceReady: boolean;
+  readonly room: RoomSnapshot;
+  readonly target: StructureSnapshot;
+}):
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
+  | {
+      readonly reason: null;
+      readonly replacement: NonNullable<RoomSnapshot["ownedLinks"]>[number];
+    } {
+  const links = input.room.ownedLinks;
+  if (
+    input.room.controller?.level !== 8 ||
+    input.allowance !== 6 ||
+    links === undefined ||
+    links.length !== input.allowance ||
+    input.desiredLinks.length !== input.allowance
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const occupying = (input.room.structures ?? []).filter(({ pos }) =>
+    samePosition(pos, input.target.pos),
+  );
+  if (
+    occupying.length !== 1 ||
+    occupying[0]?.id !== input.target.id ||
+    input.room.constructionSites.some(({ pos }) => samePosition(pos, input.target.pos))
+  )
+    return { reason: "target-shared", replacement: null };
+  const linkRuntime = input.linkRuntime;
+  if (
+    !input.logisticsEvidenceReady ||
+    input.activeLogisticsTargetIds === undefined ||
+    linkRuntime === undefined ||
+    linkRuntime === null
+  )
+    return { reason: "logistics-unavailable", replacement: null };
+
+  const currentLinks = input.currentPlacements.filter(
+    ({ layer, structureType }) => layer === "primary" && structureType === "link",
+  );
+  const sourceServices = input.currentPlacements.filter(
+    (placement) => placement.service?.kind === "source-container",
+  );
+  const storages = input.room.storedStructures.filter(
+    ({ ownership, structureType }) => ownership === "owned" && structureType === "storage",
+  );
+  const sourceIds = new Set(input.room.sources.map(({ id }) => id));
+  if (
+    currentLinks.length !== input.allowance ||
+    new Set(currentLinks.map(({ pos }) => positionKey(pos))).size !== currentLinks.length ||
+    new Set(input.desiredLinks.map(({ pos }) => positionKey(pos))).size !==
+      input.desiredLinks.length ||
+    sourceServices.length !== input.room.sources.length ||
+    new Set(sourceServices.map(({ service }) => service?.sourceId)).size !==
+      sourceServices.length ||
+    sourceServices.some(({ service }) => !sourceIds.has(service?.sourceId ?? "")) ||
+    storages.length !== 1
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const targetPlacements = currentLinks.filter(({ pos }) => samePosition(pos, input.target.pos));
+  if (
+    targetPlacements.length !== 1 ||
+    targetPlacements[0]?.adoption !== "compatible-external" ||
+    input.desiredLinks.some(({ pos }) => samePosition(pos, input.target.pos))
+  )
+    return { reason: "replacement-pending", replacement: null };
+
+  const layoutRevision = `${input.commitment.algorithmRevision}:${input.commitment.fingerprint}`;
+  const layoutEvidence = (placements: readonly LayoutPlacement[]): LinkLayoutEvidence => ({
+    algorithmRevision: input.commitment.algorithmRevision,
+    controller: input.room.controller?.pos ?? input.commitment.anchor,
+    fingerprint: input.commitment.fingerprint,
+    linkPlacements: placements.map(({ pos }) => pos),
+    sourceServices: sourceServices.map((placement) => ({
+      pos: placement.pos,
+      sourceId: placement.service?.sourceId ?? "",
+    })),
+    storage: storages[0]?.pos ?? null,
+  });
+  const observed = links.map((link) => observedLink(link, input.room.observedAt));
+  const currentAnchors = deriveLinkRoleAnchors(layoutEvidence(currentLinks));
+  const currentClassification = classifyLinks({
+    anchors: currentAnchors,
+    layoutRevision,
+    links: observed,
+    tick: input.room.observedAt,
+  });
+  if (
+    currentAnchors.length !== input.allowance ||
+    currentAnchors.filter(({ role }) => role === "source").length !== sourceServices.length ||
+    currentAnchors.filter(({ role }) => role === "hub").length !== 1 ||
+    currentAnchors.filter(({ role }) => role === "controller").length !== 1 ||
+    linkRuntime.roomName !== input.room.name ||
+    linkRuntime.layoutRevision !== layoutRevision ||
+    JSON.stringify(linkRuntime.classification) !== JSON.stringify(currentClassification) ||
+    currentClassification.blockers.length !== 0 ||
+    currentClassification.truncatedLinks !== 0 ||
+    currentClassification.links.length !== input.allowance
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const currentTarget = currentClassification.links.find(({ id }) => id === input.target.id);
+  if (currentTarget?.role !== "reserve")
+    return { reason: "replacement-pending", replacement: null };
+
+  const idealAnchors = deriveLinkRoleAnchors(layoutEvidence(input.desiredLinks));
+  const exactObserved = observed.filter((link) =>
+    input.desiredLinks.some(({ pos }) => samePosition(pos, link.pos)),
+  );
+  const idealClassification = classifyLinks({
+    anchors: idealAnchors,
+    layoutRevision,
+    links: exactObserved,
+    tick: input.room.observedAt,
+  });
+  const missingAnchors = idealAnchors.filter(
+    (anchor) => !exactObserved.some(({ pos }) => samePosition(pos, anchor.pos)),
+  );
+  if (
+    idealAnchors.length !== input.allowance ||
+    exactObserved.length !== input.allowance - 1 ||
+    idealClassification.links.length !== input.allowance - 1 ||
+    idealClassification.truncatedLinks !== 0 ||
+    idealClassification.blockers.length !== 1 ||
+    idealClassification.blockers[0]?.reason !== "missing-link" ||
+    missingAnchors.length !== 1 ||
+    missingAnchors[0]?.role !== "reserve" ||
+    idealAnchors.filter(({ role }) => role === "source").length !== sourceServices.length ||
+    idealAnchors.filter(({ role }) => role === "hub").length !== 1 ||
+    idealAnchors.filter(({ role }) => role === "controller").length !== 1 ||
+    !["source", "hub", "controller"].every((role) =>
+      idealAnchors
+        .filter((anchor) => anchor.role === role)
+        .every((anchor) =>
+          idealClassification.links.some(
+            (link) => link.anchorId === anchor.id && link.role === anchor.role,
+          ),
+        ),
+    )
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const replacements = idealClassification.links
+    .filter(({ role }) => role === "reserve")
+    .map(({ id }) => links.find((link) => link.id === id))
+    .filter((link): link is NonNullable<typeof link> => link !== undefined)
+    .sort(
+      (left, right) =>
+        left.pos.y - right.pos.y || left.pos.x - right.pos.x || left.id.localeCompare(right.id),
+    );
+  const replacement = replacements[0];
+  if (
+    replacement === undefined ||
+    currentClassification.links.find(({ id }) => id === replacement.id)?.role !== "reserve"
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const target = links.find(({ id }) => id === input.target.id);
+  if (target === undefined || !exactEmptyIdleLink(target))
+    return { reason: "target-unavailable", replacement: null };
+  if (!exactEmptyIdleLink(replacement)) return { reason: "replacement-pending", replacement: null };
+  if (
+    input.activeLogisticsTargetIds.has(target.id) ||
+    input.activeLogisticsTargetIds.has(replacement.id) ||
+    linkRuntime.arbitration.accepted.some(
+      ({ sourceLinkId, targetLinkId }) =>
+        sourceLinkId === target.id ||
+        targetLinkId === target.id ||
+        sourceLinkId === replacement.id ||
+        targetLinkId === replacement.id,
+    )
+  )
+    return { reason: "logistics-active", replacement: null };
+  return { reason: null, replacement };
+}
+
+function observedLink(
+  link: NonNullable<RoomSnapshot["ownedLinks"]>[number],
+  observedAt: number,
+): ObservedLink {
+  return {
+    active: link.active,
+    cooldown: link.cooldown,
+    energy: link.store.resources
+      .filter(({ resourceType }) => resourceType === "energy")
+      .reduce((total, { amount }) => total + amount, 0),
+    freeCapacity: link.store.freeCapacity ?? 0,
+    id: link.id,
+    observedAt,
+    owned: true,
+    pos: link.pos,
+  };
+}
+
+function exactEmptyIdleLink(link: NonNullable<RoomSnapshot["ownedLinks"]>[number]): boolean {
+  return (
+    link.active &&
+    link.cooldown === 0 &&
+    link.store.capacity === MAX_LAYOUT_LINK_ENERGY &&
+    link.store.usedCapacity === 0 &&
+    link.store.freeCapacity === MAX_LAYOUT_LINK_ENERGY &&
+    link.store.resources.length === 0
+  );
 }
 
 function towerMigrationEvidence(

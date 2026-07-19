@@ -1,4 +1,5 @@
 import {
+  MAX_LAYOUT_LINK_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   type DestroyOwnedStructureIntent,
   type StructureDestroyExecutionCode,
@@ -42,11 +43,17 @@ export class StructureDestroyExecutor {
         return result(intent, false, "ERR_INVALID_TARGET", "target-mismatch");
       if (!hasEmptyCurrentStore(target, intent.targetStructureType))
         return result(intent, false, "ERR_INVALID_TARGET", "target-not-empty");
+      if (intent.targetStructureType === "link" && !hasZeroCooldown(target))
+        return result(intent, false, "ERR_INVALID_TARGET", "target-cooldown");
       const replacement = adapter.resolveStructure(intent.replacementId);
       if (replacement === null)
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-absent");
       if (!matchesReplacement(intent, replacement))
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-mismatch");
+      if (intent.replacementStructureType === "link" && !hasEmptyCurrentStore(replacement, "link"))
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-not-empty");
+      if (intent.replacementStructureType === "link" && !hasZeroCooldown(replacement))
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-cooldown");
       if (!hasOperationalReplacementEnergy(intent, replacement))
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-underfunded");
     } catch {
@@ -86,7 +93,26 @@ function hasEmptyCurrentStore(
   };
   const used = candidate.store?.getUsedCapacity();
   const removableInOwnedRoom = targetStructureType === "container" || candidate.my === true;
-  return removableInOwnedRoom && candidate.isActive() && used === 0;
+  if (!removableInOwnedRoom || !candidate.isActive() || used !== 0) return false;
+  if (targetStructureType !== "link") return true;
+  const store = candidate.store as
+    | {
+        getCapacity(resource?: string): number | null;
+        getFreeCapacity(resource?: string): number | null;
+        getUsedCapacity(resource?: string): number | null;
+      }
+    | undefined;
+  return (
+    store?.getCapacity() === MAX_LAYOUT_LINK_ENERGY &&
+    store.getCapacity("energy") === MAX_LAYOUT_LINK_ENERGY &&
+    store.getFreeCapacity() === MAX_LAYOUT_LINK_ENERGY &&
+    store.getFreeCapacity("energy") === MAX_LAYOUT_LINK_ENERGY &&
+    store.getUsedCapacity("energy") === 0
+  );
+}
+function hasZeroCooldown(structure: Structure): boolean {
+  const cooldown = (structure as Structure & { readonly cooldown?: number }).cooldown;
+  return cooldown === 0;
 }
 function matchesReplacement(intent: DestroyOwnedStructureIntent, replacement: Structure): boolean {
   const candidate = replacement as Structure & { readonly my?: boolean };

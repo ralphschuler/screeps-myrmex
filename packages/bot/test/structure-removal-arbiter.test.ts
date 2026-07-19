@@ -145,6 +145,45 @@ describe("StructureRemovalArbiter", () => {
     ).toBe("invalid-proposal");
   });
 
+  it("preserves typed empty-idle link terms in the sole removal intent", () => {
+    const link = {
+      ...proposal("link-reserve-external"),
+      replacementId: "link-reserve-exact",
+      replacementRequiresZeroCooldown: true,
+      replacementStructureType: "link",
+      stableId: "remove-reserve-link/link-reserve-external",
+      targetRequiresZeroCooldown: true,
+      targetStructureType: "link",
+    } as const satisfies LayoutMigrationProposal;
+    const result = arbitrateStructureRemovals({
+      authorizations: [authorization(link)],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: [link],
+    });
+    expect(result.intents).toEqual([
+      expect.objectContaining({
+        replacementId: "link-reserve-exact",
+        replacementRequiresZeroCooldown: true,
+        replacementStructureType: "link",
+        targetId: "link-reserve-external",
+        targetRequiresEmptyStore: true,
+        targetRequiresZeroCooldown: true,
+        targetStructureType: "link",
+      }),
+    ]);
+    const untyped = {
+      ...link,
+      replacementRequiresZeroCooldown: false,
+    } as unknown as LayoutMigrationProposal;
+    expect(
+      arbitrateStructureRemovals({
+        authorizations: [authorization(untyped)],
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals: [untyped],
+      }).rejected[0]?.reason,
+    ).toBe("invalid-proposal");
+  });
+
   it("rejects a proposal without one exact current authorization", () => {
     const candidate = proposal("extension-a");
     expect(
