@@ -135,6 +135,7 @@ import {
   persistLayoutCommitment,
   persistLayoutContainerMigration,
   persistLayoutExtensionEvacuation,
+  persistLayoutRemovalReceipt,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
@@ -151,7 +152,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV4,
+  type LayoutsOwnerV5,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -445,7 +446,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV4 | null;
+  owner: LayoutsOwnerV5 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -1988,6 +1989,8 @@ function layoutPlanningSystem(
           observationFingerprint,
           placements: convergencePlacements,
           policyFingerprint,
+          removalReceipt:
+            owner.records.find(({ roomName }) => roomName === room.name)?.removalReceipt ?? null,
           room,
         });
         if (migration.authorization !== null) migrationAuthorizations.push(migration.authorization);
@@ -2000,6 +2003,11 @@ function layoutPlanningSystem(
           migrationOwner,
           room.name,
           migration.extensionEvacuation,
+        );
+        migrationOwner = persistLayoutRemovalReceipt(
+          migrationOwner,
+          room.name,
+          migration.removalReceipt,
         );
         if (migrationOwner !== owner) {
           owner = migrationOwner;
@@ -2074,24 +2082,27 @@ function layoutPlanningSystem(
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV4 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV5 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
     draft.migrationExecution.length === 0
       ? { owner: site.owner, receipts: [] as const }
       : reconcileStructureDestroyExecution(site.owner, draft.migrationExecution, tick);
-  return { owner: destroy.owner, receiptsWritten: site.receipts.length };
+  return {
+    owner: destroy.owner,
+    receiptsWritten: site.receipts.length + destroy.receipts.length,
+  };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV4 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV5 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV4["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV5["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,

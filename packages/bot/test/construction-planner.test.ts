@@ -284,21 +284,22 @@ describe("ConstructionPlanner", () => {
       }).proposals,
     ).toEqual([]);
 
-    const failedMigration = {
-      ...staged.containerMigration,
-      removalReceipt: {
-        attempt: 1,
-        code: "ERR_BUSY" as const,
-        nextEligibleTick: 104,
-        observedAt: 102,
-      },
+    const removalReceipt = {
+      attempt: 1,
+      code: "ERR_BUSY" as const,
+      nextEligibleTick: 104,
+      observedAt: 102,
+      replacementId: "container-service",
+      targetId: "container-redundant",
+      targetStructureType: "container" as const,
     };
     const backoff = planMigration({
       activeLogisticsFlowIds: new Set(),
       activeLogisticsTargetIds: new Set(),
-      containerMigration: failedMigration,
+      containerMigration: staged.containerMigration,
       logisticsEvidenceReady: true,
       placements: fixture.placements,
+      removalReceipt,
       room: deliveredRoom,
     });
     expect(backoff).toMatchObject({
@@ -309,9 +310,10 @@ describe("ConstructionPlanner", () => {
       planMigration({
         activeLogisticsFlowIds: new Set(),
         activeLogisticsTargetIds: new Set(),
-        containerMigration: failedMigration,
+        containerMigration: staged.containerMigration,
         logisticsEvidenceReady: true,
         placements: fixture.placements,
+        removalReceipt,
         room: { ...deliveredRoom, observedAt: 104 },
       }).proposals,
     ).toHaveLength(1);
@@ -319,12 +321,10 @@ describe("ConstructionPlanner", () => {
       planMigration({
         activeLogisticsFlowIds: new Set(),
         activeLogisticsTargetIds: new Set(),
-        containerMigration: {
-          ...failedMigration,
-          removalReceipt: { ...failedMigration.removalReceipt, attempt: 3 },
-        },
+        containerMigration: staged.containerMigration,
         logisticsEvidenceReady: true,
         placements: fixture.placements,
+        removalReceipt: { ...removalReceipt, attempt: 3 },
         room: { ...deliveredRoom, observedAt: 104 },
       }),
     ).toMatchObject({

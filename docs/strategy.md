@@ -78,6 +78,9 @@ and require fresh empty-target, every delivered replacement gain, and retired fl
 before removal. Canonical general positions adjacent to a source, over-eight-kind or malformed
 stock, selected source-service targets, capacity loss, and unavailable contract evidence fail
 closed. Other stocked structures and rooms without exact replacement evidence remain untouched.
+Every authorized extension/container destroy result persists one exact per-room receipt: success
+waits for fresh target disappearance, failures back off and stop after three attempts, and a blocked
+room leaves the global removal slot available to another eligible room.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
