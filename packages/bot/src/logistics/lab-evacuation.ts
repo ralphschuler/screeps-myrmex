@@ -4,11 +4,14 @@ import {
   LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_LAB_ENERGY,
   MAX_LAYOUT_LAB_MINERAL,
+  MAX_LAYOUT_STORAGE_CAPACITY,
+  MAX_LAYOUT_STORAGE_RESOURCES,
   layoutLabEvacuationBudgetIssuer,
   layoutLabEvacuationFlowId,
   type LayoutRecord,
 } from "../layout";
-import type { OwnedLabSnapshot, WorldSnapshot } from "../world/snapshot";
+import type { OwnedLabSnapshot, OwnedStorageSnapshot, WorldSnapshot } from "../world/snapshot";
+import { aggregateStoreCapacityReservationKey } from "./planner";
 import type { LogisticsResourceDemandProjection } from "./resource-demands";
 
 export interface LayoutLabEvacuationProjection {
@@ -45,12 +48,21 @@ export function projectLayoutLabEvacuations(input: {
     if (
       evacuation === undefined ||
       evacuation.amount <= 0 ||
-      evacuation.amount > MAX_LAYOUT_LAB_ENERGY ||
-      evacuation.replacementInitialEnergy < 0 ||
-      evacuation.replacementInitialEnergy + evacuation.amount > MAX_LAYOUT_LAB_ENERGY ||
       evacuation.expiresAt - evacuation.startedAt !== LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS ||
       input.tick <= evacuation.startedAt ||
       input.tick >= evacuation.expiresAt
+    )
+      continue;
+    const mineralEvacuation = "resourceType" in evacuation;
+    if (
+      mineralEvacuation
+        ? evacuation.amount > MAX_LAYOUT_LAB_MINERAL ||
+          evacuation.resourceType === "energy" ||
+          evacuation.destinationInitialAmount < 0 ||
+          evacuation.destinationInitialAmount + evacuation.amount > MAX_LAYOUT_STORAGE_CAPACITY
+        : evacuation.amount > MAX_LAYOUT_LAB_ENERGY ||
+          evacuation.replacementInitialEnergy < 0 ||
+          evacuation.replacementInitialEnergy + evacuation.amount > MAX_LAYOUT_LAB_ENERGY
     )
       continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
@@ -73,53 +85,86 @@ export function projectLayoutLabEvacuations(input: {
     if (!assignedIds.has(evacuation.replacementId)) continue;
     const source = room.ownedLabs?.find(({ id }) => id === evacuation.sourceId);
     const replacement = room.ownedLabs?.find(({ id }) => id === evacuation.replacementId);
-    if (
-      source?.active !== true ||
-      source.cooldown !== 0 ||
-      replacement?.active !== true ||
-      source.mineralAmount !== 0 ||
-      source.mineralType !== null
-    )
-      continue;
+    if (source?.active !== true || source.cooldown !== 0 || replacement?.active !== true) continue;
     const sourceEnergy = exactLabEnergy(source);
     const replacementEnergy = exactLabEnergy(replacement);
-    if (
-      sourceEnergy === null ||
-      replacementEnergy === null ||
-      sourceEnergy > evacuation.amount ||
-      replacementEnergy < evacuation.replacementInitialEnergy ||
-      replacementEnergy + sourceEnergy > MAX_LAYOUT_LAB_ENERGY
-    )
-      continue;
+    if (sourceEnergy === null || replacementEnergy === null) continue;
+
+    let resourceType: string;
+    let sourceAmount: number;
+    let sinkId: string;
+    let sinkPosition: OwnedLabSnapshot["pos"];
+    let sinkFreeCapacity: number;
+    let capacityReservationKey: string;
+    if (mineralEvacuation) {
+      const activeStorages = (room.ownedStorages ?? []).filter(({ active }) => active);
+      const destination = activeStorages.find(({ id }) => id === evacuation.destinationId);
+      const destinationStore = destination === undefined ? null : exactStorage(destination);
+      const destinationResourceAmount =
+        destinationStore?.resources.get(evacuation.resourceType) ?? 0;
+      if (
+        activeStorages.length !== 1 ||
+        destination === undefined ||
+        migration.evacuationStorageId !== evacuation.destinationId ||
+        destinationStore === null ||
+        sourceEnergy !== 0 ||
+        source.mineralType !== evacuation.resourceType ||
+        source.mineralAmount <= 0 ||
+        source.mineralAmount > evacuation.amount ||
+        destinationResourceAmount < evacuation.destinationInitialAmount ||
+        destinationStore.freeCapacity < source.mineralAmount
+      )
+        continue;
+      resourceType = evacuation.resourceType;
+      sourceAmount = source.mineralAmount;
+      sinkId = destination.id;
+      sinkPosition = destination.pos;
+      sinkFreeCapacity = destinationStore.freeCapacity;
+      capacityReservationKey = aggregateStoreCapacityReservationKey(room.name, destination.id);
+    } else {
+      if (
+        source.mineralAmount !== 0 ||
+        source.mineralType !== null ||
+        sourceEnergy > evacuation.amount ||
+        replacementEnergy < evacuation.replacementInitialEnergy ||
+        replacementEnergy + sourceEnergy > MAX_LAYOUT_LAB_ENERGY
+      )
+        continue;
+      resourceType = "energy";
+      sourceAmount = sourceEnergy;
+      sinkId = replacement.id;
+      sinkPosition = replacement.pos;
+      sinkFreeCapacity = MAX_LAYOUT_LAB_ENERGY - replacementEnergy;
+      capacityReservationKey = `lab:${room.name}:${replacement.id}:energy-capacity`;
+    }
     const flowId = layoutLabEvacuationFlowId(room.name, evacuation);
     const issuer = layoutLabEvacuationBudgetIssuer(room.name, evacuation);
     if (flowId === null || issuer === null) continue;
-    const sourceNodeId = `${flowId}:source:energy`;
-    const sinkNodeId = `${flowId}:sink:energy`;
-    const replacementFreeCapacity = MAX_LAYOUT_LAB_ENERGY - replacementEnergy;
+    const sourceNodeId = `${flowId}:source:${resourceType}`;
+    const sinkNodeId = `${flowId}:sink:${resourceType}`;
     nodes.push(
       {
         colonyId: room.name,
         freeCapacity: 0,
         id: sourceNodeId,
         kind: "source",
-        observedAmount: sourceEnergy,
+        observedAmount: sourceAmount,
         observedAt: input.tick,
         position: source.pos,
         priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
-        resourceType: "energy",
+        resourceType,
       },
       {
-        capacityReservationKey: `lab:${room.name}:${replacement.id}:energy-capacity`,
+        capacityReservationKey,
         colonyId: room.name,
-        freeCapacity: replacementFreeCapacity,
+        freeCapacity: sinkFreeCapacity,
         id: sinkNodeId,
         kind: "sink",
         observedAmount: 0,
         observedAt: input.tick,
-        position: replacement.pos,
+        position: sinkPosition,
         priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
-        resourceType: "energy",
+        resourceType,
       },
     );
     endpoints.push(
@@ -127,20 +172,20 @@ export function projectLayoutLabEvacuations(input: {
         acquireAction: "withdraw",
         freeCapacity: 0,
         nodeId: sourceNodeId,
-        observedAmount: sourceEnergy,
+        observedAmount: sourceAmount,
         observedAt: input.tick,
         position: source.pos,
-        resourceType: "energy",
+        resourceType,
         targetId: source.id,
       },
       {
-        freeCapacity: replacementFreeCapacity,
+        freeCapacity: sinkFreeCapacity,
         nodeId: sinkNodeId,
         observedAmount: 0,
         observedAt: input.tick,
-        position: replacement.pos,
-        resourceType: "energy",
-        targetId: replacement.id,
+        position: sinkPosition,
+        resourceType,
+        targetId: sinkId,
       },
     );
     edges.push({
@@ -149,17 +194,15 @@ export function projectLayoutLabEvacuations(input: {
       maximumAmount: evacuation.amount,
       roundTripTicks: Math.max(
         1,
-        Math.max(
-          Math.abs(source.pos.x - replacement.pos.x),
-          Math.abs(source.pos.y - replacement.pos.y),
-        ) * 2,
+        Math.max(Math.abs(source.pos.x - sinkPosition.x), Math.abs(source.pos.y - sinkPosition.y)) *
+          2,
       ),
       sinkNodeId,
       sourceNodeId,
     });
     authorizedFlowIds.push(flowId);
-    suppressedSinkTargetIds.push(source.id, replacement.id);
-    suppressedSourceTargetIds.push(source.id, replacement.id);
+    suppressedSinkTargetIds.push(source.id, ...(mineralEvacuation ? [] : [replacement.id]));
+    suppressedSourceTargetIds.push(source.id, ...(mineralEvacuation ? [] : [replacement.id]));
     budgets.push({
       colonyId: room.name,
       category: "optional-growth",
@@ -215,6 +258,41 @@ function exactLabEnergy(lab: OwnedLabSnapshot): number | null {
     (lab.mineralType === null ? 0 : (resources.get(lab.mineralType) ?? 0)) === lab.mineralAmount &&
     resources.size === Number(lab.energy > 0) + Number(lab.mineralAmount > 0)
     ? lab.energy
+    : null;
+}
+
+function exactStorage(storage: OwnedStorageSnapshot): {
+  readonly freeCapacity: number;
+  readonly resources: ReadonlyMap<string, number>;
+} | null {
+  if (
+    storage.store.capacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    storage.store.freeCapacity === null ||
+    !Number.isSafeInteger(storage.store.freeCapacity) ||
+    storage.store.freeCapacity < 0 ||
+    !Number.isSafeInteger(storage.store.usedCapacity) ||
+    storage.store.usedCapacity < 0 ||
+    storage.store.freeCapacity + storage.store.usedCapacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    storage.store.resources.length > MAX_LAYOUT_STORAGE_RESOURCES
+  )
+    return null;
+  const resources = new Map<string, number>();
+  let used = 0;
+  for (const { amount, resourceType } of storage.store.resources) {
+    if (
+      resources.has(resourceType) ||
+      resourceType.length === 0 ||
+      resourceType.length > 64 ||
+      resourceType !== resourceType.trim() ||
+      !Number.isSafeInteger(amount) ||
+      amount <= 0
+    )
+      return null;
+    resources.set(resourceType, amount);
+    used += amount;
+  }
+  return used === storage.store.usedCapacity
+    ? { freeCapacity: storage.store.freeCapacity, resources }
     : null;
 }
 

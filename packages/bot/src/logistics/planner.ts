@@ -1,6 +1,11 @@
 export const MAX_LOGISTICS_NODES = 128;
 export const MAX_LOGISTICS_EDGES = 256;
 export const MAX_ADMITTED_LOGISTICS_FLOWS = 128;
+
+/** One physical Store capacity identity shared by every resource-specific sink projection. */
+export function aggregateStoreCapacityReservationKey(colonyId: string, targetId: string): string {
+  return `store-capacity/${String(colonyId.length)}:${colonyId}/${String(targetId.length)}:${targetId}`;
+}
 export const MAX_LOGISTICS_BODY_PARTS = 50;
 
 export type LogisticsNodeKind = "source" | "sink" | "buffer";

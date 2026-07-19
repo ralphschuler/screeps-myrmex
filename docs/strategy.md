@@ -106,9 +106,13 @@ labs still form a valid reaction cluster. An otherwise eligible energy-only targ
 one 150-tick evacuation when the canonical exact replacement has complete independent energy
 capacity. The sole funded creep-logistics path suppresses both labs' ordinary source/refill
 publication; removal waits for fresh target emptiness, baseline-plus-amount replacement energy,
-retired flow/endpoints, and unchanged quiescence, cluster, and safety evidence. Mineral-bearing,
-contaminated, cooling, active-work, stale, malformed, capacity-lost, cluster-breaking, or pressured
-labs remain.
+retired flow/endpoints, and unchanged quiescence, cluster, and safety evidence. A zero-energy target
+holding one mineral kind may instead use the exact active owned storage published by the industry
+view when its general-purpose Store has complete aggregate capacity. One funded mineral flow
+suppresses the obsolete lab's ordinary source/refill publication; removal waits for fresh lab
+emptiness, baseline-plus-amount storage stock, retired work, and unchanged destination, quiescence,
+cluster, and safety evidence. Energy-plus-mineral, terminal-only, contaminated, cooling,
+active-work, stale, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

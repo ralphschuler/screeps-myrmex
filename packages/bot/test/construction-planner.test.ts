@@ -454,6 +454,7 @@ describe("ConstructionPlanner", () => {
     const labMigration = {
       activity: [],
       assignment,
+      evacuationStorageId: null,
       limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
       observedAt: 100,
       quiescent: true,
@@ -875,6 +876,311 @@ describe("ConstructionPlanner", () => {
     });
     expect(activeIndustry.proposals).toEqual([]);
     expect(activeIndustry.labEvacuation).toEqual(evacuation);
+  });
+
+  it("persists and completes one mineral-only quiescent-lab evacuation into active storage", () => {
+    const fixture = labMineralEvacuationFixture(750, 1_000, 10_000, 100);
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      labMigration: fixture.labMigration,
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+
+    expect(staged.proposals).toEqual([]);
+    expect(staged.labEvacuation).toEqual({
+      amount: 750,
+      destinationId: "storage",
+      destinationInitialAmount: 1_000,
+      expiresAt: 250,
+      replacementId: fixture.replacementId,
+      resourceType: "XGH2O",
+      sourceId: "lab-external",
+      startedAt: 100,
+    });
+    const evacuation = staged.labEvacuation;
+    if (evacuation === null) throw new Error("expected mineral lab evacuation");
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", migrationCommitment);
+    owner = persistLayoutLabEvacuation(owner, "W1N1", evacuation);
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const persisted = owner.records[0]?.labEvacuation;
+    if (persisted === undefined) throw new Error("expected persisted mineral evacuation");
+
+    const following = labMineralEvacuationFixture(750, 1_000, 10_000, 101, fixture.replacementId);
+    const logistics = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [following.labMigration],
+      records: owner.records,
+      snapshot: { rooms: [following.room] } as unknown as WorldSnapshot,
+      tick: 101,
+    });
+    const flowId = layoutLabEvacuationFlowId("W1N1", persisted);
+    if (flowId === null) throw new Error("expected bounded mineral flow identity");
+    expect(logistics).toMatchObject({
+      authorizedFlowIds: [flowId],
+      demands: {
+        edges: [expect.objectContaining({ id: flowId, maximumAmount: 750 })],
+        endpoints: [
+          expect.objectContaining({ resourceType: "XGH2O", targetId: "lab-external" }),
+          expect.objectContaining({ resourceType: "XGH2O", targetId: "storage" }),
+        ],
+        nodes: [
+          expect.objectContaining({ resourceType: "XGH2O" }),
+          expect.objectContaining({
+            capacityReservationKey: "store-capacity/4:W1N1/7:storage",
+            resourceType: "XGH2O",
+          }),
+        ],
+        suppressedSourceTargetIds: ["lab-external"],
+      },
+    });
+
+    const partial = labMineralEvacuationFixture(300, 1_450, 10_450, 102, fixture.replacementId);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set([flowId]),
+        activeLogisticsTargetIds: new Set(["lab-external", "storage"]),
+        colony: partial.colony,
+        labEvacuation: JSON.parse(JSON.stringify(persisted)) as typeof evacuation,
+        labMigration: partial.labMigration,
+        logisticsEvidenceReady: true,
+        placements: [...partial.placements].reverse(),
+        room: {
+          ...partial.room,
+          ownedLabs: [...(partial.room.ownedLabs ?? [])].reverse(),
+          structures: [...(partial.room.structures ?? [])].reverse(),
+        },
+      }),
+    ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+
+    const completeFixture = labMineralEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      103,
+      fixture.replacementId,
+    );
+    const complete = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: completeFixture.colony,
+      labEvacuation: evacuation,
+      labMigration: completeFixture.labMigration,
+      logisticsEvidenceReady: true,
+      placements: completeFixture.placements,
+      room: completeFixture.room,
+    });
+    expect(complete.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: fixture.replacementId,
+        targetId: "lab-external",
+        targetStructureType: "lab",
+      }),
+    ]);
+    if (complete.authorization === null) throw new Error("expected mineral removal authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [complete.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: complete.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: "W1N1" } as unknown as Room;
+    const liveLabs = completeFixture.room.ownedLabs ?? [];
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) => {
+        const value = liveLabs.find((candidate) => candidate.id === id);
+        if (value === undefined) return null;
+        return {
+          cooldown: value.cooldown,
+          destroy: id === "lab-external" ? destroy : vi.fn(() => 0),
+          id: value.id,
+          isActive: () => value.active,
+          mineralType: value.mineralType,
+          my: true,
+          pos: value.pos,
+          room: liveRoom,
+          store: {
+            getCapacity: (resource?: string) =>
+              resource === "energy" ? 2_000 : resource === undefined ? null : 3_000,
+            getFreeCapacity: (resource?: string) =>
+              resource === "energy" ? 2_000 - value.energy : resource === undefined ? null : 3_000,
+            getUsedCapacity: (resource?: string) =>
+              resource === "energy" || resource === undefined ? value.energy : 0,
+          },
+          structureType: "lab",
+        } as unknown as Structure;
+      },
+    });
+    owner = reconcileStructureDestroyExecution(owner, execution, 103).owner;
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const receipt = owner.records[0]?.removalReceipt ?? null;
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    const pendingFixture = labMineralEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      104,
+      fixture.replacementId,
+    );
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: pendingFixture.colony,
+        labEvacuation: owner.records[0]?.labEvacuation ?? null,
+        labMigration: pendingFixture.labMigration,
+        logisticsEvidenceReady: true,
+        placements: pendingFixture.placements,
+        removalReceipt: receipt,
+        room: pendingFixture.room,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-pending" })],
+      proposals: [],
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+
+    const disappearedRoom = {
+      ...pendingFixture.room,
+      observedAt: 105,
+      ownedLabs: (pendingFixture.room.ownedLabs ?? []).filter(({ id }) => id !== "lab-external"),
+      structures: (pendingFixture.room.structures ?? []).filter(({ id }) => id !== "lab-external"),
+    } as RoomSnapshot;
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: pendingFixture.colony,
+        labEvacuation: evacuation,
+        labMigration: { ...pendingFixture.labMigration, observedAt: 105 },
+        logisticsEvidenceReady: true,
+        placements: pendingFixture.placements,
+        removalReceipt: receipt,
+        room: disappearedRoom,
+      }),
+    ).toMatchObject({ labEvacuation: null, proposals: [], removalReceipt: null });
+
+    const consumed = labMineralEvacuationFixture(0, 1_749, 10_749, 103, fixture.replacementId);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: consumed.colony,
+        labEvacuation: evacuation,
+        labMigration: consumed.labMigration,
+        logisticsEvidenceReady: true,
+        placements: consumed.placements,
+        room: consumed.room,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-incomplete" })],
+      proposals: [],
+    });
+
+    const capacityLost = labMineralEvacuationFixture(750, 1_000, 999_500, 100);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: capacityLost.colony,
+        labMigration: capacityLost.labMigration,
+        logisticsEvidenceReady: true,
+        placements: capacityLost.placements,
+        room: capacityLost.room,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-capacity" })],
+      labEvacuation: null,
+      proposals: [],
+    });
+
+    const changedDestination = labMineralEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      103,
+      fixture.replacementId,
+    );
+    const priorStorage = changedDestination.room.ownedStorages?.[0];
+    if (priorStorage === undefined) throw new Error("expected mineral storage");
+    const changedStorage = { ...priorStorage, id: "storage-new" };
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: changedDestination.colony,
+        labEvacuation: evacuation,
+        labMigration: {
+          ...changedDestination.labMigration,
+          evacuationStorageId: changedStorage.id,
+        },
+        logisticsEvidenceReady: true,
+        placements: changedDestination.placements,
+        room: {
+          ...changedDestination.room,
+          ownedStorages: [changedStorage],
+        },
+      }).proposals,
+    ).toEqual([]);
+
+    const malformedStorage = labMineralEvacuationFixture(750, 1_000, 10_000, 100);
+    const storage = malformedStorage.room.ownedStorages?.[0];
+    if (storage === undefined) throw new Error("expected mineral storage");
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: malformedStorage.colony,
+        labMigration: malformedStorage.labMigration,
+        logisticsEvidenceReady: true,
+        placements: malformedStorage.placements,
+        room: {
+          ...malformedStorage.room,
+          ownedStorages: [
+            {
+              ...storage,
+              store: {
+                ...storage.store,
+                resources: [...storage.store.resources, { amount: 1, resourceType: "XGH2O" }],
+                usedCapacity: storage.store.usedCapacity + 1,
+              },
+            },
+          ],
+        },
+      }).proposals,
+    ).toEqual([]);
+
+    const expired = labMineralEvacuationFixture(
+      100,
+      1_650,
+      10_650,
+      evacuation.expiresAt,
+      fixture.replacementId,
+    );
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: expired.colony,
+        labEvacuation: evacuation,
+        labMigration: expired.labMigration,
+        logisticsEvidenceReady: true,
+        placements: expired.placements,
+        room: expired.room,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-expired" })],
+      labEvacuation: null,
+      proposals: [],
+    });
   });
 
   it("persists and completes one stocked obsolete-tower evacuation before removal", () => {
@@ -2581,6 +2887,7 @@ function labEvacuationFixture(
     labMigration: {
       activity: [],
       assignment,
+      evacuationStorageId: null,
       limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
       observedAt,
       quiescent: true,
@@ -2589,6 +2896,62 @@ function labEvacuationFixture(
     placements,
     replacementId,
     room,
+  };
+}
+
+function labMineralEvacuationFixture(
+  targetMineral: number,
+  storageMineral: number,
+  storageUsed: number,
+  observedAt: number,
+  requiredReplacementId?: string,
+) {
+  const base = labEvacuationFixture(0, 250, observedAt, requiredReplacementId);
+  const labs = base.room.ownedLabs ?? [];
+  const target = labs.find(({ id }) => id === "lab-external");
+  if (target === undefined) throw new Error("expected obsolete lab");
+  const mineralType = targetMineral > 0 ? "XGH2O" : null;
+  const ownedLabs = labs.map((value) =>
+    value.id === target.id
+      ? {
+          ...value,
+          mineralAmount: targetMineral,
+          mineralType,
+          store: {
+            ...value.store,
+            resources:
+              targetMineral === 0 ? [] : [{ amount: targetMineral, resourceType: "XGH2O" }],
+            usedCapacity: targetMineral,
+          },
+        }
+      : value,
+  );
+  const storageOther = storageUsed - storageMineral;
+  if (storageOther < 0) throw new Error("storage total must include mineral baseline");
+  const storage = {
+    active: true,
+    hits: 10_000,
+    hitsMax: 10_000,
+    id: "storage",
+    pos: { roomName: "W1N1", x: 20, y: 20 },
+    store: {
+      capacity: 1_000_000,
+      freeCapacity: 1_000_000 - storageUsed,
+      resources: [
+        ...(storageOther === 0 ? [] : [{ amount: storageOther, resourceType: "energy" }]),
+        ...(storageMineral === 0 ? [] : [{ amount: storageMineral, resourceType: "XGH2O" }]),
+      ],
+      usedCapacity: storageUsed,
+    },
+  } as const;
+  return {
+    ...base,
+    labMigration: { ...base.labMigration, evacuationStorageId: storage.id },
+    room: {
+      ...base.room,
+      ownedLabs,
+      ownedStorages: [storage],
+    } as RoomSnapshot,
   };
 }
 

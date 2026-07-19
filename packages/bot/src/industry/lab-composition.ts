@@ -48,6 +48,8 @@ export type LabMigrationActivity =
 export interface LabMigrationRoomView {
   readonly activity: readonly LabMigrationActivity[];
   readonly assignment: LabClusterAssignment | null;
+  /** Exact active general-purpose destination selected by the industry observation boundary. */
+  readonly evacuationStorageId: string | null;
   readonly limits: LabClusterLimits;
   readonly observedAt: number;
   readonly quiescent: boolean;
@@ -223,6 +225,7 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
   });
   const migrationRooms = input.snapshot.ownedRooms.map((room): LabMigrationRoomView => {
     const activity: LabMigrationActivity[] = [];
+    const activeStorages = (room.ownedStorages ?? []).filter(({ active }) => active);
     if (policy.commitments.some(({ colonyId }) => colonyId === room.name))
       activity.push("commitment");
     if (input.pendingAttempts.some(({ roomName }) => roomName === room.name))
@@ -236,6 +239,7 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     return {
       activity: freeze(activity),
       assignment: assignments.find(({ roomName }) => roomName === room.name) ?? null,
+      evacuationStorageId: activeStorages.length === 1 ? (activeStorages[0]?.id ?? null) : null,
       limits: labClusterLimits(input.policy.maximumLabsPerRoom),
       observedAt: room.observedAt,
       quiescent: activity.length === 0,

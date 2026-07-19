@@ -1,7 +1,12 @@
 import type { LabClusterAssignment } from "../industry/lab-cluster";
 import type { WorldSnapshot } from "../world/snapshot";
 import type { LogisticsContractEndpoint } from "./contracts";
-import type { LogisticsEdge, LogisticsNode, LogisticsPriorityClass } from "./planner";
+import {
+  aggregateStoreCapacityReservationKey,
+  type LogisticsEdge,
+  type LogisticsNode,
+  type LogisticsPriorityClass,
+} from "./planner";
 
 export type LabResourceDemandMode = "drain" | "fill";
 
@@ -316,7 +321,12 @@ function makeEndpointNode(
   const amount = resourceAmount(endpoint, resourceType);
   return freeze({
     ...(mode === "drain"
-      ? { capacityReservationKey: `inventory:${demand.colonyId}:${endpoint.id}:aggregate-capacity` }
+      ? {
+          capacityReservationKey: aggregateStoreCapacityReservationKey(
+            demand.colonyId,
+            endpoint.id,
+          ),
+        }
       : {}),
     colonyId: demand.colonyId,
     freeCapacity: mode === "drain" ? Math.max(0, endpoint.store.freeCapacity ?? 0) : 0,

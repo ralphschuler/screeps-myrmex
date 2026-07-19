@@ -83,7 +83,7 @@ describe("lab resource-demand projection", () => {
     expect(result.nodes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          capacityReservationKey: "inventory:W1N1:storage:aggregate-capacity",
+          capacityReservationKey: "store-capacity/4:W1N1/7:storage",
           id: "inventory:W1N1:storage:H",
         }),
       ]),

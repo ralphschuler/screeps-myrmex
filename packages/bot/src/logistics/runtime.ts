@@ -11,6 +11,7 @@ import {
 import {
   MAX_LOGISTICS_EDGES,
   MAX_LOGISTICS_NODES,
+  aggregateStoreCapacityReservationKey,
   planLogistics,
   type LogisticsEdge,
   type LogisticsNode,
@@ -139,6 +140,7 @@ export function observeLogisticsGraph(
       ) {
         addEndpoint(nodes, endpoints, {
           amount: 0,
+          capacityReservationKey: aggregateStoreCapacityReservationKey(room.name, structure.id),
           colonyId: room.name,
           freeCapacity: structure.store.freeCapacity,
           id: `store:${structure.id}:sink:energy`,
@@ -623,6 +625,7 @@ function addEndpoint(
   input: {
     readonly acquireAction?: "pickup" | "withdraw";
     readonly amount: number;
+    readonly capacityReservationKey?: string;
     readonly colonyId: string;
     readonly freeCapacity: number;
     readonly id: string;
@@ -635,6 +638,9 @@ function addEndpoint(
   },
 ): void {
   nodes.push({
+    ...(input.capacityReservationKey === undefined
+      ? {}
+      : { capacityReservationKey: input.capacityReservationKey }),
     colonyId: input.colonyId,
     freeCapacity: input.freeCapacity,
     id: input.id,

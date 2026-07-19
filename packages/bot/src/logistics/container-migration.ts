@@ -13,6 +13,7 @@ import {
   type LayoutRecord,
 } from "../layout";
 import type { StoredStructureSnapshot, WorldSnapshot } from "../world/snapshot";
+import { aggregateStoreCapacityReservationKey } from "./planner";
 import type { LogisticsResourceDemandProjection } from "./resource-demands";
 
 export interface LayoutContainerMigrationProjection extends LogisticsResourceDemandProjection {
@@ -125,7 +126,7 @@ export function projectLayoutContainerMigrations(input: {
           resourceType: term.resourceType,
         },
         {
-          capacityReservationKey: `container:${room.name}:${replacement.id}:aggregate-capacity`,
+          capacityReservationKey: aggregateStoreCapacityReservationKey(room.name, replacement.id),
           colonyId: room.name,
           freeCapacity: replacement.store.freeCapacity,
           id: sinkNodeId,

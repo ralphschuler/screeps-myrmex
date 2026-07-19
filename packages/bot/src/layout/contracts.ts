@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 11 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 12 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -19,6 +19,8 @@ export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
 export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
 export const MAX_LAYOUT_LAB_ENERGY = 2_000 as const;
 export const MAX_LAYOUT_LAB_MINERAL = 3_000 as const;
+export const MAX_LAYOUT_STORAGE_CAPACITY = 1_000_000 as const;
+export const MAX_LAYOUT_STORAGE_RESOURCES = 64 as const;
 export const MAX_LAYOUT_LINK_ENERGY = 800 as const;
 export const MAX_LAYOUT_TOWER_ENERGY = 1_000 as const;
 /** Official energy cost of one tower attack, heal, or repair action. */
@@ -105,7 +107,7 @@ export interface LayoutTowerEvacuation {
   readonly sourceId: string;
   readonly startedAt: number;
 }
-export interface LayoutLabEvacuation {
+export interface LayoutLabEnergyEvacuation {
   readonly amount: number;
   readonly expiresAt: number;
   readonly replacementId: string;
@@ -113,6 +115,18 @@ export interface LayoutLabEvacuation {
   readonly sourceId: string;
   readonly startedAt: number;
 }
+export interface LayoutLabMineralEvacuation {
+  readonly amount: number;
+  readonly destinationId: string;
+  readonly destinationInitialAmount: number;
+  readonly expiresAt: number;
+  /** Canonical post-removal cluster member retained for safe structure removal. */
+  readonly replacementId: string;
+  readonly resourceType: string;
+  readonly sourceId: string;
+  readonly startedAt: number;
+}
+export type LayoutLabEvacuation = LayoutLabEnergyEvacuation | LayoutLabMineralEvacuation;
 export interface LayoutLinkEvacuation {
   readonly amount: number;
   readonly expiresAt: number;
@@ -228,23 +242,45 @@ export function layoutExtensionEvacuationBudgetIssuer(
   return issuer.length <= 128 ? issuer : null;
 }
 
+interface LayoutLabEvacuationIdentity {
+  readonly destinationId?: string;
+  readonly replacementId: string;
+  readonly resourceType?: string;
+  readonly sourceId: string;
+}
+
 export function layoutLabEvacuationFlowId(
   roomName: string,
-  evacuation: Pick<LayoutLabEvacuation, "replacementId" | "sourceId">,
+  evacuation: LayoutLabEvacuationIdentity,
 ): string | null {
-  const flowId = `layout-lab-evacuation:${roomName}:${evacuation.sourceId}:${evacuation.replacementId}`;
+  const mineralIdentity =
+    evacuation.destinationId === undefined && evacuation.resourceType === undefined
+      ? ""
+      : evacuation.destinationId !== undefined && evacuation.resourceType !== undefined
+        ? `:${String(evacuation.resourceType.length)}:${evacuation.resourceType}:${String(evacuation.destinationId.length)}:${evacuation.destinationId}`
+        : null;
+  if (mineralIdentity === null) return null;
+  const flowId = `layout-lab-evacuation:${roomName}:${evacuation.sourceId}:${evacuation.replacementId}${mineralIdentity}`;
   return flowId.length <= 128 ? flowId : null;
 }
 
 export function layoutLabEvacuationBudgetIssuer(
   roomName: string,
-  evacuation: Pick<LayoutLabEvacuation, "replacementId" | "sourceId">,
+  evacuation: LayoutLabEvacuationIdentity,
 ): string | null {
+  if ((evacuation.destinationId === undefined) !== (evacuation.resourceType === undefined))
+    return null;
   const issuer = [
     "layout-migration",
     `${String(roomName.length)}:${roomName}`,
     `${String(evacuation.sourceId.length)}:${evacuation.sourceId}`,
     `${String(evacuation.replacementId.length)}:${evacuation.replacementId}`,
+    ...(evacuation.resourceType === undefined || evacuation.destinationId === undefined
+      ? []
+      : [
+          `${String(evacuation.resourceType.length)}:${evacuation.resourceType}`,
+          `${String(evacuation.destinationId.length)}:${evacuation.destinationId}`,
+        ]),
   ].join("/");
   return issuer.length <= 128 ? issuer : null;
 }
@@ -651,7 +687,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV11 {
+export interface LayoutsOwnerV12 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

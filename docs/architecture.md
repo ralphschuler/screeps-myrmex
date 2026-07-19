@@ -109,9 +109,12 @@ current view is quiescent, no logistics endpoint names any room lab, and the rem
 labs still derive a valid cluster. Issue #322 permits that target to hold energy only when one
 bounded funded creep-logistics evacuation can deliver the complete amount to the canonical exact
 replacement; removal requires fresh empty/delivered/retired-work and unchanged quiescence, cluster,
-and safety evidence. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, tower, link,
-and lab result reuses the same fixed receipt.
+and safety evidence. Issue #324 permits one zero-energy, single-kind mineral target only when the
+industry-owned view publishes one exact active owned storage with complete aggregate capacity. The
+sole logistics path moves the mineral; removal requires fresh empty/delivered/retired-work and
+unchanged destination, quiescence, cluster, and safety evidence. `StructureRemovalArbiter` alone
+authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension,
+container, tower, link, and lab result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1350,11 +1353,15 @@ any optional demand batch would exceed the bounded observed graph's node, endpoi
 complete demand batch is omitted before graph admission so optional work cannot displace observed
 survival logistics.
 
-Quiescent lab-energy migration also uses that authority. One layouts-owned V11 record projects one
-`optional-growth` energy edge only while the current industry-owned migration view remains quiescent
-and contains the exact replacement assignment. Both labs' ordinary sources and refill sinks are
-suppressed. Loss of quiescence or graph admission excludes the persisted flow from same-tick agent
-execution; removal waits for fresh empty/delivered evidence and retired V3 work.
+Quiescent lab stock migration also uses that authority. One layouts-owned V12 record projects one
+`optional-growth` edge only while the current industry-owned migration view remains quiescent and
+contains the exact replacement assignment. Energy moves to that replacement lab while both labs'
+ordinary sources and refill sinks are suppressed. One zero-energy, single-kind mineral target may
+instead move to the exact active owned storage published by Industry; its sink shares the storage's
+aggregate-capacity key while the obsolete lab's ordinary source/refill projections are suppressed.
+Loss of quiescence, destination continuity, capacity, or graph admission excludes the persisted flow
+from same-tick agent execution; removal waits for fresh empty/delivered evidence and retired V3
+work.
 
 ### 12.4 MovementArbiter
 
@@ -1449,7 +1456,7 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V11
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V12
 `layouts` owner. V3 adds the optional source-migration identity, V4 adds one optional source-service
 issuance coordinate, and V5 adds one generic bounded removal receipt. Site `OK` waits for observed
 world change; full and unexpected faults back off; RCL, target, and ownership failures wait for the
@@ -1462,13 +1469,13 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V11 layouts owner; V8 adds
+commitments and bounded receipts stage through the owner-local schema V12 layouts owner; V8 adds
 `link` to the existing removal-receipt discriminator, V9 adds one optional fixed-shape reserve-link
-evacuation, V10 adds `lab` to the fixed receipt discriminator, and V11 adds one optional fixed-shape
-lab-energy evacuation. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior
-commitments and authorizes no command. Every observed owned layout site enters the existing funded
-survival-growth build flow, while controller risk, recovery, maintenance, and protected reserves
-retain precedence.
+evacuation, V10 adds `lab` to the fixed receipt discriminator, V11 adds one optional fixed-shape
+lab-energy evacuation, and V12 adds its single-kind mineral/storage variant. Degraded, unknown,
+lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no command.
+Every observed owned layout site enters the existing funded survival-growth build flow, while
+controller risk, recovery, maintenance, and protected reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -1662,8 +1669,19 @@ baseline-plus-amount replacement energy, retired flow/endpoints, and unchanged c
 evidence. Lost quiescence or graph admission removes the persisted flow from same-tick agent
 execution. [ADR 0051](adr/0051-quiescent-lab-energy-evacuation.md) records the boundary.
 
-Other structure stock evacuation, mineral-bearing or active-work-preserving lab handoff, defensive
-migration, general multi-step migration, and creep dismantling remain issue #99 and fail closed.
+Issue #324 permits one zero-energy target containing one positive mineral kind. Industry publishes
+one exact active owned storage; Layouts owner V12 persists the destination, resource, amount, and
+resource baseline without changing V11 energy terms. Following ticks publish one funded mineral flow
+through the same V3 path, using the storage aggregate-capacity key and suppressing the obsolete
+lab's ordinary source/refill projections. Removal waits for fresh empty target, baseline-plus-amount
+storage stock, retired flow/endpoints, and unchanged destination, quiescence, assignment, cluster,
+and safety evidence. Inactive/duplicate/malformed storage, terminal-only capacity, consumption,
+drift, mixed stock, or graph omission fails closed.
+[ADR 0052](adr/0052-quiescent-lab-mineral-evacuation.md) records the boundary.
+
+Other structure stock evacuation, energy-plus-mineral or active-work-preserving lab handoff,
+defensive migration, terminal-destination migration, general multi-step migration, and creep
+dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -1700,9 +1718,11 @@ clean-room. Reserve-link convergence additionally follows official
 [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy), and
 [`Structure.isActive`](https://docs.screeps.com/api/#Structure.isActive) contracts. The Screeps Wiki
 [`StructureLink`](https://wiki.screepspl.us/StructureLink/) role names are terminology only.
-Quiescent lab convergence and energy evacuation additionally follow official
+Quiescent lab convergence and stock evacuation additionally follow official
 [`StructureLab`](https://docs.screeps.com/api/#StructureLab) capacities, RCL allowance, range-two
-cluster, and cooldown contracts, official [`Store`](https://docs.screeps.com/api/#Store),
+cluster, and cooldown contracts, official
+[`StructureStorage`](https://docs.screeps.com/api/#StructureStorage),
+[`Store`](https://docs.screeps.com/api/#Store),
 [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw), and
 [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer), plus Screeps Wiki
 [`StructureLab`](https://wiki.screepspl.us/StructureLab/) operational terminology.
@@ -2251,7 +2271,10 @@ Required architecture assertions include:
   zero-cooldown external target, matching quiescent industry evidence, valid post-removal cluster
   assignment, current safety, and the same global one-command and reset-safe receipt ceilings; an
   energy-only target first uses one bounded funded logistics evacuation and requires fresh
-  empty-target, baseline-plus-amount replacement energy, and retired flow/endpoints;
+  empty-target, baseline-plus-amount replacement energy, and retired flow/endpoints; a zero-energy,
+  single-kind mineral target instead requires the Industry-published exact active storage, one
+  funded mineral flow, aggregate capacity, baseline-plus-amount storage stock, retired work, and
+  unchanged destination evidence;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;

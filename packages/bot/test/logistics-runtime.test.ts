@@ -462,7 +462,7 @@ describe("logistics runtime adapter", () => {
     );
   });
 
-  it("routes one authorized energy-only obsolete-lab evacuation through the sole logistics graph", () => {
+  it("routes authorized energy and mineral obsolete-lab evacuation through the sole logistics graph", () => {
     const snapshot = world();
     const room = snapshot.rooms[0];
     if (room === undefined) throw new Error("lab evacuation fixture room missing");
@@ -580,6 +580,7 @@ describe("logistics runtime adapter", () => {
       {
         activity: [],
         assignment,
+        evacuationStorageId: null,
         limits,
         observedAt: 11,
         quiescent: true,
@@ -644,6 +645,148 @@ describe("logistics runtime adapter", () => {
       execution: { action: "withdraw", counterpartId: replacementId },
       quantity: 750,
       targetId: "lab-obsolete",
+    });
+
+    const mineralLabs = ownedLabs.map((value) =>
+      value.id === "lab-obsolete"
+        ? {
+            ...value,
+            energy: 0,
+            mineralAmount: 750,
+            mineralType: "XGH2O",
+            store: {
+              ...value.store,
+              resources: [{ amount: 750, resourceType: "XGH2O" }],
+              usedCapacity: 750,
+            },
+          }
+        : value,
+    );
+    const storage = {
+      active: true,
+      hits: 10_000,
+      hitsMax: 10_000,
+      id: "storage",
+      pos: position(20, 20),
+      store: {
+        capacity: 1_000_000,
+        freeCapacity: 800,
+        resources: [
+          { amount: 998_200, resourceType: "energy" },
+          { amount: 1_000, resourceType: "XGH2O" },
+        ],
+        usedCapacity: 999_200,
+      },
+    } as const;
+    const mineralRoom = evacuationWorld.rooms[0];
+    if (mineralRoom === undefined) throw new Error("mineral evacuation fixture room missing");
+    const labIds = new Set(mineralLabs.map(({ id }) => id));
+    const mineralWorld = {
+      ...evacuationWorld,
+      rooms: [
+        {
+          ...mineralRoom,
+          ownedLabs: mineralLabs,
+          ownedSpawns: mineralRoom.ownedSpawns.map((spawn) => ({
+            ...spawn,
+            store: {
+              capacity: 300,
+              freeCapacity: 0,
+              resources: [{ amount: 300, resourceType: "energy" }],
+              usedCapacity: 300,
+            },
+          })),
+          ownedStorages: [storage],
+          storedStructures: [
+            ...mineralRoom.storedStructures.filter(
+              ({ id }) => id !== storage.id && !labIds.has(id),
+            ),
+            ...mineralLabs.map((value) => ({
+              hits: value.hits,
+              hitsMax: value.hitsMax,
+              id: value.id,
+              ownerUsername: "me",
+              ownership: "owned" as const,
+              pos: value.pos,
+              store: value.store,
+              structureType: "lab",
+              ticksToDecay: null,
+            })),
+            {
+              hits: storage.hits,
+              hitsMax: storage.hitsMax,
+              id: storage.id,
+              ownerUsername: "me",
+              ownership: "owned" as const,
+              pos: storage.pos,
+              store: storage.store,
+              structureType: "storage",
+              ticksToDecay: null,
+            },
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const mineralTerms = {
+      amount: 750,
+      destinationId: storage.id,
+      destinationInitialAmount: 1_000,
+      expiresAt: 160,
+      replacementId,
+      resourceType: "XGH2O",
+      sourceId: "lab-obsolete",
+      startedAt: 10,
+    } as const;
+    const mineralRecord = {
+      ...record,
+      labEvacuation: mineralTerms,
+    } as const satisfies LayoutRecord;
+    const mineralProjection = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+      records: [mineralRecord],
+      snapshot: mineralWorld,
+      tick: 11,
+    });
+    const mineralRuntime = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: mineralProjection.demands,
+      snapshot: mineralWorld,
+      tick: 11,
+    });
+    const mineralFlow = mineralRuntime.contracts.commitments.find(({ flowId }) =>
+      flowId.startsWith("layout-lab-evacuation:"),
+    );
+    expect(mineralProjection.demands).toMatchObject({
+      suppressedSinkTargetIds: ["lab-obsolete"],
+      suppressedSourceTargetIds: ["lab-obsolete"],
+    });
+    expect(mineralFlow?.request).toMatchObject({
+      budgetBinding: { category: "optional-growth" },
+      execution: {
+        action: "withdraw",
+        counterpartId: storage.id,
+        resourceType: "XGH2O",
+        version: 3,
+      },
+      targetId: "lab-obsolete",
+    });
+    const storageSinkNodeIds = new Set(
+      mineralRuntime.graph.endpoints
+        .filter(({ targetId }) => targetId === storage.id)
+        .map(({ nodeId }) => nodeId),
+    );
+    expect(
+      mineralRuntime.plan.projections
+        .filter(({ sinkNodeId }) => storageSinkNodeIds.has(sinkNodeId))
+        .reduce((total, { admittedAmount }) => total + admittedAmount, 0),
+    ).toBe(storage.store.freeCapacity);
+    expect(mineralRuntime.plan.reservations).toContainEqual({
+      nodeId: "store-capacity/4:W1N1/7:storage",
+      sinkCapacity: storage.store.freeCapacity,
+      sourceAmount: 0,
     });
 
     const empty = {
@@ -1304,7 +1447,7 @@ describe("logistics runtime adapter", () => {
           capacityReservationKey === undefined ? [] : [capacityReservationKey],
         ),
       ),
-    ).toEqual(new Set(["container:W1N1:container-replacement:aggregate-capacity"]));
+    ).toEqual(new Set(["store-capacity/4:W1N1/21:container-replacement"]));
     expect(projection.suppressedSinkTargetIds).toEqual([
       "container-obsolete",
       "container-replacement",
@@ -1377,7 +1520,7 @@ describe("logistics runtime adapter", () => {
     expect(singletonProjection.nodes).toEqual([
       expect.objectContaining({ kind: "source", observedAmount: 50, resourceType: "U" }),
       expect.objectContaining({
-        capacityReservationKey: "container:W1N1:container-replacement:aggregate-capacity",
+        capacityReservationKey: "store-capacity/4:W1N1/21:container-replacement",
         kind: "sink",
         resourceType: "U",
       }),

@@ -22,6 +22,8 @@ import {
   MAX_LAYOUT_LAB_ENERGY,
   MAX_LAYOUT_LAB_MINERAL,
   MAX_LAYOUT_LINK_ENERGY,
+  MAX_LAYOUT_STORAGE_CAPACITY,
+  MAX_LAYOUT_STORAGE_RESOURCES,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
@@ -794,13 +796,19 @@ export class ConstructionPlanner {
         const ownedEvacuationTargetIds =
           labEvacuation === null
             ? new Set<string>()
-            : new Set([labEvacuation.sourceId, labEvacuation.replacementId]);
+            : "resourceType" in labEvacuation
+              ? new Set([labEvacuation.sourceId])
+              : new Set([labEvacuation.sourceId, labEvacuation.replacementId]);
         const lab = labMigrationEvidence({
           activeLogisticsTargetIds: input.activeLogisticsTargetIds,
           allowance: input.colony.rclPolicy.unlocks?.labs ?? 0,
           desiredLabs,
           logisticsEvidenceReady: input.logisticsEvidenceReady === true,
           ownedEvacuationTargetIds,
+          requiredEvacuationStorageId:
+            labEvacuation !== null && "resourceType" in labEvacuation
+              ? labEvacuation.destinationId
+              : null,
           room: input.room,
           target: candidate.target,
           view: input.labMigration ?? null,
@@ -822,11 +830,16 @@ export class ConstructionPlanner {
           });
           break;
         }
-        if (labEvacuation === null && lab.targetEnergy > 0) {
-          const identity = {
-            replacementId: lab.replacement.id,
-            sourceId: candidate.target.id,
-          };
+        if (labEvacuation === null && (lab.targetEnergy > 0 || lab.targetMineralAmount > 0)) {
+          const identity =
+            lab.targetMineralType === null || lab.destination === null
+              ? { replacementId: lab.replacement.id, sourceId: candidate.target.id }
+              : {
+                  destinationId: lab.destination.id,
+                  replacementId: lab.replacement.id,
+                  resourceType: lab.targetMineralType,
+                  sourceId: candidate.target.id,
+                };
           if (
             input.activeLogisticsFlowIds === undefined ||
             input.activeLogisticsTargetIds === undefined ||
@@ -840,7 +853,11 @@ export class ConstructionPlanner {
             });
             break;
           }
-          if (lab.replacementEnergy + lab.targetEnergy > MAX_LAYOUT_LAB_ENERGY) {
+          const capacityMissing =
+            lab.targetMineralType === null
+              ? lab.replacementEnergy + lab.targetEnergy > MAX_LAYOUT_LAB_ENERGY
+              : lab.destination === null || lab.destinationFreeCapacity < lab.targetMineralAmount;
+          if (capacityMissing) {
             pushMigrationBlocker(blockers, {
               reason: "evacuation-capacity",
               roomName: input.room.name,
@@ -848,14 +865,26 @@ export class ConstructionPlanner {
             });
             break;
           }
-          labEvacuation = {
-            amount: lab.targetEnergy,
-            expiresAt: input.room.observedAt + LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
-            replacementId: lab.replacement.id,
-            replacementInitialEnergy: lab.replacementEnergy,
-            sourceId: candidate.target.id,
-            startedAt: input.room.observedAt,
-          };
+          labEvacuation =
+            lab.targetMineralType === null || lab.destination === null
+              ? {
+                  amount: lab.targetEnergy,
+                  expiresAt: input.room.observedAt + LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
+                  replacementId: lab.replacement.id,
+                  replacementInitialEnergy: lab.replacementEnergy,
+                  sourceId: candidate.target.id,
+                  startedAt: input.room.observedAt,
+                }
+              : {
+                  amount: lab.targetMineralAmount,
+                  destinationId: lab.destination.id,
+                  destinationInitialAmount: lab.destinationResourceAmount,
+                  expiresAt: input.room.observedAt + LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
+                  replacementId: lab.replacement.id,
+                  resourceType: lab.targetMineralType,
+                  sourceId: candidate.target.id,
+                  startedAt: input.room.observedAt,
+                };
           pushMigrationBlocker(blockers, {
             reason: "target-stocked",
             roomName: input.room.name,
@@ -866,6 +895,13 @@ export class ConstructionPlanner {
         if (labEvacuation !== null) {
           const flowId = layoutLabEvacuationFlowId(input.room.name, labEvacuation);
           const flowActive = flowId !== null && input.activeLogisticsFlowIds?.has(flowId) === true;
+          const mineralTerms = "resourceType" in labEvacuation ? labEvacuation : null;
+          const energyTerms = "replacementInitialEnergy" in labEvacuation ? labEvacuation : null;
+          const sourceAmount = mineralTerms === null ? lab.targetEnergy : lab.targetMineralAmount;
+          const destinationResourceAmount =
+            mineralTerms === null
+              ? lab.destinationResourceAmount
+              : (lab.destinationResources.get(mineralTerms.resourceType) ?? 0);
           let reason: LayoutMigrationBlocker | null = null;
           if (
             input.activeLogisticsFlowIds === undefined ||
@@ -875,22 +911,33 @@ export class ConstructionPlanner {
             reason = "logistics-unavailable";
           else if (input.room.observedAt >= labEvacuation.expiresAt) {
             reason = "evacuation-expired";
-            if (lab.targetEnergy > 0 && !flowActive) labEvacuation = null;
+            if (sourceAmount > 0 && !flowActive) labEvacuation = null;
           } else if (
-            lab.targetEnergy > labEvacuation.amount ||
-            lab.replacementEnergy < labEvacuation.replacementInitialEnergy
+            sourceAmount > labEvacuation.amount ||
+            (mineralTerms === null
+              ? lab.targetMineralAmount !== 0 ||
+                energyTerms === null ||
+                lab.replacementEnergy < energyTerms.replacementInitialEnergy
+              : lab.targetEnergy !== 0 ||
+                (lab.targetMineralType !== null &&
+                  lab.targetMineralType !== mineralTerms.resourceType) ||
+                lab.destination?.id !== mineralTerms.destinationId ||
+                destinationResourceAmount < mineralTerms.destinationInitialAmount)
           )
             reason = "evacuation-incomplete";
-          else if (lab.targetEnergy > 0) reason = "target-stocked";
+          else if (sourceAmount > 0) reason = "target-stocked";
           else if (flowActive) reason = "evacuation-pending";
           else if (
-            lab.replacementEnergy <
-            labEvacuation.replacementInitialEnergy + labEvacuation.amount
+            mineralTerms === null
+              ? energyTerms === null ||
+                lab.replacementEnergy < energyTerms.replacementInitialEnergy + energyTerms.amount
+              : destinationResourceAmount <
+                mineralTerms.destinationInitialAmount + mineralTerms.amount
           )
             reason = "evacuation-incomplete";
           else if (
             input.activeLogisticsTargetIds.has(candidate.target.id) ||
-            input.activeLogisticsTargetIds.has(lab.replacement.id)
+            (mineralTerms === null && input.activeLogisticsTargetIds.has(lab.replacement.id))
           )
             reason = "logistics-active";
           if (reason !== null) {
@@ -2036,16 +2083,23 @@ function labMigrationEvidence(input: {
   readonly desiredLabs: readonly LayoutPlacement[];
   readonly logisticsEvidenceReady: boolean;
   readonly ownedEvacuationTargetIds: ReadonlySet<string>;
+  readonly requiredEvacuationStorageId: string | null;
   readonly room: RoomSnapshot;
   readonly target: StructureSnapshot;
   readonly view: LabMigrationRoomView | null;
 }):
   | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
   | {
+      readonly destination: NonNullable<RoomSnapshot["ownedStorages"]>[number] | null;
+      readonly destinationFreeCapacity: number;
+      readonly destinationResourceAmount: number;
+      readonly destinationResources: ReadonlyMap<string, number>;
       readonly reason: null;
       readonly replacement: NonNullable<RoomSnapshot["ownedLabs"]>[number];
       readonly replacementEnergy: number;
       readonly targetEnergy: number;
+      readonly targetMineralAmount: number;
+      readonly targetMineralType: string | null;
     } {
   const occupying = (input.room.structures ?? []).filter(({ pos }) =>
     samePosition(pos, input.target.pos),
@@ -2061,7 +2115,7 @@ function labMigrationEvidence(input: {
   const targetEnergy = target === undefined ? null : exactLabEnergy(target);
   if (target === undefined || !target.active || target.cooldown !== 0 || targetEnergy === null)
     return { reason: "target-unavailable", replacement: null };
-  if (target.mineralAmount !== 0 || target.mineralType !== null)
+  if (targetEnergy > 0 && target.mineralAmount > 0)
     return { reason: "target-stocked", replacement: null };
   if (
     input.room.controller?.level !== 8 ||
@@ -2138,9 +2192,39 @@ function labMigrationEvidence(input: {
   ].sort(compareText);
   const replacement = exact.find(({ id }) => id === clusterIds[0]);
   const replacementEnergy = replacement === undefined ? null : exactLabEnergy(replacement);
-  return replacement === undefined || replacementEnergy === null
-    ? { reason: "lab-cluster-invalid", replacement: null }
-    : { reason: null, replacement, replacementEnergy, targetEnergy };
+  if (replacement === undefined || replacementEnergy === null)
+    return { reason: "lab-cluster-invalid", replacement: null };
+  let destination: NonNullable<RoomSnapshot["ownedStorages"]>[number] | null = null;
+  let destinationFreeCapacity = 0;
+  let destinationResourceAmount = 0;
+  let destinationResources: ReadonlyMap<string, number> = new Map();
+  if (target.mineralAmount > 0 || input.requiredEvacuationStorageId !== null) {
+    const activeStorages = (input.room.ownedStorages ?? []).filter(({ active }) => active);
+    const requiredStorageId = input.requiredEvacuationStorageId ?? input.view.evacuationStorageId;
+    destination =
+      activeStorages.length === 1 &&
+      activeStorages[0]?.id === requiredStorageId &&
+      input.view.evacuationStorageId === requiredStorageId
+        ? activeStorages[0]
+        : null;
+    const destinationStore = destination === null ? null : exactStorage(destination);
+    if (destinationStore === null) return { reason: "industry-unavailable", replacement: null };
+    destinationFreeCapacity = destinationStore.freeCapacity;
+    destinationResources = destinationStore.resources;
+    destinationResourceAmount = destinationResources.get(target.mineralType ?? "") ?? 0;
+  }
+  return {
+    destination,
+    destinationFreeCapacity,
+    destinationResourceAmount,
+    destinationResources,
+    reason: null,
+    replacement,
+    replacementEnergy,
+    targetEnergy,
+    targetMineralAmount: target.mineralAmount,
+    targetMineralType: target.mineralType,
+  };
 }
 
 function exactLabEnergy(lab: NonNullable<RoomSnapshot["ownedLabs"]>[number]): number | null {
@@ -2176,6 +2260,41 @@ function exactLabEnergy(lab: NonNullable<RoomSnapshot["ownedLabs"]>[number]): nu
   )
     return null;
   return lab.energy;
+}
+
+function exactStorage(storage: NonNullable<RoomSnapshot["ownedStorages"]>[number]): {
+  readonly freeCapacity: number;
+  readonly resources: ReadonlyMap<string, number>;
+} | null {
+  if (
+    storage.store.capacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    !Number.isSafeInteger(storage.store.usedCapacity) ||
+    storage.store.usedCapacity < 0 ||
+    !Number.isSafeInteger(storage.store.freeCapacity) ||
+    storage.store.freeCapacity === null ||
+    storage.store.freeCapacity < 0 ||
+    storage.store.usedCapacity + storage.store.freeCapacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    storage.store.resources.length > MAX_LAYOUT_STORAGE_RESOURCES
+  )
+    return null;
+  const resources = new Map<string, number>();
+  let used = 0;
+  for (const { amount, resourceType } of storage.store.resources) {
+    if (
+      resources.has(resourceType) ||
+      resourceType.length === 0 ||
+      resourceType.length > 64 ||
+      resourceType !== resourceType.trim() ||
+      !Number.isSafeInteger(amount) ||
+      amount <= 0
+    )
+      return null;
+    resources.set(resourceType, amount);
+    used += amount;
+  }
+  return used === storage.store.usedCapacity
+    ? { freeCapacity: storage.store.freeCapacity, resources }
+    : null;
 }
 
 function towerMigrationEvidence(

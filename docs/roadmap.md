@@ -143,9 +143,13 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   remaining nine exact committed labs still derive a valid cluster. Issue #322 extends only that
   quiescent path to one energy-only target, persisting a 150-tick funded creep-logistics evacuation
   and requiring fresh target-empty, baseline-plus-amount replacement energy, retired work, and
-  unchanged cluster/safety evidence before removal. Other structure types, mineral-bearing or
-  active-work-preserving lab handoff, general multi-step migration, and creep dismantling remain
-  issue #99.
+  unchanged cluster/safety evidence before removal. Issue #324 admits one zero-energy, single-kind
+  mineral target only when the industry view publishes one exact active owned storage with complete
+  aggregate capacity. One funded mineral flow uses the sole logistics path; removal requires fresh
+  target emptiness, baseline-plus-amount storage stock, retired work, and unchanged destination,
+  cluster, quiescence, and safety evidence. Other structure types, energy-plus-mineral or
+  active-work-preserving lab handoff, terminal destinations, general multi-step migration, and creep
+  dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
