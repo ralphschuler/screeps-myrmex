@@ -137,8 +137,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   link remains active. Issue #318 persists one bounded positive-energy reserve-link evacuation only
   when the exact reserve replacement can hold the complete amount, routes it through funded creep
   logistics without native link-transfer loss, and requires exact delivery, retired work, zero
-  cooldown, unchanged reserve roles, and no accepted native transfer before removal. Other structure
-  types, general multi-step migration, and creep dismantling remain issue #99.
+  cooldown, unchanged reserve roles, and no accepted native transfer before removal. Issue #320
+  restores committed RCL8 lab geometry, then removes one active empty zero-cooldown external lab
+  only while current industry work is quiescent, no logistics endpoint names any room lab, and the
+  remaining nine exact committed labs still derive a valid cluster. Other structure types,
+  active-work-preserving lab handoff, general multi-step migration, and creep dismantling remain
+  issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

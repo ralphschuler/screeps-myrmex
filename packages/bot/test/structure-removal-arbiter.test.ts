@@ -116,6 +116,28 @@ describe("StructureRemovalArbiter", () => {
       }),
     ]);
 
+    const lab = {
+      ...proposal("lab-obsolete"),
+      replacementId: "lab-replacement",
+      replacementStructureType: "lab",
+      stableId: "remove-lab/lab-obsolete",
+      targetRequiresZeroCooldown: true,
+      targetStructureType: "lab",
+    } as const satisfies LayoutMigrationProposal;
+    expect(
+      arbitrateStructureRemovals({
+        authorizations: [authorization(lab)],
+        limits: STRUCTURE_REMOVAL_LIMITS,
+        proposals: [lab],
+      }).intents,
+    ).toEqual([
+      expect.objectContaining({
+        replacementStructureType: "lab",
+        targetRequiresZeroCooldown: true,
+        targetStructureType: "lab",
+      }),
+    ]);
+
     const mismatched = {
       ...candidate,
       replacementStructureType: "extension",

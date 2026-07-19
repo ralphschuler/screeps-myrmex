@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { planStaticMining } from "../src/economy";
+import { assignLabCluster, fingerprintLabLayout } from "../src/industry";
 import {
   layoutLinkEvacuationFlowId,
   layoutTowerEvacuationFlowId,
@@ -391,6 +392,171 @@ describe("ConstructionPlanner", () => {
       room([obsolete]),
     ])
       expect(planMigration({ colony, placements, room: blocked }).proposals).toEqual([]);
+  });
+
+  it("removes one empty idle external lab only while current lab work is quiescent", () => {
+    const desiredLabs = Array.from({ length: 10 }, (_, index) => ({
+      ...placement("lab", 10 + (index % 4), 10 + Math.floor(index / 4)),
+      adoption: "exact" as const,
+      minimumRcl: 6,
+    }));
+    const ownedLabs = [
+      ...desiredLabs
+        .slice(0, 9)
+        .map((item, index) => lab(`lab-exact-${String(index)}`, item.pos.x, item.pos.y)),
+      lab("lab-external", 30, 30),
+    ];
+    const assignment = assignLabCluster({
+      labs: ownedLabs,
+      layoutFingerprint: fingerprintLabLayout("W1N1", ownedLabs),
+      limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
+      roomName: "W1N1",
+    }).assignment;
+    if (assignment === null) throw new Error("expected current lab assignment");
+    const rclPolicy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 8,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 12_900,
+      energyCapacityAvailable: 12_900,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "mature",
+      visibility: "visible",
+    });
+    const colony = {
+      ...migrationColony({ state: "mature" }),
+      rclPolicy: {
+        ...rclPolicy,
+        progression: { authorized: true, reasonCode: "sustaining", status: "sustaining" },
+      },
+    } as ColonyView;
+    const room = {
+      ...migrationRoom(),
+      controller: { level: 8, ownership: "owned" as const },
+      ownedLabs,
+      structures: ownedLabs.map((item) =>
+        structure(item.id, "lab", 500, 500, item.pos.x, item.pos.y),
+      ),
+    } as unknown as RoomSnapshot;
+    const labMigration = {
+      activity: [],
+      assignment,
+      limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
+      observedAt: 100,
+      quiescent: true,
+      roomName: "W1N1",
+    } as const;
+    const ready = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      labMigration,
+      logisticsEvidenceReady: true,
+      placements: desiredLabs,
+      room,
+    });
+    const reordered = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      labMigration,
+      logisticsEvidenceReady: true,
+      placements: [...desiredLabs].reverse(),
+      room: {
+        ...room,
+        ownedLabs: [...ownedLabs].reverse(),
+        structures: [...(room.structures ?? [])].reverse(),
+      },
+    });
+
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementStructureType: "lab",
+        targetId: "lab-external",
+        targetRequiresEmptyStore: true,
+        targetRequiresZeroCooldown: true,
+        targetStructureType: "lab",
+      }),
+    ]);
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(ready));
+    const admittedLab = ready.proposals[0];
+    if (admittedLab === undefined) throw new Error("expected lab removal proposal");
+    const desiredExtensions = Array.from({ length: 60 }, (_, index) => ({
+      ...placement("extension", 10 + (index % 20), 20 + Math.floor(index / 20)),
+      adoption: "exact" as const,
+      minimumRcl: 8,
+    }));
+    const extension = (id: string, x: number, y: number) => ({
+      active: true,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      pos: { roomName: "W1N1", x, y },
+      store: { capacity: 200, freeCapacity: 200, resources: [], usedCapacity: 0 },
+    });
+    const exactExtensions = desiredExtensions
+      .slice(0, 59)
+      .map((item, index) => extension(`extension-exact-${String(index)}`, item.pos.x, item.pos.y));
+    const externalExtension = extension("extension-obsolete", 1, 1);
+    const mixedRoom = {
+      ...room,
+      ownedExtensions: [...exactExtensions, externalExtension],
+      structures: [
+        ...(room.structures ?? []),
+        ...[...exactExtensions, externalExtension].map((item) =>
+          structure(item.id, "extension", 1_000, 1_000, item.pos.x, item.pos.y),
+        ),
+      ],
+    } as RoomSnapshot;
+    const pendingReceipt = {
+      attempt: 1,
+      code: "OK" as const,
+      nextEligibleTick: Number.MAX_SAFE_INTEGER,
+      observedAt: 99,
+      replacementId: admittedLab.replacementId,
+      targetId: admittedLab.targetId,
+      targetStructureType: "lab" as const,
+    };
+    expect(
+      planMigration({
+        activeLogisticsTargetIds: new Set(),
+        colony,
+        labMigration,
+        logisticsEvidenceReady: true,
+        placements: [...desiredExtensions, ...desiredLabs],
+        removalReceipt: pendingReceipt,
+        room: mixedRoom,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-pending", targetId: "lab-external" })],
+      proposals: [],
+      removalReceipt: pendingReceipt,
+    });
+
+    for (const overrides of [
+      { labMigration: { ...labMigration, quiescent: false } },
+      { activeLogisticsTargetIds: new Set(["lab-exact-0"]) },
+      { labMigration: { ...labMigration, observedAt: 99 } },
+      {
+        room: {
+          ...room,
+          ownedLabs: ownedLabs.map((item) =>
+            item.id === "lab-external" ? { ...item, cooldown: 1 } : item,
+          ),
+        } as RoomSnapshot,
+      },
+    ])
+      expect(
+        planMigration({
+          activeLogisticsTargetIds: new Set(),
+          colony,
+          labMigration,
+          logisticsEvidenceReady: true,
+          placements: desiredLabs,
+          room,
+          ...overrides,
+        }).proposals,
+      ).toEqual([]);
   });
 
   it("persists and completes one stocked obsolete-tower evacuation before removal", () => {
@@ -2000,6 +2166,23 @@ function migrationRoom(): RoomSnapshot {
     ],
   } as unknown as RoomSnapshot;
 }
+function lab(id: string, x: number, y: number) {
+  return {
+    active: true,
+    cooldown: 0,
+    energy: 0,
+    energyCapacity: 2_000,
+    hits: 500,
+    hitsMax: 500,
+    id,
+    mineralAmount: 0,
+    mineralCapacity: 3_000,
+    mineralType: null,
+    pos: { roomName: "W1N1", x, y },
+    store: { capacity: null, freeCapacity: null, resources: [], usedCapacity: 0 },
+  };
+}
+
 function migrationColony(
   overrides: Partial<ColonyView> & { readonly reserveState?: "restored" | "unrestored" } = {},
 ): ColonyView {

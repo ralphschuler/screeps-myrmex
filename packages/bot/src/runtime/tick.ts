@@ -155,7 +155,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV9,
+  type LayoutsOwnerV10,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -454,7 +454,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV9 | null;
+  owner: LayoutsOwnerV10 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -750,7 +750,12 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     ),
     industryPublicationSystem(input, industryDraft),
-    layoutPlanningSystem(input, layoutDraft, () => logisticsRuntime),
+    layoutPlanningSystem(
+      input,
+      layoutDraft,
+      () => logisticsRuntime,
+      () => industryDraft.labs,
+    ),
     {
       descriptor: {
         id: "maintenance.routine-contracts",
@@ -1810,6 +1815,7 @@ function layoutPlanningSystem(
   input: CompositionInput,
   draft: LayoutTickDraft,
   currentLogistics: () => LogisticsRuntimeProjection,
+  currentLabs: () => LabCompositionProjection,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -2009,6 +2015,8 @@ function layoutPlanningSystem(
           towerEvacuation:
             owner.records.find(({ roomName }) => roomName === room.name)?.towerEvacuation ?? null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
+          labMigration:
+            currentLabs().migrationRooms.find(({ roomName }) => roomName === room.name) ?? null,
           logisticsEvidenceReady:
             context.contractExecution.status === "ready" &&
             context.contractPlanning.status === "ready",
@@ -2164,7 +2172,7 @@ function layoutMigrationPlanningSystem(
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV9 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV10 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2177,14 +2185,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV9 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV10 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV9["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV10["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,

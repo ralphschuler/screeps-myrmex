@@ -1,4 +1,6 @@
 import type { ColonyView } from "../colony";
+import { fingerprintLabLayout, type LabMigrationRoomView } from "../industry/lab-composition";
+import { assignLabCluster } from "../industry/lab-cluster";
 import {
   classifyLinks,
   deriveLinkRoleAnchors,
@@ -16,6 +18,8 @@ import {
   MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
   MAX_LAYOUT_CONTAINER_STORE_RESOURCES,
   MAX_LAYOUT_EXTENSION_ENERGY,
+  MAX_LAYOUT_LAB_ENERGY,
+  MAX_LAYOUT_LAB_MINERAL,
   MAX_LAYOUT_LINK_ENERGY,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
@@ -231,6 +235,7 @@ export class ConstructionPlanner {
     readonly extensionEvacuation?: LayoutExtensionEvacuation | null;
     readonly towerEvacuation?: LayoutTowerEvacuation | null;
     readonly globalOwnedSiteCount: number;
+    readonly labMigration?: LabMigrationRoomView | null;
     readonly linkEvacuation?: LayoutLinkEvacuation | null;
     readonly linkRuntime?: LinkRoomRuntimeResult | null;
     readonly logisticsEvidenceReady?: boolean;
@@ -259,6 +264,9 @@ export class ConstructionPlanner {
     const desiredTowers = input.placements
       .filter((placement) => placement.layer === "primary" && placement.structureType === "tower")
       .sort(comparePlacement);
+    const desiredLabs = input.placements
+      .filter((placement) => placement.layer === "primary" && placement.structureType === "lab")
+      .sort(comparePlacement);
     const desiredLinks = input.placements
       .filter((placement) => placement.layer === "primary" && placement.structureType === "link")
       .sort(comparePlacement);
@@ -273,6 +281,12 @@ export class ConstructionPlanner {
         structure.ownership === "owned" &&
         structure.structureType === "tower" &&
         !desiredTowers.some(({ pos }) => samePosition(pos, structure.pos)),
+    );
+    const labCandidates = (input.room.structures ?? []).filter(
+      (structure) =>
+        structure.ownership === "owned" &&
+        structure.structureType === "lab" &&
+        !desiredLabs.some(({ pos }) => samePosition(pos, structure.pos)),
     );
     const linkCandidates = (input.room.structures ?? []).filter(
       (structure) =>
@@ -318,9 +332,14 @@ export class ConstructionPlanner {
         target,
       })),
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
+      ...labCandidates.map((target) => ({ kind: "lab" as const, target })),
       ...linkCandidates.map((target) => ({ kind: "link" as const, target })),
       ...towerCandidates.map((target) => ({ kind: "tower" as const, target })),
     ].sort((left, right) => {
+      const leftReceiptTarget = left.target.id === removalReceipt?.targetId;
+      const rightReceiptTarget = right.target.id === removalReceipt?.targetId;
+      const receiptOrder = Number(rightReceiptTarget) - Number(leftReceiptTarget);
+      if (receiptOrder !== 0) return receiptOrder;
       const leftActive =
         (left.kind === "link" && left.target.id === input.linkEvacuation?.sourceId) ||
         (left.kind === "tower" && left.target.id === input.towerEvacuation?.sourceId) ||
@@ -357,6 +376,26 @@ export class ConstructionPlanner {
     const truncatedCandidates = Math.max(0, candidates.length - considered.length);
     if (truncatedCandidates > 0)
       blockers.push({ reason: "candidate-cap", roomName: input.room.name, targetId: null });
+    const receiptBlocker = removalReceiptBlocker(removalReceipt, input.room.observedAt);
+    if (receiptBlocker !== null && removalReceipt !== null) {
+      pushMigrationBlocker(blockers, {
+        reason: receiptBlocker,
+        roomName: input.room.name,
+        targetId: removalReceipt.targetId,
+      });
+      return freeze({
+        authorization: null,
+        blockers,
+        containerMigration,
+        extensionEvacuation: input.extensionEvacuation ?? null,
+        linkEvacuation: input.linkEvacuation ?? null,
+        towerEvacuation: input.towerEvacuation ?? null,
+        proposals,
+        removalReceipt,
+        scannedCandidates: considered.length,
+        truncatedCandidates,
+      });
+    }
     if (considered.length === 0)
       return freeze({
         authorization: null,
@@ -735,6 +774,47 @@ export class ConstructionPlanner {
           targetId: candidate.target.id,
           targetRequiresEmptyStore: true,
           targetStructureType: "container",
+        });
+        break;
+      }
+
+      if (candidate.kind === "lab") {
+        const lab = labMigrationEvidence({
+          activeLogisticsTargetIds: input.activeLogisticsTargetIds,
+          allowance: input.colony.rclPolicy.unlocks?.labs ?? 0,
+          desiredLabs,
+          logisticsEvidenceReady: input.logisticsEvidenceReady === true,
+          room: input.room,
+          target: candidate.target,
+          view: input.labMigration ?? null,
+        });
+        if (lab.replacement === null) {
+          pushMigrationBlocker(blockers, {
+            reason: lab.reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          continue;
+        }
+        admitRemoval({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementId: lab.replacement.id,
+          replacementStructureType: "lab",
+          stableId: [
+            "remove-quiescent-lab-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            candidate.target.id,
+            lab.replacement.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetRequiresZeroCooldown: true,
+          targetStructureType: "lab",
         });
         break;
       }
@@ -1164,6 +1244,7 @@ type MigrationCandidate =
   | { readonly kind: "source-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "general-container"; readonly target: StoredStructureSnapshot }
   | { readonly kind: "extension"; readonly target: StructureSnapshot }
+  | { readonly kind: "lab"; readonly target: StructureSnapshot }
   | { readonly kind: "link"; readonly target: StructureSnapshot }
   | { readonly kind: "tower"; readonly target: StructureSnapshot };
 
@@ -1185,6 +1266,17 @@ function assessRemovalReceipt(
     receipt.targetStructureType !== proposal.targetStructureType
   )
     return { blocker: null, receipt: null };
+  return { blocker: removalReceiptBlocker(receipt, tick), receipt };
+}
+
+function removalReceiptBlocker(
+  receipt: LayoutStructureRemovalReceipt | null,
+  tick: number,
+): Extract<
+  LayoutMigrationBlocker,
+  "removal-backoff" | "removal-failed" | "removal-pending"
+> | null {
+  if (receipt === null) return null;
   if (
     !Number.isSafeInteger(receipt.attempt) ||
     receipt.attempt < 1 ||
@@ -1193,12 +1285,11 @@ function assessRemovalReceipt(
     !Number.isSafeInteger(receipt.nextEligibleTick) ||
     receipt.nextEligibleTick <= receipt.observedAt
   )
-    return { blocker: "removal-failed", receipt };
-  if (receipt.code === "OK" || receipt.code === "TARGET_ABSENT")
-    return { blocker: "removal-pending", receipt };
-  if (receipt.attempt >= 3) return { blocker: "removal-failed", receipt };
-  if (tick < receipt.nextEligibleTick) return { blocker: "removal-backoff", receipt };
-  return { blocker: null, receipt };
+    return "removal-failed";
+  if (receipt.code === "OK" || receipt.code === "TARGET_ABSENT") return "removal-pending";
+  if (receipt.attempt >= 3) return "removal-failed";
+  if (tick < receipt.nextEligibleTick) return "removal-backoff";
+  return null;
 }
 
 function generalContainerMigrationEvidence(
@@ -1830,6 +1921,123 @@ function exactIdleLinkEnergy(link: NonNullable<RoomSnapshot["ownedLinks"]>[numbe
     link.store.freeCapacity === MAX_LAYOUT_LINK_ENERGY - energy
     ? energy
     : null;
+}
+
+function labMigrationEvidence(input: {
+  readonly activeLogisticsTargetIds: ReadonlySet<string> | undefined;
+  readonly allowance: number;
+  readonly desiredLabs: readonly LayoutPlacement[];
+  readonly logisticsEvidenceReady: boolean;
+  readonly room: RoomSnapshot;
+  readonly target: StructureSnapshot;
+  readonly view: LabMigrationRoomView | null;
+}):
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
+  | {
+      readonly reason: null;
+      readonly replacement: NonNullable<RoomSnapshot["ownedLabs"]>[number];
+    } {
+  const occupying = (input.room.structures ?? []).filter(({ pos }) =>
+    samePosition(pos, input.target.pos),
+  );
+  if (
+    occupying.length !== 1 ||
+    occupying[0]?.id !== input.target.id ||
+    input.room.constructionSites.some(({ pos }) => samePosition(pos, input.target.pos))
+  )
+    return { reason: "target-shared", replacement: null };
+  const labs = input.room.ownedLabs;
+  const target = labs?.find(({ id }) => id === input.target.id);
+  if (
+    target === undefined ||
+    !target.active ||
+    target.cooldown !== 0 ||
+    target.energyCapacity !== MAX_LAYOUT_LAB_ENERGY ||
+    target.mineralCapacity !== MAX_LAYOUT_LAB_MINERAL ||
+    target.store.usedCapacity !== target.energy + target.mineralAmount ||
+    target.store.resources.some(({ amount }) => !Number.isSafeInteger(amount) || amount <= 0)
+  )
+    return { reason: "target-unavailable", replacement: null };
+  if (
+    target.energy !== 0 ||
+    target.mineralAmount !== 0 ||
+    target.mineralType !== null ||
+    target.store.usedCapacity !== 0 ||
+    target.store.resources.length !== 0
+  )
+    return { reason: "target-stocked", replacement: null };
+  if (
+    input.room.controller?.level !== 8 ||
+    input.allowance !== 10 ||
+    labs === undefined ||
+    labs.length !== input.allowance ||
+    input.desiredLabs.length !== input.allowance ||
+    new Set(labs.map(({ id }) => id)).size !== labs.length ||
+    new Set(input.desiredLabs.map(({ pos }) => positionKey(pos))).size !==
+      input.desiredLabs.length ||
+    !labs.every((lab) =>
+      (input.room.structures ?? []).some(
+        (structure) =>
+          structure.id === lab.id &&
+          structure.ownership === "owned" &&
+          structure.structureType === "lab" &&
+          samePosition(structure.pos, lab.pos),
+      ),
+    )
+  )
+    return { reason: "replacement-pending", replacement: null };
+  if (
+    input.view === null ||
+    input.view.roomName !== input.room.name ||
+    input.view.observedAt !== input.room.observedAt ||
+    input.view.assignment === null
+  )
+    return { reason: "industry-unavailable", replacement: null };
+  const currentAssignment = assignLabCluster({
+    labs,
+    layoutFingerprint: fingerprintLabLayout(input.room.name, labs),
+    limits: input.view.limits,
+    roomName: input.room.name,
+  }).assignment;
+  if (
+    currentAssignment === null ||
+    JSON.stringify(currentAssignment) !== JSON.stringify(input.view.assignment)
+  )
+    return { reason: "industry-unavailable", replacement: null };
+  if (!input.view.quiescent) return { reason: "industry-active", replacement: null };
+  if (!input.logisticsEvidenceReady || input.activeLogisticsTargetIds === undefined)
+    return { reason: "industry-unavailable", replacement: null };
+  if (labs.some(({ id }) => input.activeLogisticsTargetIds?.has(id) === true))
+    return { reason: "logistics-active", replacement: null };
+  const exact = labs
+    .filter(
+      (lab) =>
+        lab.id !== target.id &&
+        lab.active &&
+        input.desiredLabs.some(({ pos }) => samePosition(pos, lab.pos)),
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
+  if (
+    exact.length !== input.allowance - 1 ||
+    new Set(exact.map(({ pos }) => positionKey(pos))).size !== exact.length
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const postRemoval = assignLabCluster({
+    labs: exact,
+    layoutFingerprint: fingerprintLabLayout(input.room.name, exact),
+    limits: input.view.limits,
+    roomName: input.room.name,
+  }).assignment;
+  if (postRemoval === null) return { reason: "lab-cluster-invalid", replacement: null };
+  const clusterIds = [
+    ...postRemoval.reagentLabIds,
+    ...postRemoval.productLabIds,
+    ...postRemoval.boostLabIds,
+  ].sort(compareText);
+  const replacement = exact.find(({ id }) => id === clusterIds[0]);
+  return replacement === undefined
+    ? { reason: "lab-cluster-invalid", replacement: null }
+    : { reason: null, replacement };
 }
 
 function towerMigrationEvidence(

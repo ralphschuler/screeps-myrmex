@@ -1,4 +1,6 @@
 import {
+  MAX_LAYOUT_LAB_ENERGY,
+  MAX_LAYOUT_LAB_MINERAL,
   MAX_LAYOUT_LINK_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   type DestroyOwnedStructureIntent,
@@ -43,7 +45,10 @@ export class StructureDestroyExecutor {
         return result(intent, false, "ERR_INVALID_TARGET", "target-mismatch");
       if (!hasEmptyCurrentStore(target, intent.targetStructureType))
         return result(intent, false, "ERR_INVALID_TARGET", "target-not-empty");
-      if (intent.targetStructureType === "link" && !hasZeroCooldown(target))
+      if (
+        (intent.targetStructureType === "lab" || intent.targetStructureType === "link") &&
+        !hasZeroCooldown(target)
+      )
         return result(intent, false, "ERR_INVALID_TARGET", "target-cooldown");
       const replacement = adapter.resolveStructure(intent.replacementId);
       if (replacement === null)
@@ -97,6 +102,7 @@ function hasEmptyCurrentStore(
   const used = candidate.store?.getUsedCapacity();
   const removableInOwnedRoom = targetStructureType === "container" || candidate.my === true;
   if (!removableInOwnedRoom || !candidate.isActive() || used !== 0) return false;
+  if (targetStructureType === "lab") return hasExactEmptyLabStore(target);
   if (targetStructureType !== "link") return true;
   const store = candidate.store as
     | {
@@ -111,6 +117,26 @@ function hasEmptyCurrentStore(
     store.getFreeCapacity() === MAX_LAYOUT_LINK_ENERGY &&
     store.getFreeCapacity("energy") === MAX_LAYOUT_LINK_ENERGY &&
     store.getUsedCapacity("energy") === 0
+  );
+}
+function hasExactEmptyLabStore(structure: Structure): boolean {
+  const candidate = structure as Structure & {
+    readonly mineralType?: string | null;
+    readonly store?: {
+      getCapacity(resource?: string): number | null;
+      getFreeCapacity(resource?: string): number | null;
+      getUsedCapacity(resource?: string): number | null;
+    };
+  };
+  const store = candidate.store;
+  return (
+    candidate.mineralType === null &&
+    store?.getCapacity("energy") === MAX_LAYOUT_LAB_ENERGY &&
+    store.getFreeCapacity("energy") === MAX_LAYOUT_LAB_ENERGY &&
+    store.getUsedCapacity("energy") === 0 &&
+    store.getCapacity("H") === MAX_LAYOUT_LAB_MINERAL &&
+    store.getFreeCapacity("H") === MAX_LAYOUT_LAB_MINERAL &&
+    store.getUsedCapacity("H") === 0
   );
 }
 function hasExpectedLinkEnergy(structure: Structure, expectedEnergy: number): boolean {

@@ -114,6 +114,7 @@ function labProjection(): LabCompositionProjection {
     assignments: [],
     creepFingerprints: new Map(),
     intents: [],
+    migrationRooms: [],
     objectiveBudgets: [],
     policy: { blockers: [], budgets: [], commitments: [], demands: [], dispositions: [] },
     resourceDemands: { blockers: [], dispositions: [], edges: [], endpoints: [], nodes: [] },

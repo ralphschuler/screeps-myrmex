@@ -83,11 +83,12 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
     readonly targetStructureType: string;
   } = proposal;
   const validMigrationTerms =
-    ["container", "extension", "link", "tower"].includes(terms.targetStructureType) &&
+    ["container", "extension", "lab", "link", "tower"].includes(terms.targetStructureType) &&
     terms.replacementStructureType === terms.targetStructureType &&
     typeof terms.replacementId === "string" &&
     terms.replacementId.length > 0 &&
     terms.targetRequiresEmptyStore &&
+    (terms.targetStructureType !== "lab" || terms.targetRequiresZeroCooldown === true) &&
     (terms.targetStructureType !== "link" ||
       (Number.isSafeInteger(terms.replacementExpectedEnergy) &&
         (terms.replacementExpectedEnergy ?? -1) >= 0 &&
@@ -142,6 +143,15 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
       replacementStructureType: "tower",
       targetRequiresEmptyStore: true,
       targetStructureType: "tower",
+    };
+  if (proposal.targetStructureType === "lab")
+    return {
+      ...envelope,
+      replacementId: proposal.replacementId,
+      replacementStructureType: "lab",
+      targetRequiresEmptyStore: true,
+      targetRequiresZeroCooldown: true,
+      targetStructureType: "lab",
     };
   return {
     ...envelope,

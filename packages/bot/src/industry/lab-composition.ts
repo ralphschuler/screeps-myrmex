@@ -4,11 +4,17 @@ import {
   projectLabResourceDemands,
   type LabResourceDemandProjection,
 } from "../logistics/resource-demands";
-import type { CreepSnapshot, RoomSnapshot, WorldSnapshot } from "../world/snapshot";
+import type {
+  CreepSnapshot,
+  OwnedLabSnapshot,
+  RoomSnapshot,
+  WorldSnapshot,
+} from "../world/snapshot";
 import {
   assignLabCluster,
   normalizeReactionCatalog,
   type LabClusterAssignment,
+  type LabClusterLimits,
 } from "./lab-cluster";
 import {
   reconcileLabPolicy,
@@ -36,10 +42,23 @@ import {
   type PendingLabAttempt,
 } from "./lab-runtime";
 
+export type LabMigrationActivity =
+  "commitment" | "demand-endpoint" | "intent" | "pending-attempt" | "staging-demand";
+
+export interface LabMigrationRoomView {
+  readonly activity: readonly LabMigrationActivity[];
+  readonly assignment: LabClusterAssignment | null;
+  readonly limits: LabClusterLimits;
+  readonly observedAt: number;
+  readonly quiescent: boolean;
+  readonly roomName: string;
+}
+
 export interface LabCompositionProjection {
   readonly assignments: readonly LabClusterAssignment[];
   readonly creepFingerprints: ReadonlyMap<string, string>;
   readonly intents: readonly LabCommandIntent[];
+  readonly migrationRooms: readonly LabMigrationRoomView[];
   readonly objectiveBudgets: readonly {
     readonly colonyId: string;
     readonly deadline: number;
@@ -84,6 +103,7 @@ export function emptyLabCompositionProjection(): LabCompositionProjection {
     assignments: [],
     creepFingerprints: new Map<string, string>(),
     intents: [],
+    migrationRooms: [],
     objectiveBudgets: [],
     policy: { blockers: [], budgets: [], commitments: [], demands: [], dispositions: [] },
     resourceDemands: { blockers: [], dispositions: [], edges: [], endpoints: [], nodes: [] },
@@ -103,12 +123,8 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
   const assignments = input.snapshot.ownedRooms.flatMap((room) => {
     const result = assignLabCluster({
       labs: room.ownedLabs ?? [],
-      layoutFingerprint: labLayoutFingerprint(room),
-      limits: {
-        maximumBoostLabs: Math.min(2, input.policy.maximumLabsPerRoom - 2),
-        maximumLabsScanned: input.policy.maximumLabsPerRoom,
-        maximumOutputLabs: Math.max(1, input.policy.maximumLabsPerRoom - 2),
-      },
+      layoutFingerprint: fingerprintLabLayout(room.name, room.ownedLabs ?? []),
+      limits: labClusterLimits(input.policy.maximumLabsPerRoom),
       roomName: room.name,
     });
     return result.assignment === null ? [] : [result.assignment];
@@ -205,6 +221,27 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     snapshot: input.snapshot,
     snapshotRevision: input.snapshotRevision,
   });
+  const migrationRooms = input.snapshot.ownedRooms.map((room): LabMigrationRoomView => {
+    const activity: LabMigrationActivity[] = [];
+    if (policy.commitments.some(({ colonyId }) => colonyId === room.name))
+      activity.push("commitment");
+    if (input.pendingAttempts.some(({ roomName }) => roomName === room.name))
+      activity.push("pending-attempt");
+    if (intents.some(({ payload }) => payload.roomName === room.name)) activity.push("intent");
+    if (policy.demands.some(({ colonyId }) => colonyId === room.name))
+      activity.push("staging-demand");
+    if (resourceDemands.endpoints.some(({ position }) => position.roomName === room.name))
+      activity.push("demand-endpoint");
+    activity.sort();
+    return {
+      activity: freeze(activity),
+      assignment: assignments.find(({ roomName }) => roomName === room.name) ?? null,
+      limits: labClusterLimits(input.policy.maximumLabsPerRoom),
+      observedAt: room.observedAt,
+      quiescent: activity.length === 0,
+      roomName: room.name,
+    };
+  });
   const objectiveBudgets = [
     ...reactionObjectives.map(({ colonyId, deadline, industryBudgetId }) => ({
       colonyId,
@@ -221,6 +258,7 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     assignments,
     creepFingerprints,
     intents,
+    migrationRooms,
     objectiveBudgets,
     policy,
     resourceDemands,
@@ -421,13 +459,20 @@ export function fingerprintCreepSnapshot(creep: CreepSnapshot): string {
   ]);
 }
 
-function labLayoutFingerprint(room: RoomSnapshot): string {
+export function fingerprintLabLayout(roomName: string, labs: readonly OwnedLabSnapshot[]): string {
   return fingerprint([
-    room.name,
-    ...[...(room.ownedLabs ?? [])]
+    roomName,
+    ...[...labs]
       .sort((a, b) => a.id.localeCompare(b.id))
       .flatMap(({ id, pos }) => [id, String(pos.x), String(pos.y)]),
   ]);
+}
+function labClusterLimits(maximumLabsPerRoom: number): LabClusterLimits {
+  return freeze({
+    maximumBoostLabs: Math.min(2, maximumLabsPerRoom - 2),
+    maximumLabsScanned: maximumLabsPerRoom,
+    maximumOutputLabs: Math.max(1, maximumLabsPerRoom - 2),
+  });
 }
 
 function fingerprint(parts: readonly string[]): string {

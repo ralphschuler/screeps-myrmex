@@ -35,20 +35,24 @@ geometry and removes one empty idle external reserve link only after canonical p
 exact reserve-replacement continuity. Issue
 [#318](https://github.com/ralphschuler/screeps-myrmex/issues/318) adds one funded creep-logistics
 evacuation continuation for a stocked reserve link whose exact replacement has complete capacity.
-Parent issue #99 still owns other structure migration and dismantling.
+Issue [#320](https://github.com/ralphschuler/screeps-myrmex/issues/320) restores committed RCL8 lab
+geometry and removes one empty idle external lab only while industry and logistics are quiescent and
+the remaining exact labs preserve a valid cluster. Parent issue #99 still owns other structure
+migration and dismantling.
 
 ## Runtime order
 
 1. `world.observe` publishes one immutable normalized snapshot.
 2. `colony.director` publishes lifecycle, RCL policy, progression, and budget authority.
-3. `layout.plan` plans at most two visible owned rooms and persists only complete commitments. A
-   pure projection restores committed geometry for compatible external extensions, towers, and
-   links, allowing the ordinary diff/site chain to spend spare controller allowance without changing
-   current world usability. Tower removal remains separate and requires full allowance of at least
-   two, exactly allowance minus one active committed towers, one active empty unshared obsolete
-   target, and an exact active committed replacement holding at least 10 energy. A stocked target
-   may first persist one exact 150-tick energy evacuation only when that replacement can hold the
-   full amount. The diff also follows current engine co-location: planned primary geometry may
+3. `industry.publish` first derives one current bounded lab assignment/quiescence view.
+   `layout.plan` then plans at most two visible owned rooms and persists only complete commitments.
+   A pure projection restores committed geometry for compatible external extensions, towers, links,
+   and labs, allowing the ordinary diff/site chain to spend spare controller allowance without
+   changing current world usability. Tower removal remains separate and requires full allowance of
+   at least two, exactly allowance minus one active committed towers, one active empty unshared
+   obsolete target, and an exact active committed replacement holding at least 10 energy. A stocked
+   target may first persist one exact 150-tick energy evacuation only when that replacement can hold
+   the full amount. The diff also follows current engine co-location: planned primary geometry may
    retain existing roads/ramparts, and planned road/rampart layers may share another buildable
    structure; current sites and incompatible primary occupancy still block. `ConstructionPlanner`
    may then project one active empty external extension after exact current replacement evidence,
@@ -79,7 +83,12 @@ Parent issue #99 still owns other structure migration and dismantling.
    directly eligible while a positive target may persist one exact evacuation only when the
    replacement can hold the complete amount and no unrelated V3 endpoint names either ID. Duplicate,
    stale, revision-mismatched, unclassified, malformed, cooling, shared, site-occupied, pressured,
-   or incomplete evidence emits no proposal.
+   or incomplete evidence emits no proposal. Lab removal is RCL8-only: all ten owned labs must be
+   observed, exactly nine active labs must occupy distinct committed positions, the external target
+   must be active, empty, zero-cooldown, unshared, and site-free, and the current industry view must
+   have no commitment, pending attempt, intent, staging demand, or demand endpoint. No active
+   logistics endpoint may name any room lab, and deterministic post-removal assignment over the nine
+   exact labs must succeed.
 5. On the following tick, runtime composition validates each stocked commitment from fresh
    observation. A reserve-link commitment additionally reuses canonical ideal-link classification to
    prove every productive anchor remains exact and the target/replacement remain reserve capacity;
@@ -105,8 +114,8 @@ Parent issue #99 still owns other structure migration and dismantling.
    a prefix. Public link-runtime arbitration uses source, hub, and controller roles only; neither
    reserve link can become a transfer endpoint in the removal tick. `StructureRemovalArbiter` then
    requires one exact current planner authorization and accepts at most one deterministic container,
-   extension, tower, or link removal after proving current global/room site headroom. The following
-   observation re-enters ordinary site arbitration.
+   extension, tower, link, or lab removal after proving current global/room site headroom. The
+   following observation re-enters ordinary site arbitration.
 7. `layout.execute` alone resolves live rooms and targets. `ConstructionSiteExecutor` calls
    `Room.createConstructionSite`; `StructureDestroyExecutor` calls `Structure.destroy` after fresh
    ownership, threat, commitment, ID, type, room, and position checks. Extension removal also
@@ -116,13 +125,15 @@ Parent issue #99 still owns other structure migration and dismantling.
    removal rechecks an active empty owned target and the exact active owned same-room replacement's
    minimum 10 energy immediately before the call. Reserve-link removal rechecks both exact owned
    active same-room link identities, exact 800-capacity energy-only Stores, target emptiness, the
-   intent-bound replacement energy, and zero cooldown immediately before the call.
+   intent-bound replacement energy, and zero cooldown immediately before the call. Lab removal
+   rechecks exact 2,000-energy and 3,000-mineral empty capacity, null mineral type, zero cooldown,
+   ownership/activity, and one exact active same-room lab.
 8. On a selected-service switch only, `layout.handoff-reconcile` reconciles the complete layout
-   draft and stages layouts-owner V9 before the root commit. The predecessor remains executable. On
+   draft and stages layouts-owner V10 before the root commit. The predecessor remains executable. On
    the following tick, StaticMiningPlanner consumes the durable coordinate; Reconcile atomically
    cancels the predecessor, creates/funds its exact next sequence, and leaves exactly one
    commitment.
-9. Ordinary `layout.reconcile` converts site results and every extension/container/tower/link
+9. Ordinary `layout.reconcile` converts site results and every extension/container/tower/link/lab
    destroy result to bounded fingerprinted receipts and stages `layouts`; on the handoff path it
    publishes the already-reconciled draft without a second write. The generic removal receipt binds
    exact target, replacement, type, attempt, code, and next eligibility. `OK`/`TARGET_ABSENT` waits
@@ -145,13 +156,14 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - two accepted globally and one per room per tick;
 - 64 inspected proposals and ten active sites per room;
 - 32 receipts per room;
-- at most 128 container/extension/tower/link-removal candidates and authorizations; over-cap batches
-  fail before traversal;
+- at most 128 container/extension/tower/link/lab-removal candidates and authorizations; over-cap
+  batches fail before traversal;
 - one accepted removal globally per tick;
-- layouts owner-local schema V9 migrates V1-V8 records, preserves V3's optional bounded source
+- layouts owner-local schema V10 migrates V1-V9 records, preserves V3's optional bounded source
   identity and V4's optional source-service issuance coordinate, moves a valid legacy nested receipt
-  to the generic field, preserves V6 tower receipts, V7 tower evacuations, and V8 link receipts,
-  invents no reserve-link evacuation while migrating, and makes rollback to older code fail closed;
+  to the generic field, preserves V6 tower receipts, V7 tower evacuations, V8 link receipts, and V9
+  reserve-link evacuations, invents no lab evidence while migrating, and makes rollback to older
+  code fail closed;
 - reserve-link role proof stays within the existing 16-link classification cap and persists no role
   map, transfer receipt, or migration queue;
 - at most one compact extension evacuation, one compact tower evacuation, one compact reserve-link
@@ -184,24 +196,29 @@ final desired site. Tower replacement-first convergence proves one operational a
 committed replacement site eligible under spare allowance. Its stocked continuation persists one
 exact amount only when that active committed replacement begins with 10 energy and has complete
 capacity; one externally funded acquire/deliver flow suppresses obsolete-target refill and reserves
-replacement capacity. Partial delivery plus JSON reset/reordering preserves terms, active flow and
-endpoints block removal, fresh empty-target and replacement gain admit one destroy, pending success
-emits no duplicate, and target disappearance exposes the final committed site. Reserve-link
-replacement-first convergence proves one ordinary committed site is built under spare allowance,
-then complete canonical current/ideal role evidence retains all source, hub, and controller anchors
-while naming only zero-cooldown reserve target/replacement IDs. Public link-runtime evidence keeps
-both IDs out of native funded transfers. Fresh canonical continuity authorization gates every
-following-tick projection, while oversized optional demand cannot displace observed logistics. The
-stocked continuation persists one exact 300-energy commitment, projects one funded V3 creep flow,
-preserves terms through partial delivery plus JSON reset/reordering, and blocks removal until exact
-target emptiness, replacement gain, retired flow and endpoints, zero cooldown, and no accepted
-native transfer. The executor revalidates exact delivered replacement energy; the V9 receipt
-suppresses a duplicate after `OK`, and observed disappearance exposes the final committed site. The
-container continuation proves one exact selected source service survives removal of one empty
-unshared adjacent container, static-mining identity/work position remain unchanged, reordered/reset
-input is byte-identical, unsafe or stocked variants fail closed, and next observation emits no
-repeated removal. The general-container continuation proves spare-allowance site-first replacement,
-persisted one-tick suppression, active-target retirement, unavailable-contract refusal,
+replacement capacity. Quiescent lab convergence proves nine labs including one external target
+produce one ordinary committed lab site; observing ten labs with nine exact committed positions,
+matching idle industry evidence, no logistics endpoint, and a valid post-removal cluster admits one
+destroy. Exact Store/cooldown checks, JSON reset/reordering, pending-success duplicate suppression,
+observed disappearance, and final canonical site eligibility pass while active work and drift fail
+closed. Partial delivery plus JSON reset/reordering preserves terms, active flow and endpoints block
+removal, fresh empty-target and replacement gain admit one destroy, pending success emits no
+duplicate, and target disappearance exposes the final committed site. Reserve-link replacement-first
+convergence proves one ordinary committed site is built under spare allowance, then complete
+canonical current/ideal role evidence retains all source, hub, and controller anchors while naming
+only zero-cooldown reserve target/replacement IDs. Public link-runtime evidence keeps both IDs out
+of native funded transfers. Fresh canonical continuity authorization gates every following-tick
+projection, while oversized optional demand cannot displace observed logistics. The stocked
+continuation persists one exact 300-energy commitment, projects one funded V3 creep flow, preserves
+terms through partial delivery plus JSON reset/reordering, and blocks removal until exact target
+emptiness, replacement gain, retired flow and endpoints, zero cooldown, and no accepted native
+transfer. The executor revalidates exact delivered replacement energy; the V9 receipt suppresses a
+duplicate after `OK`, and observed disappearance exposes the final committed site. The container
+continuation proves one exact selected source service survives removal of one empty unshared
+adjacent container, static-mining identity/work position remain unchanged, reordered/reset input is
+byte-identical, unsafe or stocked variants fail closed, and next observation emits no repeated
+removal. The general-container continuation proves spare-allowance site-first replacement, persisted
+one-tick suppression, active-target retirement, unavailable-contract refusal,
 source-adjacent-placement refusal, reset/reorder identity, one exact destroy call, preserved source
 service, and one final committed site. Its stocked continuation proves paired exact energy/baseline
 persistence and legacy empty-handoff parsing. The stocked redundant-source continuation proves
@@ -244,6 +261,9 @@ package evidence.
   collection.
 - Official [`StructureTower`](https://docs.screeps.com/api/#StructureTower) defines the 1/2/3/6
   RCL3/5/7/8 allowances, 1,000 energy capacity, and 10-energy attack/heal/repair action cost.
+- Official [`StructureLab`](https://docs.screeps.com/api/#StructureLab) defines the 3/6/10 RCL6/7/8
+  allowances, 50,000 build cost, 2,000 energy and 3,000 mineral capacities, range-two reaction
+  geometry, and cooldown behavior.
 - Official [`StructureLink`](https://docs.screeps.com/api/#StructureLink) defines the 2/3/4/6
   RCL5/6/7/8 allowances, 5,000 build cost, 800 energy capacity, 3% transfer loss, and distance-based
   sender cooldown;
@@ -270,6 +290,8 @@ package evidence.
   source-defined.
 - Screeps Wiki [StructureTower](https://wiki.screepspl.us/StructureTower/) supplies tower placement,
   refill-access, and ten-energy action terminology only.
+- Screeps Wiki [`StructureLab`](https://wiki.screepspl.us/StructureLab/) supplies two-input,
+  range-two, cooldown, emptying, and refill terminology only.
 - Screeps Wiki [`StructureLink`](https://wiki.screepspl.us/StructureLink/) supplies source, storage,
   controller, and balancing terminology only; MYRMEX role derivation remains source-defined.
 - Screeps Wiki [Structure](https://wiki.screepspl.us/Structure/) confirms the community model that

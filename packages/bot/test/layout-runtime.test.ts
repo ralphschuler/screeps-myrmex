@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
+import { buildRuntimeConfig } from "../src/config/runtime-config";
 import { planStaticMining } from "../src/economy";
+import { composeLabRuntime } from "../src/industry";
 import { planLinkRuntime } from "../src/links";
 import { ConstructionPlanner } from "../src/maintenance";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
@@ -175,6 +177,238 @@ describe("composed layout runtime", () => {
         planOwnedRoomLayout({ ...planningInput, structures: [...structures].reverse() }),
       ),
     ).toBe(JSON.stringify(planOwnedRoomLayout(planningInput)));
+  });
+
+  it("builds lab capacity, removes one quiescent empty external lab, and resumes canonical geometry", () => {
+    const projectedPolicy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 8,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 12_900,
+      energyCapacityAvailable: 12_900,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "mature",
+      visibility: "visible",
+    });
+    const labPolicy = {
+      ...projectedPolicy,
+      progression: { authorized: true, reasonCode: "sustaining", status: "sustaining" },
+    } as ColonyView["rclPolicy"];
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: labPolicy,
+      roomName,
+      state: "mature",
+      visibility: "visible",
+    } as ColonyView;
+    const commitment = { ...complete().commitment, fingerprint: "layout-lab-migration-a" };
+    const desiredLabs = Array.from({ length: 10 }, (_, index): LayoutPlacement => ({
+      adoption: "planned",
+      layer: "primary",
+      minimumRcl: 6,
+      pos: pos(10 + (index % 4), 10 + Math.floor(index / 4)),
+      structureType: "lab",
+    }));
+    const lab = (id: string, position: ReturnType<typeof pos>) => ({
+      active: true,
+      cooldown: 0,
+      energy: 0,
+      energyCapacity: 2_000,
+      hits: 500,
+      hitsMax: 500,
+      id,
+      mineralAmount: 0,
+      mineralCapacity: 3_000,
+      mineralType: null,
+      pos: position,
+      store: { capacity: null, freeCapacity: null, resources: [], usedCapacity: 0 },
+    });
+    const generic = (value: ReturnType<typeof lab>) => ({
+      hits: 500,
+      hitsMax: 500,
+      id: value.id,
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: value.pos,
+      structureType: "lab",
+    });
+    const exactEight = desiredLabs
+      .slice(0, 8)
+      .map((placement, index) => lab(`lab-exact-${String(index)}`, placement.pos));
+    const external = lab("lab-external", pos(30, 30));
+    const initialLabs = [...exactEight, external];
+    const initialDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-lab-100",
+      placements: desiredLabs,
+      policy: labPolicy,
+      policyEnabled: true,
+      policyFingerprint: "policy-lab",
+      roomName,
+      roomStatus: "owned",
+      structures: initialLabs.map(generic),
+    });
+    expect(initialDiff.proposals).toEqual([expect.objectContaining({ structureType: "lab" })]);
+    const builtSite = initialDiff.proposals[0];
+    if (builtSite === undefined) throw new Error("expected committed lab site");
+    const siteArbitration = arbitrateConstructionSites({
+      globalOwnedSiteCount: 0,
+      limits: CONSTRUCTION_SITE_LIMITS,
+      perRoomSiteCounts: [{ count: 0, roomName }],
+      priorReceipts: [],
+      progressionAuthorizations: [{ authorized: true, colonyId: roomName, roomName }],
+      proposals: initialDiff.proposals,
+      tick: 100,
+    });
+    const createConstructionSite = vi.fn(() => 0);
+    const siteExecution = new ConstructionSiteExecutor().execute(siteArbitration.intents, {
+      isCurrentCommitment: () => true,
+      resolveRoom: () => ({ controller: { my: true }, createConstructionSite }) as unknown as Room,
+    });
+    const siteOwner = reconcileConstructionSiteExecution(
+      persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
+      siteExecution,
+      100,
+    ).owner;
+    expect(siteArbitration.intents).toEqual([expect.objectContaining({ structureType: "lab" })]);
+    expect(createConstructionSite).toHaveBeenCalledOnce();
+    expect(siteOwner.records[0]?.siteReceipts).toEqual([expect.objectContaining({ code: "OK" })]);
+    const built = lab("lab-built", builtSite.pos);
+    const tenLabs = [...exactEight, built, external];
+    const room = (labs: readonly ReturnType<typeof lab>[], tick: number) =>
+      ({
+        constructionSites: [],
+        controller: { level: 8, ownership: "owned" as const },
+        hostileCreeps: [],
+        name: roomName,
+        observedAt: tick,
+        ownedCreeps: [],
+        ownedExtensions: [],
+        ownedLabs: labs,
+        ownedSpawns: [],
+        ownedTowers: [],
+        roads: [],
+        sources: [],
+        storedStructures: [],
+        structures: labs.map(generic),
+      }) as unknown as WorldSnapshot["rooms"][number];
+    const labsProjection = (labs: readonly ReturnType<typeof lab>[], tick: number) =>
+      composeLabRuntime({
+        fundedBudgetIds: new Set(),
+        pendingAttempts: [],
+        policy: buildRuntimeConfig().policy.industry,
+        previousCommitments: [],
+        reactionObjectives: [],
+        reactions: {},
+        reactionTimes: {},
+        snapshot: {
+          observation: { age: 0, shard: "shard0", status: "observed", tick },
+          observedAt: tick,
+          ownedRooms: [room(labs, tick)],
+          rooms: [room(labs, tick)],
+        } as unknown as WorldSnapshot,
+        snapshotRevision: `snapshot/${String(tick)}`,
+      });
+    const plan = (
+      labs: readonly ReturnType<typeof lab>[],
+      tick: number,
+      removalReceipt: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"] = null,
+    ) =>
+      new ConstructionPlanner().planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony,
+        commitment,
+        globalOwnedSiteCount: 0,
+        labMigration: labsProjection(labs, tick).migrationRooms[0] ?? null,
+        logisticsEvidenceReady: true,
+        observationFingerprint: `obs-lab-${String(tick)}`,
+        placements: desiredLabs,
+        policyFingerprint: "policy-lab",
+        removalReceipt,
+        room: room(labs, tick),
+      });
+    const ready = plan(tenLabs, 101);
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({ targetId: external.id, targetStructureType: "lab" }),
+    ]);
+    if (ready.authorization === null) throw new Error("expected lab removal authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [ready.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: ready.proposals,
+    });
+    const removalIntent = arbitration.intents[0];
+    if (removalIntent === undefined) throw new Error("expected lab removal intent");
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveLab = (value: ReturnType<typeof lab>, command = vi.fn(() => 0)) => ({
+      cooldown: value.cooldown,
+      destroy: command,
+      id: value.id,
+      isActive: () => value.active,
+      mineralType: value.mineralType,
+      my: true,
+      pos: value.pos,
+      room: liveRoom,
+      store: {
+        getCapacity: (resource?: string) =>
+          resource === "energy" ? 2_000 : resource === undefined ? null : 3_000,
+        getFreeCapacity: (resource?: string) =>
+          resource === "energy" ? 2_000 : resource === undefined ? null : 3_000,
+        getUsedCapacity: () => 0,
+      },
+      structureType: "lab",
+    });
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) => {
+        const value = tenLabs.find((candidate) => candidate.id === id);
+        return value === undefined
+          ? null
+          : (liveLab(value, id === external.id ? destroy : undefined) as unknown as Structure);
+      },
+    });
+    let owner = reconcileStructureDestroyExecution(siteOwner, execution, 101).owner;
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const receipt = owner.records[0]?.removalReceipt ?? null;
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(plan([...tenLabs].reverse(), 102, receipt)).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-pending" })],
+      proposals: [],
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+
+    const postRemovalLabs = tenLabs.filter(({ id }) => id !== external.id);
+    const following = plan(postRemovalLabs, 103, receipt);
+    expect(following.removalReceipt).toBeNull();
+    expect(labsProjection(postRemovalLabs, 103).assignments).toHaveLength(1);
+    const finalDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-lab-103",
+      placements: desiredLabs,
+      policy: labPolicy,
+      policyEnabled: true,
+      policyFingerprint: "policy-lab",
+      roomName,
+      roomStatus: "owned",
+      structures: postRemovalLabs.map(generic),
+    });
+    expect(finalDiff.proposals).toEqual([expect.objectContaining({ structureType: "lab" })]);
   });
 
   it("builds desired extension capacity before removing one empty obsolete extension", () => {

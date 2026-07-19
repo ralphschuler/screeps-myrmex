@@ -16,6 +16,78 @@ const reactions = { H: { O: "OH" } };
 const reactionTimes = { OH: 10 };
 
 describe("composed lab runtime", () => {
+  it("publishes one current quiescence view without exposing lab policy internals", () => {
+    const snapshot = world("forward");
+    const idle = composeLabRuntime({
+      fundedBudgetIds: new Set(),
+      pendingAttempts: [],
+      policy: buildRuntimeConfig().policy.industry,
+      previousCommitments: [],
+      reactionObjectives: [],
+      reactions,
+      reactionTimes,
+      snapshot,
+      snapshotRevision: "snapshot/100",
+    });
+    const active = compose(snapshot, objective("forward"));
+
+    expect(idle.migrationRooms).toHaveLength(1);
+    expect(idle.migrationRooms[0]).toMatchObject({
+      activity: [],
+      observedAt: 100,
+      quiescent: true,
+      roomName: "W1N1",
+    });
+    expect(idle.migrationRooms[0]?.assignment?.roomName).toBe("W1N1");
+    expect(active.migrationRooms[0]).toMatchObject({
+      observedAt: 100,
+      quiescent: false,
+      roomName: "W1N1",
+    });
+    expect(active.migrationRooms[0]?.activity).toContain("commitment");
+    expect(active.migrationRooms[0]?.activity).toContain("intent");
+
+    const stagingSnapshot = world("forward");
+    const stagingRoom = required(stagingSnapshot.ownedRooms[0]);
+    const staging = compose(
+      {
+        ...stagingSnapshot,
+        ownedRooms: [
+          {
+            ...stagingRoom,
+            ownedLabs: (stagingRoom.ownedLabs ?? []).map((value) => ({
+              ...value,
+              energy: 0,
+              mineralAmount: 0,
+              mineralType: null,
+            })),
+          },
+        ],
+      },
+      objective("forward"),
+    );
+    expect(staging.migrationRooms[0]).toMatchObject({ quiescent: false });
+    expect(staging.migrationRooms[0]?.activity).toContain("demand-endpoint");
+    expect(staging.migrationRooms[0]?.activity).toContain("staging-demand");
+
+    const pending = required(createPendingLabAttempt(required(active.intents[0]), "OK"));
+    const pendingOnly = composeLabRuntime({
+      fundedBudgetIds: new Set(),
+      pendingAttempts: [pending],
+      policy: buildRuntimeConfig().policy.industry,
+      previousCommitments: [],
+      reactionObjectives: [],
+      reactions,
+      reactionTimes,
+      snapshot,
+      snapshotRevision: "snapshot/100",
+    });
+    expect(pendingOnly.migrationRooms[0]).toMatchObject({
+      activity: ["pending-attempt"],
+      quiescent: false,
+    });
+  });
+
   it("projects deterministic forward and explicitly funded reverse commands", () => {
     const forward = compose(world("forward"), objective("forward"));
     const reverse = compose(world("reverse"), objective("reverse"));
