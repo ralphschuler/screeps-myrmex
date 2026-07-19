@@ -1,14 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { planLeaseAgents } from "../src/agents";
-import { emptyContractExecutionView, emptyContractPlanningView } from "../src/contracts";
+import {
+  emptyContractExecutionView,
+  emptyContractPlanningView,
+  type ContractExecutionView,
+} from "../src/contracts";
 import {
   layoutExtensionEvacuationBudgetIssuer,
+  layoutLinkEvacuationBudgetIssuer,
+  layoutLinkEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
   type LayoutRecord,
 } from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
-import { observeLogisticsGraph, planLogisticsRuntime } from "../src/logistics/runtime";
+import { projectLayoutLinkEvacuations } from "../src/logistics/link-evacuation";
+import {
+  executableLogisticsView,
+  observeLogisticsGraph,
+  planLogisticsRuntime,
+} from "../src/logistics/runtime";
 import { projectLayoutTowerEvacuations } from "../src/logistics/tower-evacuation";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
@@ -28,6 +39,49 @@ describe("logistics runtime adapter", () => {
     const constrained = observeLogisticsGraph(snapshot, false);
     expect(constrained.nodes.some(({ id }) => id === "store:storage:sink:energy")).toBe(false);
     expect(constrained.nodes.some(({ id }) => id === "store:spawn:sink:energy")).toBe(true);
+  });
+
+  it("drops an oversized optional demand batch before it can displace observed logistics", () => {
+    const snapshot = world();
+    const observed = observeLogisticsGraph(snapshot, true);
+    const optionalNodes = Array.from({ length: 128 }, (_, index) => ({
+      colonyId: "W1N1",
+      freeCapacity: 0,
+      id: `a:optional:${String(index).padStart(3, "0")}`,
+      kind: "source" as const,
+      observedAmount: 1,
+      observedAt: 10,
+      position: position(1, 1),
+      priority: { class: "normal" as const, deadline: 20 },
+      resourceType: "energy",
+    }));
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: { edges: [], endpoints: [], nodes: optionalNodes },
+      snapshot,
+      tick: 10,
+    });
+
+    expect(result.graph).toEqual(observed);
+    expect(result.plan.blockers.some(({ reason }) => reason === "node-cap")).toBe(false);
+  });
+
+  it("removes a retiring stale logistics lease before agent planning", () => {
+    const execution = {
+      leases: [
+        { contractId: "retiring", execution: { flowId: "blocked", version: 3 } },
+        { contractId: "retained", execution: { flowId: "retained", version: 3 } },
+      ],
+      status: "ready",
+    } as unknown as ContractExecutionView;
+
+    expect(
+      executableLogisticsView(execution, new Set(["blocked"])).leases.map(
+        ({ contractId }) => contractId,
+      ),
+    ).toEqual(["retained"]);
   });
 
   it("normalizes dropped, tombstone, ruin, and stored sources for one runtime graph", () => {
@@ -503,6 +557,134 @@ describe("logistics runtime adapter", () => {
     expect(JSON.stringify(reset)).toBe(JSON.stringify(evacuation));
     expect(
       projectLayoutTowerEvacuations({
+        existingBudgets: [],
+        records: Array.from({ length: 65 }, () => record),
+        snapshot: evacuationWorld,
+        tick: 10,
+      }),
+    ).toEqual({
+      budgets: [],
+      demands: { edges: [], endpoints: [], nodes: [], suppressedSinkTargetIds: [] },
+    });
+  });
+
+  it("routes one persisted reserve-link evacuation through the sole logistics graph", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("link evacuation fixture room missing");
+    const link = (id: string, x: number, used: number) => ({
+      active: true,
+      cooldown: 0,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      pos: position(x, 13),
+      store: {
+        capacity: 800,
+        freeCapacity: 800 - used,
+        resources: used === 0 ? [] : [{ amount: used, resourceType: "energy" }],
+        usedCapacity: used,
+      },
+    });
+    const evacuationWorld = {
+      ...snapshot,
+      rooms: [
+        {
+          ...room,
+          ownedLinks: [link("link-reserve-external", 11, 300), link("link-reserve-exact", 12, 0)],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const terms = {
+      amount: 300,
+      expiresAt: 160,
+      replacementId: "link-reserve-exact",
+      replacementInitialEnergy: 0,
+      sourceId: "link-reserve-external",
+      startedAt: 10,
+    } as const;
+    const budgetIssuer = layoutLinkEvacuationBudgetIssuer("W1N1", terms);
+    const flowId = layoutLinkEvacuationFlowId("W1N1", terms);
+    if (budgetIssuer === null || flowId === null)
+      throw new Error("link evacuation identity overflowed");
+    const record = {
+      algorithmRevision: "owned-room-layout-v2-source-services",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      fingerprint: "layout-a",
+      linkEvacuation: terms,
+      roomName: "W1N1",
+      transform: 0,
+    } as const satisfies LayoutRecord;
+    expect(
+      projectLayoutLinkEvacuations({
+        authorizedFlowIds: new Set(),
+        existingBudgets: [],
+        records: [record],
+        snapshot: evacuationWorld,
+        tick: 10,
+      }),
+    ).toEqual({
+      budgets: [],
+      demands: { edges: [], endpoints: [], nodes: [], suppressedSinkTargetIds: [] },
+    });
+    const evacuation = projectLayoutLinkEvacuations({
+      authorizedFlowIds: new Set([flowId]),
+      existingBudgets: [],
+      records: [record],
+      snapshot: evacuationWorld,
+      tick: 10,
+    });
+    const result = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: false,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: evacuation.demands,
+      snapshot: evacuationWorld,
+      tick: 10,
+    });
+    const flow = result.contracts.commitments.find(({ flowId }) =>
+      flowId.startsWith("layout-link-evacuation:"),
+    );
+
+    expect(evacuation.budgets).toEqual([
+      expect.objectContaining({ category: "optional-growth", issuer: budgetIssuer }),
+    ]);
+    expect(evacuation.demands.nodes).toHaveLength(2);
+    expect(evacuation.demands.endpoints).toHaveLength(2);
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: "store:link-reserve-external:sink:energy" }),
+    );
+    expect(result.graph.nodes).not.toContainEqual(
+      expect.objectContaining({ id: "store:link-reserve-exact:sink:energy" }),
+    );
+    expect(flow?.request).toMatchObject({
+      budgetBinding: { category: "optional-growth", issuer: budgetIssuer },
+      execution: { action: "withdraw", counterpartId: "link-reserve-exact" },
+      quantity: 300,
+      targetId: "link-reserve-external",
+    });
+
+    const reset = projectLayoutLinkEvacuations({
+      authorizedFlowIds: new Set([flowId]),
+      existingBudgets: [],
+      records: JSON.parse(JSON.stringify([record])) as LayoutRecord[],
+      snapshot: {
+        ...evacuationWorld,
+        rooms: [
+          {
+            ...room,
+            ownedLinks: [link("link-reserve-exact", 12, 0), link("link-reserve-external", 11, 300)],
+          },
+        ],
+      },
+      tick: 10,
+    });
+    expect(JSON.stringify(reset)).toBe(JSON.stringify(evacuation));
+    expect(
+      projectLayoutLinkEvacuations({
+        authorizedFlowIds: new Set([flowId]),
         existingBudgets: [],
         records: Array.from({ length: 65 }, () => record),
         snapshot: evacuationWorld,

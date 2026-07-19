@@ -30,6 +30,7 @@ export {
   persistLayoutCommitment,
   persistLayoutContainerMigration,
   persistLayoutExtensionEvacuation,
+  persistLayoutLinkEvacuation,
   persistLayoutTowerEvacuation,
   persistLayoutRemovalReceipt,
   freshSourceServicePlacements,

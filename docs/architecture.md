@@ -99,10 +99,13 @@ delivered-replacement, and retired-flow/endpoint evidence. Sole, over-capacity, 
 underfunded, unsafe, or pressured tower removals fail closed. Issue #316 restores committed RCL8
 link geometry, then permits one empty idle external reserve link only while canonical current/ideal
 role evidence retains exact active source, hub, and controller links plus an empty idle exact
-reserve replacement. Active logistics endpoints, productive roles, stock, cooldown, drift, or
-pressure fail closed. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, tower, and
-link result reuses the same fixed receipt.
+reserve replacement. Issue #318 permits one positive energy-only reserve target to persist a bounded
+creep-logistics evacuation when the exact replacement can hold the complete amount. Removal waits
+for exact target emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, zero
+cooldown, unchanged reserve roles, and no accepted native link transfer. Productive roles, malformed
+stock, capacity loss, cooldown, drift, or pressure fail closed. `StructureRemovalArbiter` alone
+authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension,
+container, tower, and link result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1332,6 +1335,15 @@ admits at most 64 resource flows and 128 nodes, otherwise it publishes nothing. 
 leases, and executors remain Logistics-owned; layout consumes only fresh target, replacement, flow,
 and endpoint evidence.
 
+Reserve-link stock migration uses the same authority only after the canonical link-role boundary
+revalidates every productive anchor plus the exact external/reserve-replacement relation from
+current observation. The target and replacement IDs are excluded from native link-transfer proposals
+while one energy-only evacuation is active. One externally funded creep flow suppresses competing
+target and replacement refill and requires exact delivery plus flow/endpoint retirement. If adding
+any optional demand batch would exceed the bounded observed graph's node, endpoint, or edge cap, the
+complete demand batch is omitted before graph admission so optional work cannot displace observed
+survival logistics.
+
 ### 12.4 MovementArbiter
 
 Every creep movement request is a `MovementIntent` with actor ID, desired position/range, deadline,
@@ -1438,11 +1450,12 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V8 layouts owner; V8 adds only
-`link` to the existing removal-receipt discriminator. Degraded, unknown, lost, stale, denied, or
-CPU-skipped work preserves prior commitments and authorizes no command. Every observed owned layout
-site enters the existing funded survival-growth build flow, while controller risk, recovery,
-maintenance, and protected reserves retain precedence.
+commitments and bounded receipts stage through the owner-local schema V9 layouts owner; V8 adds
+`link` to the existing removal-receipt discriminator, while V9 adds one optional fixed-shape
+reserve- link evacuation. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves
+prior commitments and authorizes no command. Every observed owned layout site enters the existing
+funded survival-growth build flow, while controller risk, recovery, maintenance, and protected
+reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -1601,6 +1614,19 @@ the same live structure facts before the sole destroy call. Layouts owner V8 add
 existing fixed receipt discriminator; V1-V7 migrate without invented link evidence, and rollback
 preserves future owner bytes. [ADR 0048](adr/0048-replacement-first-empty-reserve-link-removal.md)
 records the boundary.
+
+Issue #318 extends only that reserve-link path. One exact positive target amount persists for 150
+ticks only when both reserve links are active, zero-cooldown, exact 800-capacity energy-only Stores
+and the replacement can hold the complete amount. Following ticks first reuse the canonical link
+role boundary to validate exact productive-anchor and reserve continuity. Only that current result
+projects one externally funded `optional-growth` energy flow through the sole LogisticsPlanner and
+existing V3 creep contract path, while both evacuation IDs are excluded from native link proposals.
+Loss of current authorization removes that flow's lease from same-tick agent planning. Removal
+requires exact target emptiness, exact baseline-plus-amount replacement energy, retired flow and
+endpoints, unchanged reserve classification, and no accepted native link transfer. The removal
+intent carries exact replacement energy for immediate executor revalidation. Layouts owner V9 adds
+one optional fixed-shape link evacuation; V1-V8 migrate without invented terms and older code
+preserves V9 bytes. [ADR 0049](adr/0049-stocked-reserve-link-evacuation.md) records the boundary.
 
 Other structure stock evacuation, defensive migration, general multi-step migration, and creep
 dismantling remain issue #99 and fail closed.
@@ -2178,6 +2204,9 @@ Required architecture assertions include:
   complete canonical source/hub/controller continuity, one reserve missing ideal anchor, an active
   external reserve target and exact reserve replacement with empty 800-capacity Stores and zero
   cooldown, no active logistics endpoint, current safety, and the same global one-command ceiling;
+  stocked targets first use one exact bounded funded creep-logistics evacuation and require exact
+  target-empty, baseline-plus-amount replacement energy, retired flow/endpoints, zero cooldown, and
+  no accepted native link transfer;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;

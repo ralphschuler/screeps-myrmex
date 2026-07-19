@@ -26,6 +26,7 @@ export function emptyLinkRuntimeResult(
 
 /** Projects funded link transfers without owning layout, budgets, or live commands. */
 export function planLinkRuntime(input: {
+  readonly excludedLinkIds?: ReadonlySet<string>;
   readonly growth: readonly GrowthCandidate[];
   readonly layouts: readonly LinkRoomLayoutEvidence[];
   readonly logistics: LogisticsRuntimeProjection;
@@ -39,9 +40,12 @@ export function planLinkRuntime(input: {
     const room = input.rooms.find(({ name }) => name === layout.roomName);
     if (room?.controller?.ownership !== "owned") continue;
     const { classification, layoutRevision } = classifyRoomLinks(layout.evidence, room, input.tick);
+    const excludedLinkIds = validExcludedLinkIds(input.excludedLinkIds)
+      ? input.excludedLinkIds
+      : new Set(classification.links.map(({ id }) => id));
     const proposals = proposalsForRoom({
       ...input,
-      links: classification.links,
+      links: classification.links.filter(({ id }) => !excludedLinkIds?.has(id)),
       room,
       layoutRevision,
     });
@@ -58,6 +62,115 @@ export function planLinkRuntime(input: {
     });
   }
   return freeze({ execution: [], rooms, status: "planned" });
+}
+
+export function validateReserveLinkEvacuationContinuity(input: {
+  readonly candidates: readonly {
+    readonly id: string;
+    readonly replacementId: string;
+    readonly roomName: string;
+    readonly sourceId: string;
+  }[];
+  readonly layouts: readonly LinkRoomLayoutEvidence[];
+  readonly rooms: readonly RoomSnapshot[];
+  readonly tick: number;
+}): readonly string[] {
+  if (input.candidates.length > 64) return Object.freeze([]);
+  const candidateIds = new Set(input.candidates.map(({ id }) => id));
+  if (
+    candidateIds.size !== input.candidates.length ||
+    input.candidates.some(
+      ({ id, replacementId, roomName, sourceId }) =>
+        id.length === 0 ||
+        id.length > 128 ||
+        replacementId.length === 0 ||
+        replacementId.length > 128 ||
+        roomName.length === 0 ||
+        roomName.length > 16 ||
+        sourceId.length === 0 ||
+        sourceId.length > 128 ||
+        sourceId === replacementId,
+    )
+  )
+    return Object.freeze([]);
+  const authorized: string[] = [];
+  for (const candidate of [...input.candidates].sort((a, b) => a.id.localeCompare(b.id))) {
+    const layouts = input.layouts.filter(({ roomName }) => roomName === candidate.roomName);
+    const layout = layouts[0];
+    const room = input.rooms.find(({ name }) => name === candidate.roomName);
+    if (
+      layouts.length !== 1 ||
+      layout === undefined ||
+      room?.controller?.ownership !== "owned" ||
+      room.controller.level !== 8 ||
+      room.observedAt !== input.tick ||
+      room.ownedLinks?.length !== 6 ||
+      layout.evidence.linkPlacements.length !== 6 ||
+      layout.evidence.sourceServices.length !== room.sources.length
+    )
+      continue;
+    const sourceIds = new Set(room.sources.map(({ id }) => id));
+    if (
+      new Set(layout.evidence.sourceServices.map(({ sourceId }) => sourceId)).size !==
+        layout.evidence.sourceServices.length ||
+      layout.evidence.sourceServices.some(({ sourceId }) => !sourceIds.has(sourceId))
+    )
+      continue;
+    const anchors = deriveLinkRoleAnchors(layout.evidence);
+    if (
+      anchors.length !== 6 ||
+      anchors.filter(({ role }) => role === "source").length !== room.sources.length ||
+      anchors.filter(({ role }) => role === "hub").length !== 1 ||
+      anchors.filter(({ role }) => role === "controller").length !== 1
+    )
+      continue;
+    const target = room.ownedLinks.find(({ id }) => id === candidate.sourceId);
+    const replacement = room.ownedLinks.find(({ id }) => id === candidate.replacementId);
+    if (
+      target === undefined ||
+      replacement === undefined ||
+      layout.evidence.linkPlacements.some(({ x, y }) => x === target.pos.x && y === target.pos.y) ||
+      !layout.evidence.linkPlacements.some(
+        ({ x, y }) => x === replacement.pos.x && y === replacement.pos.y,
+      )
+    )
+      continue;
+    const exactLinks = room.ownedLinks.filter((link) =>
+      layout.evidence.linkPlacements.some(({ x, y }) => x === link.pos.x && y === link.pos.y),
+    );
+    const missingAnchors = anchors.filter(
+      (anchor) => !exactLinks.some(({ pos }) => pos.x === anchor.pos.x && pos.y === anchor.pos.y),
+    );
+    const layoutRevision = `${layout.evidence.algorithmRevision}:${layout.evidence.fingerprint}`;
+    const exactClassification = classifyLinks({
+      anchors,
+      layoutRevision,
+      links: exactLinks.map((link) => observedLink(link, room.observedAt)),
+      tick: input.tick,
+    });
+    if (
+      exactLinks.length !== 5 ||
+      missingAnchors.length !== 1 ||
+      missingAnchors[0]?.role !== "reserve" ||
+      exactClassification.links.length !== 5 ||
+      exactClassification.truncatedLinks !== 0 ||
+      exactClassification.blockers.length !== 1 ||
+      exactClassification.blockers[0]?.reason !== "missing-link" ||
+      exactClassification.links.find(({ id }) => id === replacement.id)?.role !== "reserve" ||
+      !["source", "hub", "controller"].every((role) =>
+        anchors
+          .filter((anchor) => anchor.role === role)
+          .every((anchor) =>
+            exactClassification.links.some(
+              (link) => link.anchorId === anchor.id && link.role === anchor.role,
+            ),
+          ),
+      )
+    )
+      continue;
+    authorized.push(candidate.id);
+  }
+  return Object.freeze(authorized);
 }
 
 export function projectLinkDomainHealth(input: {
@@ -88,6 +201,26 @@ export function projectLinkDomainHealth(input: {
   return freeze(statuses);
 }
 
+function validExcludedLinkIds(value: ReadonlySet<string> | undefined): boolean {
+  return (
+    value === undefined ||
+    (value.size <= 128 && [...value].every((id) => id.length > 0 && id.length <= 128))
+  );
+}
+
+function observedLink(link: NonNullable<RoomSnapshot["ownedLinks"]>[number], observedAt: number) {
+  return {
+    active: link.active,
+    cooldown: link.cooldown,
+    energy: link.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0,
+    freeCapacity: link.store.freeCapacity ?? 0,
+    id: link.id,
+    observedAt,
+    owned: true,
+    pos: link.pos,
+  };
+}
+
 function classifyRoomLinks(
   evidence: LinkLayoutEvidence,
   room: RoomSnapshot,
@@ -98,17 +231,7 @@ function classifyRoomLinks(
   const classification = classifyLinks({
     anchors,
     layoutRevision,
-    links: (room.ownedLinks ?? []).map((link) => ({
-      active: link.active,
-      cooldown: link.cooldown,
-      energy:
-        link.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0,
-      freeCapacity: link.store.freeCapacity ?? 0,
-      id: link.id,
-      observedAt: room.observedAt,
-      owned: true,
-      pos: link.pos,
-    })),
+    links: (room.ownedLinks ?? []).map((link) => observedLink(link, room.observedAt)),
     tick,
   });
   return { classification, layoutRevision };

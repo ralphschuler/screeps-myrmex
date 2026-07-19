@@ -74,6 +74,7 @@ export function arbitrateStructureRemovals(
 
 function validProposal(proposal: LayoutMigrationProposal): boolean {
   const terms: {
+    readonly replacementExpectedEnergy?: number;
     readonly replacementId: string | null;
     readonly replacementStructureType: string;
     readonly replacementRequiresZeroCooldown?: boolean;
@@ -88,7 +89,10 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
     terms.replacementId.length > 0 &&
     terms.targetRequiresEmptyStore &&
     (terms.targetStructureType !== "link" ||
-      (terms.targetRequiresZeroCooldown === true &&
+      (Number.isSafeInteger(terms.replacementExpectedEnergy) &&
+        (terms.replacementExpectedEnergy ?? -1) >= 0 &&
+        (terms.replacementExpectedEnergy ?? 801) <= 800 &&
+        terms.targetRequiresZeroCooldown === true &&
         terms.replacementRequiresZeroCooldown === true));
   return (
     validMigrationTerms &&
@@ -141,6 +145,7 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
     };
   return {
     ...envelope,
+    replacementExpectedEnergy: proposal.replacementExpectedEnergy,
     replacementId: proposal.replacementId,
     replacementRequiresZeroCooldown: true,
     replacementStructureType: "link",

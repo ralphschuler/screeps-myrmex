@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { planStaticMining } from "../src/economy";
 import {
+  layoutLinkEvacuationFlowId,
   layoutTowerEvacuationFlowId,
   type LayoutCommitment,
   type LayoutPlacement,
@@ -252,6 +253,79 @@ describe("ConstructionPlanner", () => {
           ...overrides,
         }).proposals,
       ).toEqual([]);
+  });
+
+  it("persists and completes one stocked obsolete reserve-link evacuation before removal", () => {
+    const stagedFixture = reserveLinkMigrationFixture(300, 0, 100);
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: stagedFixture.colony,
+      currentPlacements: stagedFixture.currentPlacements,
+      linkRuntime: stagedFixture.linkRuntime,
+      logisticsEvidenceReady: true,
+      placements: stagedFixture.idealPlacements,
+      room: stagedFixture.room,
+    });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.blockers).toContainEqual({
+      reason: "target-stocked",
+      roomName: "W1N1",
+      targetId: "link-reserve-external",
+    });
+    expect(staged.linkEvacuation).toEqual({
+      amount: 300,
+      expiresAt: 250,
+      replacementId: "link-reserve-exact",
+      replacementInitialEnergy: 0,
+      sourceId: "link-reserve-external",
+      startedAt: 100,
+    });
+    const evacuation = staged.linkEvacuation;
+    if (evacuation === null) throw new Error("expected link evacuation");
+    const flowId = layoutLinkEvacuationFlowId("W1N1", evacuation);
+    if (flowId === null) throw new Error("expected bounded link evacuation identity");
+
+    const partialFixture = reserveLinkMigrationFixture(100, 200, 101);
+    const partial = planMigration({
+      activeLogisticsFlowIds: new Set([flowId]),
+      activeLogisticsTargetIds: new Set(["link-reserve-external", "link-reserve-exact"]),
+      colony: partialFixture.colony,
+      currentPlacements: [...partialFixture.currentPlacements].reverse(),
+      linkEvacuation: JSON.parse(JSON.stringify(evacuation)) as typeof evacuation,
+      linkRuntime: partialFixture.linkRuntime,
+      logisticsEvidenceReady: true,
+      placements: [...partialFixture.idealPlacements].reverse(),
+      room: {
+        ...partialFixture.room,
+        ownedLinks: [...(partialFixture.room.ownedLinks ?? [])].reverse(),
+        structures: [...(partialFixture.room.structures ?? [])].reverse(),
+      },
+    });
+    expect(partial.proposals).toEqual([]);
+    expect(partial.linkEvacuation).toEqual(evacuation);
+
+    const completeFixture = reserveLinkMigrationFixture(0, 300, 102);
+    const complete = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: completeFixture.colony,
+      currentPlacements: completeFixture.currentPlacements,
+      linkEvacuation: evacuation,
+      linkRuntime: completeFixture.linkRuntime,
+      logisticsEvidenceReady: true,
+      placements: completeFixture.idealPlacements,
+      room: completeFixture.room,
+    });
+    expect(complete.proposals).toEqual([
+      expect.objectContaining({
+        replacementExpectedEnergy: 300,
+        replacementId: "link-reserve-exact",
+        targetId: "link-reserve-external",
+        targetStructureType: "link",
+      }),
+    ]);
+    expect(complete.linkEvacuation).toEqual(evacuation);
   });
 
   it("keeps an operational committed tower before proposing one empty obsolete tower", () => {
@@ -1651,7 +1725,7 @@ function sourceContainerMigrationFixture(): {
   };
 }
 
-function reserveLinkMigrationFixture() {
+function reserveLinkMigrationFixture(targetEnergy = 0, replacementEnergy = 0, observedAt = 100) {
   const sourceServices: LayoutPlacement[] = [
     {
       adoption: "exact",
@@ -1697,21 +1771,26 @@ function reserveLinkMigrationFixture() {
     linkPlacement(26, 25, "planned"),
     linkPlacement(39, 40),
   ];
-  const link = (id: string, x: number, y: number) => ({
+  const link = (id: string, x: number, y: number, energy = 0) => ({
     active: true,
     cooldown: 0,
     hits: 1_000,
     hitsMax: 1_000,
     id,
     pos: { roomName: "W1N1", x, y },
-    store: { capacity: 800, freeCapacity: 800, resources: [], usedCapacity: 0 },
+    store: {
+      capacity: 800,
+      freeCapacity: 800 - energy,
+      resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+      usedCapacity: energy,
+    },
   });
   const ownedLinks = [
     link("link-source-a", 11, 10),
     link("link-source-b", 41, 10),
     link("link-hub", 20, 21),
-    link("link-reserve-exact", 25, 25),
-    link("link-reserve-external", 30, 30),
+    link("link-reserve-exact", 25, 25, replacementEnergy),
+    link("link-reserve-external", 30, 30, targetEnergy),
     link("link-controller", 39, 40),
   ];
   const storage = {
@@ -1722,6 +1801,7 @@ function reserveLinkMigrationFixture() {
   };
   const room = {
     ...migrationRoom(),
+    observedAt,
     controller: {
       ...migrationRoom().controller,
       level: 8,

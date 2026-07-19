@@ -50,8 +50,11 @@ export class StructureDestroyExecutor {
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-absent");
       if (!matchesReplacement(intent, replacement))
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-mismatch");
-      if (intent.replacementStructureType === "link" && !hasEmptyCurrentStore(replacement, "link"))
-        return result(intent, false, "ERR_INVALID_TARGET", "replacement-not-empty");
+      if (
+        intent.replacementStructureType === "link" &&
+        !hasExpectedLinkEnergy(replacement, intent.replacementExpectedEnergy)
+      )
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-energy-mismatch");
       if (intent.replacementStructureType === "link" && !hasZeroCooldown(replacement))
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-cooldown");
       if (!hasOperationalReplacementEnergy(intent, replacement))
@@ -108,6 +111,32 @@ function hasEmptyCurrentStore(
     store.getFreeCapacity() === MAX_LAYOUT_LINK_ENERGY &&
     store.getFreeCapacity("energy") === MAX_LAYOUT_LINK_ENERGY &&
     store.getUsedCapacity("energy") === 0
+  );
+}
+function hasExpectedLinkEnergy(structure: Structure, expectedEnergy: number): boolean {
+  if (
+    !Number.isSafeInteger(expectedEnergy) ||
+    expectedEnergy < 0 ||
+    expectedEnergy > MAX_LAYOUT_LINK_ENERGY
+  )
+    return false;
+  const store = (
+    structure as Structure & {
+      readonly store?: {
+        getCapacity(resource?: string): number | null;
+        getFreeCapacity(resource?: string): number | null;
+        getUsedCapacity(resource?: string): number | null;
+      };
+    }
+  ).store;
+  const free = MAX_LAYOUT_LINK_ENERGY - expectedEnergy;
+  return (
+    store?.getCapacity() === MAX_LAYOUT_LINK_ENERGY &&
+    store.getCapacity("energy") === MAX_LAYOUT_LINK_ENERGY &&
+    store.getFreeCapacity() === free &&
+    store.getFreeCapacity("energy") === free &&
+    store.getUsedCapacity() === expectedEnergy &&
+    store.getUsedCapacity("energy") === expectedEnergy
   );
 }
 function hasZeroCooldown(structure: Structure): boolean {

@@ -44,6 +44,7 @@ const linkIntent: DestroyOwnedStructureIntent = {
   layoutFingerprint: "layout-a",
   observationFingerprint: "observation-a",
   policyFingerprint: "policy-a",
+  replacementExpectedEnergy: 0,
   replacementId: "link-reserve-exact",
   replacementRequiresZeroCooldown: true,
   replacementStructureType: "link",
@@ -287,7 +288,7 @@ describe("StructureDestroyExecutor", () => {
     ).toMatchObject({ called: false, fault: "target-not-empty" });
   });
 
-  it("revalidates active owned empty 800-capacity idle links immediately before destroy", () => {
+  it("revalidates empty targets and exact active 800-capacity idle replacement energy", () => {
     const room = { controller: { my: true }, name: "W1N1" } as unknown as Room;
     const destroy = vi.fn(() => 0);
     const link = (
@@ -334,6 +335,19 @@ describe("StructureDestroyExecutor", () => {
       code: "OK",
     });
     expect(destroy).toHaveBeenCalledOnce();
+    const stockedIntent = { ...linkIntent, replacementExpectedEnergy: 300 } as const;
+    expect(
+      new StructureDestroyExecutor().execute(
+        [stockedIntent],
+        adapter(undefined, link("link-reserve-exact", { used: 300 })),
+      )[0],
+    ).toMatchObject({ called: true, code: "OK" });
+    expect(
+      new StructureDestroyExecutor().execute(
+        [stockedIntent],
+        adapter(undefined, link("link-reserve-exact", { used: 299 })),
+      )[0],
+    ).toMatchObject({ called: false, fault: "replacement-energy-mismatch" });
     for (const [value, fault] of [
       [adapter(link("link-reserve-external", { active: false })), "target-not-empty"],
       [adapter(link("link-reserve-external", { my: false })), "target-not-empty"],
@@ -341,15 +355,18 @@ describe("StructureDestroyExecutor", () => {
       [adapter(link("link-reserve-external", { capacity: 799 })), "target-not-empty"],
       [adapter(link("link-reserve-external", { cooldown: 1 })), "target-cooldown"],
       [adapter(undefined, link("link-reserve-exact", { active: false })), "replacement-mismatch"],
-      [adapter(undefined, link("link-reserve-exact", { used: 1 })), "replacement-not-empty"],
-      [adapter(undefined, link("link-reserve-exact", { capacity: 799 })), "replacement-not-empty"],
+      [adapter(undefined, link("link-reserve-exact", { used: 1 })), "replacement-energy-mismatch"],
+      [
+        adapter(undefined, link("link-reserve-exact", { capacity: 799 })),
+        "replacement-energy-mismatch",
+      ],
       [adapter(undefined, link("link-reserve-exact", { cooldown: 1 })), "replacement-cooldown"],
     ] as const)
       expect(new StructureDestroyExecutor().execute([linkIntent], value)[0]).toMatchObject({
         called: false,
         fault,
       });
-    expect(destroy).toHaveBeenCalledOnce();
+    expect(destroy).toHaveBeenCalledTimes(2);
   });
 
   it("revalidates an empty room container and its exact current service replacement", () => {
