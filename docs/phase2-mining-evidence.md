@@ -1,7 +1,9 @@
 # Phase 2 static mining evidence
 
 Issue [#46](https://github.com/ralphschuler/screeps-myrmex/issues/46) establishes deterministic
-static extraction for visible owned sources. The checked result is
+static extraction for visible owned sources. Issue
+[#302](https://github.com/ralphschuler/screeps-myrmex/issues/302) preserves those executable terms
+when alternate source containers appear. The checked gate result remains
 [`phase2-mining-results.json`](phase2-mining-results.json).
 
 ## Composed deterministic scenario
@@ -9,27 +11,33 @@ static extraction for visible owned sources. The checked result is
 The scenario composes the production source-service selector, static-mining projection, body
 projection, and observer-only mining telemetry reducer with a deterministic funding and replacement
 ledger. Warm, serialized-state reset, and reordered source observations produce the same semantic
-result.
+result. Focused runtime evidence additionally retains the persisted work position and byte-stable
+contract when a newly observed exact alternate replaces the selected container observation.
 
 The fixed room has two sources. One has exactly one legal adjacent tile at `W1N1/9/10`. Each run
 keeps one stable primary extraction identity per source and checks a maximum of eight adjacent
 candidates per source. The scenario ledger funds two source identities and retains exactly those two
-identities after reset.
+identities after reset. Continuity inspects no additional source candidates and trusts a prior
+position only when exactly one matching persisted service remains among the same legal reachable
+eight tiles.
 
 ## Outcome matrix
 
-| Scenario                             | Checked outcome                                                    |
-| ------------------------------------ | ------------------------------------------------------------------ |
-| Container site and missing container | `site-pending` and `site-needed`; extraction remains active        |
-| Full container                       | `container-full`; drop fallback remains available                  |
-| Decaying container                   | decay telemetry is exposed without repair authority                |
-| Destroyed container                  | `container-destroyed`; drop fallback avoids extraction deadlock    |
-| Miner death and expiry               | one stable replacement demand is retained until scheduling         |
-| Spawn busy and low energy            | replacement waits; no duplicate identity is introduced             |
-| Temporary blocked tile               | the committed work position remains stable for deterministic retry |
-| RCL downgrade and recovery           | `rcl-locked` returns to `container-ready` without identity churn   |
-| Link candidate                       | `link-candidate` is exposed with zero link commands                |
-| Source depletion and regeneration    | the commitment remains stable and energy deltas are observed       |
+| Scenario                             | Checked outcome                                                     |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| Container site and missing container | `site-pending` and `site-needed`; extraction remains active         |
+| Full container                       | `container-full`; drop fallback remains available                   |
+| Decaying container                   | decay telemetry is exposed without repair authority                 |
+| Destroyed container                  | `container-destroyed`; drop fallback avoids extraction deadlock     |
+| Miner death and expiry               | one stable replacement demand is retained until scheduling          |
+| Spawn busy and low energy            | replacement waits; no duplicate identity is introduced              |
+| Temporary blocked tile               | the committed work position remains stable for deterministic retry  |
+| Exact alternate appears              | prior legal service and contract terms remain byte-stable           |
+| Selected container disappears        | prior tile remains selected with the existing drop fallback         |
+| Invalid/ambiguous prior evidence     | continuity is ignored; bounded normal selection remains fail-closed |
+| RCL downgrade and recovery           | `rcl-locked` returns to `container-ready` without identity churn    |
+| Link candidate                       | `link-candidate` is exposed with zero link commands                 |
+| Source depletion and regeneration    | the commitment remains stable and energy deltas are observed        |
 
 At 800 room energy capacity the body projection requests five `WORK` and three `MOVE` parts. Five
 active `WORK` parts harvest the source regeneration bound of ten energy per tick without requesting
@@ -64,7 +72,9 @@ the implementation and scenario remain clean-room.
 Run the focused evidence and documentation checks from the repository root:
 
 ```bash
-npx vitest run packages/scenario-kit/test/phase2-static-mining-gate.test.ts
-npx markdownlint-cli2 docs/phase2-mining-evidence.md docs/adr/0017-static-mining-authority.md \
-  docs/architecture.md docs/strategy.md docs/roadmap.md
+npx vitest run packages/bot/test/source-services.test.ts \
+  packages/bot/test/static-mining-runtime.test.ts \
+  packages/scenario-kit/test/phase2-static-mining-gate.test.ts
+npx markdownlint-cli2 docs/phase2-mining-evidence.md docs/phase2-layout-evidence.md \
+  docs/adr/0017-static-mining-authority.md docs/architecture.md docs/strategy.md docs/roadmap.md
 ```

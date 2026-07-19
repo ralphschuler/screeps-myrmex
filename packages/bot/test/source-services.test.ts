@@ -90,6 +90,118 @@ describe("source service selection", () => {
     });
   });
 
+  it("keeps a legal prior service when a better exact alternate appears or the old container vanishes", () => {
+    const previous = select({ structures: [structure("container", 9, 9, "old-service")] });
+    const input = {
+      constructionSites: [],
+      placements: [origin],
+      priorSourceServices: previous.placements,
+      roomName,
+      sources: [pos(10, 10, "source-a")],
+      structures: [
+        structure("container", 9, 9, "old-service"),
+        structure("container", 11, 11, "new-service"),
+      ],
+      terrain: terrain(),
+    };
+
+    expect(selectSourceServices(input).placements[0]).toMatchObject({
+      adoption: "exact",
+      pos: pos(9, 9),
+    });
+    expect(
+      selectSourceServices({
+        ...input,
+        structures: [structure("container", 11, 11, "new-service")],
+      }).placements[0],
+    ).toMatchObject({ adoption: "planned", pos: pos(9, 9) });
+  });
+
+  it("ignores ambiguous, conflicting, non-adjacent, or blocked prior service evidence", () => {
+    const exactAlternate = structure("container", 11, 11, "new-service");
+    const prior = (x: number, y: number, sourceId = "source-a"): LayoutPlacement => ({
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: pos(x, y),
+      service: { kind: "source-container", sourceId },
+      structureType: "container",
+    });
+    const base = {
+      constructionSites: [],
+      placements: [origin],
+      roomName,
+      sources: [pos(10, 10, "source-a")],
+      structures: [exactAlternate],
+      terrain: terrain(),
+    };
+
+    expect(
+      selectSourceServices({ ...base, priorSourceServices: [prior(20, 20)] }).placements[0]?.pos,
+    ).toEqual(pos(11, 11));
+    expect(
+      selectSourceServices({ ...base, priorSourceServices: [prior(9, 9), prior(9, 10)] })
+        .placements[0]?.pos,
+    ).toEqual(pos(11, 11));
+    expect(
+      selectSourceServices({
+        ...base,
+        priorSourceServices: [prior(9, 9)],
+        terrain: terrain([[9, 9, "1"]]),
+      }).placements[0]?.pos,
+    ).toEqual(pos(11, 11));
+
+    const conflict = selectSourceServices({
+      ...base,
+      priorSourceServices: [prior(10, 11), prior(10, 11, "source-b")],
+      sources: [pos(10, 10, "source-a"), pos(10, 12, "source-b")],
+      structures: [exactAlternate, structure("container", 11, 13, "source-b-alternate")],
+    });
+    expect(conflict.placements.map(({ pos: placement }) => placement)).toEqual([
+      pos(11, 11),
+      pos(11, 13),
+    ]);
+  });
+
+  it("preserves continuity across nontrivial reorder and JSON reconstruction", () => {
+    const prior = (x: number, y: number, sourceId: string): LayoutPlacement => ({
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: pos(x, y),
+      service: { kind: "source-container", sourceId },
+      structureType: "container",
+    });
+    const input = {
+      constructionSites: [],
+      placements: [origin],
+      priorSourceServices: [prior(9, 9, "source-a"), prior(29, 9, "source-b")],
+      roomName,
+      sources: [pos(10, 10, "source-a"), pos(30, 10, "source-b")],
+      structures: [
+        structure("container", 9, 9, "source-a-prior"),
+        structure("container", 11, 11, "source-a-alternate"),
+        structure("container", 29, 9, "source-b-prior"),
+        structure("container", 31, 11, "source-b-alternate"),
+      ],
+      terrain: terrain(),
+    };
+    const stable = selectSourceServices(input);
+    const cloned = JSON.parse(JSON.stringify(input)) as typeof input;
+    const reset = selectSourceServices({
+      ...cloned,
+      priorSourceServices: [...cloned.priorSourceServices].reverse(),
+      sources: [...cloned.sources].reverse(),
+      structures: [...cloned.structures].reverse(),
+    });
+
+    expect(stable.placements.map(({ pos: placement }) => placement)).toEqual([
+      pos(9, 9),
+      pos(29, 9),
+    ]);
+    expect(JSON.stringify(reset)).toBe(JSON.stringify(stable));
+  });
+
   it("uses bounded shortest route, then plain over swamp, then y,x", () => {
     const storage = { ...origin, pos: pos(10, 20), structureType: "storage" } as const;
     const result = select({ placements: [storage, origin], terrain: terrain([[9, 11, "2"]]) });

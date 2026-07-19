@@ -126,6 +126,40 @@ describe("static mining runtime activation", () => {
     expect(commands.createConstructionSite).not.toHaveBeenCalled();
     expect(commands.harvest).not.toHaveBeenCalled();
   });
+
+  it("keeps one byte-stable mining contract when an exact alternate replaces the observed container", () => {
+    const memory = {} as Memory;
+    const commands = commandSpies();
+    const oldService = [{ id: "container-old", x: 9, y: 9 }] as const;
+    const alternate = [{ id: "container-alternate", x: 10, y: 11 }] as const;
+    runTick({ game: miningGame(500, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(501, commands, true, 2, oldService), memory });
+    runTick({ game: miningGame(502, commands, true, 2, oldService), memory });
+    const before = activeMiningContract(memory, "mining/W1N1/source-a");
+
+    const changed = runTick({ game: miningGame(503, commands, true, 2, alternate), memory });
+    const reconstructed = JSON.parse(JSON.stringify(memory)) as Memory;
+    const outcome = runTick({
+      game: miningGame(504, commands, true, 2, alternate, true),
+      memory: reconstructed,
+    });
+    const after = activeMiningContract(reconstructed, "mining/W1N1/source-a");
+
+    expect(before).toMatchObject({ execution: { workPosition: { x: 9, y: 9 } } });
+    expect(
+      changed.layout.arbitration?.rejected.some(
+        ({ proposal }) =>
+          proposal.structureType === "container" && proposal.pos.x === 9 && proposal.pos.y === 9,
+      ),
+    ).toBe(true);
+    expect(after).toEqual(before);
+    expect(
+      outcome.contracts?.submissions.filter(({ contractId }) =>
+        contractId?.includes("mining/W1N1/source-a"),
+      ),
+    ).toEqual([expect.objectContaining({ accepted: true, outcome: "duplicate-active" })]);
+    expect(commands.harvest).not.toHaveBeenCalled();
+  });
 });
 
 function miningContractIds(outcome: ReturnType<typeof runTick>): string[] {
@@ -148,6 +182,15 @@ function miningContractStates(memory: Memory): string[] {
     .sort();
 }
 
+function activeMiningContract(memory: Memory, issuer: string): unknown {
+  const contracts = memory.myrmex?.contracts as unknown as {
+    active?: Array<{ issuer?: string }>;
+  };
+  const matches = (contracts.active ?? []).filter((contract) => contract.issuer === issuer);
+  expect(matches).toHaveLength(1);
+  return JSON.parse(JSON.stringify(matches[0])) as unknown;
+}
+
 function setDisabled(memory: Memory, disabled: readonly string[]): void {
   const config = memory.myrmex?.config as unknown as { candidate: unknown } | undefined;
   if (config === undefined) throw new Error("expected initialized config owner");
@@ -168,6 +211,12 @@ function miningGame(
   commands: ReturnType<typeof commandSpies>,
   owned = true,
   controllerLevel = 2,
+  containerPositions: readonly {
+    readonly id: string;
+    readonly x: number;
+    readonly y: number;
+  }[] = [],
+  reverseObservations = false,
 ): RuntimeGame {
   const roomName = "W1N1";
   const pos = (x: number, y: number) => ({ roomName, x, y });
@@ -204,6 +253,20 @@ function miningGame(
     harvest: commands.harvest,
     moveTo: commands.moveTo,
   } as unknown as Creep;
+  const containers = containerPositions.map(({ id, x, y }) => ({
+    hits: 250_000,
+    hitsMax: 250_000,
+    id,
+    pos: pos(x, y),
+    room: { name: roomName },
+    store: {
+      getCapacity: () => 2_000,
+      getFreeCapacity: () => 2_000,
+      getUsedCapacity: () => 0,
+    },
+    structureType: "container",
+    ticksToDecay: 500,
+  })) as unknown as StructureContainer[];
   const spawn = {
     hits: 5_000,
     hitsMax: 5_000,
@@ -237,6 +300,10 @@ function miningGame(
     ticksToDowngrade: 10_000,
     upgradeBlocked: undefined,
   } as unknown as StructureController;
+  const observedSources = reverseObservations ? [...sources].reverse() : sources;
+  const observedStructures = reverseObservations
+    ? [spawn, ...containers].reverse()
+    : [spawn, ...containers];
   const room = {
     controller,
     createConstructionSite: commands.createConstructionSite,
@@ -246,9 +313,9 @@ function miningGame(
       kind === FIND_CREEPS_VALUE
         ? [creep]
         : kind === FIND_STRUCTURES_VALUE
-          ? [spawn]
+          ? observedStructures
           : kind === FIND_SOURCES_VALUE
-            ? sources
+            ? observedSources
             : kind === FIND_CONSTRUCTION_SITES_VALUE
               ? []
               : [],
@@ -263,7 +330,8 @@ function miningGame(
         ? creep
         : id === spawn.id
           ? spawn
-          : sources.find((source) => source.id === id),
+          : (containers.find((container) => container.id === id) ??
+            sources.find((source) => source.id === id)),
     rooms: { [roomName]: room },
     shard: { name: "shard3" },
     time,

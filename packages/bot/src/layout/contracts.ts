@@ -517,6 +517,7 @@ export interface LayoutPlanningInput {
   readonly mineral: MineralSnapshot | null;
   readonly policy: ColonyView["rclPolicy"];
   readonly priorCommitment: LayoutCommitment | null;
+  readonly priorSourceServices?: readonly LayoutPlacement[];
   readonly roomName: string;
   readonly sources: readonly PositionSnapshot[];
   readonly structures: readonly StructureSnapshot[];
@@ -526,6 +527,7 @@ export interface LayoutPlanningInput {
 export interface SourceServicePlanningInput {
   readonly constructionSites: readonly ConstructionSiteSnapshot[];
   readonly placements: readonly LayoutPlacement[];
+  readonly priorSourceServices?: readonly LayoutPlacement[];
   readonly roomName: string;
   readonly sources: readonly PositionSnapshot[];
   readonly structures: readonly StructureSnapshot[];

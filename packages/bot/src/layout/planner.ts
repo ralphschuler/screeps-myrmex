@@ -59,6 +59,9 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
       const services = selectSourceServices({
         constructionSites: input.constructionSites,
         placements: adopted,
+        ...(input.priorSourceServices === undefined
+          ? {}
+          : { priorSourceServices: input.priorSourceServices }),
         roomName: input.roomName,
         sources: input.sources,
         structures: input.structures,
