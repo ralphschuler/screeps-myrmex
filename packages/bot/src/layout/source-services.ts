@@ -23,6 +23,7 @@ export function selectSourceServices(
   const placements: LayoutPlacement[] = [];
   const blockers: SourceServiceBlocker[] = [];
   const assigned = new Set<string>();
+  const priorServices = priorServicePositions(input);
   const sources = [...input.sources].sort((a, b) => compare(sourceId(a), sourceId(b)));
   const origin = committedOrigin(input.placements);
   let candidatesInspected = 0;
@@ -41,7 +42,10 @@ export function selectSourceServices(
       .map((candidate) => rankCandidate(input, candidate, origin))
       .filter((candidate): candidate is RankedCandidate => candidate !== null)
       .sort(compareCandidate);
-    const selected = ranked[0];
+    const prior = priorServices.get(id);
+    const selected =
+      (prior === undefined ? undefined : ranked.find(({ pos }) => key(pos) === key(prior))) ??
+      ranked[0];
     if (selected === undefined) {
       blockers.push(blocker(id, source, "no-legal-position"));
       continue;
@@ -66,6 +70,34 @@ export function selectSourceServices(
 
 function sourceId(source: PositionSnapshot): string {
   return source.sourceId ?? `missing:${source.roomName}:${String(source.x)}:${String(source.y)}`;
+}
+function priorServicePositions(
+  input: SourceServicePlanningInput,
+): ReadonlyMap<string, PositionSnapshot> {
+  const prior = input.priorSourceServices;
+  if (prior === undefined || prior.length > 8) return new Map();
+  const positions = new Map<string, PositionSnapshot>();
+  const assigned = new Set<string>();
+  for (const placement of prior) {
+    const sourceId = placement.service?.sourceId;
+    if (
+      placement.layer !== "primary" ||
+      placement.structureType !== "container" ||
+      placement.service?.kind !== "source-container" ||
+      sourceId === undefined ||
+      sourceId.length === 0 ||
+      sourceId.length > 128 ||
+      placement.pos.roomName !== input.roomName ||
+      !coordinate(placement.pos.x) ||
+      !coordinate(placement.pos.y) ||
+      positions.has(sourceId) ||
+      assigned.has(key(placement.pos))
+    )
+      return new Map();
+    positions.set(sourceId, placement.pos);
+    assigned.add(key(placement.pos));
+  }
+  return positions;
 }
 function committedOrigin(placements: readonly LayoutPlacement[]): PositionSnapshot | null {
   return (
@@ -191,6 +223,9 @@ function byPosition(a: PositionSnapshot, b: PositionSnapshot): number {
 }
 function key(pos: PositionSnapshot): string {
   return `${String(pos.x)},${String(pos.y)}`;
+}
+function coordinate(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0 && value < 50;
 }
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;

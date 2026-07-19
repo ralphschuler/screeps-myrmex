@@ -1822,6 +1822,9 @@ function layoutPlanningSystem(
           mineral: room.mineral ?? null,
           policy: colony.rclPolicy,
           priorCommitment,
+          ...(priorRecord?.sourceServices === undefined
+            ? {}
+            : { priorSourceServices: priorRecord.sourceServices }),
           roomName: room.name,
           sources: room.sources.map(({ pos }) => pos),
           structures: room.structures ?? [],

@@ -90,11 +90,14 @@ spawn time, and kernel-admitted CPU are conserved before priority is considered.
 spawning, defense, and replacement may consume protected spawn energy; every later category must
 leave the remaining tranche intact.
 
-Static mining assigns one deterministic primary extraction commitment per visible owned source.
-Useful `WORK` is capped by source regeneration throughput, replacement remains ahead of optional
-growth, and missing or unavailable offload infrastructure degrades to dropped energy rather than
-stalling extraction. Container state is evidence only for #47 hauling and #49 repair, while a nearby
-link is only a candidate until #48 authorizes link commands.
+Static mining assigns one deterministic primary extraction commitment per visible owned source. Once
+persisted, its legal reachable work position outranks newly observed alternate containers or sites
+until an explicit migration handoff is authorized. Losing the selected container therefore keeps the
+same mining terms and degrades to dropped energy instead of silently moving the station. Useful
+`WORK` is capped by source regeneration throughput, replacement remains ahead of optional growth,
+and missing or unavailable offload infrastructure degrades to dropped energy rather than stalling
+extraction. Container state is evidence only for #47 hauling and #49 repair, while a nearby link is
+only a candidate until #48 authorizes link commands.
 
 Logistics uses one canonical resource-flow admission model across fresh visible owned rooms. Spawn
 and extension supply, survival towers, and controller supply are mandatory before optional storage

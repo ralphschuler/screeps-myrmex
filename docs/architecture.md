@@ -50,8 +50,10 @@ one bundle, one composition root, one tick loop, and internal modules with stric
 
 `StaticMiningPlanner` is the sole owned-source extraction projection. It consumes visible source
 facts and fresh semantic source-service placements, emits stable `mining/{colonyId}/{sourceId}`
-contracts, and owns neither commands nor persistent mining state. ContractLedger, population policy,
-SpawnBroker, movement arbitration, and executors retain their existing authorities.
+contracts, and owns neither commands nor persistent mining state. A persisted source-service
+position has continuity precedence while that adjacent tile remains legal and reachable; a newer
+exact container or site cannot silently change executable mining terms. ContractLedger, population
+policy, SpawnBroker, movement arbitration, and executors retain their existing authorities.
 
 `LinkArbiter` is the sole link-transfer admission authority. Mining, logistics, and controller
 policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
@@ -1506,8 +1508,17 @@ destroy attempts under capped exponential backoff; `OK` or exhausted attempts wa
 fresh disappearance evidence. [ADR 0043](adr/0043-stocked-redundant-source-container-evacuation.md)
 records this extension.
 
-Other structure stock evacuation, selected source-service migration, defensive migration, general
-multi-step migration, and creep dismantling remain issue #99 and fail closed.
+Issue #302 closes the implicit-switch path before selected source-service migration exists. The
+bounded selector consumes the existing persisted source-service projection and keeps its position
+when that source-adjacent tile remains legal and reachable, even if a new exact container or site
+would otherwise rank first or the selected container disappears. Current observation still derives
+`exact`, `matching-site`, or `planned` offload quality, so container loss degrades to dropped energy
+without changing issuer sequence, request signature, work position, or persistent schema. Invalid,
+ambiguous, conflicting, or unreachable continuity evidence is ignored; source and structure reorder
+plus heap reconstruction remain deterministic.
+
+Other structure stock evacuation, explicit selected source-service migration, defensive migration,
+general multi-step migration, and creep dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,

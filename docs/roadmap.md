@@ -117,7 +117,9 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   one distinct funded flow per kind and an atomic 64-flow projection ceiling. Issue #298 extends the
   same manifest to exactly one non-energy kind while preserving the legacy energy-only identity.
   Issue #300 reuses that evacuation for one stocked, unselected redundant source-adjacent container
-  while preserving the different exact selected service, mining identity, and work position. Other
+  while preserving the different exact selected service, mining identity, and work position. Issue
+  #302 pins each persisted legal/reachable source-service position when an alternate appears or its
+  container vanishes, preserving the executable mining terms until an explicit handoff exists. Other
   structure types, selected source-service switching, general multi-step migration, and creep
   dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
