@@ -111,8 +111,10 @@ holding one mineral kind may instead use the exact active owned storage publishe
 view when its general-purpose Store has complete aggregate capacity. One funded mineral flow
 suppresses the obsolete lab's ordinary source/refill publication; removal waits for fresh lab
 emptiness, baseline-plus-amount storage stock, retired work, and unchanged destination, quiescence,
-cluster, and safety evidence. Energy-plus-mineral, terminal-only, contaminated, cooling,
-active-work, stale, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
+cluster, and safety evidence. A target holding both energy and one mineral kind combines those exact
+destinations in one bounded commitment: energy and mineral flows are admitted as an atomic pair, and
+removal waits for both destination gains plus complete work retirement. Terminal-only, contaminated,
+cooling, active-work, stale, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

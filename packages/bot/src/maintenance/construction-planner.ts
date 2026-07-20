@@ -32,8 +32,8 @@ import {
   layoutContainerMigrationResourceBudgetIssuer,
   layoutContainerMigrationResourceFlowId,
   layoutExtensionEvacuationFlowId,
-  layoutLabEvacuationBudgetIssuer,
-  layoutLabEvacuationFlowId,
+  layoutLabEvacuationBudgetIssuers,
+  layoutLabEvacuationFlowIds,
   layoutLinkEvacuationBudgetIssuer,
   layoutLinkEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
@@ -796,7 +796,7 @@ export class ConstructionPlanner {
         const ownedEvacuationTargetIds =
           labEvacuation === null
             ? new Set<string>()
-            : "resourceType" in labEvacuation
+            : "resourceType" in labEvacuation && !("energyAmount" in labEvacuation)
               ? new Set([labEvacuation.sourceId])
               : new Set([labEvacuation.sourceId, labEvacuation.replacementId]);
         const lab = labMigrationEvidence({
@@ -831,20 +831,54 @@ export class ConstructionPlanner {
           break;
         }
         if (labEvacuation === null && (lab.targetEnergy > 0 || lab.targetMineralAmount > 0)) {
-          const identity =
-            lab.targetMineralType === null || lab.destination === null
-              ? { replacementId: lab.replacement.id, sourceId: candidate.target.id }
-              : {
-                  destinationId: lab.destination.id,
+          const startedAt = input.room.observedAt;
+          const expiresAt = startedAt + LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS;
+          const prospective: LayoutLabEvacuation | null =
+            lab.targetMineralAmount === 0
+              ? {
+                  amount: lab.targetEnergy,
+                  expiresAt,
                   replacementId: lab.replacement.id,
-                  resourceType: lab.targetMineralType,
+                  replacementInitialEnergy: lab.replacementEnergy,
                   sourceId: candidate.target.id,
-                };
+                  startedAt,
+                }
+              : lab.targetMineralType === null || lab.destination === null
+                ? null
+                : lab.targetEnergy === 0
+                  ? {
+                      amount: lab.targetMineralAmount,
+                      destinationId: lab.destination.id,
+                      destinationInitialAmount: lab.destinationResourceAmount,
+                      expiresAt,
+                      replacementId: lab.replacement.id,
+                      resourceType: lab.targetMineralType,
+                      sourceId: candidate.target.id,
+                      startedAt,
+                    }
+                  : {
+                      destinationId: lab.destination.id,
+                      destinationInitialAmount: lab.destinationResourceAmount,
+                      energyAmount: lab.targetEnergy,
+                      expiresAt,
+                      mineralAmount: lab.targetMineralAmount,
+                      replacementId: lab.replacement.id,
+                      replacementInitialEnergy: lab.replacementEnergy,
+                      resourceType: lab.targetMineralType,
+                      sourceId: candidate.target.id,
+                      startedAt,
+                    };
+          const flowIds =
+            prospective === null ? null : layoutLabEvacuationFlowIds(input.room.name, prospective);
+          const budgetIssuers =
+            prospective === null
+              ? null
+              : layoutLabEvacuationBudgetIssuers(input.room.name, prospective);
           if (
             input.activeLogisticsFlowIds === undefined ||
             input.activeLogisticsTargetIds === undefined ||
-            layoutLabEvacuationBudgetIssuer(input.room.name, identity) === null ||
-            layoutLabEvacuationFlowId(input.room.name, identity) === null
+            flowIds === null ||
+            budgetIssuers === null
           ) {
             pushMigrationBlocker(blockers, {
               reason: "logistics-unavailable",
@@ -854,9 +888,10 @@ export class ConstructionPlanner {
             break;
           }
           const capacityMissing =
-            lab.targetMineralType === null
-              ? lab.replacementEnergy + lab.targetEnergy > MAX_LAYOUT_LAB_ENERGY
-              : lab.destination === null || lab.destinationFreeCapacity < lab.targetMineralAmount;
+            (lab.targetEnergy > 0 &&
+              lab.replacementEnergy + lab.targetEnergy > MAX_LAYOUT_LAB_ENERGY) ||
+            (lab.targetMineralAmount > 0 &&
+              (lab.destination === null || lab.destinationFreeCapacity < lab.targetMineralAmount));
           if (capacityMissing) {
             pushMigrationBlocker(blockers, {
               reason: "evacuation-capacity",
@@ -865,26 +900,7 @@ export class ConstructionPlanner {
             });
             break;
           }
-          labEvacuation =
-            lab.targetMineralType === null || lab.destination === null
-              ? {
-                  amount: lab.targetEnergy,
-                  expiresAt: input.room.observedAt + LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
-                  replacementId: lab.replacement.id,
-                  replacementInitialEnergy: lab.replacementEnergy,
-                  sourceId: candidate.target.id,
-                  startedAt: input.room.observedAt,
-                }
-              : {
-                  amount: lab.targetMineralAmount,
-                  destinationId: lab.destination.id,
-                  destinationInitialAmount: lab.destinationResourceAmount,
-                  expiresAt: input.room.observedAt + LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
-                  replacementId: lab.replacement.id,
-                  resourceType: lab.targetMineralType,
-                  sourceId: candidate.target.id,
-                  startedAt: input.room.observedAt,
-                };
+          labEvacuation = prospective;
           pushMigrationBlocker(blockers, {
             reason: "target-stocked",
             roomName: input.room.name,
@@ -893,51 +909,61 @@ export class ConstructionPlanner {
           break;
         }
         if (labEvacuation !== null) {
-          const flowId = layoutLabEvacuationFlowId(input.room.name, labEvacuation);
-          const flowActive = flowId !== null && input.activeLogisticsFlowIds?.has(flowId) === true;
+          const flowIds = layoutLabEvacuationFlowIds(input.room.name, labEvacuation);
+          const flowActive =
+            flowIds?.some((flowId) => input.activeLogisticsFlowIds?.has(flowId) === true) === true;
+          const mixedTerms = "energyAmount" in labEvacuation ? labEvacuation : null;
           const mineralTerms = "resourceType" in labEvacuation ? labEvacuation : null;
           const energyTerms = "replacementInitialEnergy" in labEvacuation ? labEvacuation : null;
-          const sourceAmount = mineralTerms === null ? lab.targetEnergy : lab.targetMineralAmount;
+          const singleAmount = "amount" in labEvacuation ? labEvacuation.amount : 0;
+          const energyAmount =
+            mixedTerms?.energyAmount ?? (mineralTerms === null ? singleAmount : 0);
+          const mineralAmount =
+            mixedTerms?.mineralAmount ?? (mineralTerms === null ? 0 : singleAmount);
           const destinationResourceAmount =
             mineralTerms === null
-              ? lab.destinationResourceAmount
+              ? 0
               : (lab.destinationResources.get(mineralTerms.resourceType) ?? 0);
           let reason: LayoutMigrationBlocker | null = null;
           if (
             input.activeLogisticsFlowIds === undefined ||
             input.activeLogisticsTargetIds === undefined ||
-            flowId === null
+            flowIds === null
           )
             reason = "logistics-unavailable";
           else if (input.room.observedAt >= labEvacuation.expiresAt) {
             reason = "evacuation-expired";
-            if (sourceAmount > 0 && !flowActive) labEvacuation = null;
+            if (lab.targetEnergy + lab.targetMineralAmount > 0 && !flowActive) labEvacuation = null;
           } else if (
-            sourceAmount > labEvacuation.amount ||
-            (mineralTerms === null
-              ? lab.targetMineralAmount !== 0 ||
-                energyTerms === null ||
-                lab.replacementEnergy < energyTerms.replacementInitialEnergy
-              : lab.targetEnergy !== 0 ||
-                (lab.targetMineralType !== null &&
-                  lab.targetMineralType !== mineralTerms.resourceType) ||
+            lab.targetEnergy > energyAmount ||
+            lab.targetMineralAmount > mineralAmount ||
+            (lab.targetMineralAmount > 0 &&
+              (mineralTerms === null || lab.targetMineralType !== mineralTerms.resourceType)) ||
+            (energyAmount > 0 &&
+              (energyTerms === null ||
+                lab.replacementEnergy < energyTerms.replacementInitialEnergy)) ||
+            (mineralAmount > 0 &&
+              (mineralTerms === null ||
                 lab.destination?.id !== mineralTerms.destinationId ||
-                destinationResourceAmount < mineralTerms.destinationInitialAmount)
+                destinationResourceAmount < mineralTerms.destinationInitialAmount))
           )
             reason = "evacuation-incomplete";
-          else if (sourceAmount > 0) reason = "target-stocked";
+          else if (lab.targetEnergy > 0 || lab.targetMineralAmount > 0) reason = "target-stocked";
           else if (flowActive) reason = "evacuation-pending";
           else if (
-            mineralTerms === null
-              ? energyTerms === null ||
-                lab.replacementEnergy < energyTerms.replacementInitialEnergy + energyTerms.amount
-              : destinationResourceAmount <
-                mineralTerms.destinationInitialAmount + mineralTerms.amount
+            (energyAmount > 0 &&
+              (energyTerms === null ||
+                lab.replacementEnergy < energyTerms.replacementInitialEnergy + energyAmount)) ||
+            (mineralAmount > 0 &&
+              (mineralTerms === null ||
+                destinationResourceAmount < mineralTerms.destinationInitialAmount + mineralAmount))
           )
             reason = "evacuation-incomplete";
           else if (
             input.activeLogisticsTargetIds.has(candidate.target.id) ||
-            (mineralTerms === null && input.activeLogisticsTargetIds.has(lab.replacement.id))
+            (energyAmount > 0 && input.activeLogisticsTargetIds.has(lab.replacement.id)) ||
+            (mineralTerms !== null &&
+              input.activeLogisticsTargetIds.has(mineralTerms.destinationId))
           )
             reason = "logistics-active";
           if (reason !== null) {
@@ -2115,8 +2141,6 @@ function labMigrationEvidence(input: {
   const targetEnergy = target === undefined ? null : exactLabEnergy(target);
   if (target === undefined || !target.active || target.cooldown !== 0 || targetEnergy === null)
     return { reason: "target-unavailable", replacement: null };
-  if (targetEnergy > 0 && target.mineralAmount > 0)
-    return { reason: "target-stocked", replacement: null };
   if (
     input.room.controller?.level !== 8 ||
     input.allowance !== 10 ||

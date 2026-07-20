@@ -112,9 +112,12 @@ replacement; removal requires fresh empty/delivered/retired-work and unchanged q
 and safety evidence. Issue #324 permits one zero-energy, single-kind mineral target only when the
 industry-owned view publishes one exact active owned storage with complete aggregate capacity. The
 sole logistics path moves the mineral; removal requires fresh empty/delivered/retired-work and
-unchanged destination, quiescence, cluster, and safety evidence. `StructureRemovalArbiter` alone
-authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension,
-container, tower, link, and lab result reuses the same fixed receipt.
+unchanged destination, quiescence, cluster, and safety evidence. Issue #326 admits both resources in
+one bounded record, atomically publishes distinct energy/replacement-lab and mineral/storage flows,
+and requires both exact destination gains plus complete work retirement before removal.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`. Every extension, container, tower, link, and lab result reuses the same fixed
+receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1353,15 +1356,16 @@ any optional demand batch would exceed the bounded observed graph's node, endpoi
 complete demand batch is omitted before graph admission so optional work cannot displace observed
 survival logistics.
 
-Quiescent lab stock migration also uses that authority. One layouts-owned V12 record projects one
-`optional-growth` edge only while the current industry-owned migration view remains quiescent and
-contains the exact replacement assignment. Energy moves to that replacement lab while both labs'
-ordinary sources and refill sinks are suppressed. One zero-energy, single-kind mineral target may
-instead move to the exact active owned storage published by Industry; its sink shares the storage's
-aggregate-capacity key while the obsolete lab's ordinary source/refill projections are suppressed.
-Loss of quiescence, destination continuity, capacity, or graph admission excludes the persisted flow
-from same-tick agent execution; removal waits for fresh empty/delivered evidence and retired V3
-work.
+Quiescent lab stock migration also uses that authority. One layouts-owned V13 record projects one or
+two `optional-growth` edges only while the current industry-owned migration view remains quiescent
+and contains the exact replacement assignment. Energy moves to that replacement lab while both labs'
+ordinary sources and refill sinks are suppressed. One mineral kind moves to the exact active owned
+storage published by Industry; its sink shares the storage's aggregate-capacity key while the
+obsolete lab's ordinary source/refill projections are suppressed. A mixed target atomically admits
+both distinct flow identities, or neither when the complete bounded batch cannot fit. Loss of
+quiescence, destination continuity, either baseline, capacity, or graph admission excludes the mixed
+projection from same-tick agent execution; removal waits for fresh empty/delivered evidence and all
+V3 work to retire.
 
 ### 12.4 MovementArbiter
 
@@ -1456,7 +1460,7 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V12
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V13
 `layouts` owner. V3 adds the optional source-migration identity, V4 adds one optional source-service
 issuance coordinate, and V5 adds one generic bounded removal receipt. Site `OK` waits for observed
 world change; full and unexpected faults back off; RCL, target, and ownership failures wait for the
@@ -1469,13 +1473,14 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V12 layouts owner; V8 adds
+commitments and bounded receipts stage through the owner-local schema V13 layouts owner; V8 adds
 `link` to the existing removal-receipt discriminator, V9 adds one optional fixed-shape reserve-link
 evacuation, V10 adds `lab` to the fixed receipt discriminator, V11 adds one optional fixed-shape
-lab-energy evacuation, and V12 adds its single-kind mineral/storage variant. Degraded, unknown,
-lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no command.
-Every observed owned layout site enters the existing funded survival-growth build flow, while
-controller risk, recovery, maintenance, and protected reserves retain precedence.
+lab-energy evacuation, V12 adds its single-kind mineral/storage variant, and V13 adds the paired
+energy/mineral variant without changing either predecessor representation. Degraded, unknown, lost,
+stale, denied, or CPU-skipped work preserves prior commitments and authorizes no command. Every
+observed owned layout site enters the existing funded survival-growth build flow, while controller
+risk, recovery, maintenance, and protected reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -1679,9 +1684,17 @@ and safety evidence. Inactive/duplicate/malformed storage, terminal-only capacit
 drift, mixed stock, or graph omission fails closed.
 [ADR 0052](adr/0052-quiescent-lab-mineral-evacuation.md) records the boundary.
 
-Other structure stock evacuation, energy-plus-mineral or active-work-preserving lab handoff,
-defensive migration, terminal-destination migration, general multi-step migration, and creep
-dismantling remain issue #99 and fail closed.
+Issue #326 composes those two destinations for one target containing energy and one mineral kind.
+Layouts owner V13 persists both amounts and baselines in one fixed record. The sole logistics
+projection validates the complete record before admitting two distinct funded flows and rejects the
+whole projection above 64 flows/128 nodes. Independent partial delivery remains resumable, while
+removal requires an empty target, both baseline-plus-amount gains, every flow and source,
+replacement-lab, and storage endpoint retired, and unchanged quiescence, assignment, cluster, and
+safety evidence. [ADR 0053](adr/0053-quiescent-lab-mixed-stock-evacuation.md) records the boundary.
+
+Other structure stock evacuation, active-work-preserving lab handoff, defensive migration,
+terminal-destination migration, general multi-step migration, and creep dismantling remain issue #99
+and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2274,7 +2287,8 @@ Required architecture assertions include:
   empty-target, baseline-plus-amount replacement energy, and retired flow/endpoints; a zero-energy,
   single-kind mineral target instead requires the Industry-published exact active storage, one
   funded mineral flow, aggregate capacity, baseline-plus-amount storage stock, retired work, and
-  unchanged destination evidence;
+  unchanged destination evidence; a target holding both resources atomically admits those two flow
+  forms and requires both exact destination gains plus all flow/endpoint retirement;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;

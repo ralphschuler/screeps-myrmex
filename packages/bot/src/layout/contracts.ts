@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 12 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 13 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -19,6 +19,7 @@ export const MAX_CONSTRUCTION_SITE_RECEIPTS_PER_ROOM = 32 as const;
 export const MAX_LAYOUT_EXTENSION_ENERGY = 200 as const;
 export const MAX_LAYOUT_LAB_ENERGY = 2_000 as const;
 export const MAX_LAYOUT_LAB_MINERAL = 3_000 as const;
+export const MAX_LAYOUT_LAB_EVACUATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_STORAGE_CAPACITY = 1_000_000 as const;
 export const MAX_LAYOUT_STORAGE_RESOURCES = 64 as const;
 export const MAX_LAYOUT_LINK_ENERGY = 800 as const;
@@ -126,7 +127,21 @@ export interface LayoutLabMineralEvacuation {
   readonly sourceId: string;
   readonly startedAt: number;
 }
-export type LayoutLabEvacuation = LayoutLabEnergyEvacuation | LayoutLabMineralEvacuation;
+export interface LayoutLabMixedEvacuation {
+  readonly destinationId: string;
+  readonly destinationInitialAmount: number;
+  readonly energyAmount: number;
+  readonly expiresAt: number;
+  readonly mineralAmount: number;
+  /** Canonical post-removal cluster member retained for safe structure removal. */
+  readonly replacementId: string;
+  readonly replacementInitialEnergy: number;
+  readonly resourceType: string;
+  readonly sourceId: string;
+  readonly startedAt: number;
+}
+export type LayoutLabEvacuation =
+  LayoutLabEnergyEvacuation | LayoutLabMineralEvacuation | LayoutLabMixedEvacuation;
 export interface LayoutLinkEvacuation {
   readonly amount: number;
   readonly expiresAt: number;
@@ -283,6 +298,43 @@ export function layoutLabEvacuationBudgetIssuer(
         ]),
   ].join("/");
   return issuer.length <= 128 ? issuer : null;
+}
+
+export function layoutLabEvacuationFlowIds(
+  roomName: string,
+  evacuation: LayoutLabEvacuation,
+): readonly string[] | null {
+  const ids = labEvacuationIdentities(evacuation).map((identity) =>
+    layoutLabEvacuationFlowId(roomName, identity),
+  );
+  return ids.some((id) => id === null) ? null : (ids as readonly string[]);
+}
+
+export function layoutLabEvacuationBudgetIssuers(
+  roomName: string,
+  evacuation: LayoutLabEvacuation,
+): readonly string[] | null {
+  const issuers = labEvacuationIdentities(evacuation).map((identity) =>
+    layoutLabEvacuationBudgetIssuer(roomName, identity),
+  );
+  return issuers.some((issuer) => issuer === null) ? null : (issuers as readonly string[]);
+}
+
+function labEvacuationIdentities(
+  evacuation: LayoutLabEvacuation,
+): readonly LayoutLabEvacuationIdentity[] {
+  const energy = {
+    replacementId: evacuation.replacementId,
+    sourceId: evacuation.sourceId,
+  } as const;
+  if (!("resourceType" in evacuation)) return [energy];
+  const mineral = {
+    destinationId: evacuation.destinationId,
+    replacementId: evacuation.replacementId,
+    resourceType: evacuation.resourceType,
+    sourceId: evacuation.sourceId,
+  } as const;
+  return "energyAmount" in evacuation ? [energy, mineral] : [mineral];
 }
 
 export function layoutTowerEvacuationFlowId(
@@ -687,7 +739,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV12 {
+export interface LayoutsOwnerV13 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];
