@@ -147,7 +147,9 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   mineral target only when the industry view publishes one exact active owned storage with complete
   aggregate capacity. One funded mineral flow uses the sole logistics path; removal requires fresh
   target emptiness, baseline-plus-amount storage stock, retired work, and unchanged destination,
-  cluster, quiescence, and safety evidence. Other structure types, energy-plus-mineral or
+  cluster, quiescence, and safety evidence. Issue #326 composes those destinations for one target
+  holding both energy and one mineral kind: two distinct funded flows are admitted atomically, and
+  removal waits for both exact gains plus complete flow/endpoint retirement. Other structure types,
   active-work-preserving lab handoff, terminal destinations, general multi-step migration, and creep
   dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed

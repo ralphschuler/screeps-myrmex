@@ -9,6 +9,7 @@ import { assignLabCluster, fingerprintLabLayout } from "../src/industry";
 import {
   layoutExtensionEvacuationBudgetIssuer,
   layoutLabEvacuationBudgetIssuer,
+  layoutLabEvacuationFlowIds,
   layoutLinkEvacuationBudgetIssuer,
   layoutLinkEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
@@ -16,7 +17,10 @@ import {
 } from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
 import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
-import { projectLayoutLabEvacuations } from "../src/logistics/lab-evacuation";
+import {
+  completeExecutableLayoutLabEvacuationFlowIds,
+  projectLayoutLabEvacuations,
+} from "../src/logistics/lab-evacuation";
 import { projectLayoutLinkEvacuations } from "../src/logistics/link-evacuation";
 import {
   currentlyExecutableLogisticsFlowIds,
@@ -789,6 +793,183 @@ describe("logistics runtime adapter", () => {
       sourceAmount: 0,
     });
 
+    const mixedLabs = mineralLabs.map((value) =>
+      value.id === "lab-obsolete"
+        ? {
+            ...value,
+            energy: 500,
+            store: {
+              ...value.store,
+              resources: [
+                { amount: 500, resourceType: "energy" },
+                { amount: 750, resourceType: "XGH2O" },
+              ],
+              usedCapacity: 1_250,
+            },
+          }
+        : value,
+    );
+    const mixedRoom = mineralWorld.rooms[0];
+    if (mixedRoom === undefined) throw new Error("mixed evacuation fixture room missing");
+    const mixedWorld = {
+      ...mineralWorld,
+      rooms: [
+        {
+          ...mixedRoom,
+          ownedLabs: mixedLabs,
+          storedStructures: [
+            ...mixedRoom.storedStructures.filter(({ id }) => !labIds.has(id)),
+            ...mixedLabs.map((value) => ({
+              hits: value.hits,
+              hitsMax: value.hitsMax,
+              id: value.id,
+              ownerUsername: "me",
+              ownership: "owned" as const,
+              pos: value.pos,
+              store: value.store,
+              structureType: "lab",
+              ticksToDecay: null,
+            })),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const mixedTerms = {
+      destinationId: storage.id,
+      destinationInitialAmount: 1_000,
+      energyAmount: 500,
+      expiresAt: 160,
+      mineralAmount: 750,
+      replacementId,
+      replacementInitialEnergy: 250,
+      resourceType: "XGH2O",
+      sourceId: "lab-obsolete",
+      startedAt: 10,
+    } as const;
+    const mixedFlowIds = layoutLabEvacuationFlowIds("W1N1", mixedTerms);
+    if (mixedFlowIds === null) throw new Error("mixed lab flow identities overflowed");
+    const mixedRecord = { ...record, labEvacuation: mixedTerms } as const satisfies LayoutRecord;
+    const mixedProjection = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+      records: [mixedRecord],
+      snapshot: mixedWorld,
+      tick: 11,
+    });
+    expect(mixedProjection.authorizedFlowIds).toEqual(mixedFlowIds);
+    expect([
+      ...completeExecutableLayoutLabEvacuationFlowIds({
+        executableFlowIds: new Set([mixedFlowIds[0] ?? ""]),
+        projectedFlowIds: new Set(mixedFlowIds),
+        records: [mixedRecord],
+      }),
+    ]).toEqual([]);
+    expect([
+      ...completeExecutableLayoutLabEvacuationFlowIds({
+        executableFlowIds: new Set(mixedFlowIds),
+        projectedFlowIds: new Set(mixedFlowIds),
+        records: [mixedRecord],
+      }),
+    ]).toEqual(mixedFlowIds);
+    expect(mixedProjection.budgets).toHaveLength(2);
+    expect(mixedProjection.demands.edges).toEqual([
+      expect.objectContaining({ id: mixedFlowIds[0], maximumAmount: 500 }),
+      expect.objectContaining({ id: mixedFlowIds[1], maximumAmount: 750 }),
+    ]);
+    expect(mixedProjection.demands).toMatchObject({
+      suppressedSinkTargetIds: ["lab-obsolete", replacementId],
+      suppressedSourceTargetIds: ["lab-obsolete", replacementId],
+    });
+
+    const emptiedSourceLabs = mixedLabs.map((value) =>
+      value.id === "lab-obsolete"
+        ? {
+            ...value,
+            energy: 0,
+            mineralAmount: 0,
+            mineralType: null,
+            store: { ...value.store, resources: [], usedCapacity: 0 },
+          }
+        : value,
+    );
+    const emptiedSourceRoom = mixedWorld.rooms[0];
+    if (emptiedSourceRoom === undefined) throw new Error("empty mixed source fixture missing");
+    const emptiedSourceWorld = {
+      ...mixedWorld,
+      rooms: [
+        {
+          ...emptiedSourceRoom,
+          ownedLabs: emptiedSourceLabs,
+          storedStructures: [
+            ...emptiedSourceRoom.storedStructures.filter(({ id }) => !labIds.has(id)),
+            ...emptiedSourceLabs.map((value) => ({
+              hits: value.hits,
+              hitsMax: value.hitsMax,
+              id: value.id,
+              ownerUsername: "me",
+              ownership: "owned" as const,
+              pos: value.pos,
+              store: value.store,
+              structureType: "lab",
+              ticksToDecay: null,
+            })),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+        records: [mixedRecord],
+        snapshot: emptiedSourceWorld,
+        tick: 11,
+      }),
+    ).toMatchObject({
+      authorizedFlowIds: mixedFlowIds,
+      demands: {
+        edges: [
+          expect.objectContaining({ id: mixedFlowIds[0] }),
+          expect.objectContaining({ id: mixedFlowIds[1] }),
+        ],
+        suppressedSinkTargetIds: ["lab-obsolete", replacementId],
+      },
+    });
+    const capacityLostStorage = {
+      ...storage,
+      store: {
+        ...storage.store,
+        freeCapacity: 100,
+        resources: [
+          { amount: 998_900, resourceType: "energy" },
+          { amount: 1_000, resourceType: "XGH2O" },
+        ],
+        usedCapacity: 999_900,
+      },
+    } as const;
+    const capacityRoom = emptiedSourceWorld.rooms[0];
+    if (capacityRoom === undefined) throw new Error("mixed capacity fixture missing");
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+        records: [mixedRecord],
+        snapshot: {
+          ...emptiedSourceWorld,
+          rooms: [
+            {
+              ...capacityRoom,
+              ownedStorages: [capacityLostStorage],
+              storedStructures: capacityRoom.storedStructures.map((value) =>
+                value.id === storage.id ? { ...value, store: capacityLostStorage.store } : value,
+              ),
+            },
+          ],
+        },
+        tick: 11,
+      }).demands.edges,
+    ).toEqual([]);
+
     const empty = {
       authorizedFlowIds: [],
       budgets: [],
@@ -800,6 +981,15 @@ describe("logistics runtime adapter", () => {
         suppressedSourceTargetIds: [],
       },
     };
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+        records: Array.from({ length: 33 }, () => mixedRecord),
+        snapshot: mixedWorld,
+        tick: 11,
+      }),
+    ).toEqual(empty);
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],

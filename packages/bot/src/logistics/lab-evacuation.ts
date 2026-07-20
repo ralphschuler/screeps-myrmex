@@ -3,11 +3,13 @@ import type { LabMigrationRoomView } from "../industry/lab-composition";
 import {
   LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_LAB_ENERGY,
+  MAX_LAYOUT_LAB_EVACUATION_FLOWS,
   MAX_LAYOUT_LAB_MINERAL,
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_RESOURCES,
-  layoutLabEvacuationBudgetIssuer,
-  layoutLabEvacuationFlowId,
+  layoutLabEvacuationBudgetIssuers,
+  layoutLabEvacuationFlowIds,
+  type LayoutLabEvacuation,
   type LayoutRecord,
 } from "../layout";
 import type { OwnedLabSnapshot, OwnedStorageSnapshot, WorldSnapshot } from "../world/snapshot";
@@ -18,6 +20,25 @@ export interface LayoutLabEvacuationProjection {
   readonly authorizedFlowIds: readonly string[];
   readonly budgets: readonly BudgetRequest[];
   readonly demands: LogisticsResourceDemandProjection;
+}
+
+/** Keeps each currently projected mixed pair atomic when logistics can execute only a prefix. */
+export function completeExecutableLayoutLabEvacuationFlowIds(input: {
+  readonly executableFlowIds: ReadonlySet<string>;
+  readonly projectedFlowIds: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+}): ReadonlySet<string> {
+  const complete = new Set<string>();
+  for (const record of input.records) {
+    if (record.labEvacuation === undefined) continue;
+    const flowIds = layoutLabEvacuationFlowIds(record.roomName, record.labEvacuation);
+    if (flowIds === null) continue;
+    const projected = flowIds.filter((flowId) => input.projectedFlowIds.has(flowId));
+    if (projected.length > 0 && projected.every((flowId) => input.executableFlowIds.has(flowId))) {
+      for (const flowId of projected) complete.add(flowId);
+    }
+  }
+  return complete;
 }
 
 /** Projects currently quiescent layout-owned lab evacuation terms into the sole logistics graph. */
@@ -47,22 +68,9 @@ export function projectLayoutLabEvacuations(input: {
     const evacuation = record.labEvacuation;
     if (
       evacuation === undefined ||
-      evacuation.amount <= 0 ||
       evacuation.expiresAt - evacuation.startedAt !== LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS ||
       input.tick <= evacuation.startedAt ||
       input.tick >= evacuation.expiresAt
-    )
-      continue;
-    const mineralEvacuation = "resourceType" in evacuation;
-    if (
-      mineralEvacuation
-        ? evacuation.amount > MAX_LAYOUT_LAB_MINERAL ||
-          evacuation.resourceType === "energy" ||
-          evacuation.destinationInitialAmount < 0 ||
-          evacuation.destinationInitialAmount + evacuation.amount > MAX_LAYOUT_STORAGE_CAPACITY
-        : evacuation.amount > MAX_LAYOUT_LAB_ENERGY ||
-          evacuation.replacementInitialEnergy < 0 ||
-          evacuation.replacementInitialEnergy + evacuation.amount > MAX_LAYOUT_LAB_ENERGY
     )
       continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
@@ -90,131 +98,222 @@ export function projectLayoutLabEvacuations(input: {
     const replacementEnergy = exactLabEnergy(replacement);
     if (sourceEnergy === null || replacementEnergy === null) continue;
 
-    let resourceType: string;
-    let sourceAmount: number;
-    let sinkId: string;
-    let sinkPosition: OwnedLabSnapshot["pos"];
-    let sinkFreeCapacity: number;
-    let capacityReservationKey: string;
-    if (mineralEvacuation) {
+    const shape = labEvacuationShape(evacuation);
+    if (shape === null) continue;
+    const remainingEnergy = Math.max(
+      sourceEnergy,
+      shape.replacementInitialEnergy + shape.energyAmount - replacementEnergy,
+    );
+    if (
+      sourceEnergy > shape.energyAmount ||
+      (shape.energyAmount === 0 && sourceEnergy !== 0) ||
+      (shape.energyAmount > 0 &&
+        (replacementEnergy < shape.replacementInitialEnergy ||
+          replacementEnergy + remainingEnergy > MAX_LAYOUT_LAB_ENERGY)) ||
+      source.mineralAmount > shape.mineralAmount ||
+      (shape.mineralAmount === 0 && (source.mineralAmount !== 0 || source.mineralType !== null)) ||
+      (shape.mineralAmount > 0 &&
+        source.mineralAmount > 0 &&
+        source.mineralType !== shape.resourceType)
+    )
+      continue;
+
+    let destination: OwnedStorageSnapshot | null = null;
+    let destinationFreeCapacity = 0;
+    let destinationResourceAmount = 0;
+    if (shape.mineralAmount > 0) {
       const activeStorages = (room.ownedStorages ?? []).filter(({ active }) => active);
-      const destination = activeStorages.find(({ id }) => id === evacuation.destinationId);
-      const destinationStore = destination === undefined ? null : exactStorage(destination);
-      const destinationResourceAmount =
-        destinationStore?.resources.get(evacuation.resourceType) ?? 0;
+      destination = activeStorages.find(({ id }) => id === shape.destinationId) ?? null;
+      const destinationStore = destination === null ? null : exactStorage(destination);
+      destinationResourceAmount = destinationStore?.resources.get(shape.resourceType ?? "") ?? 0;
+      const remainingMineral = Math.max(
+        source.mineralAmount,
+        shape.destinationInitialAmount + shape.mineralAmount - destinationResourceAmount,
+      );
       if (
         activeStorages.length !== 1 ||
-        destination === undefined ||
-        migration.evacuationStorageId !== evacuation.destinationId ||
+        destination === null ||
+        migration.evacuationStorageId !== shape.destinationId ||
         destinationStore === null ||
-        sourceEnergy !== 0 ||
-        source.mineralType !== evacuation.resourceType ||
-        source.mineralAmount <= 0 ||
-        source.mineralAmount > evacuation.amount ||
-        destinationResourceAmount < evacuation.destinationInitialAmount ||
-        destinationStore.freeCapacity < source.mineralAmount
+        destinationResourceAmount < shape.destinationInitialAmount ||
+        destinationStore.freeCapacity < remainingMineral
       )
         continue;
-      resourceType = evacuation.resourceType;
-      sourceAmount = source.mineralAmount;
-      sinkId = destination.id;
-      sinkPosition = destination.pos;
-      sinkFreeCapacity = destinationStore.freeCapacity;
-      capacityReservationKey = aggregateStoreCapacityReservationKey(room.name, destination.id);
-    } else {
-      if (
-        source.mineralAmount !== 0 ||
-        source.mineralType !== null ||
-        sourceEnergy > evacuation.amount ||
-        replacementEnergy < evacuation.replacementInitialEnergy ||
-        replacementEnergy + sourceEnergy > MAX_LAYOUT_LAB_ENERGY
-      )
-        continue;
-      resourceType = "energy";
-      sourceAmount = sourceEnergy;
-      sinkId = replacement.id;
-      sinkPosition = replacement.pos;
-      sinkFreeCapacity = MAX_LAYOUT_LAB_ENERGY - replacementEnergy;
-      capacityReservationKey = `lab:${room.name}:${replacement.id}:energy-capacity`;
+      destinationFreeCapacity = destinationStore.freeCapacity;
     }
-    const flowId = layoutLabEvacuationFlowId(room.name, evacuation);
-    const issuer = layoutLabEvacuationBudgetIssuer(room.name, evacuation);
-    if (flowId === null || issuer === null) continue;
-    const sourceNodeId = `${flowId}:source:${resourceType}`;
-    const sinkNodeId = `${flowId}:sink:${resourceType}`;
-    nodes.push(
-      {
+
+    const flowIds = layoutLabEvacuationFlowIds(room.name, evacuation);
+    const issuers = layoutLabEvacuationBudgetIssuers(room.name, evacuation);
+    const expectedFlows = Number(shape.energyAmount > 0) + Number(shape.mineralAmount > 0);
+    if (
+      flowIds === null ||
+      issuers === null ||
+      flowIds.length !== expectedFlows ||
+      issuers.length !== expectedFlows ||
+      new Set(flowIds).size !== flowIds.length ||
+      new Set(issuers).size !== issuers.length
+    )
+      continue;
+
+    const terms: {
+      readonly committedAmount: number;
+      readonly flowId: string;
+      readonly issuer: string;
+      readonly resourceType: string;
+      readonly sinkFreeCapacity: number;
+      readonly sinkId: string;
+      readonly sinkPosition: OwnedLabSnapshot["pos"];
+      readonly sourceAmount: number;
+      readonly workRemaining: boolean;
+      readonly capacityReservationKey: string;
+    }[] = [];
+    let identityIndex = 0;
+    if (shape.energyAmount > 0) {
+      const flowId = flowIds[identityIndex];
+      const issuer = issuers[identityIndex];
+      if (flowId === undefined || issuer === undefined) continue;
+      terms.push({
+        capacityReservationKey: `lab:${room.name}:${replacement.id}:energy-capacity`,
+        committedAmount: shape.energyAmount,
+        flowId,
+        issuer,
+        resourceType: "energy",
+        sinkFreeCapacity: MAX_LAYOUT_LAB_ENERGY - replacementEnergy,
+        sinkId: replacement.id,
+        sinkPosition: replacement.pos,
+        sourceAmount: sourceEnergy,
+        workRemaining:
+          sourceEnergy > 0 ||
+          replacementEnergy < shape.replacementInitialEnergy + shape.energyAmount,
+      });
+      identityIndex += 1;
+    }
+    if (shape.mineralAmount > 0) {
+      const flowId = flowIds[identityIndex];
+      const issuer = issuers[identityIndex];
+      if (
+        flowId === undefined ||
+        issuer === undefined ||
+        destination === null ||
+        shape.resourceType === null
+      )
+        continue;
+      terms.push({
+        capacityReservationKey: aggregateStoreCapacityReservationKey(room.name, destination.id),
+        committedAmount: shape.mineralAmount,
+        flowId,
+        issuer,
+        resourceType: shape.resourceType,
+        sinkFreeCapacity: destinationFreeCapacity,
+        sinkId: destination.id,
+        sinkPosition: destination.pos,
+        sourceAmount: source.mineralAmount,
+        workRemaining:
+          source.mineralAmount > 0 ||
+          destinationResourceAmount < shape.destinationInitialAmount + shape.mineralAmount,
+      });
+    }
+    const activeTerms = terms.filter(({ workRemaining }) => workRemaining);
+    for (const term of activeTerms) {
+      const capacityReservationKey =
+        term.resourceType === "energy"
+          ? `lab:${room.name}:${replacement.id}:energy-capacity`
+          : term.capacityReservationKey;
+      const sourceNodeId = `${term.flowId}:source:${term.resourceType}`;
+      const sinkNodeId = `${term.flowId}:sink:${term.resourceType}`;
+      nodes.push(
+        {
+          colonyId: room.name,
+          freeCapacity: 0,
+          id: sourceNodeId,
+          kind: "source",
+          observedAmount: term.sourceAmount,
+          observedAt: input.tick,
+          position: source.pos,
+          priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
+          resourceType: term.resourceType,
+        },
+        {
+          capacityReservationKey,
+          colonyId: room.name,
+          freeCapacity: term.sinkFreeCapacity,
+          id: sinkNodeId,
+          kind: "sink",
+          observedAmount: 0,
+          observedAt: input.tick,
+          position: term.sinkPosition,
+          priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
+          resourceType: term.resourceType,
+        },
+      );
+      endpoints.push(
+        {
+          acquireAction: "withdraw",
+          freeCapacity: 0,
+          nodeId: sourceNodeId,
+          observedAmount: term.sourceAmount,
+          observedAt: input.tick,
+          position: source.pos,
+          resourceType: term.resourceType,
+          targetId: source.id,
+        },
+        {
+          freeCapacity: term.sinkFreeCapacity,
+          nodeId: sinkNodeId,
+          observedAmount: 0,
+          observedAt: input.tick,
+          position: term.sinkPosition,
+          resourceType: term.resourceType,
+          targetId: term.sinkId,
+        },
+      );
+      edges.push({
+        budgetBinding: { category: "optional-growth", issuer: term.issuer },
+        id: term.flowId,
+        maximumAmount: term.committedAmount,
+        roundTripTicks: Math.max(
+          1,
+          Math.max(
+            Math.abs(source.pos.x - term.sinkPosition.x),
+            Math.abs(source.pos.y - term.sinkPosition.y),
+          ) * 2,
+        ),
+        sinkNodeId,
+        sourceNodeId,
+      });
+      authorizedFlowIds.push(term.flowId);
+      budgets.push({
         colonyId: room.name,
-        freeCapacity: 0,
-        id: sourceNodeId,
-        kind: "source",
-        observedAmount: sourceAmount,
-        observedAt: input.tick,
-        position: source.pos,
-        priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
-        resourceType,
-      },
-      {
-        capacityReservationKey,
-        colonyId: room.name,
-        freeCapacity: sinkFreeCapacity,
-        id: sinkNodeId,
-        kind: "sink",
-        observedAmount: 0,
-        observedAt: input.tick,
-        position: sinkPosition,
-        priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
-        resourceType,
-      },
-    );
-    endpoints.push(
-      {
-        acquireAction: "withdraw",
-        freeCapacity: 0,
-        nodeId: sourceNodeId,
-        observedAmount: sourceAmount,
-        observedAt: input.tick,
-        position: source.pos,
-        resourceType,
-        targetId: source.id,
-      },
-      {
-        freeCapacity: sinkFreeCapacity,
-        nodeId: sinkNodeId,
-        observedAmount: 0,
-        observedAt: input.tick,
-        position: sinkPosition,
-        resourceType,
-        targetId: sinkId,
-      },
-    );
-    edges.push({
-      budgetBinding: { category: "optional-growth", issuer },
-      id: flowId,
-      maximumAmount: evacuation.amount,
-      roundTripTicks: Math.max(
-        1,
-        Math.max(Math.abs(source.pos.x - sinkPosition.x), Math.abs(source.pos.y - sinkPosition.y)) *
-          2,
-      ),
-      sinkNodeId,
-      sourceNodeId,
-    });
-    authorizedFlowIds.push(flowId);
-    suppressedSinkTargetIds.push(source.id, ...(mineralEvacuation ? [] : [replacement.id]));
-    suppressedSourceTargetIds.push(source.id, ...(mineralEvacuation ? [] : [replacement.id]));
-    budgets.push({
-      colonyId: room.name,
-      category: "optional-growth",
-      cpu: { desired: 100, minimum: 0 },
-      energy: null,
-      expiresAt: evacuation.expiresAt,
-      issuer,
-      revision: renewedRevision(input.existingBudgets, room.name, issuer, evacuation.startedAt + 1),
-      spawn: null,
-    });
+        category: "optional-growth",
+        cpu: { desired: 100, minimum: 0 },
+        energy: null,
+        expiresAt: evacuation.expiresAt,
+        issuer: term.issuer,
+        revision: renewedRevision(
+          input.existingBudgets,
+          room.name,
+          term.issuer,
+          evacuation.startedAt + 1,
+        ),
+        spawn: null,
+      });
+    }
+    if (activeTerms.length > 0) {
+      suppressedSinkTargetIds.push(source.id, ...(shape.energyAmount > 0 ? [replacement.id] : []));
+      suppressedSourceTargetIds.push(
+        source.id,
+        ...(shape.energyAmount > 0 ? [replacement.id] : []),
+      );
+    }
   }
 
+  if (
+    edges.length > MAX_LAYOUT_LAB_EVACUATION_FLOWS ||
+    budgets.length > MAX_LAYOUT_LAB_EVACUATION_FLOWS ||
+    nodes.length > MAX_LAYOUT_LAB_EVACUATION_FLOWS * 2 ||
+    endpoints.length > MAX_LAYOUT_LAB_EVACUATION_FLOWS * 2
+  )
+    return emptyProjection();
   return freeze({
     authorizedFlowIds,
     budgets,
@@ -226,6 +325,58 @@ export function projectLayoutLabEvacuations(input: {
       suppressedSourceTargetIds,
     },
   });
+}
+
+function labEvacuationShape(evacuation: LayoutLabEvacuation): {
+  readonly destinationId: string | null;
+  readonly destinationInitialAmount: number;
+  readonly energyAmount: number;
+  readonly mineralAmount: number;
+  readonly replacementInitialEnergy: number;
+  readonly resourceType: string | null;
+} | null {
+  const mixed = "energyAmount" in evacuation;
+  const mineral = "resourceType" in evacuation;
+  const energyAmount = mixed ? evacuation.energyAmount : mineral ? 0 : evacuation.amount;
+  const mineralAmount = mixed ? evacuation.mineralAmount : mineral ? evacuation.amount : 0;
+  const replacementInitialEnergy =
+    "replacementInitialEnergy" in evacuation ? evacuation.replacementInitialEnergy : 0;
+  const destinationId = mineral ? evacuation.destinationId : null;
+  const destinationInitialAmount = mineral ? evacuation.destinationInitialAmount : 0;
+  const resourceType = mineral ? evacuation.resourceType : null;
+  if (
+    !Number.isSafeInteger(energyAmount) ||
+    energyAmount < 0 ||
+    energyAmount > MAX_LAYOUT_LAB_ENERGY ||
+    !Number.isSafeInteger(mineralAmount) ||
+    mineralAmount < 0 ||
+    mineralAmount > MAX_LAYOUT_LAB_MINERAL ||
+    energyAmount + mineralAmount <= 0 ||
+    !Number.isSafeInteger(replacementInitialEnergy) ||
+    replacementInitialEnergy < 0 ||
+    replacementInitialEnergy + energyAmount > MAX_LAYOUT_LAB_ENERGY ||
+    (mineralAmount > 0 &&
+      (resourceType === null ||
+        resourceType === "energy" ||
+        resourceType.length === 0 ||
+        resourceType.length > 64 ||
+        resourceType !== resourceType.trim() ||
+        destinationId === null ||
+        destinationId === evacuation.sourceId ||
+        destinationId === evacuation.replacementId ||
+        !Number.isSafeInteger(destinationInitialAmount) ||
+        destinationInitialAmount < 0 ||
+        destinationInitialAmount + mineralAmount > MAX_LAYOUT_STORAGE_CAPACITY))
+  )
+    return null;
+  return {
+    destinationId,
+    destinationInitialAmount,
+    energyAmount,
+    mineralAmount,
+    replacementInitialEnergy,
+    resourceType,
+  };
 }
 
 function exactLabEnergy(lab: OwnedLabSnapshot): number | null {
