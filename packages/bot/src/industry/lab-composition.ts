@@ -7,6 +7,7 @@ import {
 import type {
   CreepSnapshot,
   OwnedLabSnapshot,
+  PositionSnapshot,
   RoomSnapshot,
   WorldSnapshot,
 } from "../world/snapshot";
@@ -19,6 +20,7 @@ import {
 import {
   reconcileLabPolicy,
   type BoostManifest,
+  type LabAssignmentHandoff,
   type LabPolicyBodyPartObservation,
   type LabPolicyCommitment,
   type LabPolicyProjection,
@@ -45,9 +47,28 @@ import {
 export type LabMigrationActivity =
   "commitment" | "demand-endpoint" | "intent" | "pending-attempt" | "staging-demand";
 
+export interface CommittedLabLayout {
+  readonly labPositions: readonly PositionSnapshot[];
+  readonly layoutFingerprint: string;
+  readonly roomName: string;
+}
+
+interface DerivedLabAssignmentHandoff extends LabAssignmentHandoff {
+  readonly blocked?: boolean;
+  readonly layoutFingerprint: string | null;
+}
+
+export interface LabAssignmentHandoffView extends DerivedLabAssignmentHandoff {
+  readonly objectiveId: string;
+  readonly objectiveRevision: number;
+  readonly status: "blocked" | "pending" | "ready";
+}
+
 export interface LabMigrationRoomView {
   readonly activity: readonly LabMigrationActivity[];
+  /** Current assignment over every observed lab, retained for independent migration validation. */
   readonly assignment: LabClusterAssignment | null;
+  readonly assignmentHandoff?: LabAssignmentHandoffView | null;
   /** Exact active general-purpose destination selected by the industry observation boundary. */
   readonly evacuationStorageId: string | null;
   readonly limits: LabClusterLimits;
@@ -89,6 +110,7 @@ export interface LabTelemetry {
 
 export interface ComposeLabRuntimeInput {
   readonly boostManifests?: readonly BoostManifest[];
+  readonly committedLabLayouts?: readonly CommittedLabLayout[];
   readonly fundedBudgetIds: ReadonlySet<string>;
   readonly pendingAttempts: readonly PendingLabAttempt[];
   readonly policy: RuntimeConfig["policy"]["industry"];
@@ -122,22 +144,49 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     reactions: input.reactions,
   });
   const catalog = catalogResult.catalog;
-  const assignments = input.snapshot.ownedRooms.flatMap((room) => {
+  const limits = labClusterLimits(input.policy.maximumLabsPerRoom);
+  const currentAssignments = input.snapshot.ownedRooms.flatMap((room) => {
     const result = assignLabCluster({
       labs: room.ownedLabs ?? [],
       layoutFingerprint: fingerprintLabLayout(room.name, room.ownedLabs ?? []),
-      limits: labClusterLimits(input.policy.maximumLabsPerRoom),
+      limits,
       roomName: room.name,
     });
     return result.assignment === null ? [] : [result.assignment];
   });
+  const committedLabLayouts = input.committedLabLayouts ?? [];
+  const eligibleAssignmentHandoffs = deriveAssignmentHandoffs({
+    assignments: currentAssignments,
+    layouts: committedLabLayouts,
+    limits,
+    previousCommitments: input.previousCommitments,
+    rooms: input.snapshot.ownedRooms,
+  }).filter((handoff) =>
+    pendingAttemptsAllowHandoff(handoff, input.pendingAttempts, input.previousCommitments),
+  );
+  const assignmentHandoffs = freeze(
+    [
+      ...eligibleAssignmentHandoffs,
+      ...deriveAssignmentHandoffHolds({
+        assignments: currentAssignments,
+        eligibleHandoffs: eligibleAssignmentHandoffs,
+        layouts: committedLabLayouts,
+        limits,
+        previousCommitments: input.previousCommitments,
+        rooms: input.snapshot.ownedRooms,
+      }),
+    ].sort((left, right) => left.assignment.roomName.localeCompare(right.assignment.roomName)),
+  );
   const creepFingerprints = new Map(
     input.snapshot.ownedRooms.flatMap((room) =>
       room.ownedCreeps.map((creep) => [creep.id, fingerprintCreepSnapshot(creep)] as const),
     ),
   );
   const rooms = input.snapshot.ownedRooms.flatMap((room): readonly LabPolicyRoomObservation[] => {
-    const assignment = assignments.find(({ roomName }) => roomName === room.name) ?? null;
+    const assignment = currentAssignments.find(({ roomName }) => roomName === room.name) ?? null;
+    const assignmentHandoff = assignmentHandoffs.find(
+      ({ assignment: value }) => value.roomName === room.name,
+    );
     const endpoint = [...(room.ownedStorages ?? []), ...(room.ownedTerminals ?? [])].sort(
       (left, right) => left.id.localeCompare(right.id),
     )[0];
@@ -145,6 +194,7 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     return [
       {
         assignment,
+        ...(assignmentHandoff === undefined ? {} : { assignmentHandoff }),
         catalog,
         colonyId: room.name,
         creeps: room.ownedCreeps.map((creep) => ({
@@ -183,7 +233,12 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     stagingDispositions: [],
     tick: input.snapshot.observation.tick,
   });
-  const demandParts = assignments.map((assignment) =>
+  const firstAssignments = effectiveAssignments(
+    currentAssignments,
+    assignmentHandoffs,
+    first.commitments,
+  );
+  const demandParts = firstAssignments.map((assignment) =>
     projectLabResourceDemands({
       assignment,
       demands: first.demands.filter(({ colonyId }) => colonyId === assignment.roomName),
@@ -207,6 +262,11 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     stagingDispositions: resourceDemands.dispositions,
     tick: input.snapshot.observation.tick,
   });
+  const assignments = effectiveAssignments(
+    currentAssignments,
+    assignmentHandoffs,
+    policy.commitments,
+  );
   const settlements = reconcilePendingLabAttempts({
     assignments,
     commitments: input.previousCommitments,
@@ -214,14 +274,26 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     pendingAttempts: input.pendingAttempts,
     snapshot: input.snapshot,
   });
+  const pendingHandoffKeys = pendingAssignmentHandoffKeys(
+    input.previousCommitments,
+    policy.commitments,
+    assignmentHandoffs,
+  );
   const intents = arbitrateLabCommands({
     assignments,
-    commitments: policy.commitments,
+    commitments: policy.commitments.filter(
+      (commitment) => !pendingHandoffKeys.has(commitmentKey(commitment)),
+    ),
     creepFingerprints,
     dispositions: policy.dispositions,
     pendingAttempts: input.pendingAttempts,
     snapshot: input.snapshot,
     snapshotRevision: input.snapshotRevision,
+  });
+  const handoffViews = projectAssignmentHandoffViews({
+    handoffs: assignmentHandoffs,
+    previousCommitments: input.previousCommitments,
+    projection: policy,
   });
   const migrationRooms = input.snapshot.ownedRooms.map((room): LabMigrationRoomView => {
     const activity: LabMigrationActivity[] = [];
@@ -238,9 +310,11 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     activity.sort();
     return {
       activity: freeze(activity),
-      assignment: assignments.find(({ roomName }) => roomName === room.name) ?? null,
+      assignment: currentAssignments.find(({ roomName }) => roomName === room.name) ?? null,
+      assignmentHandoff:
+        handoffViews.find(({ assignment }) => assignment.roomName === room.name) ?? null,
       evacuationStorageId: activeStorages.length === 1 ? (activeStorages[0]?.id ?? null) : null,
-      limits: labClusterLimits(input.policy.maximumLabsPerRoom),
+      limits,
       observedAt: room.observedAt,
       quiescent: activity.length === 0,
       roomName: room.name,
@@ -357,6 +431,360 @@ export function projectLabTelemetry(
     retries: projection.settlements.filter(({ status }) => status === "retry").length,
     settledAmount: projection.settlements.reduce((total, value) => total + value.settledAmount, 0),
   });
+}
+
+function deriveAssignmentHandoffs(input: {
+  readonly assignments: readonly LabClusterAssignment[];
+  readonly layouts: readonly CommittedLabLayout[];
+  readonly limits: LabClusterLimits;
+  readonly previousCommitments: readonly LabPolicyCommitment[];
+  readonly rooms: readonly RoomSnapshot[];
+}): readonly DerivedLabAssignmentHandoff[] {
+  if (
+    input.assignments.length > LAB_COMPOSITION_HANDOFF_CAPS.maximumRooms ||
+    input.layouts.length > LAB_COMPOSITION_HANDOFF_CAPS.maximumLayouts ||
+    input.previousCommitments.length > LAB_COMPOSITION_HANDOFF_CAPS.maximumCommitments ||
+    input.limits.maximumLabsScanned !== LAB_COMPOSITION_HANDOFF_CAPS.rcl8LabAllowance
+  )
+    return freeze([]);
+  const layouts = [...input.layouts].sort((left, right) =>
+    left.roomName.localeCompare(right.roomName),
+  );
+  if (new Set(layouts.map(({ roomName }) => roomName)).size !== layouts.length) return freeze([]);
+  const result: DerivedLabAssignmentHandoff[] = [];
+  for (const layout of layouts) {
+    const room = input.rooms.find(({ name }) => name === layout.roomName);
+    const current = input.assignments.find(({ roomName }) => roomName === layout.roomName);
+    const labs = room?.ownedLabs ?? [];
+    if (
+      room === undefined ||
+      current === undefined ||
+      layout.labPositions.length !== LAB_COMPOSITION_HANDOFF_CAPS.rcl8LabAllowance ||
+      labs.length !== LAB_COMPOSITION_HANDOFF_CAPS.rcl8LabAllowance ||
+      !validIdentity(layout.layoutFingerprint, 128) ||
+      !validCommittedPositions(layout) ||
+      new Set(labs.map(({ id }) => id)).size !== labs.length
+    )
+      continue;
+    const positionKeys = new Set(layout.labPositions.map(positionKey));
+    const retained = labs
+      .filter(({ pos }) => positionKeys.has(positionKey(pos)))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    const external = labs.filter(({ pos }) => !positionKeys.has(positionKey(pos)));
+    const target = external[0];
+    if (
+      retained.length !== LAB_COMPOSITION_HANDOFF_CAPS.rcl8LabAllowance - 1 ||
+      external.length !== 1 ||
+      target === undefined ||
+      retained.some(({ active }) => !active)
+    )
+      continue;
+    const postRemoval = assignLabCluster({
+      labs: retained,
+      layoutFingerprint: fingerprintLabLayout(layout.roomName, retained),
+      limits: input.limits,
+      roomName: layout.roomName,
+    }).assignment;
+    if (
+      postRemoval === null ||
+      postRemoval.fingerprint === current.fingerprint ||
+      !sameAssignmentRoles(current, postRemoval) ||
+      assignmentIds(postRemoval).has(target.id) ||
+      (!emptyHandoffTarget(target) &&
+        !input.previousCommitments.some(
+          (commitment) =>
+            commitment.kind === "reaction" &&
+            commitment.colonyId === layout.roomName &&
+            commitment.assignmentFingerprint === postRemoval.fingerprint,
+        ))
+    )
+      continue;
+    result.push(
+      freeze({
+        assignment: postRemoval,
+        blocked: false,
+        fromFingerprint: current.fingerprint,
+        layoutFingerprint: layout.layoutFingerprint,
+        targetLabId: target.id,
+      }),
+    );
+  }
+  return freeze(result);
+}
+
+function deriveAssignmentHandoffHolds(input: {
+  readonly assignments: readonly LabClusterAssignment[];
+  readonly eligibleHandoffs: readonly DerivedLabAssignmentHandoff[];
+  readonly layouts: readonly CommittedLabLayout[];
+  readonly limits: LabClusterLimits;
+  readonly previousCommitments: readonly LabPolicyCommitment[];
+  readonly rooms: readonly RoomSnapshot[];
+}): readonly DerivedLabAssignmentHandoff[] {
+  if (
+    input.assignments.length > LAB_COMPOSITION_HANDOFF_CAPS.maximumRooms ||
+    input.eligibleHandoffs.length > LAB_COMPOSITION_HANDOFF_CAPS.maximumRooms ||
+    input.layouts.length > LAB_COMPOSITION_HANDOFF_CAPS.maximumLayouts ||
+    input.previousCommitments.length > LAB_COMPOSITION_HANDOFF_CAPS.maximumCommitments ||
+    input.limits.maximumLabsScanned !== LAB_COMPOSITION_HANDOFF_CAPS.rcl8LabAllowance
+  )
+    return freeze([]);
+  const result: DerivedLabAssignmentHandoff[] = [];
+  for (const current of input.assignments) {
+    if (input.eligibleHandoffs.some(({ assignment }) => assignment.roomName === current.roomName))
+      continue;
+    const room = input.rooms.find(({ name }) => name === current.roomName);
+    const labs = room?.ownedLabs ?? [];
+    const previous = input.previousCommitments.filter(
+      (commitment) =>
+        commitment.kind === "reaction" &&
+        commitment.colonyId === current.roomName &&
+        commitment.assignmentFingerprint !== current.fingerprint,
+    );
+    const commitment = previous[0];
+    if (
+      room === undefined ||
+      labs.length !== LAB_COMPOSITION_HANDOFF_CAPS.rcl8LabAllowance ||
+      new Set(labs.map(({ id }) => id)).size !== labs.length ||
+      previous.length !== 1 ||
+      commitment === undefined
+    )
+      continue;
+    const candidates = [...labs]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .flatMap((target): readonly { assignment: LabClusterAssignment; targetLabId: string }[] => {
+        const retained = labs.filter(({ id }) => id !== target.id);
+        const assignment = assignLabCluster({
+          labs: retained,
+          layoutFingerprint: fingerprintLabLayout(current.roomName, retained),
+          limits: input.limits,
+          roomName: current.roomName,
+        }).assignment;
+        return assignment !== null &&
+          assignment.fingerprint === commitment.assignmentFingerprint &&
+          sameAssignmentRoles(current, assignment) &&
+          !assignmentIds(assignment).has(target.id)
+          ? [{ assignment, targetLabId: target.id }]
+          : [];
+      });
+    const candidate = candidates[0];
+    if (candidates.length !== 1 || candidate === undefined) continue;
+    const layouts = input.layouts.filter(({ roomName }) => roomName === current.roomName);
+    const layout = layouts[0];
+    result.push(
+      freeze({
+        assignment: candidate.assignment,
+        blocked: true,
+        fromFingerprint: current.fingerprint,
+        layoutFingerprint:
+          layouts.length === 1 &&
+          layout !== undefined &&
+          validIdentity(layout.layoutFingerprint, 128)
+            ? layout.layoutFingerprint
+            : null,
+        targetLabId: candidate.targetLabId,
+      }),
+    );
+  }
+  return freeze(result);
+}
+
+const LAB_COMPOSITION_HANDOFF_CAPS = Object.freeze({
+  maximumCommitments: 64,
+  maximumLayouts: 64,
+  maximumRooms: 8,
+  rcl8LabAllowance: 10,
+} as const);
+
+function pendingAttemptsAllowHandoff(
+  handoff: DerivedLabAssignmentHandoff,
+  attempts: readonly PendingLabAttempt[],
+  commitments: readonly LabPolicyCommitment[],
+): boolean {
+  if (attempts.length > 64) return false;
+  const roomAttempts = attempts.filter(({ roomName }) => roomName === handoff.assignment.roomName);
+  if (roomAttempts.length === 0) return true;
+  const rebound = commitments.filter(
+    (commitment) =>
+      commitment.kind === "reaction" &&
+      commitment.colonyId === handoff.assignment.roomName &&
+      commitment.assignmentFingerprint === handoff.assignment.fingerprint,
+  );
+  const commitment = rebound[0];
+  return (
+    rebound.length === 1 &&
+    commitment !== undefined &&
+    roomAttempts.every(
+      (attempt) =>
+        attempt.assignmentFingerprint === handoff.assignment.fingerprint &&
+        attempt.objectiveId === commitment.objectiveId &&
+        attempt.objectiveRevision === commitment.objectiveRevision &&
+        attempt.commitmentFingerprint === commitment.objectiveFingerprint &&
+        attempt.catalogFingerprint === commitment.catalogFingerprint,
+    )
+  );
+}
+
+function validCommittedPositions(layout: CommittedLabLayout): boolean {
+  const keys = new Set<string>();
+  for (const position of layout.labPositions) {
+    if (
+      position.roomName !== layout.roomName ||
+      !Number.isSafeInteger(position.x) ||
+      !Number.isSafeInteger(position.y) ||
+      position.x < 0 ||
+      position.x > 49 ||
+      position.y < 0 ||
+      position.y > 49
+    )
+      return false;
+    keys.add(positionKey(position));
+  }
+  return keys.size === layout.labPositions.length;
+}
+
+function emptyHandoffTarget(lab: OwnedLabSnapshot): boolean {
+  return (
+    lab.active &&
+    lab.cooldown === 0 &&
+    lab.energyCapacity === 2_000 &&
+    lab.mineralCapacity === 3_000 &&
+    lab.energy === 0 &&
+    lab.mineralAmount === 0 &&
+    lab.mineralType === null &&
+    lab.store.usedCapacity === 0 &&
+    lab.store.resources.length === 0
+  );
+}
+
+function sameAssignmentRoles(left: LabClusterAssignment, right: LabClusterAssignment): boolean {
+  return (
+    sameStrings(left.reagentLabIds, right.reagentLabIds) &&
+    sameStrings(left.productLabIds, right.productLabIds) &&
+    sameStrings(left.boostLabIds, right.boostLabIds)
+  );
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function assignmentIds(assignment: LabClusterAssignment): ReadonlySet<string> {
+  return new Set([
+    ...assignment.reagentLabIds,
+    ...assignment.productLabIds,
+    ...assignment.boostLabIds,
+  ]);
+}
+
+function positionKey(position: PositionSnapshot): string {
+  return `${position.roomName}:${String(position.x)}:${String(position.y)}`;
+}
+
+function effectiveAssignments(
+  current: readonly LabClusterAssignment[],
+  handoffs: readonly DerivedLabAssignmentHandoff[],
+  commitments: readonly LabPolicyCommitment[],
+): readonly LabClusterAssignment[] {
+  return freeze(
+    current.map((assignment) => {
+      const handoff = handoffs.find(
+        ({ assignment: value }) => value.roomName === assignment.roomName,
+      );
+      if (handoff === undefined) return assignment;
+      const rebound = commitments.filter(
+        (commitment) =>
+          commitment.colonyId === assignment.roomName &&
+          commitment.kind === "reaction" &&
+          commitment.assignmentFingerprint === handoff.assignment.fingerprint,
+      );
+      return rebound.length === 1 ? handoff.assignment : assignment;
+    }),
+  );
+}
+
+function pendingAssignmentHandoffKeys(
+  previous: readonly LabPolicyCommitment[],
+  projected: readonly LabPolicyCommitment[],
+  handoffs: readonly DerivedLabAssignmentHandoff[],
+): ReadonlySet<string> {
+  const result = new Set<string>();
+  for (const handoff of handoffs) {
+    const next = projected.find(
+      (commitment) =>
+        commitment.kind === "reaction" &&
+        commitment.colonyId === handoff.assignment.roomName &&
+        commitment.assignmentFingerprint === handoff.assignment.fingerprint,
+    );
+    if (next === undefined) continue;
+    if (handoff.blocked) {
+      result.add(commitmentKey(next));
+      continue;
+    }
+    const prior = previous.find(
+      (commitment) =>
+        commitmentKey(commitment) === commitmentKey(next) &&
+        commitment.assignmentFingerprint === handoff.fromFingerprint,
+    );
+    if (prior !== undefined) result.add(commitmentKey(next));
+  }
+  return result;
+}
+
+function projectAssignmentHandoffViews(input: {
+  readonly handoffs: readonly DerivedLabAssignmentHandoff[];
+  readonly previousCommitments: readonly LabPolicyCommitment[];
+  readonly projection: LabPolicyProjection;
+}): readonly LabAssignmentHandoffView[] {
+  const result: LabAssignmentHandoffView[] = [];
+  for (const handoff of input.handoffs) {
+    const projected = input.projection.commitments.filter(
+      (commitment) =>
+        commitment.kind === "reaction" &&
+        commitment.colonyId === handoff.assignment.roomName &&
+        commitment.assignmentFingerprint === handoff.assignment.fingerprint,
+    );
+    const next = projected[0];
+    if (projected.length !== 1 || next === undefined) continue;
+    const previous = input.previousCommitments.filter(
+      (commitment) => commitmentKey(commitment) === commitmentKey(next),
+    );
+    const prior = previous[0];
+    if (previous.length !== 1 || prior?.kind !== "reaction") continue;
+    const priorIsSource = prior.assignmentFingerprint === handoff.fromFingerprint;
+    const priorIsRebound = prior.assignmentFingerprint === handoff.assignment.fingerprint;
+    const executionReady = input.projection.dispositions.some(
+      (disposition) =>
+        disposition.kind === "reaction" &&
+        disposition.objectiveId === next.objectiveId &&
+        disposition.objectiveRevision === next.objectiveRevision &&
+        disposition.status === "ready",
+    );
+    const status = handoff.blocked
+      ? priorIsSource || priorIsRebound
+        ? "blocked"
+        : null
+      : priorIsSource
+        ? "pending"
+        : priorIsRebound
+          ? executionReady
+            ? "ready"
+            : "blocked"
+          : null;
+    if (status === null) continue;
+    result.push(
+      freeze({
+        ...handoff,
+        objectiveId: next.objectiveId,
+        objectiveRevision: next.objectiveRevision,
+        status,
+      }),
+    );
+  }
+  return freeze(result);
+}
+
+function commitmentKey(commitment: LabPolicyCommitment): string {
+  return `${commitment.kind}:${commitment.objectiveId}:${String(commitment.objectiveRevision)}`;
 }
 
 function deriveReactionObjectives(
@@ -487,6 +915,14 @@ function fingerprint(parts: readonly string[]): string {
       hash = Math.imul(hash, 16_777_619);
     }
   return `lab-composition-v1:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+function validIdentity(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximum &&
+    value === value.trim()
+  );
 }
 function safeAdd(value: number, delta: number): number {
   return value <= Number.MAX_SAFE_INTEGER - delta ? value + delta : Number.MAX_SAFE_INTEGER;

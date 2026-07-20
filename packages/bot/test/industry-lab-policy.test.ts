@@ -135,6 +135,41 @@ describe("bounded lab policy", () => {
     expect(replay.commitments).toHaveLength(1);
   });
 
+  it("preserves reaction identity and progress across one role-equivalent assignment handoff", () => {
+    const first = reconcile({ reactionObjectives: [reaction()] });
+    const previous = required(first.commitments[0]);
+    if (previous.kind !== "reaction") throw new Error("expected reaction commitment");
+    const nextAssignment = {
+      ...ASSIGNMENT,
+      fingerprint: "lab-cluster-v1:post-removal",
+      layoutFingerprint: "layout-v2",
+    } as const;
+    const rebound = reconcile({
+      commitments: [{ ...previous, settledAmount: 25 }],
+      reactionObjectives: [reaction()],
+      rooms: [
+        room({
+          assignmentHandoff: {
+            assignment: nextAssignment,
+            fromFingerprint: ASSIGNMENT.fingerprint,
+            targetLabId: "lab-external",
+          },
+        }),
+      ],
+    });
+
+    expect(rebound.dispositions).toEqual([
+      expect.objectContaining({ objectiveId: "reaction", reason: null, status: "staging" }),
+    ]);
+    expect(rebound.commitments).toEqual([
+      {
+        ...previous,
+        assignmentFingerprint: nextAssignment.fingerprint,
+        settledAmount: 25,
+      },
+    ]);
+  });
+
   it("drains the exact observed product-lab contaminant through normal logistics", () => {
     const result = reconcile({
       reactionObjectives: [reaction()],
@@ -329,6 +364,11 @@ function labs(options: { productAmount?: number; productMineral?: string | null 
       mineralType: options.productMineral ?? null,
     },
   ];
+}
+
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("required fixture missing");
+  return value;
 }
 
 function roundTrip<T>(value: T): T {

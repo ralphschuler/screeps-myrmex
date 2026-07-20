@@ -149,9 +149,13 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   target emptiness, baseline-plus-amount storage stock, retired work, and unchanged destination,
   cluster, quiescence, and safety evidence. Issue #326 composes those destinations for one target
   holding both energy and one mineral kind: two distinct funded flows are admitted atomically, and
-  removal waits for both exact gains plus complete flow/endpoint retirement. Other structure types,
-  active-work-preserving lab handoff, terminal destinations, general multi-step migration, and creep
-  dismantling remain issue #99.
+  removal waits for both exact gains plus complete flow/endpoint retirement. Issue #330 permits one
+  existing reaction commitment to advance onto a role-identical nine-committed-lab assignment, then
+  removes the empty unused external lab only after that fingerprint is durable; objective identity
+  and settled progress survive reset, temporary source-layout/staging unavailability, and exact
+  next-observation settlement. Other structure types, boost-work handoff, stocked active-lab
+  migration, terminal destinations, general multi-step migration, and creep dismantling remain issue
+  #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

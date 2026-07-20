@@ -803,6 +803,7 @@ export class ConstructionPlanner {
           activeLogisticsTargetIds: input.activeLogisticsTargetIds,
           allowance: input.colony.rclPolicy.unlocks?.labs ?? 0,
           desiredLabs,
+          layoutFingerprint: input.commitment.fingerprint,
           logisticsEvidenceReady: input.logisticsEvidenceReady === true,
           ownedEvacuationTargetIds,
           requiredEvacuationStorageId:
@@ -984,7 +985,7 @@ export class ConstructionPlanner {
           replacementId: lab.replacement.id,
           replacementStructureType: "lab",
           stableId: [
-            "remove-quiescent-lab-v1",
+            lab.activeHandoff ? "remove-active-reaction-lab-v1" : "remove-quiescent-lab-v1",
             input.colony.id,
             input.commitment.fingerprint,
             candidate.target.id,
@@ -2107,6 +2108,7 @@ function labMigrationEvidence(input: {
   readonly activeLogisticsTargetIds: ReadonlySet<string> | undefined;
   readonly allowance: number;
   readonly desiredLabs: readonly LayoutPlacement[];
+  readonly layoutFingerprint: string;
   readonly logisticsEvidenceReady: boolean;
   readonly ownedEvacuationTargetIds: ReadonlySet<string>;
   readonly requiredEvacuationStorageId: string | null;
@@ -2116,6 +2118,7 @@ function labMigrationEvidence(input: {
 }):
   | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
   | {
+      readonly activeHandoff: boolean;
       readonly destination: NonNullable<RoomSnapshot["ownedStorages"]>[number] | null;
       readonly destinationFreeCapacity: number;
       readonly destinationResourceAmount: number;
@@ -2179,7 +2182,6 @@ function labMigrationEvidence(input: {
     JSON.stringify(currentAssignment) !== JSON.stringify(input.view.assignment)
   )
     return { reason: "industry-unavailable", replacement: null };
-  if (!input.view.quiescent) return { reason: "industry-active", replacement: null };
   if (!input.logisticsEvidenceReady || input.activeLogisticsTargetIds === undefined)
     return { reason: "industry-unavailable", replacement: null };
   if (
@@ -2209,6 +2211,26 @@ function labMigrationEvidence(input: {
     roomName: input.room.name,
   }).assignment;
   if (postRemoval === null) return { reason: "lab-cluster-invalid", replacement: null };
+  const handoff = input.view.assignmentHandoff;
+  const activeHandoff =
+    !input.view.quiescent &&
+    handoff?.status === "ready" &&
+    handoff.targetLabId === target.id &&
+    handoff.fromFingerprint === currentAssignment.fingerprint &&
+    handoff.layoutFingerprint === input.layoutFingerprint &&
+    typeof handoff.objectiveId === "string" &&
+    handoff.objectiveId.length > 0 &&
+    handoff.objectiveId.length <= 160 &&
+    Number.isSafeInteger(handoff.objectiveRevision) &&
+    handoff.objectiveRevision > 0 &&
+    !input.view.activity.includes("pending-attempt") &&
+    targetEnergy === 0 &&
+    target.mineralAmount === 0 &&
+    target.mineralType === null &&
+    sameLabAssignmentRoles(currentAssignment, postRemoval) &&
+    JSON.stringify(handoff.assignment) === JSON.stringify(postRemoval);
+  if (!input.view.quiescent && !activeHandoff)
+    return { reason: "industry-active", replacement: null };
   const clusterIds = [
     ...postRemoval.reagentLabIds,
     ...postRemoval.productLabIds,
@@ -2238,6 +2260,7 @@ function labMigrationEvidence(input: {
     destinationResourceAmount = destinationResources.get(target.mineralType ?? "") ?? 0;
   }
   return {
+    activeHandoff,
     destination,
     destinationFreeCapacity,
     destinationResourceAmount,
@@ -2249,6 +2272,19 @@ function labMigrationEvidence(input: {
     targetMineralAmount: target.mineralAmount,
     targetMineralType: target.mineralType,
   };
+}
+
+function sameLabAssignmentRoles(
+  current: NonNullable<LabMigrationRoomView["assignment"]>,
+  postRemoval: NonNullable<LabMigrationRoomView["assignment"]>,
+): boolean {
+  const same = (left: readonly string[], right: readonly string[]) =>
+    left.length === right.length && left.every((value, index) => value === right[index]);
+  return (
+    same(current.reagentLabIds, postRemoval.reagentLabIds) &&
+    same(current.productLabIds, postRemoval.productLabIds) &&
+    same(current.boostLabIds, postRemoval.boostLabIds)
+  );
 }
 
 function exactLabEnergy(lab: NonNullable<RoomSnapshot["ownedLabs"]>[number]): number | null {

@@ -7,9 +7,19 @@ import {
   type ContractFundingView,
   type WorkContractRequest,
 } from "../src/contracts";
+import { COLONY_RCL_POLICY_TABLE } from "../src/colony";
 import { FEATURE_GATE_IDS } from "../src/config";
 import { planSurvivalFlow } from "../src/economy";
-import { runTick } from "../src/runtime/tick";
+import {
+  LAYOUT_ALGORITHM_REVISION,
+  emptyLayoutsOwner,
+  persistLayoutCommitment,
+} from "../src/layout";
+import {
+  projectCommittedLabLayouts,
+  projectPinnedLabHandoffLayout,
+  runTick,
+} from "../src/runtime/tick";
 import type { RuntimeGame } from "../src/runtime/context";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
 import {
@@ -53,6 +63,67 @@ describe("tick lifecycle", () => {
       .filter((systemId) => ["layout.plan", "links.plan", "migration.layout"].includes(systemId));
 
     expect(planOrder).toEqual(["layout.plan", "links.plan", "migration.layout"]);
+  });
+
+  it("reconstructs and pins exact committed RCL8 lab handoff geometry", () => {
+    const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", {
+      algorithmRevision: LAYOUT_ALGORITHM_REVISION,
+      anchor: { roomName: "W1N1", x: 25, y: 25 },
+      blockers: [],
+      committedAt: 90,
+      fingerprint: "layout-commitment",
+      transform: 0,
+    });
+    const snapshot = {
+      rooms: [
+        {
+          controller: {
+            level: 8,
+            ownership: "owned",
+            pos: { roomName: "W1N1", x: 20, y: 20 },
+          },
+          name: "W1N1",
+          sources: [
+            { id: "source-a", pos: { roomName: "W1N1", x: 10, y: 10 } },
+            { id: "source-b", pos: { roomName: "W1N1", x: 40, y: 40 } },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof projectCommittedLabLayouts>[0];
+
+    const first = projectCommittedLabLayouts(snapshot, owner);
+    const reset = projectCommittedLabLayouts(roundTrip(snapshot), roundTrip(owner));
+
+    expect(first).toHaveLength(1);
+    expect(first[0]?.roomName).toBe("W1N1");
+    expect(first[0]?.layoutFingerprint).toBe("layout-commitment");
+    expect(first[0]?.labPositions).toHaveLength(10);
+    expect(first[0]?.labPositions.every(({ roomName }) => roomName === "W1N1")).toBe(true);
+    expect(reset).toEqual(first);
+    expect(projectCommittedLabLayouts(snapshot, null)).toEqual([]);
+
+    const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks ?? null;
+    const record = owner.records[0];
+    const pinned = projectPinnedLabHandoffLayout({
+      handoffLayoutFingerprint: "layout-commitment",
+      record,
+      roomName: "W1N1",
+      sourceCount: 2,
+      unlocks,
+    });
+    expect(pinned?.commitment.fingerprint).toBe("layout-commitment");
+    expect(pinned?.placements.filter(({ structureType }) => structureType === "lab")).toHaveLength(
+      10,
+    );
+    expect(
+      projectPinnedLabHandoffLayout({
+        handoffLayoutFingerprint: "replacement-layout",
+        record,
+        roomName: "W1N1",
+        sourceCount: 2,
+        unlocks,
+      }),
+    ).toBeNull();
   });
 
   it("executes one fail-closed tower command from the mandatory safety phase", () => {
@@ -2225,4 +2296,8 @@ function activeFundingFromTick(outcome: ReturnType<typeof runTick>): ContractFun
       status: "active" as const,
     })),
   };
+}
+
+function roundTrip<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
