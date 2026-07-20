@@ -62,11 +62,12 @@ import {
   populationSpawnDemandBinding,
   recoverySpawnDemandBinding,
   resolveColoniesOwner,
+  type BudgetRequest,
   type ColonyDirectorSession,
   type ColonyDomainHealthDomain,
   type ColonyPlanningResult,
+  type ColonyRclUnlockAllowances,
   type ColonySpawnCommandSettlement,
-  type BudgetRequest,
 } from "../colony";
 import {
   isFeatureEnabled,
@@ -232,6 +233,7 @@ import {
   type IndustryTelemetry,
   type LabCommand,
   type LabCompositionProjection,
+  type CommittedLabLayout,
   type InternalSendRequest,
   type MatureCommand,
   type MatureInfrastructureProjection,
@@ -1914,27 +1916,56 @@ function layoutPlanningSystem(
         const priorRecord = owner.records.find((record) => record.roomName === room.name);
         const priorCommitment =
           priorRecord === undefined ? null : commitmentFromRecord(priorRecord);
-        const result = planOwnedRoomLayout({
-          constructionSites: room.constructionSites,
-          controller: room.controller.pos,
-          exits: room.exits,
-          mineral: room.mineral ?? null,
-          policy: colony.rclPolicy,
-          priorCommitment,
-          ...(priorRecord?.sourceServices === undefined
-            ? {}
-            : { priorSourceServices: priorRecord.sourceServices }),
+        const labMigration = currentLabs().migrationRooms.find(
+          ({ roomName }) => roomName === room.name,
+        );
+        const pinnedHandoff = projectPinnedLabHandoffLayout({
+          handoffLayoutFingerprint: labMigration?.assignmentHandoff?.layoutFingerprint ?? null,
+          record: priorRecord,
           roomName: room.name,
-          sourceServiceHandoffAuthorized:
-            colony.activeThreat === false &&
-            colony.controllerRisk === false &&
-            colony.legalWorkforce === true &&
-            colony.rclPolicy.protectedSpawnReserve.state === "restored",
-          sources: room.sources.map(({ pos }) => pos),
-          structures: room.structures ?? [],
-          terrain: room.terrain,
-          tick: context.tick,
+          sourceCount: room.sources.length,
+          unlocks: colony.rclPolicy.unlocks,
         });
+        if (labMigration?.assignmentHandoff != null && pinnedHandoff === null) {
+          planning.push({
+            blocker: "policy-unavailable",
+            fingerprint: priorCommitment?.fingerprint ?? null,
+            roomName: room.name,
+            status: "degraded",
+          });
+          continue;
+        }
+        const labHandoffPinned = pinnedHandoff !== null;
+        const result = labHandoffPinned
+          ? Object.freeze({
+              candidatesInspected: 0,
+              commitment: pinnedHandoff.commitment,
+              floodCellsInspected: 0,
+              placements: pinnedHandoff.placements,
+              status: "complete" as const,
+              transformsInspected: 0,
+            })
+          : planOwnedRoomLayout({
+              constructionSites: room.constructionSites,
+              controller: room.controller.pos,
+              exits: room.exits,
+              mineral: room.mineral ?? null,
+              policy: colony.rclPolicy,
+              priorCommitment,
+              ...(priorRecord?.sourceServices === undefined
+                ? {}
+                : { priorSourceServices: priorRecord.sourceServices }),
+              roomName: room.name,
+              sourceServiceHandoffAuthorized:
+                colony.activeThreat === false &&
+                colony.controllerRisk === false &&
+                colony.legalWorkforce === true &&
+                colony.rclPolicy.protectedSpawnReserve.state === "restored",
+              sources: room.sources.map(({ pos }) => pos),
+              structures: room.structures ?? [],
+              terrain: room.terrain,
+              tick: context.tick,
+            });
         if (result.status === "degraded") {
           planning.push({
             blocker: result.blocker,
@@ -1948,11 +1979,12 @@ function layoutPlanningSystem(
           priorCommitment?.fingerprint === result.commitment.fingerprint
             ? priorCommitment
             : result.commitment;
-        const sourceServices = result.placements.filter(
-          (placement) => placement.service?.kind === "source-container",
-        );
         const priorSourceServices = freshSourceServicePlacements(owner, room.name);
+        const sourceServices = labHandoffPinned
+          ? priorSourceServices
+          : result.placements.filter((placement) => placement.service?.kind === "source-container");
         const sourceServicesChanged =
+          !labHandoffPinned &&
           JSON.stringify(priorSourceServices) !== JSON.stringify(sourceServices);
         sourceServiceHandoffChanged ||= sourceServices.some((service) => {
           const sourceId = service.service?.sourceId;
@@ -2035,8 +2067,7 @@ function layoutPlanningSystem(
           towerEvacuation:
             owner.records.find(({ roomName }) => roomName === room.name)?.towerEvacuation ?? null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
-          labMigration:
-            currentLabs().migrationRooms.find(({ roomName }) => roomName === room.name) ?? null,
+          labMigration: labMigration ?? null,
           logisticsEvidenceReady:
             context.contractExecution.status === "ready" &&
             context.contractPlanning.status === "ready",
@@ -2047,22 +2078,23 @@ function layoutPlanningSystem(
             owner.records.find(({ roomName }) => roomName === room.name)?.removalReceipt ?? null,
           room,
         });
-        proposals.push(
-          ...diffOwnedRoomLayout({
-            colonyId: colony.id,
-            commitment,
-            commitmentConflicted: false,
-            constructionSites: room.constructionSites,
-            observationFingerprint,
-            placements: convergencePlacements,
-            policy: colony.rclPolicy,
-            policyEnabled: true,
-            policyFingerprint,
-            roomName: room.name,
-            roomStatus: "owned",
-            structures: room.structures ?? [],
-          }).proposals,
-        );
+        if (!labHandoffPinned)
+          proposals.push(
+            ...diffOwnedRoomLayout({
+              colonyId: colony.id,
+              commitment,
+              commitmentConflicted: false,
+              constructionSites: room.constructionSites,
+              observationFingerprint,
+              placements: convergencePlacements,
+              policy: colony.rclPolicy,
+              policyEnabled: true,
+              policyFingerprint,
+              roomName: room.name,
+              roomStatus: "owned",
+              structures: room.structures ?? [],
+            }).proposals,
+          );
         planning.push({
           blocker: null,
           fingerprint: commitment.fingerprint,
@@ -2464,6 +2496,14 @@ function colonyDirectorSystem(
       );
       const labs = isFeatureEnabled(context.config, "phase2.labs")
         ? composeLabRuntime({
+            committedLabLayouts:
+              isFeatureEnabled(context.config, "phase2.layout") &&
+              context.snapshot.ownedRooms.some(({ controller }) => controller.level === 8)
+                ? projectCommittedLabLayouts(
+                    context.snapshot,
+                    parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null),
+                  )
+                : [],
             fundedBudgetIds: fundedIndustryBudgetIds,
             pendingAttempts: industryDraft.owner.labAttempts,
             policy: context.config.policy.industry,
@@ -2879,6 +2919,83 @@ function staticMiningLayouts(manager: MemoryManager | null) {
   return new Map(
     owner.records.map(({ roomName }) => [roomName, freshSourceServicePlacements(owner, roomName)]),
   );
+}
+
+export function projectPinnedLabHandoffLayout(input: {
+  readonly handoffLayoutFingerprint: string | null;
+  readonly record: LayoutsOwnerV13["records"][number] | undefined;
+  readonly roomName: string;
+  readonly sourceCount: number;
+  readonly unlocks: ColonyRclUnlockAllowances | null;
+}): {
+  readonly commitment: LayoutCommitment;
+  readonly placements: readonly LayoutPlacement[];
+} | null {
+  if (
+    input.record === undefined ||
+    input.unlocks === null ||
+    input.handoffLayoutFingerprint !== input.record.fingerprint ||
+    input.record.roomName !== input.roomName
+  )
+    return null;
+  const commitment = commitmentFromRecord(input.record);
+  const placements = reconstructCommittedLayout({
+    commitment,
+    roomName: input.roomName,
+    sourceCount: input.sourceCount,
+    unlocks: input.unlocks,
+  });
+  return placements === null ? null : Object.freeze({ commitment, placements });
+}
+
+export function projectCommittedLabLayouts(
+  snapshot: WorldSnapshot,
+  owner: LayoutsOwnerV13 | null,
+): readonly CommittedLabLayout[] {
+  const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
+  if (
+    owner === null ||
+    unlocks === undefined ||
+    owner.records.length > 64 ||
+    snapshot.rooms.length > 64
+  )
+    return Object.freeze([]);
+  const layouts = [...snapshot.rooms]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((room): readonly CommittedLabLayout[] => {
+      if (room.controller?.ownership !== "owned" || room.controller.level !== 8) return [];
+      const records = owner.records.filter(({ roomName }) => roomName === room.name);
+      const record = records[0];
+      if (records.length !== 1 || record === undefined) return [];
+      const placements = reconstructCommittedLayout({
+        commitment: commitmentFromRecord(record),
+        roomName: room.name,
+        sourceCount: room.sources.length,
+        unlocks,
+      });
+      if (placements === null) return [];
+      const labPositions = placements
+        .filter(({ layer, structureType }) => layer === "primary" && structureType === "lab")
+        .map(({ pos }) => Object.freeze({ ...pos }))
+        .sort(
+          (left, right) =>
+            left.y - right.y || left.x - right.x || left.roomName.localeCompare(right.roomName),
+        );
+      if (
+        labPositions.length !== unlocks.labs ||
+        new Set(labPositions.map(({ roomName, x, y }) => `${roomName}:${String(x)}:${String(y)}`))
+          .size !== labPositions.length
+      )
+        return [];
+      return [
+        Object.freeze({
+          labPositions: Object.freeze(labPositions),
+          layoutFingerprint: record.fingerprint,
+          roomName: room.name,
+        }),
+      ];
+    });
+  return Object.freeze(layouts.slice(0, 64));
 }
 
 function directLinkHealthLayouts(

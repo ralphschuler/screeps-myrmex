@@ -113,8 +113,14 @@ suppresses the obsolete lab's ordinary source/refill publication; removal waits 
 emptiness, baseline-plus-amount storage stock, retired work, and unchanged destination, quiescence,
 cluster, and safety evidence. A target holding both energy and one mineral kind combines those exact
 destinations in one bounded commitment: energy and mineral flows are admitted as an atomic pair, and
-removal waits for both destination gains plus complete work retirement. Terminal-only, contaminated,
-cooling, active-work, stale, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
+removal waits for both destination gains plus complete work retirement. One active reaction may
+continue only when the empty external target has no current or post-removal role, the retained nine
+labs keep byte-identical reagent/product/boost IDs, and Industry durably advances only the
+assignment fingerprint before any reaction or destroy command. Pending predecessor effects settle
+first; the objective and settled amount never restart. A uniquely reconstructible durable rebound is
+held without staging, reaction, removal, or layout revision while retained-lab staging or source-
+layout evidence is unavailable. Terminal-only, contaminated, cooling, boost-assigned, stocked
+active-work, ambiguous, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

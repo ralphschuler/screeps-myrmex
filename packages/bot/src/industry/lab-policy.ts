@@ -72,8 +72,18 @@ export interface LabPolicyCreepObservation {
   readonly id: string;
 }
 
+export interface LabAssignmentHandoff {
+  readonly assignment: LabClusterAssignment;
+  /** Holds a durable rebound without staging or execution when source evidence is incomplete. */
+  readonly blocked?: boolean;
+  readonly fromFingerprint: string;
+  readonly targetLabId: string;
+}
+
 export interface LabPolicyRoomObservation {
   readonly assignment: LabClusterAssignment | null;
+  /** Tick-local Industry-owned permission to rebind one reaction onto role-equivalent retained labs. */
+  readonly assignmentHandoff?: LabAssignmentHandoff;
   readonly catalog: ReactionCatalog | null;
   readonly colonyId: string;
   readonly creeps: readonly LabPolicyCreepObservation[];
@@ -334,6 +344,33 @@ function validateRoom(room: LabPolicyRoomObservation): LabPolicyCancellationReas
     return "invalid-objective";
   const assignment = room.assignment;
   if (assignment === null || assignment.roomName !== room.colonyId) return "missing-cluster";
+  const assignmentReason = validateAssignment(assignment, room);
+  if (assignmentReason !== null) return assignmentReason;
+  const handoff = room.assignmentHandoff;
+  if (
+    handoff !== undefined &&
+    ((handoff.blocked !== undefined && typeof handoff.blocked !== "boolean") ||
+      !identity(handoff.fromFingerprint) ||
+      handoff.fromFingerprint !== assignment.fingerprint ||
+      !identity(handoff.targetLabId, 128) ||
+      handoff.assignment.roomName !== room.colonyId ||
+      handoff.assignment.fingerprint === assignment.fingerprint ||
+      validateAssignment(handoff.assignment, room) !== null ||
+      !sameRoles(assignment, handoff.assignment) ||
+      [...handoff.assignment.reagentLabIds, ...handoff.assignment.productLabIds].includes(
+        handoff.targetLabId,
+      ) ||
+      handoff.assignment.boostLabIds.includes(handoff.targetLabId))
+  )
+    return "invalid-objective";
+  if (!validCatalog(room.catalog)) return "invalid-catalog";
+  return null;
+}
+
+function validateAssignment(
+  assignment: LabClusterAssignment,
+  room: LabPolicyRoomObservation,
+): LabPolicyCancellationReason | null {
   const assignedIds = [...assignment.reagentLabIds, ...assignment.productLabIds];
   if (duplicateValues(assignedIds).size > 0) return "invalid-objective";
   if (
@@ -342,7 +379,7 @@ function validateRoom(room: LabPolicyRoomObservation): LabPolicyCancellationReas
   )
     return "invalid-objective";
   const labs = new Map(room.labs.map((lab) => [lab.id, lab]));
-  for (const labId of new Set([...assignment.reagentLabIds, ...assignment.productLabIds])) {
+  for (const labId of new Set(assignedIds)) {
     const lab = labs.get(labId);
     if (lab === undefined) return "missing-lab";
     if (!lab.active) return "inactive-lab";
@@ -353,7 +390,6 @@ function validateRoom(room: LabPolicyRoomObservation): LabPolicyCancellationReas
     )
       return "invalid-objective";
   }
-  if (!validCatalog(room.catalog)) return "invalid-catalog";
   return null;
 }
 
@@ -409,11 +445,43 @@ function previousStaleReason(
 ): LabPolicyCancellationReason | null {
   if (previous === undefined) return null;
   if (previous.kind !== candidate.kind) return "duplicate-identity";
-  if (previous.assignmentFingerprint !== room.assignment?.fingerprint) return "cluster-changed";
+  const handoff = room.assignmentHandoff;
+  const assignmentMatches =
+    previous.assignmentFingerprint === room.assignment?.fingerprint ||
+    (previous.kind === "reaction" &&
+      handoff !== undefined &&
+      (previous.assignmentFingerprint === handoff.fromFingerprint ||
+        previous.assignmentFingerprint === handoff.assignment.fingerprint));
+  if (!assignmentMatches) return "cluster-changed";
   if (previous.catalogFingerprint !== room.catalog?.fingerprint) return "catalog-changed";
   if (previous.objectiveFingerprint !== objectiveFingerprint(candidate))
     return "duplicate-identity";
   return null;
+}
+
+function assignmentFor(
+  room: LabPolicyRoomObservation,
+  previous: LabPolicyCommitment | undefined,
+): LabClusterAssignment {
+  const handoff = room.assignmentHandoff;
+  return previous?.kind === "reaction" &&
+    handoff !== undefined &&
+    (previous.assignmentFingerprint === handoff.fromFingerprint ||
+      previous.assignmentFingerprint === handoff.assignment.fingerprint)
+    ? handoff.assignment
+    : (room.assignment as LabClusterAssignment);
+}
+
+function sameRoles(left: LabClusterAssignment, right: LabClusterAssignment): boolean {
+  return (
+    sameStrings(left.reagentLabIds, right.reagentLabIds) &&
+    sameStrings(left.productLabIds, right.productLabIds) &&
+    sameStrings(left.boostLabIds, right.boostLabIds)
+  );
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function projectReaction(
@@ -450,10 +518,11 @@ function projectReaction(
       : selectedFromCommitment(existing, room.catalog as ReactionCatalog);
   if (selected === null)
     return { commitment: null, completed: false, demands: [], reason: "no-reaction-path" };
-  const assignment = room.assignment as LabClusterAssignment;
+  const assignment = assignmentFor(room, previous);
+  const assignedRoom = assignment === room.assignment ? room : freeze({ ...room, assignment });
   const commitment: ReactionCommitment = freeze({
     assignmentFingerprint: assignment.fingerprint,
-    batchAmount: selected.amount,
+    batchAmount: existing?.batchAmount ?? selected.amount,
     catalogFingerprint: (room.catalog as ReactionCatalog).fingerprint,
     colonyId: objective.colonyId,
     deadline: objective.deadline,
@@ -469,44 +538,46 @@ function projectReaction(
     targetProduct: objective.product,
   });
   const demands: LabResourceDemand[] =
-    direction === "reverse"
-      ? reverseDemands(objective, room, assignment, selected)
-      : [
-          makeDemand(
-            objective,
-            room,
-            "reagent-a",
-            assignment.reagentLabIds[0],
-            "fill",
-            selected.recipe.reagents[0],
-            selected.amount,
-          ),
-          makeDemand(
-            objective,
-            room,
-            "reagent-b",
-            assignment.reagentLabIds[1],
-            "fill",
-            selected.recipe.reagents[1],
-            selected.amount,
-          ),
-          ...assignment.productLabIds.flatMap((labId, index) => {
-            const lab = room.labs.find(({ id }) => id === labId);
-            return lab?.mineralType === null || lab === undefined || lab.mineralAmount === 0
-              ? []
-              : [
-                  makeDemand(
-                    objective,
-                    room,
-                    `product-${String(index)}`,
-                    labId,
-                    "drain",
-                    lab.mineralType,
-                    lab.mineralAmount,
-                  ),
-                ];
-          }),
-        ];
+    room.assignmentHandoff?.blocked === true
+      ? []
+      : direction === "reverse"
+        ? reverseDemands(objective, assignedRoom, assignment, selected)
+        : [
+            makeDemand(
+              objective,
+              assignedRoom,
+              "reagent-a",
+              assignment.reagentLabIds[0],
+              "fill",
+              selected.recipe.reagents[0],
+              selected.amount,
+            ),
+            makeDemand(
+              objective,
+              assignedRoom,
+              "reagent-b",
+              assignment.reagentLabIds[1],
+              "fill",
+              selected.recipe.reagents[1],
+              selected.amount,
+            ),
+            ...assignment.productLabIds.flatMap((labId, index) => {
+              const lab = room.labs.find(({ id }) => id === labId);
+              return lab?.mineralType === null || lab === undefined || lab.mineralAmount === 0
+                ? []
+                : [
+                    makeDemand(
+                      objective,
+                      assignedRoom,
+                      `product-${String(index)}`,
+                      labId,
+                      "drain",
+                      lab.mineralType,
+                      lab.mineralAmount,
+                    ),
+                  ];
+            }),
+          ];
   return { commitment, completed: false, demands: freeze(demands), reason: null };
 }
 
@@ -592,7 +663,8 @@ function projectBoost(
   const settled = Math.max(previous?.kind === "boost" ? previous.settledParts : 0, observed);
   if (settled >= manifest.partCount)
     return { commitment: null, completed: true, demands: [], reason: null };
-  const assignment = room.assignment as LabClusterAssignment;
+  const assignment = assignmentFor(room, previous);
+  const assignedRoom = assignment === room.assignment ? room : freeze({ ...room, assignment });
   const labId = assignment.boostLabIds[0];
   if (labId === undefined)
     return { commitment: null, completed: false, demands: [], reason: "missing-lab" };
@@ -620,14 +692,14 @@ function projectBoost(
     demands: freeze([
       makeDemand(
         manifest,
-        room,
+        assignedRoom,
         "boost-compound",
         labId,
         "fill",
         manifest.compound,
         remaining * 30,
       ),
-      makeDemand(manifest, room, "boost-energy", labId, "fill", "energy", remaining * 20),
+      makeDemand(manifest, assignedRoom, "boost-energy", labId, "fill", "energy", remaining * 20),
     ]),
     reason: null,
   };

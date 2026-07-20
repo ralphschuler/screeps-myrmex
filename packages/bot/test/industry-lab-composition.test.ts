@@ -130,6 +130,156 @@ describe("composed lab runtime", () => {
     ]);
   });
 
+  it("durably rebinds one reaction before publishing retained-lab work", () => {
+    const objectiveValue = { ...objective("forward"), amount: 30 };
+    const first = composeHandoff(handoffWorld(100), objectiveValue);
+    const previous = required(first.policy.commitments[0]);
+    if (previous.kind !== "reaction") throw new Error("expected reaction commitment");
+
+    const pending = composeHandoff(handoffWorld(101, true), objectiveValue, [
+      { ...previous, settledAmount: 5 },
+    ]);
+    expect(pending.intents).toEqual([]);
+    expect(pending.policy.commitments).toEqual([
+      {
+        ...previous,
+        assignmentFingerprint: pending.assignments[0]?.fingerprint,
+        settledAmount: 5,
+      },
+    ]);
+    expect(pending.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      objectiveId: objectiveValue.id,
+      objectiveRevision: objectiveValue.revision,
+      status: "pending",
+      targetLabId: "external",
+    });
+
+    const resetCommitments = roundTrip(pending.policy.commitments);
+    const ready = composeHandoff(handoffWorld(102), objectiveValue, resetCommitments);
+    const reordered = composeHandoff(handoffWorld(102, true), objectiveValue, resetCommitments);
+    expect(ready.policy.commitments).toEqual(pending.policy.commitments);
+    expect(ready.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      status: "ready",
+      targetLabId: "external",
+    });
+    expect(ready.intents).toEqual([expect.objectContaining({ kind: "lab.run-reaction" })]);
+    const refilledTarget = composeHandoff(
+      withExternalEnergy(handoffWorld(102), 100),
+      objectiveValue,
+      ready.policy.commitments,
+    );
+    expect(refilledTarget.policy.commitments).toEqual(ready.policy.commitments);
+    expect(refilledTarget.migrationRooms[0]?.assignmentHandoff?.status).toBe("ready");
+    expect(JSON.stringify(reordered.policy)).toBe(JSON.stringify(ready.policy));
+    expect(reordered.migrationRooms[0]?.assignmentHandoff).toEqual(
+      ready.migrationRooms[0]?.assignmentHandoff,
+    );
+
+    const intent = required(ready.intents[0]);
+    const attempt = required(createPendingLabAttempt(intent, "OK"));
+    const noEffect = composeHandoff(handoffWorld(103), objectiveValue, ready.policy.commitments, [
+      attempt,
+    ]);
+    expect(noEffect.settlements).toEqual([
+      expect.objectContaining({ reason: "no-effect", status: "retry" }),
+    ]);
+    expect(noEffect.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(noEffect.migrationRooms[0]?.quiescent).toBe(false);
+    const observed = composeHandoff(
+      handoffWorld(103, false, true),
+      objectiveValue,
+      ready.policy.commitments,
+      [attempt],
+    );
+    const settled = settleLabComposition({
+      execution: [],
+      previousAttempts: [attempt],
+      projection: observed,
+    });
+    expect(observed.settlements).toEqual([
+      expect.objectContaining({ reason: "exact-effect", settledAmount: 5, status: "settled" }),
+    ]);
+    expect(settled).toMatchObject({
+      attempts: [],
+      commitments: [
+        {
+          assignmentFingerprint: ready.assignments[0]?.fingerprint,
+          settledAmount: 10,
+        },
+      ],
+    });
+  });
+
+  it("keeps assignment handoff closed for pending effects, stock, and changed roles", () => {
+    const objectiveValue = { ...objective("forward"), amount: 30 };
+    const first = composeHandoff(handoffWorld(100), objectiveValue);
+    const previous = required(first.policy.commitments[0]);
+    const attempt = required(createPendingLabAttempt(required(first.intents[0]), "OK"));
+    const pending = composeHandoff(handoffWorld(101), objectiveValue, [previous], [attempt]);
+    expect(pending.migrationRooms[0]?.assignmentHandoff).toBeNull();
+    expect(pending.policy.commitments).toEqual([previous]);
+
+    const stocked = composeHandoff(withExternalEnergy(handoffWorld(101), 100), objectiveValue, [
+      previous,
+    ]);
+    expect(stocked.migrationRooms[0]?.assignmentHandoff).toBeNull();
+    expect(stocked.policy.commitments).toEqual([previous]);
+
+    const changedRoles = composeHandoff(
+      handoffWorld(101),
+      objectiveValue,
+      [previous],
+      [],
+      ["a", "b", "c", "d", "e", "f", "g", "h", "external"],
+    );
+    expect(changedRoles.migrationRooms[0]?.assignmentHandoff).toBeNull();
+    expect(changedRoles.policy.commitments).toEqual([previous]);
+  });
+
+  it("holds a durable rebound while layout evidence or reaction staging is unavailable", () => {
+    const objectiveValue = { ...objective("forward"), amount: 30 };
+    const first = composeHandoff(handoffWorld(100), objectiveValue);
+    const rebound = composeHandoff(handoffWorld(101), objectiveValue, [
+      required(first.policy.commitments[0]),
+    ]);
+    const durable = roundTrip(rebound.policy.commitments);
+
+    const missingLayout = composeWithoutCommittedLayout(handoffWorld(102), objectiveValue, durable);
+    expect(missingLayout.policy.commitments).toEqual(durable);
+    expect(missingLayout.resourceDemands.edges).toEqual([]);
+    expect(missingLayout.intents).toEqual([]);
+    expect(missingLayout.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      layoutFingerprint: null,
+      status: "blocked",
+      targetLabId: "external",
+    });
+
+    const staleLayout = composeHandoff(
+      handoffWorld(102),
+      objectiveValue,
+      durable,
+      [],
+      ["a", "b", "c", "d", "e", "f", "g", "h", "external"],
+    );
+    expect(staleLayout.policy.commitments).toEqual(durable);
+    expect(staleLayout.resourceDemands.edges).toEqual([]);
+    expect(staleLayout.intents).toEqual([]);
+    expect(staleLayout.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      layoutFingerprint: "layout-commitment",
+      status: "blocked",
+      targetLabId: "external",
+    });
+
+    const staging = composeHandoff(emptyRetainedLabs(handoffWorld(102)), objectiveValue, durable);
+    expect(staging.policy.commitments).toEqual(durable);
+    expect(staging.intents).toEqual([]);
+    expect(staging.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      layoutFingerprint: "layout-commitment",
+      status: "blocked",
+      targetLabId: "external",
+    });
+  });
+
   it("settles only exact reverse deltas and makes no-effect attempts retry-ready", () => {
     const first = compose(world("reverse"), objective("reverse"));
     const intent = required(first.intents[0]);
@@ -208,6 +358,60 @@ function compose(
   });
 }
 
+function composeHandoff(
+  snapshot: WorldSnapshot,
+  reactionObjective: ReactionObjective,
+  previousCommitments = [] as ReturnType<typeof composeLabRuntime>["policy"]["commitments"],
+  pendingAttempts = [] as Parameters<typeof composeLabRuntime>[0]["pendingAttempts"],
+  committedLabIds?: readonly string[],
+) {
+  const labs = required(snapshot.ownedRooms[0]?.ownedLabs);
+  const committed =
+    committedLabIds === undefined
+      ? labs.filter(({ id }) => id !== "external")
+      : labs.filter(({ id }) => committedLabIds.includes(id));
+  return composeLabRuntime({
+    committedLabLayouts: [
+      {
+        labPositions: [
+          ...committed.map(({ pos }) => pos),
+          { roomName: "W1N1", x: 13, y: 12 },
+        ].reverse(),
+        layoutFingerprint: "layout-commitment",
+        roomName: "W1N1",
+      },
+    ],
+    fundedBudgetIds: new Set([reactionObjective.industryBudgetId]),
+    pendingAttempts,
+    policy: buildRuntimeConfig().policy.industry,
+    previousCommitments,
+    reactionObjectives: [reactionObjective],
+    reactions,
+    reactionTimes,
+    snapshot,
+    snapshotRevision: `snapshot/${String(snapshot.observation.tick)}`,
+  });
+}
+
+function composeWithoutCommittedLayout(
+  snapshot: WorldSnapshot,
+  reactionObjective: ReactionObjective,
+  previousCommitments: ReturnType<typeof composeLabRuntime>["policy"]["commitments"],
+) {
+  return composeLabRuntime({
+    committedLabLayouts: [],
+    fundedBudgetIds: new Set([reactionObjective.industryBudgetId]),
+    pendingAttempts: [],
+    policy: buildRuntimeConfig().policy.industry,
+    previousCommitments,
+    reactionObjectives: [reactionObjective],
+    reactions,
+    reactionTimes,
+    snapshot,
+    snapshotRevision: `snapshot/${String(snapshot.observation.tick)}`,
+  });
+}
+
 function objective(direction: "forward" | "reverse"): ReactionObjective {
   return {
     amount: 5,
@@ -221,6 +425,105 @@ function objective(direction: "forward" | "reverse"): ReactionObjective {
     product: "OH",
     revision: 1,
   };
+}
+
+function emptyRetainedLabs(snapshot: WorldSnapshot): WorldSnapshot {
+  const room = required(snapshot.ownedRooms[0]);
+  return {
+    ...snapshot,
+    ownedRooms: [
+      {
+        ...room,
+        ownedLabs: (room.ownedLabs ?? []).map((value) =>
+          value.id === "external"
+            ? value
+            : {
+                ...value,
+                energy: 0,
+                mineralAmount: 0,
+                mineralType: null,
+                store: {
+                  ...value.store,
+                  freeCapacity: 5_000,
+                  resources: [],
+                  usedCapacity: 0,
+                },
+              },
+        ),
+      },
+    ],
+  };
+}
+
+function withExternalEnergy(snapshot: WorldSnapshot, energy: number): WorldSnapshot {
+  const room = required(snapshot.ownedRooms[0]);
+  return {
+    ...snapshot,
+    ownedRooms: [
+      {
+        ...room,
+        ownedLabs: (room.ownedLabs ?? []).map((value) =>
+          value.id === "external"
+            ? {
+                ...value,
+                energy,
+                store: {
+                  ...value.store,
+                  freeCapacity: 5_000 - energy,
+                  resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+                  usedCapacity: energy,
+                },
+              }
+            : value,
+        ),
+      },
+    ],
+  };
+}
+
+function handoffWorld(tick: number, reversed = false, settled = false): WorldSnapshot {
+  const labs = [
+    labAt("a", "H", settled ? 25 : 30, 10, 10),
+    labAt("b", "O", settled ? 25 : 30, 12, 10),
+    labAt("c", settled ? "OH" : null, settled ? 5 : 0, 11, 10),
+    labAt("d", null, 0, 10, 11),
+    labAt("e", null, 0, 11, 11),
+    labAt("f", null, 0, 12, 11),
+    labAt("g", null, 0, 10, 12),
+    labAt("h", null, 0, 11, 12),
+    labAt("i", null, 0, 12, 12),
+    ...(settled ? [] : [labAt("external", null, 0, 40, 40, 0)]),
+  ];
+  const ordered = reversed ? [...labs].reverse() : labs;
+  return {
+    observation: { age: 0, shard: "shard0", status: "observed", tick },
+    observedAt: tick,
+    ownedRooms: [
+      {
+        name: "W1N1",
+        observedAt: tick,
+        ownedCreeps: [],
+        ownedLabs: ordered,
+        ownedStorages: [
+          {
+            active: true,
+            id: "storage",
+            pos: { roomName: "W1N1", x: 20, y: 20 },
+            store: {
+              capacity: 1_000_000,
+              freeCapacity: 999_940,
+              resources: [
+                { amount: 30, resourceType: "H" },
+                { amount: 30, resourceType: "O" },
+              ],
+              usedCapacity: 60,
+            },
+          },
+        ],
+        ownedTerminals: [],
+      },
+    ],
+  } as unknown as WorldSnapshot;
 }
 
 function world(mode: "forward" | "reverse" | "reverse-settled", tick = 100): WorldSnapshot {
@@ -260,10 +563,21 @@ function world(mode: "forward" | "reverse" | "reverse-settled", tick = 100): Wor
 }
 
 function lab(id: string, mineralType: string | null, mineralAmount: number, x: number) {
+  return labAt(id, mineralType, mineralAmount, x, 10);
+}
+
+function labAt(
+  id: string,
+  mineralType: string | null,
+  mineralAmount: number,
+  x: number,
+  y: number,
+  energy = 2_000,
+) {
   return {
     active: true,
     cooldown: 0,
-    energy: 2_000,
+    energy,
     energyCapacity: 2_000,
     hits: 500,
     hitsMax: 500,
@@ -271,12 +585,15 @@ function lab(id: string, mineralType: string | null, mineralAmount: number, x: n
     mineralAmount,
     mineralCapacity: 3_000,
     mineralType,
-    pos: { roomName: "W1N1", x, y: 10 },
+    pos: { roomName: "W1N1", x, y },
     store: {
       capacity: 5_000,
-      freeCapacity: 3_000 - mineralAmount,
-      resources: [],
-      usedCapacity: mineralAmount + 2_000,
+      freeCapacity: 5_000 - mineralAmount - energy,
+      resources: [
+        ...(energy > 0 ? [{ amount: energy, resourceType: "energy" }] : []),
+        ...(mineralType === null ? [] : [{ amount: mineralAmount, resourceType: mineralType }]),
+      ],
+      usedCapacity: mineralAmount + energy,
     },
   };
 }
@@ -304,4 +621,8 @@ function batch(intent: LabCommandIntent): ArbitrationBatch {
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error("expected fixture value");
   return value;
+}
+
+function roundTrip<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }

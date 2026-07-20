@@ -492,6 +492,65 @@ describe("ConstructionPlanner", () => {
       }),
     ]);
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(ready));
+    const postRemovalAssignment = assignLabCluster({
+      labs: ownedLabs.filter(({ id }) => id !== "lab-external"),
+      layoutFingerprint: fingerprintLabLayout(
+        "W1N1",
+        ownedLabs.filter(({ id }) => id !== "lab-external"),
+      ),
+      limits: labMigration.limits,
+      roomName: "W1N1",
+    }).assignment;
+    if (postRemovalAssignment === null) throw new Error("expected post-removal lab assignment");
+    expect(postRemovalAssignment).toMatchObject({
+      boostLabIds: assignment.boostLabIds,
+      productLabIds: assignment.productLabIds,
+      reagentLabIds: assignment.reagentLabIds,
+    });
+    const activeHandoff = {
+      ...labMigration,
+      activity: ["commitment", "demand-endpoint", "intent", "staging-demand"] as const,
+      assignmentHandoff: {
+        assignment: postRemovalAssignment,
+        fromFingerprint: assignment.fingerprint,
+        layoutFingerprint: "layout-migration-a",
+        objectiveId: "reaction",
+        objectiveRevision: 1,
+        status: "ready" as const,
+        targetLabId: "lab-external",
+      },
+      quiescent: false,
+    };
+    const activeResult = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      labMigration: activeHandoff,
+      logisticsEvidenceReady: true,
+      placements: desiredLabs,
+      room,
+    });
+    expect(activeResult.proposals).toHaveLength(1);
+    expect(activeResult.proposals[0]?.stableId).toContain("remove-active-reaction-lab-v1");
+    expect(activeResult.proposals[0]?.targetId).toBe("lab-external");
+    for (const assignmentHandoff of [
+      { ...activeHandoff.assignmentHandoff, status: "pending" as const },
+      { ...activeHandoff.assignmentHandoff, status: "blocked" as const },
+      { ...activeHandoff.assignmentHandoff, targetLabId: "other-lab" },
+      {
+        ...activeHandoff.assignmentHandoff,
+        assignment: { ...postRemovalAssignment, fingerprint: "lab-cluster-v1:drift" },
+      },
+    ])
+      expect(
+        planMigration({
+          activeLogisticsTargetIds: new Set(),
+          colony,
+          labMigration: { ...activeHandoff, assignmentHandoff },
+          logisticsEvidenceReady: true,
+          placements: desiredLabs,
+          room,
+        }).proposals,
+      ).toEqual([]);
     const admittedLab = ready.proposals[0];
     if (admittedLab === undefined) throw new Error("expected lab removal proposal");
     const desiredExtensions = Array.from({ length: 60 }, (_, index) => ({
