@@ -54,9 +54,9 @@ preserves the lab and authorizes no command.
 
 The path remains bounded by eight Industry rooms, ten labs per room, 64 layout records and
 evacuation flows, 128 removal candidates, and one global destroy command. Rollback requires only
-reverting code: Industry owner V5 and layouts owner V13 remain unchanged. Active mixed-stock
-evacuation, boost-work handoff, terminal destinations, multiple labs, general layout-revision
-migration, defensive migration, and creep dismantling remain issue #99.
+reverting code: Industry owner V5 and layouts owner V13 remain unchanged. Boost-work handoff,
+terminal destinations, multiple labs, general layout-revision migration, defensive migration, and
+creep dismantling remain issue #99. ADR 0057 subsequently admits the exact mixed-stock form.
 
 ## Mechanics sources
 

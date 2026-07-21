@@ -124,10 +124,12 @@ flow/endpoints, unchanged handoff evidence, and no pending reaction attempt. A z
 holding one mineral kind instead reuses the V13 mineral evacuation and exact active storage: one
 funded flow moves the complete amount under aggregate capacity, and removal waits for the exact
 storage gain, retired flow/endpoints, unchanged destination/handoff evidence, and no pending
-attempt. Pending predecessor effects settle first; the objective and settled amount never restart. A
-uniquely reconstructible durable rebound is held without staging, reaction, removal, or layout
-revision while retained-lab staging or source-layout evidence is unavailable. Terminal-only,
-mixed-stock active, contaminated, cooling, boost-assigned, ambiguous, malformed, capacity-lost,
+attempt. A target holding both forms reuses the V13 mixed record: both existing funded flows are
+admitted atomically, reaction work continues, and removal waits for both exact destination gains
+plus complete work retirement. Pending predecessor effects settle first; the objective and settled
+amount never restart. A uniquely reconstructible durable rebound is held without staging, reaction,
+removal, or layout revision while retained-lab staging or source-layout evidence is unavailable.
+Terminal-only, contaminated, cooling, boost-assigned, ambiguous, malformed, capacity-lost,
 cluster-breaking, or pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering

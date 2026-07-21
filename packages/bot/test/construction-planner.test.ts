@@ -1283,6 +1283,152 @@ describe("ConstructionPlanner", () => {
     ).toEqual([]);
   });
 
+  it("evacuates mixed stock atomically while a rebound reaction remains active", () => {
+    const fixture = labMineralEvacuationFixture(750, 1_000, 10_000, 100, undefined, 500, 250);
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      labMigration: activeReactionLabMigration(fixture),
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.labEvacuation).toEqual({
+      destinationId: "storage",
+      destinationInitialAmount: 1_000,
+      energyAmount: 500,
+      expiresAt: 250,
+      mineralAmount: 750,
+      replacementId: fixture.replacementId,
+      replacementInitialEnergy: 250,
+      resourceType: "XGH2O",
+      sourceId: "lab-external",
+      startedAt: 100,
+    });
+    const evacuation = staged.labEvacuation;
+    if (evacuation === null || !("energyAmount" in evacuation))
+      throw new Error("expected active mixed lab evacuation");
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", migrationCommitment);
+    owner = persistLayoutLabEvacuation(owner, "W1N1", evacuation);
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const persisted = owner.records[0]?.labEvacuation;
+    if (persisted === undefined) throw new Error("expected persisted active mixed evacuation");
+    const flowIds = layoutLabEvacuationFlowIds("W1N1", persisted);
+    if (flowIds === null || flowIds.length !== 2)
+      throw new Error("expected active mixed flow pair");
+
+    const following = labMineralEvacuationFixture(
+      750,
+      1_000,
+      10_000,
+      101,
+      fixture.replacementId,
+      500,
+      250,
+    );
+    const activeFollowing = activeReactionLabMigration(following);
+    const logistics = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [activeFollowing],
+      records: owner.records,
+      snapshot: { rooms: [following.room] } as unknown as WorldSnapshot,
+      tick: 101,
+    });
+    expect(logistics).toMatchObject({
+      authorizedFlowIds: flowIds,
+      budgets: [expect.any(Object), expect.any(Object)],
+      demands: {
+        edges: [
+          expect.objectContaining({ id: flowIds[0], maximumAmount: 500 }),
+          expect.objectContaining({ id: flowIds[1], maximumAmount: 750 }),
+        ],
+        suppressedSinkTargetIds: ["lab-external", fixture.replacementId],
+        suppressedSourceTargetIds: ["lab-external", fixture.replacementId],
+      },
+    });
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [
+          {
+            ...activeFollowing,
+            activity: ["commitment", "intent", "pending-attempt"] as const,
+          },
+        ],
+        records: owner.records,
+        snapshot: { rooms: [following.room] } as unknown as WorldSnapshot,
+        tick: 101,
+      }).authorizedFlowIds,
+    ).toEqual(flowIds);
+
+    const partial = labMineralEvacuationFixture(
+      300,
+      1_450,
+      10_450,
+      102,
+      fixture.replacementId,
+      200,
+      550,
+    );
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(flowIds),
+        activeLogisticsTargetIds: new Set(["lab-external", fixture.replacementId, "storage"]),
+        colony: partial.colony,
+        labEvacuation: JSON.parse(JSON.stringify(persisted)) as typeof evacuation,
+        labMigration: activeReactionLabMigration(partial),
+        logisticsEvidenceReady: true,
+        placements: [...partial.placements].reverse(),
+        room: {
+          ...partial.room,
+          ownedLabs: [...(partial.room.ownedLabs ?? [])].reverse(),
+          structures: [...(partial.room.structures ?? [])].reverse(),
+        },
+      }),
+    ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+
+    const completeFixture = labMineralEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      103,
+      fixture.replacementId,
+      0,
+      750,
+    );
+    const completeMigration = activeReactionLabMigration(completeFixture);
+    const complete = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: completeFixture.colony,
+      labEvacuation: evacuation,
+      labMigration: completeMigration,
+      logisticsEvidenceReady: true,
+      placements: completeFixture.placements,
+      room: completeFixture.room,
+    });
+    expect(complete.proposals).toHaveLength(1);
+    expect(complete.proposals[0]?.stableId).toContain("remove-active-reaction-lab-v1");
+    expect(complete.proposals[0]?.targetId).toBe("lab-external");
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: completeFixture.colony,
+        labEvacuation: evacuation,
+        labMigration: {
+          ...completeMigration,
+          activity: ["commitment", "intent", "pending-attempt"] as const,
+        },
+        logisticsEvidenceReady: true,
+        placements: completeFixture.placements,
+        room: completeFixture.room,
+      }).proposals,
+    ).toEqual([]);
+  });
+
   it("persists and completes one mineral-only quiescent-lab evacuation into active storage", () => {
     const fixture = labMineralEvacuationFixture(750, 1_000, 10_000, 100);
     const staged = planMigration({

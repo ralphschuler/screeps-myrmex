@@ -669,7 +669,6 @@ function rebindableHandoffTarget(lab: OwnedLabSnapshot): boolean {
     Number.isSafeInteger(lab.mineralAmount) &&
     lab.mineralAmount >= 0 &&
     lab.mineralAmount <= lab.mineralCapacity &&
-    (lab.energy === 0 || lab.mineralAmount === 0) &&
     mineralTypeValid &&
     lab.store.usedCapacity === lab.energy + lab.mineralAmount &&
     lab.store.resources.length === Number(lab.energy > 0) + Number(lab.mineralAmount > 0) &&

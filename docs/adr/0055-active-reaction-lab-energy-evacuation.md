@@ -36,8 +36,8 @@ and irreversible command boundaries.
   fingerprint, source target, byte-identical role arrays, and retained replacement. A post-handoff
   pending reaction effect retains this flow authorization and endpoint suppression; an
   old-assignment attempt cannot produce the ready view. Generic active Industry and every
-  mineral/mixed evacuation still require quiescence. ADR 0056 later supersedes only this mineral-
-  only exclusion; mixed evacuation remains quiescent-only.
+  mineral/mixed evacuation still require quiescence. ADR 0056 later supersedes the mineral-only
+  exclusion, and ADR 0057 later supersedes the exact mixed exclusion.
 - Existing V3 contracts, leases, agents, action arbitration, and executors perform the only
   `withdraw` and `transfer` commands. Reaction intents remain independently authorized on retained
   labs; migration does not reserve or execute a lab API slot.
@@ -58,9 +58,9 @@ blocks destruction.
 The path remains bounded by eight Industry rooms, ten labs per room, 64 layout records, the existing
 two-room migration window, 64 lab evacuation flows, 128 removal candidates, and one global destroy
 command. Rollback requires only reverting code: Industry owner V5 and layouts owner V13 remain
-unchanged. Active mixed evacuation, boost handoff, terminal destinations, multiple labs, general
-layout-revision migration, defensive migration, and creep dismantling remain issue #99. ADR 0056
-subsequently admits the mineral-only form.
+unchanged. Boost handoff, terminal destinations, multiple labs, general layout-revision migration,
+defensive migration, and creep dismantling remain issue #99. ADR 0056 subsequently admits the
+mineral-only form, and ADR 0057 admits the exact mixed form.
 
 ## Mechanics sources
 
