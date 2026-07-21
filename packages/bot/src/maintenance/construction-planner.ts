@@ -870,6 +870,9 @@ export class ConstructionPlanner {
                   : {
                       destinationId: lab.destination.id,
                       destinationInitialAmount: lab.destinationResourceAmount,
+                      ...(lab.destinationStructureType === "terminal"
+                        ? { destinationStructureType: "terminal" as const }
+                        : {}),
                       energyAmount: lab.targetEnergy,
                       expiresAt,
                       mineralAmount: lab.targetMineralAmount,
@@ -924,6 +927,7 @@ export class ConstructionPlanner {
           const flowActive =
             flowIds?.some((flowId) => input.activeLogisticsFlowIds?.has(flowId) === true) === true;
           const mixedTerms = "energyAmount" in labEvacuation ? labEvacuation : null;
+          const mixedTerminal = mixedTerms !== null && "destinationStructureType" in mixedTerms;
           const mineralTerms = "resourceType" in labEvacuation ? labEvacuation : null;
           const energyTerms = "replacementInitialEnergy" in labEvacuation ? labEvacuation : null;
           const singleAmount = "amount" in labEvacuation ? labEvacuation.amount : 0;
@@ -936,7 +940,8 @@ export class ConstructionPlanner {
               ? 0
               : (lab.destinationResources.get(mineralTerms.resourceType) ?? 0);
           let reason: LayoutMigrationBlocker | null = null;
-          if (
+          if (mixedTerminal && input.labMigration?.quiescent !== true) reason = "industry-active";
+          else if (
             input.activeLogisticsFlowIds === undefined ||
             input.activeLogisticsTargetIds === undefined ||
             flowIds === null

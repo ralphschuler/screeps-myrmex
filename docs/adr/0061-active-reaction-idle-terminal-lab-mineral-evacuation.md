@@ -54,9 +54,10 @@ The path remains bounded by eight Industry rooms, ten labs per room, 64 layout r
 evacuation flows, 128 logistics nodes/endpoints and removal candidates, the existing two-room
 migration window, and one global destroy command. Rollback requires only reverting code and
 documentation because layouts V14 and Industry owner V5 are unchanged. ADR 0062 subsequently permits
-the equivalent mineral-only explicit-boost handoff. Mixed terminal stock, autonomous boost-manifest
-production, general multi-step migration, defensive migration, and creep dismantling remain in
-parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99).
+the equivalent mineral-only explicit-boost handoff. ADR 0063 subsequently permits quiescent mixed
+terminal stock; active-work mixed terminal stock, autonomous boost-manifest production, general
+multi-step migration, defensive migration, and creep dismantling remain in parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99).
 
 ## Mechanics sources
 

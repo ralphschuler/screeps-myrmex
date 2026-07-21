@@ -22,13 +22,13 @@ logistics, contract, and command authorities.
   eligible internal send uses that room as source or destination. Missing send evidence publishes no
   terminal.
 - Layouts owner-local schema V14 adds only an optional `destinationStructureType: "terminal"`
-  discriminator to the existing mineral-only lab evacuation. Its absence preserves V12/V13 storage
+  discriminator to a mineral-bearing lab evacuation. Its absence preserves V12/V13 storage
   semantics. V1-V13 migration invents no terminal evidence; V13 code rejects and preserves V14 owner
   bytes.
-- Terminal destinations remain unavailable to mixed energy/mineral evacuations. ADR 0061
-  subsequently permits the mineral-only active-reaction handoff to reuse this exact V14 destination;
-  ADR 0062 permits the equivalent exact ready explicit-boost handoff under the same storage-absence
-  and current no-send evidence.
+- ADR 0063 subsequently permits the quiescent mixed energy/mineral evacuation to reuse this exact
+  V14 destination for mineral while energy still moves to the retained lab. ADR 0061 permits the
+  mineral-only active-reaction handoff to reuse this destination; ADR 0062 permits the equivalent
+  exact ready explicit-boost handoff under the same storage-absence and current no-send evidence.
 - A persisted terminal-bound evacuation reserves its room against every internally planned send,
   whether the room would be the source or destination. `IndustryDirector` remains the sole send
   policy owner and reports `terminal-reserved`; no terminal command authority is added.
@@ -51,9 +51,9 @@ reset, and structure reordering retain the same bounded commitment.
 
 Internal sends cannot race the reserved terminal. External incoming transfers, other Store activity,
 capacity loss, stock consumption, terminal inactivity, unauthorized active lab work, threat,
-malformed evidence, or timeout reduce progress and authorize no destruction. ADR 0061's exact ready
-reaction handoff is the only active-work exception. Fresh Store evidence, not an `OK` command,
-proves preservation.
+malformed evidence, or timeout reduce progress and authorize no destruction. ADRs 0061 and 0062 are
+the only active-work exceptions. ADR 0063's mixed composition remains quiescent-only. Fresh Store
+evidence, not an `OK` command, proves preservation.
 
 The persistent cost is one optional fixed discriminator in the existing single lab evacuation per
 room. Rollback requires reverting code and documentation; V13 fails closed on V14 owner bytes until

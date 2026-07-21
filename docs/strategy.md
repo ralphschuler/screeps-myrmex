@@ -115,37 +115,38 @@ suppresses every internal send from or to that room while the V14 terminal commi
 funded mineral flow suppresses the obsolete lab's ordinary source/refill publication; removal waits
 for fresh lab emptiness, baseline-plus-amount destination stock, retired work, and unchanged
 destination, quiescence or handoff, cluster, and safety evidence. A current boost intent or matching
-pending effect allows evacuation to continue but blocks removal. Mixed stock remains storage-only. A
-target holding both energy and one mineral kind combines those exact destinations in one bounded
-commitment: energy and mineral flows are admitted as an atomic pair, and removal waits for both
-destination gains plus complete work retirement. One active reaction may continue only when the
-external target has no current or post-removal role, the retained nine labs keep byte-identical
-reagent/product/boost IDs, and Industry durably advances only the assignment fingerprint before any
-reaction, migration, or destroy command. An empty target proceeds directly. A positive energy-only
-target first reuses the existing V13 evacuation: one funded optional-growth creep flow moves the
-exact amount to the canonical retained lab while reaction work continues, and removal waits for
-fresh target emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, unchanged
-handoff evidence, and no pending reaction attempt. A zero-energy target holding one mineral kind
-instead reuses the V13 mineral evacuation and exact active storage. Only when no active storage
-exists, the same reaction or boost handoff may reuse the V14 exact idle-terminal destination under
-current no-send evidence. One funded flow moves the complete amount under aggregate capacity, and
-removal waits for the exact destination gain, retired flow/endpoints, unchanged destination/handoff
-evidence, and no pending attempt. A target holding both forms reuses the V13 mixed record: both
-existing funded flows are admitted atomically, reaction work continues, and removal waits for both
-exact destination gains plus complete work retirement. Pending predecessor effects settle first; the
-objective and settled amount never restart. One existing explicit funded boost may use the same
-role-identical handoff: only its assignment fingerprint advances, while creep/body identity,
-compound, part target, deadline, and settled parts remain fixed. The rebound tick emits neither
-staging nor a boost command; durable prior Industry owner evidence plus a current executable intent
-or matching pending attempt enables the retained boost handoff. That current intent and its matching
-pending effect both block removal. Existing progress advances once only from exact next-observation
-body plus 30-mineral/ 20-energy corroboration; partial effects resume and conflicting deltas retain
-the commitment. A supplied funded manifest remains non-quiescent until completion even if invalid
-creep or objective evidence suppresses its commitment; runtime does not yet produce autonomous boost
-manifests. A uniquely reconstructible durable rebound is held without staging, lab command, removal,
-or layout revision while retained-lab staging or source-layout evidence is unavailable. Mixed
-terminal destinations, contaminated, cooling, target-role-assigned, ambiguous, malformed,
-capacity-lost, cluster-breaking, or pressured labs remain.
+pending effect allows evacuation to continue but blocks removal. While quiescent, a target holding
+both energy and one mineral kind may use that same terminal for mineral while energy still moves to
+the retained lab. Both flows are admitted as an atomic pair, and removal waits for both destination
+gains plus complete work retirement. Active-work mixed stock remains storage-only. One active
+reaction may continue only when the external target has no current or post-removal role, the
+retained nine labs keep byte-identical reagent/product/boost IDs, and Industry durably advances only
+the assignment fingerprint before any reaction, migration, or destroy command. An empty target
+proceeds directly. A positive energy-only target first reuses the existing V13 evacuation: one
+funded optional-growth creep flow moves the exact amount to the canonical retained lab while
+reaction work continues, and removal waits for fresh target emptiness, baseline-plus-amount
+replacement energy, retired flow/endpoints, unchanged handoff evidence, and no pending reaction
+attempt. A zero-energy target holding one mineral kind instead reuses the V13 mineral evacuation and
+exact active storage. Only when no active storage exists, the same reaction or boost handoff may
+reuse the V14 exact idle-terminal destination under current no-send evidence. One funded flow moves
+the complete amount under aggregate capacity, and removal waits for the exact destination gain,
+retired flow/endpoints, unchanged destination/handoff evidence, and no pending attempt. A target
+holding both forms reuses the V13 mixed record: both existing funded flows are admitted atomically,
+reaction work continues, and removal waits for both exact destination gains plus complete work
+retirement. Pending predecessor effects settle first; the objective and settled amount never
+restart. One existing explicit funded boost may use the same role-identical handoff: only its
+assignment fingerprint advances, while creep/body identity, compound, part target, deadline, and
+settled parts remain fixed. The rebound tick emits neither staging nor a boost command; durable
+prior Industry owner evidence plus a current executable intent or matching pending attempt enables
+the retained boost handoff. That current intent and its matching pending effect both block removal.
+Existing progress advances once only from exact next-observation body plus 30-mineral/ 20-energy
+corroboration; partial effects resume and conflicting deltas retain the commitment. A supplied
+funded manifest remains non-quiescent until completion even if invalid creep or objective evidence
+suppresses its commitment; runtime does not yet produce autonomous boost manifests. A uniquely
+reconstructible durable rebound is held without staging, lab command, removal, or layout revision
+while retained-lab staging or source-layout evidence is unavailable. Active-work mixed terminal
+destinations, contaminated, cooling, target-role-assigned, ambiguous, malformed, capacity-lost,
+cluster-breaking, or pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

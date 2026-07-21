@@ -430,9 +430,7 @@ function labEvacuationShape(evacuation: LayoutLabEvacuation): {
       ? MAX_LAYOUT_TERMINAL_CAPACITY
       : MAX_LAYOUT_STORAGE_CAPACITY;
   const resourceType = mineral ? evacuation.resourceType : null;
-  const destinationTypeInvalid = "destinationStructureType" in evacuation && mixed;
   if (
-    destinationTypeInvalid ||
     !Number.isSafeInteger(energyAmount) ||
     energyAmount < 0 ||
     energyAmount > MAX_LAYOUT_LAB_ENERGY ||
