@@ -116,11 +116,14 @@ unchanged destination, quiescence, cluster, and safety evidence. Issue #326 admi
 one bounded record, atomically publishes distinct energy/replacement-lab and mineral/storage flows,
 and requires both exact destination gains plus complete work retirement before removal. Issue #330
 permits one active reaction commitment to rebind onto a role-identical nine-committed-lab assignment
-before the empty unused external lab is removed. The prior Industry owner must already contain that
+before the unused external lab is removed. The prior Industry owner must already contain that
 fingerprint. A uniquely reconstructible durable rebound enters a non-staging, non-executable blocked
 view during temporary source-layout evidence loss or retained-lab staging, and layout planning pins
-that source record or degrades. Pending old-assignment attempts, boost work, role drift, stock,
-cooldown, logistics, or unsafe colony evidence preserve the target. `StructureRemovalArbiter` alone
+that source record or degrades. Issue #333 permits the initial target to contain one exact energy-
+only amount, then reuses the V13 funded lab-energy evacuation during the durable ready handoff.
+Removal waits for exact delivery, retired flow/endpoints, and no pending reaction attempt. Pending
+old-assignment attempts, boost work, role drift, mineral/mixed or malformed stock, cooldown,
+logistics drift, or unsafe colony evidence preserve the target. `StructureRemovalArbiter` alone
 authorizes removal and `StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension,
 container, tower, link, and lab result reuses the same fixed receipt.
 
@@ -1699,8 +1702,8 @@ safety evidence. [ADR 0053](adr/0053-quiescent-lab-mixed-stock-evacuation.md) re
 
 Issue #330 adds one active reaction-only continuation. Runtime reconstructs the current committed
 RCL8 lab positions without persisting placements. Industry may replace only a reaction commitment's
-assignment fingerprint when exactly nine active committed labs plus one empty zero-cooldown external
-lab produce byte-identical reagent, product, and boost role IDs before and after removal. Objective,
+assignment fingerprint when exactly nine active committed labs plus one zero-cooldown external lab
+produce byte-identical reagent, product, and boost role IDs before and after removal. Objective,
 chemistry, deadline, batch amount, and settled progress remain unchanged. The rebound tick emits no
 lab or destroy command; a later tick requires the new fingerprint in prior `IndustryOwnerV5`
 evidence before the retained-lab reaction and existing one-command removal path may proceed. The
@@ -1710,9 +1713,19 @@ predecessor attempt settles first; a post-handoff attempt continues exact settle
 destroy observation is pending. [ADR 0054](adr/0054-active-reaction-lab-assignment-handoff.md)
 records the boundary.
 
-Other structure stock evacuation, boost-work handoff, stocked active-lab migration, defensive
-migration, terminal-destination migration, general multi-step migration, and creep dismantling
-remain issue #99 and fail closed.
+Issue #333 permits only one exact positive energy-only initial target under that same role-identical
+reaction handoff. After the rebound is durable, `ConstructionPlanner` persists the existing V13
+energy evacuation and the sole LogisticsPlanner admits its funded V3 creep flow despite current
+reaction activity only while the handoff is exact, ready, and layout-bound. A pending post-handoff
+reaction effect retains flow authorization and endpoint suppression while blocking removal. Retained
+labs may continue exact reaction settlement. Removal still requires fresh target emptiness,
+baseline-plus-amount replacement energy, retired flow/endpoints, unchanged roles and safety, and no
+pending attempt. Mineral or mixed stock remains excluded.
+[ADR 0055](adr/0055-active-reaction-lab-energy-evacuation.md) records the boundary.
+
+Other active-lab mineral/mixed stock evacuation, boost-work handoff, defensive migration,
+terminal-destination migration, general multi-step migration, and creep dismantling remain issue #99
+and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -1899,12 +1912,14 @@ distinct, and boost mineral/energy consumption cannot be mislabeled as produced 
 `phase2-labs-results.json` evidence makes `phase2.labs` source-available under
 `runtime-config-source-v26` without enabling factory behavior.
 
-For issue #330 only, the same policy consumes a tick-local committed-lab geometry view from runtime
-composition. A role-identical nine-lab result may advance one existing reaction commitment's
-assignment fingerprint without changing its objective or settlement counters. First publication is
-non-executable; only prior-owner evidence makes the handoff ready. Old-assignment attempts settle
-before rebinding, while post-handoff attempts remain bound to the retained assignment during
-structure-removal retry or observation. Boost commitments and stocked targets cannot use this path.
+For issues #330 and #333 only, the same policy consumes a tick-local committed-lab geometry view
+from runtime composition. A role-identical nine-lab result may advance one existing reaction
+commitment's assignment fingerprint without changing its objective or settlement counters. First
+publication is non-executable; only prior-owner evidence makes the handoff ready. Old-assignment
+attempts settle before rebinding, while post-handoff attempts remain bound to the retained
+assignment during structure-removal retry or observation. An initial target may be empty or contain
+one exact energy-only amount; the latter uses the existing layout/logistics evacuation after durable
+rebound. Boost commitments and mineral or mixed targets cannot use this path.
 
 Funded `ready` factory and power-processing commitments enter one bounded mature command projection.
 Both intent kinds claim the canonical physical-structure exclusive key before the shared channel's
@@ -2313,9 +2328,11 @@ Required architecture assertions include:
   single-kind mineral target instead requires the Industry-published exact active storage, one
   funded mineral flow, aggregate capacity, baseline-plus-amount storage stock, retired work, and
   unchanged destination evidence; a target holding both resources atomically admits those two flow
-  forms and requires both exact destination gains plus all flow/endpoint retirement; one empty
-  external target may remain under active reaction work only when Industry durably rebinds the exact
-  same role IDs and commitment progress to the nine retained labs before any command or removal;
+  forms and requires both exact destination gains plus all flow/endpoint retirement; one empty or
+  exact energy-only external target may remain under active reaction work only when Industry durably
+  rebinds the same role IDs and commitment progress to the nine retained labs before any command or
+  migration, and the energy path additionally requires the existing exact funded evacuation,
+  delivered replacement gain, retired flow/endpoints, and no pending attempt before removal;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;

@@ -490,7 +490,7 @@ function deriveAssignmentHandoffs(input: {
       postRemoval.fingerprint === current.fingerprint ||
       !sameAssignmentRoles(current, postRemoval) ||
       assignmentIds(postRemoval).has(target.id) ||
-      (!emptyHandoffTarget(target) &&
+      (!rebindableHandoffTarget(target) &&
         !input.previousCommitments.some(
           (commitment) =>
             commitment.kind === "reaction" &&
@@ -642,17 +642,24 @@ function validCommittedPositions(layout: CommittedLabLayout): boolean {
   return keys.size === layout.labPositions.length;
 }
 
-function emptyHandoffTarget(lab: OwnedLabSnapshot): boolean {
+function rebindableHandoffTarget(lab: OwnedLabSnapshot): boolean {
+  const energyResources = lab.store.resources.filter(
+    ({ resourceType }) => resourceType === "energy",
+  );
   return (
     lab.active &&
     lab.cooldown === 0 &&
     lab.energyCapacity === 2_000 &&
     lab.mineralCapacity === 3_000 &&
-    lab.energy === 0 &&
+    Number.isSafeInteger(lab.energy) &&
+    lab.energy >= 0 &&
+    lab.energy <= lab.energyCapacity &&
     lab.mineralAmount === 0 &&
     lab.mineralType === null &&
-    lab.store.usedCapacity === 0 &&
-    lab.store.resources.length === 0
+    lab.store.usedCapacity === lab.energy &&
+    lab.store.resources.length === Number(lab.energy > 0) &&
+    energyResources.length === Number(lab.energy > 0) &&
+    (lab.energy === 0 || energyResources[0]?.amount === lab.energy)
   );
 }
 

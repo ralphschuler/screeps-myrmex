@@ -184,6 +184,7 @@ describe("composed lab runtime", () => {
       expect.objectContaining({ reason: "no-effect", status: "retry" }),
     ]);
     expect(noEffect.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(noEffect.migrationRooms[0]?.assignmentHandoff?.status).toBe("ready");
     expect(noEffect.migrationRooms[0]?.quiescent).toBe(false);
     const observed = composeHandoff(
       handoffWorld(103, false, true),
@@ -210,7 +211,47 @@ describe("composed lab runtime", () => {
     });
   });
 
-  it("keeps assignment handoff closed for pending effects, stock, and changed roles", () => {
+  it("durably rebinds one reaction around an energy-only external lab", () => {
+    const objectiveValue = { ...objective("forward"), amount: 30 };
+    const first = composeHandoff(handoffWorld(100), objectiveValue);
+    const previous = required(first.policy.commitments[0]);
+    if (previous.kind !== "reaction") throw new Error("expected reaction commitment");
+
+    const pending = composeHandoff(
+      withExternalEnergy(handoffWorld(101, true), 100),
+      objectiveValue,
+      [{ ...previous, settledAmount: 5 }],
+    );
+    expect(pending.intents).toEqual([]);
+    expect(pending.policy.commitments).toEqual([
+      {
+        ...previous,
+        assignmentFingerprint: pending.assignments[0]?.fingerprint,
+        settledAmount: 5,
+      },
+    ]);
+    expect(pending.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      status: "pending",
+      targetLabId: "external",
+    });
+
+    const durable = roundTrip(pending.policy.commitments);
+    const ready = composeHandoff(
+      withExternalEnergy(handoffWorld(102), 100),
+      objectiveValue,
+      durable,
+    );
+    const reordered = composeHandoff(
+      withExternalEnergy(handoffWorld(102, true), 100),
+      objectiveValue,
+      durable,
+    );
+    expect(ready.migrationRooms[0]?.assignmentHandoff?.status).toBe("ready");
+    expect(ready.intents).toEqual([expect.objectContaining({ kind: "lab.run-reaction" })]);
+    expect(JSON.stringify(reordered.policy)).toBe(JSON.stringify(ready.policy));
+  });
+
+  it("keeps assignment handoff closed for pending effects, mineral stock, and changed roles", () => {
     const objectiveValue = { ...objective("forward"), amount: 30 };
     const first = composeHandoff(handoffWorld(100), objectiveValue);
     const previous = required(first.policy.commitments[0]);
@@ -219,7 +260,7 @@ describe("composed lab runtime", () => {
     expect(pending.migrationRooms[0]?.assignmentHandoff).toBeNull();
     expect(pending.policy.commitments).toEqual([previous]);
 
-    const stocked = composeHandoff(withExternalEnergy(handoffWorld(101), 100), objectiveValue, [
+    const stocked = composeHandoff(withExternalMineral(handoffWorld(101), 100), objectiveValue, [
       previous,
     ]);
     expect(stocked.migrationRooms[0]?.assignmentHandoff).toBeNull();
@@ -469,9 +510,37 @@ function withExternalEnergy(snapshot: WorldSnapshot, energy: number): WorldSnaps
                 energy,
                 store: {
                   ...value.store,
-                  freeCapacity: 5_000 - energy,
+                  capacity: null,
+                  freeCapacity: null,
                   resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
                   usedCapacity: energy,
+                },
+              }
+            : value,
+        ),
+      },
+    ],
+  };
+}
+
+function withExternalMineral(snapshot: WorldSnapshot, mineralAmount: number): WorldSnapshot {
+  const room = required(snapshot.ownedRooms[0]);
+  return {
+    ...snapshot,
+    ownedRooms: [
+      {
+        ...room,
+        ownedLabs: (room.ownedLabs ?? []).map((value) =>
+          value.id === "external"
+            ? {
+                ...value,
+                mineralAmount,
+                mineralType: "Z",
+                store: {
+                  ...value.store,
+                  freeCapacity: 5_000 - mineralAmount,
+                  resources: [{ amount: mineralAmount, resourceType: "Z" }],
+                  usedCapacity: mineralAmount,
                 },
               }
             : value,
