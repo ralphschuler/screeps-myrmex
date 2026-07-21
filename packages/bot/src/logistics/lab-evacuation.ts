@@ -41,7 +41,7 @@ export function completeExecutableLayoutLabEvacuationFlowIds(input: {
   return complete;
 }
 
-/** Projects currently quiescent layout-owned lab evacuation terms into the sole logistics graph. */
+/** Projects quiescent or exact active-reaction layout-owned lab evacuation terms. */
 export function projectLayoutLabEvacuations(input: {
   readonly existingBudgets: readonly {
     readonly category: string;
@@ -75,20 +75,29 @@ export function projectLayoutLabEvacuations(input: {
       continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
     const migration = input.migrationRooms.find(({ roomName }) => roomName === record.roomName);
+    const shape = labEvacuationShape(evacuation);
+    const quiescent = migration === undefined ? false : quiescentMigration(migration);
+    const activeReaction =
+      migration === undefined || shape === null
+        ? false
+        : activeReactionEnergyMigration(record, migration, evacuation, shape);
     if (
       room?.controller?.ownership !== "owned" ||
       room.observedAt !== input.tick ||
       room.hostileCreeps.length > 0 ||
       migration?.observedAt !== input.tick ||
-      !migration.quiescent ||
-      migration.activity.length !== 0 ||
-      migration.assignment === null
+      migration.assignment === null ||
+      shape === null ||
+      (!quiescent && !activeReaction)
     )
       continue;
+    const effectiveAssignment = activeReaction
+      ? (migration.assignmentHandoff?.assignment ?? migration.assignment)
+      : migration.assignment;
     const assignedIds = new Set([
-      ...migration.assignment.reagentLabIds,
-      ...migration.assignment.productLabIds,
-      ...migration.assignment.boostLabIds,
+      ...effectiveAssignment.reagentLabIds,
+      ...effectiveAssignment.productLabIds,
+      ...effectiveAssignment.boostLabIds,
     ]);
     if (!assignedIds.has(evacuation.replacementId)) continue;
     const source = room.ownedLabs?.find(({ id }) => id === evacuation.sourceId);
@@ -98,8 +107,6 @@ export function projectLayoutLabEvacuations(input: {
     const replacementEnergy = exactLabEnergy(replacement);
     if (sourceEnergy === null || replacementEnergy === null) continue;
 
-    const shape = labEvacuationShape(evacuation);
-    if (shape === null) continue;
     const remainingEnergy = Math.max(
       sourceEnergy,
       shape.replacementInitialEnergy + shape.energyAmount - replacementEnergy,
@@ -325,6 +332,54 @@ export function projectLayoutLabEvacuations(input: {
       suppressedSourceTargetIds,
     },
   });
+}
+
+function quiescentMigration(migration: LabMigrationRoomView): boolean {
+  return migration.quiescent && migration.activity.length === 0;
+}
+
+function activeReactionEnergyMigration(
+  record: LayoutRecord,
+  migration: LabMigrationRoomView,
+  evacuation: LayoutLabEvacuation,
+  shape: NonNullable<ReturnType<typeof labEvacuationShape>>,
+): boolean {
+  const handoff = migration.assignmentHandoff;
+  const current = migration.assignment;
+  if (
+    current === null ||
+    migration.quiescent ||
+    !migration.activity.includes("commitment") ||
+    shape.energyAmount <= 0 ||
+    shape.mineralAmount !== 0 ||
+    "resourceType" in evacuation ||
+    handoff?.status !== "ready" ||
+    handoff.targetLabId !== evacuation.sourceId ||
+    handoff.layoutFingerprint !== record.fingerprint ||
+    handoff.fromFingerprint !== current.fingerprint ||
+    handoff.assignment.roomName !== record.roomName ||
+    !sameAssignmentRoles(current, handoff.assignment)
+  )
+    return false;
+  const assignedIds = new Set([
+    ...handoff.assignment.reagentLabIds,
+    ...handoff.assignment.productLabIds,
+    ...handoff.assignment.boostLabIds,
+  ]);
+  return !assignedIds.has(evacuation.sourceId) && assignedIds.has(evacuation.replacementId);
+}
+
+function sameAssignmentRoles(
+  left: NonNullable<LabMigrationRoomView["assignment"]>,
+  right: NonNullable<LabMigrationRoomView["assignment"]>,
+): boolean {
+  const same = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && a.every((value, index) => value === b[index]);
+  return (
+    same(left.reagentLabIds, right.reagentLabIds) &&
+    same(left.productLabIds, right.productLabIds) &&
+    same(left.boostLabIds, right.boostLabIds)
+  );
 }
 
 function labEvacuationShape(evacuation: LayoutLabEvacuation): {

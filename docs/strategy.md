@@ -114,13 +114,18 @@ emptiness, baseline-plus-amount storage stock, retired work, and unchanged desti
 cluster, and safety evidence. A target holding both energy and one mineral kind combines those exact
 destinations in one bounded commitment: energy and mineral flows are admitted as an atomic pair, and
 removal waits for both destination gains plus complete work retirement. One active reaction may
-continue only when the empty external target has no current or post-removal role, the retained nine
-labs keep byte-identical reagent/product/boost IDs, and Industry durably advances only the
-assignment fingerprint before any reaction or destroy command. Pending predecessor effects settle
-first; the objective and settled amount never restart. A uniquely reconstructible durable rebound is
-held without staging, reaction, removal, or layout revision while retained-lab staging or source-
-layout evidence is unavailable. Terminal-only, contaminated, cooling, boost-assigned, stocked
-active-work, ambiguous, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
+continue only when the external target has no current or post-removal role, the retained nine labs
+keep byte-identical reagent/product/boost IDs, and Industry durably advances only the assignment
+fingerprint before any reaction, migration, or destroy command. An empty target proceeds directly. A
+positive energy-only target first reuses the existing V13 evacuation: one funded optional-growth
+creep flow moves the exact amount to the canonical retained lab while reaction work continues, and
+removal waits for fresh target emptiness, baseline-plus-amount replacement energy, retired
+flow/endpoints, unchanged handoff evidence, and no pending reaction attempt. Pending predecessor
+effects settle first; the objective and settled amount never restart. A uniquely reconstructible
+durable rebound is held without staging, reaction, removal, or layout revision while retained-lab
+staging or source-layout evidence is unavailable. Terminal-only, mineral/mixed-stock active,
+contaminated, cooling, boost-assigned, ambiguous, malformed, capacity-lost, cluster-breaking, or
+pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
