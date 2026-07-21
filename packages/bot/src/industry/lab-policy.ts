@@ -82,7 +82,7 @@ export interface LabAssignmentHandoff {
 
 export interface LabPolicyRoomObservation {
   readonly assignment: LabClusterAssignment | null;
-  /** Tick-local Industry-owned permission to rebind one reaction onto role-equivalent retained labs. */
+  /** Tick-local Industry-owned permission to rebind one commitment onto role-equivalent retained labs. */
   readonly assignmentHandoff?: LabAssignmentHandoff;
   readonly catalog: ReactionCatalog | null;
   readonly colonyId: string;
@@ -448,8 +448,7 @@ function previousStaleReason(
   const handoff = room.assignmentHandoff;
   const assignmentMatches =
     previous.assignmentFingerprint === room.assignment?.fingerprint ||
-    (previous.kind === "reaction" &&
-      handoff !== undefined &&
+    (handoff !== undefined &&
       (previous.assignmentFingerprint === handoff.fromFingerprint ||
         previous.assignmentFingerprint === handoff.assignment.fingerprint));
   if (!assignmentMatches) return "cluster-changed";
@@ -464,7 +463,7 @@ function assignmentFor(
   previous: LabPolicyCommitment | undefined,
 ): LabClusterAssignment {
   const handoff = room.assignmentHandoff;
-  return previous?.kind === "reaction" &&
+  return previous !== undefined &&
     handoff !== undefined &&
     (previous.assignmentFingerprint === handoff.fromFingerprint ||
       previous.assignmentFingerprint === handoff.assignment.fingerprint)
@@ -657,10 +656,15 @@ function projectBoost(
   const creep = room.creeps.find(({ id }) => id === manifest.creepId);
   if (creep === undefined)
     return { commitment: null, completed: false, demands: [], reason: "lost-creep" };
+  const handoff = room.assignmentHandoff;
+  const reboundPending =
+    previous?.kind === "boost" &&
+    handoff !== undefined &&
+    previous.assignmentFingerprint === handoff.fromFingerprint;
   const observed = creep.body.filter(
     ({ boost, type }) => type === manifest.partType && boost === manifest.compound,
   ).length;
-  const settled = Math.max(previous?.kind === "boost" ? previous.settledParts : 0, observed);
+  const settled = previous?.kind === "boost" ? previous.settledParts : observed;
   if (settled >= manifest.partCount)
     return { commitment: null, completed: true, demands: [], reason: null };
   const assignment = assignmentFor(room, previous);
@@ -689,18 +693,29 @@ function projectBoost(
   return {
     commitment,
     completed: false,
-    demands: freeze([
-      makeDemand(
-        manifest,
-        assignedRoom,
-        "boost-compound",
-        labId,
-        "fill",
-        manifest.compound,
-        remaining * 30,
-      ),
-      makeDemand(manifest, assignedRoom, "boost-energy", labId, "fill", "energy", remaining * 20),
-    ]),
+    demands:
+      handoff?.blocked === true || reboundPending
+        ? []
+        : freeze([
+            makeDemand(
+              manifest,
+              assignedRoom,
+              "boost-compound",
+              labId,
+              "fill",
+              manifest.compound,
+              remaining * 30,
+            ),
+            makeDemand(
+              manifest,
+              assignedRoom,
+              "boost-energy",
+              labId,
+              "fill",
+              "energy",
+              remaining * 20,
+            ),
+          ]),
     reason: null,
   };
 }

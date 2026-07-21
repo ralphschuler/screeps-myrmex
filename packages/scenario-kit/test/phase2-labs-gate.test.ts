@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import checked from "../../../docs/phase2-labs-results.json";
 import {
   composeBoostFixture,
+  composeBoostHandoffFixture,
   composeLabFixture,
   executeBoostFixture,
+  labBoostHandoffFixtureWorld,
+  labFixtureBoostProgressWorld,
   labFixtureBoostWorld,
   labFixtureObjective,
   labFixtureWorld,
@@ -15,7 +18,7 @@ import {
 } from "../../bot/src/industry";
 import { canonicalHash } from "../src";
 
-describe("Phase 2 labs composed deterministic evidence (#257)", () => {
+describe("Phase 2 labs composed deterministic evidence (#257, #341)", () => {
   it("matches checked evidence and proves the bounded lab matrix", () => {
     expect(collectLabEvidence()).toEqual(checked);
   });
@@ -76,6 +79,105 @@ export function collectLabEvidence() {
     roundTrip(boost.policy.commitments),
     roundTrip([boostPending]),
   );
+  const boostProgressInitial = labFixtureBoostProgressWorld({
+    boostedParts: 0,
+    energy: 2_000,
+    mineralAmount: 60,
+    partCount: 2,
+    tick: 100,
+  });
+  const boostProgress = composeBoostFixture(
+    boostProgressInitial.snapshot,
+    boostProgressInitial.manifest,
+  );
+  const boostProgressAttempt = required(
+    createPendingLabAttempt(required(boostProgress.intents[0]), "OK"),
+  );
+  const boostPartialWorld = labFixtureBoostProgressWorld({
+    boostedParts: 1,
+    energy: 1_980,
+    mineralAmount: 30,
+    partCount: 2,
+    tick: 101,
+  });
+  const boostPartial = composeBoostFixture(
+    boostPartialWorld.snapshot,
+    boostPartialWorld.manifest,
+    boostProgress.policy.commitments,
+    [boostProgressAttempt],
+  );
+  const boostPartialSettled = settleLabComposition({
+    execution: [],
+    previousAttempts: [boostProgressAttempt],
+    projection: boostPartial,
+  });
+  const boostConflictWorld = labFixtureBoostProgressWorld({
+    boostedParts: 2,
+    energy: 1_960,
+    mineralAmount: 30,
+    partCount: 2,
+    tick: 101,
+  });
+  const boostConflict = composeBoostFixture(
+    boostConflictWorld.snapshot,
+    boostConflictWorld.manifest,
+    boostProgress.policy.commitments,
+    [boostProgressAttempt],
+  );
+  const handoffInitial = labBoostHandoffFixtureWorld(100);
+  const handoffFirst = composeBoostHandoffFixture(handoffInitial.snapshot, handoffInitial.manifest);
+  const handoffPrevious = required(handoffFirst.policy.commitments[0]);
+  const handoffPendingWorld = labBoostHandoffFixtureWorld(101, true);
+  const handoffPending = composeBoostHandoffFixture(
+    handoffPendingWorld.snapshot,
+    handoffPendingWorld.manifest,
+    [handoffPrevious],
+  );
+  const handoffRebound = required(handoffPending.policy.commitments[0]);
+  const handoffDurable = roundTrip(handoffPending.policy.commitments);
+  const handoffReadyWorld = labBoostHandoffFixtureWorld(102);
+  const handoffReady = composeBoostHandoffFixture(
+    handoffReadyWorld.snapshot,
+    handoffReadyWorld.manifest,
+    handoffDurable,
+  );
+  const handoffReadyReorderedWorld = labBoostHandoffFixtureWorld(102, true);
+  const handoffReadyReordered = composeBoostHandoffFixture(
+    roundTrip(handoffReadyReorderedWorld.snapshot),
+    roundTrip(handoffReadyReorderedWorld.manifest),
+    handoffDurable,
+  );
+  const handoffIntent = required(handoffReady.intents[0]);
+  const handoffAttempt = required(createPendingLabAttempt(handoffIntent, "OK"));
+  const handoffReadyRoom = required(handoffReadyWorld.snapshot.ownedRooms[0]);
+  const handoffReadyCreep = required(handoffReadyRoom.ownedCreeps[0]);
+  const handoffNonExecutable = composeBoostHandoffFixture(
+    {
+      ...handoffReadyWorld.snapshot,
+      ownedRooms: [
+        {
+          ...handoffReadyRoom,
+          ownedCreeps: [{ ...handoffReadyCreep, pos: { roomName: "W1N1", x: 20, y: 20 } }],
+        },
+      ],
+    },
+    handoffReadyWorld.manifest,
+    handoffDurable,
+  );
+  const handoffWaiting = composeBoostHandoffFixture(
+    handoffReadyWorld.snapshot,
+    handoffReadyWorld.manifest,
+    handoffDurable,
+    [handoffAttempt],
+  );
+  const handoffWaitingMigration = required(handoffWaiting.migrationRooms[0]);
+  const handoffSettledWorld = labBoostHandoffFixtureWorld(103, false, true);
+  const handoffSettled = composeBoostHandoffFixture(
+    handoffSettledWorld.snapshot,
+    handoffSettledWorld.manifest,
+    handoffDurable,
+    [handoffAttempt],
+  );
   const reordered = composeLabFixture(
     roundTrip(labFixtureWorld("forward")),
     roundTrip(forwardObjective),
@@ -85,10 +187,33 @@ export function collectLabEvidence() {
   const full = composeLabFixture(labFixtureWorld("full"), reverseObjective);
   const missing = composeLabFixture(labFixtureWorld("missing-lab"), forwardObjective);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     deterministic: {
       boostExecution: boostExecution[0]?.status ?? null,
+      boostHandoffExactParts: handoffSettled.settlements[0]?.settledAmount ?? 0,
+      boostHandoffFirstReboundIntents: handoffPending.intents.length,
+      boostHandoffIntent: handoffReady.intents[0]?.kind ?? null,
+      boostHandoffKind: handoffReady.migrationRooms[0]?.assignmentHandoff?.kind ?? null,
+      boostHandoffOnlyAssignmentChanged:
+        JSON.stringify({
+          ...handoffPrevious,
+          assignmentFingerprint: handoffRebound.assignmentFingerprint,
+        }) === JSON.stringify(handoffRebound),
+      boostHandoffNonExecutableStatus:
+        handoffNonExecutable.migrationRooms[0]?.assignmentHandoff?.status ?? null,
+      boostHandoffPendingAttemptVisible:
+        !handoffWaitingMigration.quiescent &&
+        handoffWaitingMigration.activity.includes("pending-attempt"),
+      boostHandoffPendingStatus:
+        handoffPending.migrationRooms[0]?.assignmentHandoff?.status ?? null,
+      boostHandoffReadyStatus: handoffReady.migrationRooms[0]?.assignmentHandoff?.status ?? null,
+      boostHandoffResetAndReorderEquivalent:
+        canonicalHash(canonicalProjection(handoffReady)) ===
+        canonicalHash(canonicalProjection(handoffReadyReordered)),
       boostIntent: boost.intents[0]?.kind ?? null,
+      boostPartialAppliedOnce:
+        boostPartialSettled.commitments[0]?.kind === "boost" &&
+        boostPartialSettled.commitments[0].settledParts === 1,
       boostResetAndReorderEquivalent:
         canonicalHash(canonicalProjection(boostExact)) ===
         canonicalHash(canonicalProjection(boostReordered)),
@@ -103,6 +228,11 @@ export function collectLabEvidence() {
         settled.commitments[0]?.kind === "reaction" ? settled.commitments[0].settledAmount : 0,
     },
     failures: {
+      boostConflictReason: boostConflict.settlements[0]?.reason ?? null,
+      boostConflictRetainsCommitment:
+        boostConflict.policy.commitments[0]?.kind === "boost" &&
+        boostConflict.policy.commitments[0].settledParts === 0 &&
+        boostConflict.migrationRooms[0]?.quiescent === false,
       contaminationDemands: contaminated.resourceDemands.dispositions.filter(
         ({ effectiveMode }) => effectiveMode === "drain",
       ).length,

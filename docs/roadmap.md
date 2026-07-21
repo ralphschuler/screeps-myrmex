@@ -163,8 +163,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   both exact gains plus complete work retirement before removal. Issue #339 repairs the already
   available lab gate's composed boost settlement: actor fingerprints now retain immutable identity
   and body shape across the expected boost annotation, while exact target-part and 30-mineral/
-  20-energy deltas remain mandatory. Boost-work handoff, terminal destinations, general multi-step
-  migration, defensive migration, and creep dismantling remain issue #99.
+  20-energy deltas remain mandatory. Issue #341 lets one existing explicit funded boost commitment
+  advance only its assignment fingerprint across the same role-identical obsolete-lab handoff. The
+  rebound tick is command free, reset/reorder preserves all boost objective and settled part terms,
+  readiness requires executable intent or pending attempt evidence, and both current and pending
+  boost work block removal. Autonomous boost manifest production, terminal destinations, general
+  multi-step migration, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

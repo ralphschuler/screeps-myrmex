@@ -18,6 +18,7 @@ import {
   type LabClusterLimits,
 } from "./lab-cluster";
 import {
+  LAB_POLICY_CAPS,
   reconcileLabPolicy,
   type BoostManifest,
   type LabAssignmentHandoff,
@@ -59,6 +60,7 @@ interface DerivedLabAssignmentHandoff extends LabAssignmentHandoff {
 }
 
 export interface LabAssignmentHandoffView extends DerivedLabAssignmentHandoff {
+  readonly kind: LabPolicyCommitment["kind"];
   readonly objectiveId: string;
   readonly objectiveRevision: number;
   readonly status: "blocked" | "pending" | "ready";
@@ -225,9 +227,33 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
       input.fundedBudgetIds,
       input.snapshot.observation.tick,
     );
+  const boostManifests = input.boostManifests ?? [];
+  const commitmentInputOverCap =
+    input.previousCommitments.length > LAB_POLICY_CAPS.maximumCommitments;
+  const settlementAssignments = effectiveAssignments(
+    currentAssignments,
+    assignmentHandoffs,
+    input.previousCommitments,
+  );
+  const settlements = commitmentInputOverCap
+    ? freeze([])
+    : reconcilePendingLabAttempts({
+        assignments: settlementAssignments,
+        commitments: input.previousCommitments,
+        creepFingerprints,
+        pendingAttempts: input.pendingAttempts,
+        snapshot: input.snapshot,
+      });
+  const policyCommitments = commitmentInputOverCap
+    ? input.previousCommitments
+    : applyExactBoostSettlements(input.previousCommitments, settlements);
+  const policyInputOverCap =
+    rooms.length > LAB_POLICY_CAPS.maximumRooms ||
+    reactionObjectives.length + boostManifests.length > LAB_POLICY_CAPS.maximumObjectives ||
+    commitmentInputOverCap;
   const first = reconcileLabPolicy({
-    boostManifests: input.boostManifests ?? [],
-    commitments: input.previousCommitments,
+    boostManifests,
+    commitments: policyCommitments,
     reactionObjectives,
     rooms,
     stagingDispositions: [],
@@ -255,8 +281,8 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
   );
   const resourceDemands = mergeDemandProjections(demandParts);
   const policy = reconcileLabPolicy({
-    boostManifests: input.boostManifests ?? [],
-    commitments: input.previousCommitments,
+    boostManifests,
+    commitments: policyCommitments,
     reactionObjectives,
     rooms,
     stagingDispositions: resourceDemands.dispositions,
@@ -267,13 +293,6 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     assignmentHandoffs,
     policy.commitments,
   );
-  const settlements = reconcilePendingLabAttempts({
-    assignments,
-    commitments: input.previousCommitments,
-    creepFingerprints,
-    pendingAttempts: input.pendingAttempts,
-    snapshot: input.snapshot,
-  });
   const pendingHandoffKeys = pendingAssignmentHandoffKeys(
     input.previousCommitments,
     policy.commitments,
@@ -292,13 +311,29 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
   });
   const handoffViews = projectAssignmentHandoffViews({
     handoffs: assignmentHandoffs,
+    intents,
+    pendingAttempts: input.pendingAttempts,
     previousCommitments: input.previousCommitments,
     projection: policy,
   });
   const migrationRooms = input.snapshot.ownedRooms.map((room): LabMigrationRoomView => {
     const activity: LabMigrationActivity[] = [];
     const activeStorages = (room.ownedStorages ?? []).filter(({ active }) => active);
-    if (policy.commitments.some(({ colonyId }) => colonyId === room.name))
+    const unresolvedFundedBoost =
+      policyInputOverCap ||
+      boostManifests.some(
+        (manifest) =>
+          manifest.funded &&
+          manifest.colonyId === room.name &&
+          !policy.dispositions.some(
+            (disposition) =>
+              disposition.kind === "boost" &&
+              disposition.objectiveId === manifest.id &&
+              disposition.objectiveRevision === manifest.revision &&
+              disposition.status === "completed",
+          ),
+      );
+    if (policy.commitments.some(({ colonyId }) => colonyId === room.name) || unresolvedFundedBoost)
       activity.push("commitment");
     if (input.pendingAttempts.some(({ roomName }) => roomName === room.name))
       activity.push("pending-attempt");
@@ -320,18 +355,20 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
       roomName: room.name,
     };
   });
-  const objectiveBudgets = [
-    ...reactionObjectives.map(({ colonyId, deadline, industryBudgetId }) => ({
-      colonyId,
-      deadline,
-      identity: industryBudgetId,
-    })),
-    ...(input.boostManifests ?? []).map(({ colonyId, deadline, industryBudgetId }) => ({
-      colonyId,
-      deadline,
-      identity: industryBudgetId,
-    })),
-  ];
+  const objectiveBudgets = policyInputOverCap
+    ? []
+    : [
+        ...reactionObjectives.map(({ colonyId, deadline, industryBudgetId }) => ({
+          colonyId,
+          deadline,
+          identity: industryBudgetId,
+        })),
+        ...boostManifests.map(({ colonyId, deadline, industryBudgetId }) => ({
+          colonyId,
+          deadline,
+          identity: industryBudgetId,
+        })),
+      ];
   return freeze({
     assignments,
     creepFingerprints,
@@ -342,6 +379,32 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     resourceDemands,
     settlements,
   });
+}
+
+function applyExactBoostSettlements(
+  commitments: readonly LabPolicyCommitment[],
+  settlements: readonly LabAttemptSettlement[],
+): readonly LabPolicyCommitment[] {
+  return freeze(
+    commitments.map((commitment) => {
+      if (commitment.kind !== "boost") return commitment;
+      const settled = settlements
+        .filter(
+          (value) =>
+            value.kind === "boost" &&
+            value.status === "settled" &&
+            value.objectiveId === commitment.objectiveId &&
+            value.objectiveRevision === commitment.objectiveRevision,
+        )
+        .reduce((total, value) => total + value.settledAmount, 0);
+      return settled === 0
+        ? commitment
+        : freeze({
+            ...commitment,
+            settledParts: Math.min(commitment.partCount, commitment.settledParts + settled),
+          });
+    }),
+  );
 }
 
 export function settleLabComposition(input: {
@@ -363,6 +426,7 @@ export function settleLabComposition(input: {
     return ready === null ? [] : [ready];
   });
   const commitments = input.projection.policy.commitments.map((commitment) => {
+    if (commitment.kind === "boost") return commitment;
     const settled = input.projection.settlements
       .filter(
         (value) =>
@@ -372,15 +436,10 @@ export function settleLabComposition(input: {
       )
       .reduce((total, value) => total + value.settledAmount, 0);
     if (settled === 0) return commitment;
-    return commitment.kind === "boost"
-      ? freeze({
-          ...commitment,
-          settledParts: Math.min(commitment.partCount, commitment.settledParts + settled),
-        })
-      : freeze({
-          ...commitment,
-          settledAmount: Math.min(commitment.batchAmount, commitment.settledAmount + settled),
-        });
+    return freeze({
+      ...commitment,
+      settledAmount: Math.min(commitment.batchAmount, commitment.settledAmount + settled),
+    });
   });
   for (const result of input.execution) {
     const intent = input.projection.intents.find(({ id }) => id === result.intentId);
@@ -493,7 +552,6 @@ function deriveAssignmentHandoffs(input: {
       (!rebindableHandoffTarget(target) &&
         !input.previousCommitments.some(
           (commitment) =>
-            commitment.kind === "reaction" &&
             commitment.colonyId === layout.roomName &&
             commitment.assignmentFingerprint === postRemoval.fingerprint,
         ))
@@ -536,7 +594,6 @@ function deriveAssignmentHandoffHolds(input: {
     const labs = room?.ownedLabs ?? [];
     const previous = input.previousCommitments.filter(
       (commitment) =>
-        commitment.kind === "reaction" &&
         commitment.colonyId === current.roomName &&
         commitment.assignmentFingerprint !== current.fingerprint,
     );
@@ -605,7 +662,6 @@ function pendingAttemptsAllowHandoff(
   if (roomAttempts.length === 0) return true;
   const rebound = commitments.filter(
     (commitment) =>
-      commitment.kind === "reaction" &&
       commitment.colonyId === handoff.assignment.roomName &&
       commitment.assignmentFingerprint === handoff.assignment.fingerprint,
   );
@@ -615,12 +671,29 @@ function pendingAttemptsAllowHandoff(
     commitment !== undefined &&
     roomAttempts.every(
       (attempt) =>
-        attempt.assignmentFingerprint === handoff.assignment.fingerprint &&
-        attempt.objectiveId === commitment.objectiveId &&
-        attempt.objectiveRevision === commitment.objectiveRevision &&
-        attempt.commitmentFingerprint === commitment.objectiveFingerprint &&
-        attempt.catalogFingerprint === commitment.catalogFingerprint,
+        pendingAttemptMatchesCommitment(attempt, commitment) &&
+        attempt.assignmentFingerprint === handoff.assignment.fingerprint,
     )
+  );
+}
+
+function pendingAttemptMatchesCommitment(
+  attempt: PendingLabAttempt,
+  commitment: LabPolicyCommitment,
+): boolean {
+  const kindMatches =
+    commitment.kind === "boost"
+      ? attempt.kind === "boost"
+      : commitment.direction === "reverse"
+        ? attempt.kind === "reverse-reaction"
+        : attempt.kind === "reaction";
+  return (
+    kindMatches &&
+    attempt.roomName === commitment.colonyId &&
+    attempt.objectiveId === commitment.objectiveId &&
+    attempt.objectiveRevision === commitment.objectiveRevision &&
+    attempt.commitmentFingerprint === commitment.objectiveFingerprint &&
+    attempt.catalogFingerprint === commitment.catalogFingerprint
   );
 }
 
@@ -720,7 +793,6 @@ function effectiveAssignments(
       const rebound = commitments.filter(
         (commitment) =>
           commitment.colonyId === assignment.roomName &&
-          commitment.kind === "reaction" &&
           commitment.assignmentFingerprint === handoff.assignment.fingerprint,
       );
       return rebound.length === 1 ? handoff.assignment : assignment;
@@ -737,7 +809,6 @@ function pendingAssignmentHandoffKeys(
   for (const handoff of handoffs) {
     const next = projected.find(
       (commitment) =>
-        commitment.kind === "reaction" &&
         commitment.colonyId === handoff.assignment.roomName &&
         commitment.assignmentFingerprint === handoff.assignment.fingerprint,
     );
@@ -758,6 +829,8 @@ function pendingAssignmentHandoffKeys(
 
 function projectAssignmentHandoffViews(input: {
   readonly handoffs: readonly DerivedLabAssignmentHandoff[];
+  readonly intents: readonly LabCommandIntent[];
+  readonly pendingAttempts: readonly PendingLabAttempt[];
   readonly previousCommitments: readonly LabPolicyCommitment[];
   readonly projection: LabPolicyProjection;
 }): readonly LabAssignmentHandoffView[] {
@@ -765,7 +838,6 @@ function projectAssignmentHandoffViews(input: {
   for (const handoff of input.handoffs) {
     const projected = input.projection.commitments.filter(
       (commitment) =>
-        commitment.kind === "reaction" &&
         commitment.colonyId === handoff.assignment.roomName &&
         commitment.assignmentFingerprint === handoff.assignment.fingerprint,
     );
@@ -775,16 +847,30 @@ function projectAssignmentHandoffViews(input: {
       (commitment) => commitmentKey(commitment) === commitmentKey(next),
     );
     const prior = previous[0];
-    if (previous.length !== 1 || prior?.kind !== "reaction") continue;
+    if (previous.length !== 1 || prior?.kind !== next.kind) continue;
     const priorIsSource = prior.assignmentFingerprint === handoff.fromFingerprint;
     const priorIsRebound = prior.assignmentFingerprint === handoff.assignment.fingerprint;
     const executionReady = input.projection.dispositions.some(
       (disposition) =>
-        disposition.kind === "reaction" &&
+        disposition.kind === next.kind &&
         disposition.objectiveId === next.objectiveId &&
         disposition.objectiveRevision === next.objectiveRevision &&
         disposition.status === "ready",
     );
+    const boostExecutable =
+      next.kind !== "boost" ||
+      input.intents.some(
+        (intent) =>
+          intent.kind === "lab.boost-creep" &&
+          intent.payload.assignmentFingerprint === next.assignmentFingerprint &&
+          intent.payload.objectiveId === next.objectiveId &&
+          intent.payload.objectiveRevision === next.objectiveRevision,
+      ) ||
+      input.pendingAttempts.some(
+        (attempt) =>
+          pendingAttemptMatchesCommitment(attempt, next) &&
+          attempt.assignmentFingerprint === next.assignmentFingerprint,
+      );
     const status = handoff.blocked
       ? priorIsSource || priorIsRebound
         ? "blocked"
@@ -792,7 +878,7 @@ function projectAssignmentHandoffViews(input: {
       : priorIsSource
         ? "pending"
         : priorIsRebound
-          ? executionReady
+          ? executionReady && boostExecutable
             ? "ready"
             : "blocked"
           : null;
@@ -800,6 +886,7 @@ function projectAssignmentHandoffViews(input: {
     result.push(
       freeze({
         ...handoff,
+        kind: next.kind,
         objectiveId: next.objectiveId,
         objectiveRevision: next.objectiveRevision,
         status,

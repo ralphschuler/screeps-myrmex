@@ -1,8 +1,19 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "deterministic": {
     "boostExecution": "executed",
+    "boostHandoffExactParts": 1,
+    "boostHandoffFirstReboundIntents": 0,
+    "boostHandoffIntent": "lab.boost-creep",
+    "boostHandoffKind": "boost",
+    "boostHandoffOnlyAssignmentChanged": true,
+    "boostHandoffNonExecutableStatus": "blocked",
+    "boostHandoffPendingAttemptVisible": true,
+    "boostHandoffPendingStatus": "pending",
+    "boostHandoffReadyStatus": "ready",
+    "boostHandoffResetAndReorderEquivalent": true,
     "boostIntent": "lab.boost-creep",
+    "boostPartialAppliedOnce": true,
     "boostResetAndReorderEquivalent": true,
     "exactBoostParts": 1,
     "exactReverseAmount": 5,
@@ -12,6 +23,8 @@
     "settledCommitmentAmount": 5
   },
   "failures": {
+    "boostConflictReason": "conflicting-effect",
+    "boostConflictRetainsCommitment": true,
     "contaminationDemands": 1,
     "cooldownCommands": 0,
     "fullResultCommands": 0,

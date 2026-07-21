@@ -55,6 +55,38 @@ export function composeBoostFixture(
   });
 }
 
+export function composeBoostHandoffFixture(
+  snapshot: WorldSnapshot,
+  manifest: BoostManifest,
+  previousCommitments: readonly LabPolicyCommitment[] = [],
+  pendingAttempts: readonly PendingLabAttempt[] = [],
+) {
+  const labs = snapshot.ownedRooms[0]?.ownedLabs;
+  if (labs === undefined) throw new Error("expected boost-handoff labs");
+  return composeLabRuntime({
+    boostManifests: [manifest],
+    committedLabLayouts: [
+      {
+        labPositions: [
+          ...labs.filter(({ id }) => id !== "external").map(({ pos }) => pos),
+          { roomName: "W1N1", x: 13, y: 12 },
+        ].reverse(),
+        layoutFingerprint: "layout-commitment",
+        roomName: "W1N1",
+      },
+    ],
+    fundedBudgetIds: new Set([manifest.industryBudgetId]),
+    pendingAttempts,
+    policy: buildRuntimeConfig().policy.industry,
+    previousCommitments,
+    reactionObjectives: [],
+    reactions: { H: { O: "OH" } },
+    reactionTimes: { OH: 10 },
+    snapshot,
+    snapshotRevision: `snapshot/${String(snapshot.observation.tick)}`,
+  });
+}
+
 export function executeBoostFixture(intent: LabCommandIntent) {
   if (intent.kind !== "lab.boost-creep") throw new Error("expected boost fixture intent");
   const creep = {
@@ -113,14 +145,119 @@ export function labFixtureBoostWorld(
   settled: boolean,
   tick = 100,
 ): { readonly manifest: BoostManifest; readonly snapshot: WorldSnapshot } {
-  const snapshot = labFixtureWorld("forward", tick);
+  return labFixtureBoostProgressWorld({
+    boostedParts: settled ? 1 : 0,
+    energy: settled ? 1_980 : 2_000,
+    mineralAmount: settled ? 0 : 30,
+    partCount: 1,
+    tick,
+  });
+}
+
+export function labFixtureBoostProgressWorld(input: {
+  readonly boostedParts: number;
+  readonly energy: number;
+  readonly mineralAmount: number;
+  readonly partCount: number;
+  readonly tick: number;
+}): { readonly manifest: BoostManifest; readonly snapshot: WorldSnapshot } {
+  const snapshot = labFixtureWorld("forward", input.tick);
   const room = snapshot.ownedRooms[0];
   if (room === undefined) throw new Error("expected lab fixture room");
   const none = { active: 0, boosted: 0, total: 0 };
   const creep: CreepSnapshot = {
     body: {
+      activeParts: input.partCount,
+      attack: {
+        active: input.partCount,
+        boosted: input.boostedParts,
+        total: input.partCount,
+      },
+      carry: none,
+      claim: none,
+      heal: none,
+      move: none,
+      rangedAttack: none,
+      size: input.partCount,
+      tough: none,
+      work: none,
+    },
+    boosts:
+      input.boostedParts === 0
+        ? []
+        : [{ bodyPart: "attack", compound: "XUH2O", count: input.boostedParts }],
+    fatigue: 0,
+    hits: input.partCount * 100,
+    hitsMax: input.partCount * 100,
+    id: "boost-creep",
+    name: "boost-creep",
+    ownerUsername: "me",
+    pos: { roomName: "W1N1", x: 12, y: 11 },
+    spawning: false,
+    store: { capacity: 0, freeCapacity: 0, resources: [], usedCapacity: 0 },
+    ticksToLive: 1_000,
+  };
+  return {
+    manifest: {
+      colonyId: "W1N1",
+      compound: "XUH2O",
+      creepFingerprint: fingerprintCreepSnapshot({ ...creep, boosts: [] }),
+      creepId: creep.id,
+      deadline: 110,
+      funded: true,
+      id: "boost",
+      industryBudgetId: "budget/boost",
+      partCount: input.partCount,
+      partType: "attack",
+      priority: 100,
+      revision: 1,
+    },
+    snapshot: {
+      ...snapshot,
+      ownedRooms: [
+        {
+          ...room,
+          ownedCreeps: [creep],
+          ownedLabs: (room.ownedLabs ?? []).map((value) =>
+            value.id === "out"
+              ? {
+                  ...value,
+                  energy: input.energy,
+                  mineralAmount: input.mineralAmount,
+                  mineralType: input.mineralAmount === 0 ? null : "XUH2O",
+                  store: {
+                    ...value.store,
+                    freeCapacity: 5_000 - input.energy - input.mineralAmount,
+                    resources: [
+                      { amount: input.energy, resourceType: "energy" },
+                      ...(input.mineralAmount === 0
+                        ? []
+                        : [{ amount: input.mineralAmount, resourceType: "XUH2O" }]),
+                    ],
+                    usedCapacity: input.energy + input.mineralAmount,
+                  },
+                }
+              : value,
+          ),
+        },
+      ],
+    },
+  };
+}
+
+export function labBoostHandoffFixtureWorld(
+  tick: number,
+  reversed = false,
+  boostSettled = false,
+): { readonly manifest: BoostManifest; readonly snapshot: WorldSnapshot } {
+  const snapshot = labHandoffFixtureWorld(tick, reversed);
+  const room = snapshot.ownedRooms[0];
+  if (room === undefined) throw new Error("expected boost-handoff room");
+  const none = { active: 0, boosted: 0, total: 0 };
+  const creep: CreepSnapshot = {
+    body: {
       activeParts: 1,
-      attack: { active: 1, boosted: settled ? 1 : 0, total: 1 },
+      attack: { active: 1, boosted: boostSettled ? 1 : 0, total: 1 },
       carry: none,
       claim: none,
       heal: none,
@@ -130,20 +267,18 @@ export function labFixtureBoostWorld(
       tough: none,
       work: none,
     },
-    boosts: settled ? [{ bodyPart: "attack", compound: "XUH2O", count: 1 }] : [],
+    boosts: boostSettled ? [{ bodyPart: "attack", compound: "XUH2O", count: 1 }] : [],
     fatigue: 0,
     hits: 100,
     hitsMax: 100,
     id: "boost-creep",
     name: "boost-creep",
     ownerUsername: "me",
-    pos: { roomName: "W1N1", x: 12, y: 11 },
+    pos: { roomName: "W1N1", x: 11, y: 13 },
     spawning: false,
     store: { capacity: 0, freeCapacity: 0, resources: [], usedCapacity: 0 },
     ticksToLive: 1_000,
   };
-  const energy = settled ? 1_980 : 2_000;
-  const mineralAmount = settled ? 0 : 30;
   return {
     manifest: {
       colonyId: "W1N1",
@@ -166,20 +301,20 @@ export function labFixtureBoostWorld(
           ...room,
           ownedCreeps: [creep],
           ownedLabs: (room.ownedLabs ?? []).map((value) =>
-            value.id === "out"
+            value.id === "h"
               ? {
                   ...value,
-                  energy,
-                  mineralAmount,
-                  mineralType: settled ? null : "XUH2O",
+                  energy: boostSettled ? 1_980 : 2_000,
+                  mineralAmount: boostSettled ? 0 : 30,
+                  mineralType: boostSettled ? null : "XUH2O",
                   store: {
                     ...value.store,
-                    freeCapacity: 5_000 - energy - mineralAmount,
+                    freeCapacity: boostSettled ? 3_020 : 2_970,
                     resources: [
-                      { amount: energy, resourceType: "energy" },
-                      ...(settled ? [] : [{ amount: mineralAmount, resourceType: "XUH2O" }]),
+                      { amount: boostSettled ? 1_980 : 2_000, resourceType: "energy" },
+                      ...(boostSettled ? [] : [{ amount: 30, resourceType: "XUH2O" }]),
                     ],
-                    usedCapacity: energy + mineralAmount,
+                    usedCapacity: boostSettled ? 1_980 : 2_030,
                   },
                 }
               : value,
@@ -188,6 +323,50 @@ export function labFixtureBoostWorld(
       ],
     },
   };
+}
+
+export function labHandoffFixtureWorld(tick: number, reversed = false): WorldSnapshot {
+  const labs = [
+    handoffLab("a", "H", 30, 10, 10),
+    handoffLab("b", "O", 30, 12, 10),
+    handoffLab("c", null, 0, 11, 10),
+    handoffLab("d", null, 0, 10, 11),
+    handoffLab("e", null, 0, 11, 11),
+    handoffLab("f", null, 0, 12, 11),
+    handoffLab("g", null, 0, 10, 12),
+    handoffLab("h", null, 0, 11, 12),
+    handoffLab("i", null, 0, 12, 12),
+    handoffLab("external", null, 0, 40, 40, 0),
+  ];
+  return {
+    observation: { age: 0, shard: "shard0", status: "observed", tick },
+    observedAt: tick,
+    ownedRooms: [
+      {
+        name: "W1N1",
+        observedAt: tick,
+        ownedCreeps: [],
+        ownedLabs: reversed ? labs.reverse() : labs,
+        ownedStorages: [
+          {
+            active: true,
+            id: "storage",
+            pos: { roomName: "W1N1", x: 20, y: 20 },
+            store: {
+              capacity: 1_000_000,
+              freeCapacity: 999_940,
+              resources: [
+                { amount: 30, resourceType: "H" },
+                { amount: 30, resourceType: "O" },
+              ],
+              usedCapacity: 60,
+            },
+          },
+        ],
+        ownedTerminals: [],
+      },
+    ],
+  } as unknown as WorldSnapshot;
 }
 
 export function labFixtureWorld(mode: LabFixtureMode, tick = 100): WorldSnapshot {
@@ -232,6 +411,38 @@ export function labFixtureWorld(mode: LabFixtureMode, tick = 100): WorldSnapshot
       },
     ],
   } as unknown as WorldSnapshot;
+}
+
+function handoffLab(
+  id: string,
+  mineralType: string | null,
+  mineralAmount: number,
+  x: number,
+  y: number,
+  energy = 2_000,
+) {
+  return {
+    active: true,
+    cooldown: 0,
+    energy,
+    energyCapacity: 2_000,
+    hits: 500,
+    hitsMax: 500,
+    id,
+    mineralAmount,
+    mineralCapacity: 3_000,
+    mineralType,
+    pos: { roomName: "W1N1", x, y },
+    store: {
+      capacity: 5_000,
+      freeCapacity: 5_000 - mineralAmount - energy,
+      resources: [
+        ...(energy > 0 ? [{ amount: energy, resourceType: "energy" }] : []),
+        ...(mineralType === null ? [] : [{ amount: mineralAmount, resourceType: mineralType }]),
+      ],
+      usedCapacity: mineralAmount + energy,
+    },
+  };
 }
 
 function lab(

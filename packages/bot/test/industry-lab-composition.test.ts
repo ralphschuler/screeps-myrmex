@@ -6,14 +6,22 @@ import {
   createPendingLabAttempt,
   executeLabIntents,
   fingerprintCreepSnapshot,
+  LAB_POLICY_CAPS,
   projectLabTelemetry,
   settleLabComposition,
   type BoostManifest,
   type LabCommandIntent,
+  type PendingLabAttempt,
   type ReactionObjective,
 } from "../src/industry";
 import type { CreepSnapshot, WorldSnapshot } from "../src/world/snapshot";
-import { composeBoostFixture, labFixtureBoostWorld } from "./support/lab-composition-fixture";
+import {
+  composeBoostFixture,
+  composeBoostHandoffFixture as composeBoostHandoff,
+  labBoostHandoffFixtureWorld as boostHandoffWorld,
+  labFixtureBoostProgressWorld,
+  labFixtureBoostWorld,
+} from "./support/lab-composition-fixture";
 
 const reactions = { H: { O: "OH" } };
 const reactionTimes = { OH: 10 };
@@ -164,6 +172,66 @@ describe("composed lab runtime", () => {
     expect(projectLabTelemetry(exact, []).accounting).toEqual([20, 30, 0]);
   });
 
+  it("applies partial exact boost progress once and preserves conflicts as active", () => {
+    const initial = labFixtureBoostProgressWorld({
+      boostedParts: 0,
+      energy: 2_000,
+      mineralAmount: 60,
+      partCount: 2,
+      tick: 100,
+    });
+    const first = composeBoostFixture(initial.snapshot, initial.manifest);
+    const pending = required(createPendingLabAttempt(required(first.intents[0]), "OK"));
+    const partialWorld = labFixtureBoostProgressWorld({
+      boostedParts: 1,
+      energy: 1_980,
+      mineralAmount: 30,
+      partCount: 2,
+      tick: 101,
+    });
+    const partial = composeBoostFixture(
+      partialWorld.snapshot,
+      partialWorld.manifest,
+      roundTrip(first.policy.commitments),
+      [pending],
+    );
+    expect(partial.settlements).toEqual([
+      expect.objectContaining({ reason: "exact-effect", settledAmount: 1, status: "settled" }),
+    ]);
+    expect(partial.policy.commitments).toEqual([
+      expect.objectContaining({ kind: "boost", settledParts: 1 }),
+    ]);
+    expect(
+      settleLabComposition({ execution: [], previousAttempts: [pending], projection: partial })
+        .commitments,
+    ).toEqual([expect.objectContaining({ kind: "boost", settledParts: 1 })]);
+
+    const conflictWorld = labFixtureBoostProgressWorld({
+      boostedParts: 2,
+      energy: 1_960,
+      mineralAmount: 30,
+      partCount: 2,
+      tick: 101,
+    });
+    const conflict = composeBoostFixture(
+      conflictWorld.snapshot,
+      conflictWorld.manifest,
+      roundTrip(first.policy.commitments),
+      [pending],
+    );
+    expect(conflict.settlements).toEqual([
+      expect.objectContaining({ reason: "conflicting-effect", status: "cancelled" }),
+    ]);
+    expect(conflict.policy.commitments).toEqual([
+      expect.objectContaining({ kind: "boost", settledParts: 0 }),
+    ]);
+    expect(conflict.policy.dispositions).not.toContainEqual(
+      expect.objectContaining({ kind: "boost", status: "completed" }),
+    );
+    expect(conflict.migrationRooms[0]).toMatchObject({ quiescent: false });
+    expect(conflict.migrationRooms[0]?.activity).toContain("commitment");
+  });
+
   it("fails composed boost settlement closed for missing or immutable-drifted creeps", () => {
     const initial = labFixtureBoostWorld(false);
     const first = composeBoostFixture(initial.snapshot, initial.manifest);
@@ -197,6 +265,157 @@ describe("composed lab runtime", () => {
       expect(
         project({ ...observed, ownedRooms: [{ ...room, ownedCreeps: [changed] }] }).settlements[0],
       ).toMatchObject({ reason: "fingerprint-changed", status: "cancelled" });
+  });
+
+  it("durably rebinds one funded boost before publishing retained-lab work", () => {
+    const initial = boostHandoffWorld(100);
+    const first = composeBoostHandoff(initial.snapshot, initial.manifest);
+    const previous = required(first.policy.commitments[0]);
+    if (previous.kind !== "boost") throw new Error("expected boost commitment");
+
+    const reboundWorld = boostHandoffWorld(101, true);
+    const sourceAttempt = required(createPendingLabAttempt(required(first.intents[0]), "OK"));
+    const sourcePending = composeBoostHandoff(
+      reboundWorld.snapshot,
+      reboundWorld.manifest,
+      [previous],
+      [sourceAttempt],
+    );
+    expect(sourcePending.migrationRooms[0]?.assignmentHandoff).toBeNull();
+    expect(sourcePending.policy.commitments).toEqual([previous]);
+    expect(sourcePending.intents).toEqual([]);
+    expect(sourcePending.migrationRooms[0]?.activity).toContain("pending-attempt");
+
+    const pending = composeBoostHandoff(reboundWorld.snapshot, reboundWorld.manifest, [previous]);
+    expect(pending.intents).toEqual([]);
+    expect(pending.policy.demands).toEqual([]);
+    expect(pending.resourceDemands.edges).toEqual([]);
+    expect(pending.migrationRooms[0]?.activity).toEqual(["commitment"]);
+    expect(pending.policy.commitments).toEqual([
+      { ...previous, assignmentFingerprint: pending.assignments[0]?.fingerprint },
+    ]);
+    expect(pending.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      kind: "boost",
+      objectiveId: initial.manifest.id,
+      objectiveRevision: initial.manifest.revision,
+      status: "pending",
+      targetLabId: "external",
+    });
+
+    const durable = roundTrip(pending.policy.commitments);
+    const readyWorld = boostHandoffWorld(102, true);
+    const ready = composeBoostHandoff(readyWorld.snapshot, readyWorld.manifest, durable);
+    expect(ready.policy.commitments).toEqual(pending.policy.commitments);
+    expect(ready.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      kind: "boost",
+      status: "ready",
+      targetLabId: "external",
+    });
+    expect(ready.intents).toHaveLength(1);
+    const intent = required(ready.intents[0]);
+    if (intent.kind !== "lab.boost-creep") throw new Error("expected boost intent");
+    expect(intent.payload).toMatchObject({ bodyPartsCount: 1, labId: "h" });
+
+    const attempt = required(createPendingLabAttempt(intent, "OK"));
+    const awaiting = composeBoostHandoff(readyWorld.snapshot, readyWorld.manifest, durable, [
+      attempt,
+    ]);
+    expect(awaiting.intents).toEqual([]);
+    expect(awaiting.settlements).toEqual([
+      expect.objectContaining({ kind: "boost", reason: "awaiting-observation", status: "pending" }),
+    ]);
+    expect(awaiting.migrationRooms[0]?.assignmentHandoff?.status).toBe("ready");
+    expect(awaiting.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(awaiting.migrationRooms[0]?.quiescent).toBe(false);
+
+    const observedWorld = boostHandoffWorld(103, false, true);
+    const observed = composeBoostHandoff(observedWorld.snapshot, observedWorld.manifest, durable, [
+      attempt,
+    ]);
+    expect(observed.settlements).toEqual([
+      expect.objectContaining({
+        kind: "boost",
+        reason: "exact-effect",
+        settledAmount: 1,
+        status: "settled",
+      }),
+    ]);
+    expect(observed.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(observed.migrationRooms[0]?.quiescent).toBe(false);
+    expect(
+      settleLabComposition({ execution: [], previousAttempts: [attempt], projection: observed }),
+    ).toEqual({ attempts: [], commitments: [] });
+
+    const wrongKindAttempt = {
+      ...attempt,
+      kind: "reaction" as const,
+      product: "OH",
+      productLabId: "c",
+      productMineralBefore: 0,
+      reagentLabIds: ["a", "b"] as const,
+      reagentMineralsBefore: [30, 30] as const,
+      reagents: ["H", "O"] as const,
+    } satisfies PendingLabAttempt;
+    const wrongKind = composeBoostHandoff(readyWorld.snapshot, readyWorld.manifest, durable, [
+      wrongKindAttempt,
+    ]);
+    expect(wrongKind.migrationRooms[0]?.assignmentHandoff?.status).toBe("blocked");
+    expect(wrongKind.intents).toEqual([]);
+
+    const foreignAttempt = { ...attempt, roomName: "W2N2" } as const;
+    const foreignPending = composeBoostHandoff(readyWorld.snapshot, readyWorld.manifest, durable, [
+      foreignAttempt,
+    ]);
+    expect(foreignPending.intents).toEqual([]);
+    expect(foreignPending.migrationRooms[0]?.assignmentHandoff?.status).toBe("blocked");
+
+    const room = required(readyWorld.snapshot.ownedRooms[0]);
+    const creep = required(room.ownedCreeps[0]);
+    for (const blockedCreep of [
+      { ...creep, pos: { roomName: "W1N1", x: 20, y: 20 } },
+      { ...creep, spawning: true },
+    ]) {
+      const nonExecutable = composeBoostHandoff(
+        { ...readyWorld.snapshot, ownedRooms: [{ ...room, ownedCreeps: [blockedCreep] }] },
+        readyWorld.manifest,
+        durable,
+      );
+      expect(nonExecutable.intents).toEqual([]);
+      expect(nonExecutable.migrationRooms[0]?.assignmentHandoff?.status).toBe("blocked");
+      expect(nonExecutable.migrationRooms[0]?.quiescent).toBe(false);
+    }
+
+    for (const ownedCreeps of [[], [{ ...required(room.ownedCreeps[0]), name: "replacement" }]]) {
+      const unresolved = composeBoostHandoff(
+        { ...readyWorld.snapshot, ownedRooms: [{ ...room, ownedCreeps }] },
+        readyWorld.manifest,
+        durable,
+      );
+      expect(unresolved.intents).toEqual([]);
+      expect(unresolved.migrationRooms[0]?.activity).toContain("commitment");
+      expect(unresolved.migrationRooms[0]?.quiescent).toBe(false);
+    }
+
+    const overflow = composeLabRuntime({
+      boostManifests: Array.from({ length: LAB_POLICY_CAPS.maximumObjectives + 1 }, (_, index) => ({
+        ...readyWorld.manifest,
+        id: `boost-${String(index)}`,
+        industryBudgetId: `budget/boost-${String(index)}`,
+      })),
+      fundedBudgetIds: new Set(),
+      pendingAttempts: [],
+      policy: buildRuntimeConfig().policy.industry,
+      previousCommitments: durable,
+      reactionObjectives: [],
+      reactions,
+      reactionTimes,
+      snapshot: readyWorld.snapshot,
+      snapshotRevision: "snapshot/102",
+    });
+    expect(overflow.policy.blockers).toEqual([{ identity: "input", reason: "cap-exceeded" }]);
+    expect(overflow.objectiveBudgets).toEqual([]);
+    expect(overflow.migrationRooms[0]?.activity).toContain("commitment");
+    expect(overflow.migrationRooms[0]?.quiescent).toBe(false);
   });
 
   it("durably rebinds one reaction before publishing retained-lab work", () => {
