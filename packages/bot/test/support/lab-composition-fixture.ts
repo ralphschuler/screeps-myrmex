@@ -60,6 +60,7 @@ export function composeBoostHandoffFixture(
   manifest: BoostManifest,
   previousCommitments: readonly LabPolicyCommitment[] = [],
   pendingAttempts: readonly PendingLabAttempt[] = [],
+  terminalSendRoomNames?: ReadonlySet<string>,
 ) {
   const labs = snapshot.ownedRooms[0]?.ownedLabs;
   if (labs === undefined) throw new Error("expected boost-handoff labs");
@@ -84,6 +85,7 @@ export function composeBoostHandoffFixture(
     reactionTimes: { OH: 10 },
     snapshot,
     snapshotRevision: `snapshot/${String(snapshot.observation.tick)}`,
+    ...(terminalSendRoomNames === undefined ? {} : { terminalSendRoomNames }),
   });
 }
 

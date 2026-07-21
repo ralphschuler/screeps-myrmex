@@ -1113,7 +1113,7 @@ describe("logistics runtime adapter", () => {
         snapshot: terminalWorld,
         tick: 11,
       }).authorizedFlowIds,
-    ).toEqual([]);
+    ).toEqual(terminalProjection.authorizedFlowIds);
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],

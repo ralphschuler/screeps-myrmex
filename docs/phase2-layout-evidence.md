@@ -59,9 +59,11 @@ quiescent mineral-only target to use an exact active idle terminal when no activ
 suppresses internal sends while that destination remains committed. Issue
 [#345](https://github.com/ralphschuler/screeps-myrmex/issues/345) reuses that exact V14 destination
 for one durable `ready` reaction handoff while preserving storage precedence and every send,
-delivery, work-retirement, and removal gate. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+delivery, work-retirement, and removal gate. Issue
+[#347](https://github.com/ralphschuler/screeps-myrmex/issues/347) extends the same mineral-only
+record to a durable `ready` boost handoff while boost commands and pending effects continue to block
+removal. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration and dismantling.
 
 ## Runtime order
 
@@ -156,8 +158,8 @@ and dismantling.
    mineral flow to the Industry-published storage or exact idle terminal, or both distinct
    storage-bound flows for a mixed target. Either general-purpose mineral sink shares its physical
    Store's aggregate-capacity key; the terminal form also suppresses every internal send from or to
-   the room until the commitment clears. That terminal form may continue under active work only for
-   the exact reaction handoff; boost and mixed terminal forms remain excluded. The obsolete lab
+   the room until the commitment clears. That terminal form may continue under active work for the
+   exact reaction or explicit-boost handoff; mixed terminal forms remain excluded. The obsolete lab
    source/refill is suppressed. A mixed record is validated and admitted as a complete pair before
    either flow is published. Lab work normally requires a current matching quiescent industry view.
    The only exceptions are the energy-only, mineral-only, and mixed records whose current Industry
@@ -301,50 +303,55 @@ Issue [#345](https://github.com/ralphschuler/screeps-myrmex/issues/345) extends 
 record to one durable role-identical reaction handoff. The rebound remains command-free; the ready
 handoff then publishes one funded flow through reset/reordered observation, retains it through a
 pending post-handoff reaction effect, and waits for exact terminal gain plus complete work
-retirement before one active-reaction destroy proposal. Storage appearance, send contention, boost
-handoff, mixed stock, destination drift, threat, timeout, or malformed evidence fails closed. The
-V13 mixed continuation persists both exact amounts, destinations, and baselines, atomically projects
-two distinct funded flows, and survives independent partial delivery plus JSON reset/reordering.
-Removal waits for both destination gains and complete flow/endpoint retirement; one active flow,
-under-delivery, malformed/over-cap storage, consumption, destination drift, timeout, incompatible
-active industry, or graph omission blocks removal. The active-reaction outcome preserves objective
-identity, batch amount, and prior settled progress across one non-executable rebound tick, JSON
-reset, and reordered labs/placements. It then executes only retained lab IDs, permits one empty
-external-lab removal, and settles exact `-5/-5/+5` evidence after target loss. Its energy-only
-continuation rebinds one exact stocked target, persists the existing V13 amount and baseline, admits
-one funded flow during the durable ready handoff, and waits for exact delivery plus flow/endpoint
-and pending-attempt retirement before one active-reaction removal proposal. The mineral-only
-continuation reuses the same rebound plus V13 active-storage terms, aggregate-capacity flow, exact
-storage gain, reset/reorder persistence, and removal gates. The mixed continuation persists the
-existing V13 pair after the durable rebound, atomically projects both funded flows, preserves them
-through partial delivery and a retained-assignment pending effect, and admits removal only after
-both exact gains and complete work retirement. The boost continuation changes only the assignment
-fingerprint of one explicit funded commitment, emits no command on the rebound tick, becomes ready
-only from prior Industry owner plus executable intent evidence, executes the retained boost lab, and
-settles exact body plus 30-mineral/20-energy evidence across reset and reordered labs. Partial exact
-progress is applied once and remains resumable; conflicting body/resource deltas retain unchanged
-commitment progress and active migration. The current boost intent and its kind matched pending
-attempt both block removal, while missing or changed creep evidence keeps the unresolved funded
-manifest nonquiescent. Generic active Industry, old assignment effects, malformed target stock,
-destination/role/layout drift, retained lab staging, and missing/stale geometry are covered fail
-closed; a uniquely reconstructible durable rebound remains byte stable and nonexecutable. A batch of
-33 mixed records exceeds the 64-flow ceiling and publishes no prefix. Partial tower delivery
-likewise preserves terms until fresh empty-target and replacement gain admit removal. Reserve-link
-replacement-first convergence proves one ordinary committed site is built under spare allowance,
-then complete canonical current/ideal role evidence retains all source, hub, and controller anchors
-while naming only zero-cooldown reserve target/replacement IDs. Public link-runtime evidence keeps
-both IDs out of native funded transfers. Fresh canonical continuity authorization gates every
-following-tick projection, while oversized optional demand cannot displace observed logistics. The
-stocked continuation persists one exact 300-energy commitment, projects one funded V3 creep flow,
-preserves terms through partial delivery plus JSON reset/reordering, and blocks removal until exact
-target emptiness, replacement gain, retired flow and endpoints, zero cooldown, and no accepted
-native transfer. The executor revalidates exact delivered replacement energy; the V9 receipt
-suppresses a duplicate after `OK`, and observed disappearance exposes the final committed site. The
-container continuation proves one exact selected source service survives removal of one empty
-unshared adjacent container, static-mining identity/work position remain unchanged, reordered/reset
-input is byte-identical, unsafe or stocked variants fail closed, and next observation emits no
-repeated removal. The general-container continuation proves spare-allowance site-first replacement,
-persisted one-tick suppression, active-target retirement, unavailable-contract refusal,
+retirement before one active-reaction destroy proposal. Issue
+[#347](https://github.com/ralphschuler/screeps-myrmex/issues/347) reuses the same record for one
+role-identical explicit boost. The first rebound publishes no terminal; durable readiness publishes
+the funded flow, and a current boost intent or matching pending effect retains evacuation while
+blocking removal. Exact terminal delivery plus retired work after boost settlement exposes the
+existing one-command path. Storage appearance, send contention, mixed stock, destination drift,
+threat, timeout, or malformed evidence fails closed. The V13 mixed continuation persists both exact
+amounts, destinations, and baselines, atomically projects two distinct funded flows, and survives
+independent partial delivery plus JSON reset/reordering. Removal waits for both destination gains
+and complete flow/endpoint retirement; one active flow, under-delivery, malformed/over-cap storage,
+consumption, destination drift, timeout, incompatible active industry, or graph omission blocks
+removal. The active-reaction outcome preserves objective identity, batch amount, and prior settled
+progress across one non-executable rebound tick, JSON reset, and reordered labs/placements. It then
+executes only retained lab IDs, permits one empty external-lab removal, and settles exact `-5/-5/+5`
+evidence after target loss. Its energy-only continuation rebinds one exact stocked target, persists
+the existing V13 amount and baseline, admits one funded flow during the durable ready handoff, and
+waits for exact delivery plus flow/endpoint and pending-attempt retirement before one
+active-reaction removal proposal. The mineral-only continuation reuses the same rebound plus V13
+active-storage terms, aggregate-capacity flow, exact storage gain, reset/reorder persistence, and
+removal gates. The mixed continuation persists the existing V13 pair after the durable rebound,
+atomically projects both funded flows, preserves them through partial delivery and a
+retained-assignment pending effect, and admits removal only after both exact gains and complete work
+retirement. The boost continuation changes only the assignment fingerprint of one explicit funded
+commitment, emits no command on the rebound tick, becomes ready only from prior Industry owner plus
+executable intent evidence, executes the retained boost lab, and settles exact body plus
+30-mineral/20-energy evidence across reset and reordered labs. Partial exact progress is applied
+once and remains resumable; conflicting body/resource deltas retain unchanged commitment progress
+and active migration. The current boost intent and its kind matched pending attempt both block
+removal, while missing or changed creep evidence keeps the unresolved funded manifest nonquiescent.
+Generic active Industry, old assignment effects, malformed target stock, destination/role/layout
+drift, retained lab staging, and missing/stale geometry are covered fail closed; a uniquely
+reconstructible durable rebound remains byte stable and nonexecutable. A batch of 33 mixed records
+exceeds the 64-flow ceiling and publishes no prefix. Partial tower delivery likewise preserves terms
+until fresh empty-target and replacement gain admit removal. Reserve-link replacement-first
+convergence proves one ordinary committed site is built under spare allowance, then complete
+canonical current/ideal role evidence retains all source, hub, and controller anchors while naming
+only zero-cooldown reserve target/replacement IDs. Public link-runtime evidence keeps both IDs out
+of native funded transfers. Fresh canonical continuity authorization gates every following-tick
+projection, while oversized optional demand cannot displace observed logistics. The stocked
+continuation persists one exact 300-energy commitment, projects one funded V3 creep flow, preserves
+terms through partial delivery plus JSON reset/reordering, and blocks removal until exact target
+emptiness, replacement gain, retired flow and endpoints, zero cooldown, and no accepted native
+transfer. The executor revalidates exact delivered replacement energy; the V9 receipt suppresses a
+duplicate after `OK`, and observed disappearance exposes the final committed site. The container
+continuation proves one exact selected source service survives removal of one empty unshared
+adjacent container, static-mining identity/work position remain unchanged, reordered/reset input is
+byte-identical, unsafe or stocked variants fail closed, and next observation emits no repeated
+removal. The general-container continuation proves spare-allowance site-first replacement, persisted
+one-tick suppression, active-target retirement, unavailable-contract refusal,
 source-adjacent-placement refusal, reset/reorder identity, one exact destroy call, preserved source
 service, and one final committed site. Its stocked continuation proves paired exact energy/baseline
 persistence and legacy empty-handoff parsing. The stocked redundant-source continuation proves
