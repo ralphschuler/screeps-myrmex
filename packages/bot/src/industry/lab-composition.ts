@@ -329,10 +329,10 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     const handoffTarget = (room.ownedLabs ?? []).find(
       ({ id }) => id === assignmentHandoff?.targetLabId,
     );
-    const activeMineralHandoff =
+    const activeTerminalHandoff =
       assignmentHandoff?.status === "ready" &&
       handoffTarget !== undefined &&
-      handoffTarget.energy === 0 &&
+      (handoffTarget.energy === 0 || assignmentHandoff.kind === "reaction") &&
       rebindableHandoffTarget(handoffTarget);
     const terminalIdle =
       input.terminalSendRoomNames !== undefined && !input.terminalSendRoomNames.has(room.name);
@@ -366,7 +366,7 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
       assignmentHandoff,
       evacuationStorageId: activeStorages.length === 1 ? (activeStorages[0]?.id ?? null) : null,
       evacuationTerminalId:
-        (activity.length === 0 || activeMineralHandoff) &&
+        (activity.length === 0 || activeTerminalHandoff) &&
         activeStorages.length === 0 &&
         activeTerminals.length === 1 &&
         terminalIdle

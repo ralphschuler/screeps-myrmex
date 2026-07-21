@@ -57,8 +57,9 @@ removal fail closed. It cannot derive the terminal reservation from that unavail
 so internal sends may resume. An operational rollback must also disable the `phase2.industry` gate
 or restore a supporting build before another tick; fresh destination-capacity and delivery evidence
 still prevent removal after any stock drift. Redeploying supporting code resumes from the same
-bounded record. Active-work mixed terminal destinations, general multi-step migration, defensive
-migration, and creep dismantling remain issue #99.
+bounded record. ADR 0064 subsequently permits this exact record during one durable reaction handoff.
+Mixed-terminal boost work, general multi-step migration, defensive migration, and creep dismantling
+remain issue #99.
 
 ## Mechanics sources
 

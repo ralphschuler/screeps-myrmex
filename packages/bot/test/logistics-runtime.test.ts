@@ -1127,26 +1127,42 @@ describe("logistics runtime adapter", () => {
       sinkCapacity: terminal.store.freeCapacity,
       sourceAmount: 0,
     });
+    const activeMixedTerminalMigration = {
+      ...migrationRooms[0],
+      activity: ["commitment", "pending-attempt"] as const,
+      assignmentHandoff: {
+        assignment,
+        fromFingerprint: assignment.fingerprint,
+        kind: "reaction" as const,
+        layoutFingerprint: record.fingerprint,
+        objectiveId: "reaction",
+        objectiveRevision: 1,
+        status: "ready" as const,
+        targetLabId: "lab-obsolete",
+      },
+      evacuationStorageId: null,
+      evacuationTerminalId: terminal.id,
+      quiescent: false,
+    };
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [activeMixedTerminalMigration],
+        records: [mixedTerminalRecord],
+        snapshot: mixedTerminalWorld,
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual(mixedTerminalProjection.authorizedFlowIds);
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],
         migrationRooms: [
           {
-            ...migrationRooms[0],
-            activity: ["commitment"] as const,
+            ...activeMixedTerminalMigration,
             assignmentHandoff: {
-              assignment,
-              fromFingerprint: assignment.fingerprint,
-              kind: "reaction" as const,
-              layoutFingerprint: record.fingerprint,
-              objectiveId: "reaction",
-              objectiveRevision: 1,
-              status: "ready" as const,
-              targetLabId: "lab-obsolete",
+              ...activeMixedTerminalMigration.assignmentHandoff,
+              kind: "boost" as const,
             },
-            evacuationStorageId: null,
-            evacuationTerminalId: terminal.id,
-            quiescent: false,
           },
         ],
         records: [mixedTerminalRecord],

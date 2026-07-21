@@ -940,7 +940,12 @@ export class ConstructionPlanner {
               ? 0
               : (lab.destinationResources.get(mineralTerms.resourceType) ?? 0);
           let reason: LayoutMigrationBlocker | null = null;
-          if (mixedTerminal && input.labMigration?.quiescent !== true) reason = "industry-active";
+          if (
+            mixedTerminal &&
+            input.labMigration?.quiescent !== true &&
+            !(lab.activeHandoff && input.labMigration?.assignmentHandoff?.kind === "reaction")
+          )
+            reason = "industry-active";
           else if (
             input.activeLogisticsFlowIds === undefined ||
             input.activeLogisticsTargetIds === undefined ||
@@ -2270,7 +2275,8 @@ function labMigrationEvidence(input: {
     activeHandoff &&
     handoff.kind === "boost" &&
     (input.view.activity.includes("pending-attempt") || input.view.activity.includes("intent"));
-  const activeTerminalHandoff = activeHandoff && targetEnergy === 0;
+  const activeTerminalHandoff =
+    activeHandoff && (targetEnergy === 0 || handoff.kind === "reaction");
   const clusterIds = [
     ...postRemoval.reagentLabIds,
     ...postRemoval.productLabIds,

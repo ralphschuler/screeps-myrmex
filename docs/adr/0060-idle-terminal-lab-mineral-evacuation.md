@@ -51,9 +51,9 @@ reset, and structure reordering retain the same bounded commitment.
 
 Internal sends cannot race the reserved terminal. External incoming transfers, other Store activity,
 capacity loss, stock consumption, terminal inactivity, unauthorized active lab work, threat,
-malformed evidence, or timeout reduce progress and authorize no destruction. ADRs 0061 and 0062 are
-the only active-work exceptions. ADR 0063's mixed composition remains quiescent-only. Fresh Store
-evidence, not an `OK` command, proves preservation.
+malformed evidence, or timeout reduce progress and authorize no destruction. ADRs 0061, 0062, and
+0064 are the only active-work exceptions; ADR 0064 composes mixed stock only for the exact reaction
+handoff. Fresh Store evidence, not an `OK` command, proves preservation.
 
 The persistent cost is one optional fixed discriminator in the existing single lab evacuation per
 room. Rollback requires reverting code and documentation; V13 fails closed on V14 owner bytes until
