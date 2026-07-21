@@ -32,6 +32,7 @@ export {
   persistLayoutExtensionEvacuation,
   persistLayoutLabEvacuation,
   persistLayoutLinkEvacuation,
+  persistLayoutSpawnEvacuation,
   persistLayoutTowerEvacuation,
   persistLayoutRemovalReceipt,
   freshSourceServicePlacements,

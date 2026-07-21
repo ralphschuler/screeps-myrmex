@@ -340,6 +340,19 @@ describe("StructureDestroyExecutor", () => {
         fault,
       });
     expect(destroy).toHaveBeenCalledOnce();
+    const stockedIntent = { ...spawnIntent, replacementMinimumEnergy: 300 } as const;
+    expect(
+      new StructureDestroyExecutor().execute(
+        [stockedIntent],
+        adapter(undefined, spawn("spawn-exact", { used: 299 })),
+      )[0],
+    ).toMatchObject({ called: false, fault: "replacement-underfunded" });
+    expect(
+      new StructureDestroyExecutor().execute(
+        [stockedIntent],
+        adapter(undefined, spawn("spawn-exact", { used: 300 })),
+      )[0],
+    ).toMatchObject({ called: true, code: "OK" });
   });
 
   it("revalidates an empty active tower and one immediately operational replacement", () => {

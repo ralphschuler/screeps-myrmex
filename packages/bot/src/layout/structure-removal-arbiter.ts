@@ -76,6 +76,7 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
   const terms: {
     readonly replacementExpectedEnergy?: number;
     readonly replacementId: string | null;
+    readonly replacementMinimumEnergy?: number;
     readonly replacementRequiresIdle?: boolean;
     readonly replacementStructureType: string;
     readonly replacementRequiresZeroCooldown?: boolean;
@@ -93,7 +94,12 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
     terms.replacementId.length > 0 &&
     terms.targetRequiresEmptyStore &&
     (terms.targetStructureType !== "spawn" ||
-      (terms.targetRequiresIdle === true && terms.replacementRequiresIdle === true)) &&
+      (terms.targetRequiresIdle === true &&
+        terms.replacementRequiresIdle === true &&
+        (terms.replacementMinimumEnergy === undefined ||
+          (Number.isSafeInteger(terms.replacementMinimumEnergy) &&
+            terms.replacementMinimumEnergy > 0 &&
+            terms.replacementMinimumEnergy <= 300)))) &&
     (terms.targetStructureType !== "lab" || terms.targetRequiresZeroCooldown === true) &&
     (terms.targetStructureType !== "link" ||
       (Number.isSafeInteger(terms.replacementExpectedEnergy) &&
@@ -146,6 +152,9 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
     return {
       ...envelope,
       replacementId: proposal.replacementId,
+      ...(proposal.replacementMinimumEnergy === undefined
+        ? {}
+        : { replacementMinimumEnergy: proposal.replacementMinimumEnergy }),
       replacementRequiresIdle: true,
       replacementStructureType: "spawn",
       targetRequiresEmptyStore: true,

@@ -14,6 +14,7 @@ import {
   LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_LINK_EVACUATION_TIMEOUT_TICKS,
+  LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_CONTAINER_ENERGY,
   MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
@@ -38,6 +39,8 @@ import {
   layoutLabEvacuationFlowIds,
   layoutLinkEvacuationBudgetIssuer,
   layoutLinkEvacuationFlowId,
+  layoutSpawnEvacuationBudgetIssuer,
+  layoutSpawnEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
   layoutTowerEvacuationFlowId,
   type LayoutCommitment,
@@ -51,6 +54,7 @@ import {
   type LayoutMigrationPlanningResult,
   type LayoutMigrationProposal,
   type LayoutPlacement,
+  type LayoutSpawnEvacuation,
   type LayoutStructureRemovalReceipt,
   type LayoutTowerEvacuation,
 } from "../layout";
@@ -235,6 +239,12 @@ export class ConstructionPlanner {
   /** Plans bounded container and extension convergence. */
   planMigration(input: {
     readonly activeLeasedWorkTargetIds?: ReadonlySet<string>;
+    readonly activeLogisticsEndpoints?: readonly {
+      readonly counterpartId: string | null;
+      readonly flowId: string | null;
+      readonly targetId: string;
+      readonly version: number;
+    }[];
     readonly activeLogisticsFlowIds?: ReadonlySet<string>;
     readonly activeLogisticsTargetIds?: ReadonlySet<string>;
     readonly activeSpawnClaimIds?: ReadonlySet<string>;
@@ -255,6 +265,7 @@ export class ConstructionPlanner {
     readonly policyFingerprint: string;
     readonly removalReceipt?: LayoutStructureRemovalReceipt | null;
     readonly room: RoomSnapshot;
+    readonly spawnEvacuation?: LayoutSpawnEvacuation | null;
   }): LayoutMigrationPlanningResult {
     const blockers: LayoutMigrationBlockerRecord[] = [];
     const proposals: LayoutMigrationProposal[] = [];
@@ -364,11 +375,13 @@ export class ConstructionPlanner {
       const leftActive =
         (left.kind === "lab" && left.target.id === input.labEvacuation?.sourceId) ||
         (left.kind === "link" && left.target.id === input.linkEvacuation?.sourceId) ||
+        (left.kind === "spawn" && left.target.id === input.spawnEvacuation?.sourceId) ||
         (left.kind === "tower" && left.target.id === input.towerEvacuation?.sourceId) ||
         (left.kind === "extension" && left.target.id === input.extensionEvacuation?.sourceId);
       const rightActive =
         (right.kind === "lab" && right.target.id === input.labEvacuation?.sourceId) ||
         (right.kind === "link" && right.target.id === input.linkEvacuation?.sourceId) ||
+        (right.kind === "spawn" && right.target.id === input.spawnEvacuation?.sourceId) ||
         (right.kind === "tower" && right.target.id === input.towerEvacuation?.sourceId) ||
         (right.kind === "extension" && right.target.id === input.extensionEvacuation?.sourceId);
       return Number(rightActive) - Number(leftActive) || compareMigrationCandidate(left, right);
@@ -413,6 +426,7 @@ export class ConstructionPlanner {
         extensionEvacuation: input.extensionEvacuation ?? null,
         labEvacuation: input.labEvacuation ?? null,
         linkEvacuation: input.linkEvacuation ?? null,
+        spawnEvacuation: input.spawnEvacuation ?? null,
         towerEvacuation: input.towerEvacuation ?? null,
         proposals,
         removalReceipt,
@@ -428,6 +442,7 @@ export class ConstructionPlanner {
         extensionEvacuation: null,
         labEvacuation: null,
         linkEvacuation: null,
+        spawnEvacuation: null,
         towerEvacuation: null,
         proposals,
         removalReceipt,
@@ -449,6 +464,7 @@ export class ConstructionPlanner {
         extensionEvacuation: input.extensionEvacuation ?? null,
         labEvacuation: input.labEvacuation ?? null,
         linkEvacuation: input.linkEvacuation ?? null,
+        spawnEvacuation: input.spawnEvacuation ?? null,
         towerEvacuation: input.towerEvacuation ?? null,
         proposals,
         removalReceipt,
@@ -466,6 +482,7 @@ export class ConstructionPlanner {
     let extensionEvacuation: LayoutExtensionEvacuation | null = null;
     let labEvacuation = input.labEvacuation ?? null;
     let linkEvacuation = input.linkEvacuation ?? null;
+    let spawnEvacuation = input.spawnEvacuation ?? null;
     let towerEvacuation = input.towerEvacuation ?? null;
     const admitRemoval = (proposal: LayoutMigrationProposal): boolean => {
       const assessment = assessRemovalReceipt(removalReceipt, proposal, input.room.observedAt);
@@ -483,6 +500,7 @@ export class ConstructionPlanner {
     };
     for (const candidate of considered) {
       if (candidate.kind === "spawn") {
+        if (spawnEvacuation !== null && spawnEvacuation.sourceId !== candidate.target.id) continue;
         if (
           input.logisticsEvidenceReady !== true ||
           input.activeLeasedWorkTargetIds === undefined
@@ -494,28 +512,120 @@ export class ConstructionPlanner {
           });
           break;
         }
-        if (input.activeLeasedWorkTargetIds.has(candidate.target.id)) {
-          pushMigrationBlocker(blockers, {
-            reason: "logistics-active",
-            roomName: input.room.name,
-            targetId: candidate.target.id,
-          });
-          break;
-        }
+        const requiredReplacementId =
+          spawnEvacuation?.replacementId ??
+          (removalReceipt?.targetId === candidate.target.id &&
+          removalReceipt.targetStructureType === "spawn"
+            ? removalReceipt.replacementId
+            : undefined);
         const spawn = spawnMigrationEvidence(
           input.room,
           candidate.target,
           desiredSpawns,
           input.colony.rclPolicy.unlocks?.spawns ?? 0,
           input.activeSpawnClaimIds,
-          removalReceipt?.targetId === candidate.target.id &&
-            removalReceipt.targetStructureType === "spawn"
-            ? removalReceipt.replacementId
-            : undefined,
+          requiredReplacementId,
         );
         if (spawn.replacement === null) {
           pushMigrationBlocker(blockers, {
             reason: spawn.reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        const identity = { replacementId: spawn.replacement.id, sourceId: candidate.target.id };
+        const flowId = layoutSpawnEvacuationFlowId(input.room.name, identity);
+        if (spawnEvacuation === null && spawn.targetEnergy > 0) {
+          if (
+            input.activeLogisticsFlowIds === undefined ||
+            input.activeLogisticsTargetIds === undefined ||
+            input.activeLogisticsEndpoints === undefined ||
+            flowId === null ||
+            layoutSpawnEvacuationBudgetIssuer(input.room.name, identity) === null
+          ) {
+            pushMigrationBlocker(blockers, {
+              reason: "logistics-unavailable",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          if (
+            spawn.replacementEnergy + spawn.targetEnergy > MAX_LAYOUT_SPAWN_ENERGY ||
+            spawn.replacement.store.freeCapacity !==
+              MAX_LAYOUT_SPAWN_ENERGY - spawn.replacementEnergy ||
+            spawn.replacement.store.freeCapacity < spawn.targetEnergy
+          ) {
+            pushMigrationBlocker(blockers, {
+              reason: "evacuation-capacity",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          if (hasUnrelatedSpawnEndpoint(input, identity, null)) {
+            pushMigrationBlocker(blockers, {
+              reason: "logistics-active",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          spawnEvacuation = {
+            amount: spawn.targetEnergy,
+            expiresAt: input.room.observedAt + LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS,
+            replacementId: spawn.replacement.id,
+            replacementInitialEnergy: spawn.replacementEnergy,
+            sourceId: candidate.target.id,
+            startedAt: input.room.observedAt,
+          };
+        }
+        if (spawnEvacuation !== null) {
+          const activeFlowId = layoutSpawnEvacuationFlowId(input.room.name, spawnEvacuation);
+          const flowActive =
+            activeFlowId !== null && input.activeLogisticsFlowIds?.has(activeFlowId) === true;
+          let reason: LayoutMigrationBlocker | null = null;
+          if (
+            input.activeLogisticsFlowIds === undefined ||
+            input.activeLogisticsTargetIds === undefined ||
+            input.activeLogisticsEndpoints === undefined ||
+            activeFlowId === null
+          )
+            reason = "logistics-unavailable";
+          else if (input.room.observedAt >= spawnEvacuation.expiresAt) {
+            reason = "evacuation-expired";
+            if (spawn.targetEnergy > 0 && !flowActive) spawnEvacuation = null;
+          } else if (
+            spawn.targetEnergy > spawnEvacuation.amount ||
+            (spawn.targetEnergy > 0 &&
+              spawn.replacementEnergy < spawnEvacuation.replacementInitialEnergy) ||
+            (spawn.targetEnergy > 0 &&
+              spawn.targetEnergy + spawn.replacementEnergy >
+                spawnEvacuation.replacementInitialEnergy + spawnEvacuation.amount)
+          )
+            reason = "evacuation-incomplete";
+          else if (hasUnrelatedSpawnEndpoint(input, identity, activeFlowId))
+            reason = "logistics-active";
+          else if (spawn.targetEnergy > 0) reason = "target-stocked";
+          else if (flowActive) reason = "evacuation-pending";
+          else if (hasUnrelatedSpawnEndpoint(input, identity, null)) reason = "evacuation-pending";
+          else if (
+            spawn.replacementEnergy <
+            spawnEvacuation.replacementInitialEnergy + spawnEvacuation.amount
+          )
+            reason = "evacuation-incomplete";
+          if (reason !== null) {
+            pushMigrationBlocker(blockers, {
+              reason,
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+        } else if (hasUnrelatedSpawnEndpoint(input, identity, null)) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-active",
             roomName: input.room.name,
             targetId: candidate.target.id,
           });
@@ -528,10 +638,16 @@ export class ConstructionPlanner {
           policyFingerprint: input.policyFingerprint,
           pos: candidate.target.pos,
           replacementId: spawn.replacement.id,
+          ...(spawnEvacuation === null
+            ? {}
+            : {
+                replacementMinimumEnergy:
+                  spawnEvacuation.replacementInitialEnergy + spawnEvacuation.amount,
+              }),
           replacementRequiresIdle: true,
           replacementStructureType: "spawn",
           stableId: [
-            "remove-spawn-v1",
+            spawnEvacuation === null ? "remove-spawn-v1" : "remove-spawn-v2",
             input.colony.id,
             input.commitment.fingerprint,
             candidate.target.id,
@@ -1512,6 +1628,7 @@ export class ConstructionPlanner {
       extensionEvacuation,
       labEvacuation,
       linkEvacuation,
+      spawnEvacuation,
       towerEvacuation,
       proposals: proposals.sort((a, b) => a.stableId.localeCompare(b.stableId)),
       removalReceipt,
@@ -2519,7 +2636,12 @@ function spawnMigrationEvidence(
   requiredReplacementId: string | undefined,
 ):
   | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
-  | { readonly reason: null; readonly replacement: RoomSnapshot["ownedSpawns"][number] } {
+  | {
+      readonly reason: null;
+      readonly replacement: RoomSnapshot["ownedSpawns"][number];
+      readonly replacementEnergy: number;
+      readonly targetEnergy: number;
+    } {
   const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
   if (
     occupying.length !== 1 ||
@@ -2529,13 +2651,14 @@ function spawnMigrationEvidence(
     return { reason: "target-shared", replacement: null };
   const observedTargets = room.ownedSpawns.filter(({ id }) => id === target.id);
   const observedTarget = observedTargets[0];
+  const targetEnergy = observedTarget === undefined ? null : exactSpawnEnergy(observedTarget);
   if (
     observedTargets.length !== 1 ||
     observedTarget === undefined ||
     !samePosition(observedTarget.pos, target.pos) ||
     !observedTarget.active ||
     observedTarget.spawning !== null ||
-    exactSpawnEnergy(observedTarget) !== 0
+    targetEnergy === null
   )
     return { reason: "target-unavailable", replacement: null };
   if (activeSpawnClaimIds === undefined || activeSpawnClaimIds.has(target.id))
@@ -2566,9 +2689,54 @@ function spawnMigrationEvidence(
       !activeSpawnClaimIds.has(spawn.id) &&
       exactSpawnEnergy(spawn) !== null,
   );
-  return replacement === undefined
-    ? { reason: "spawn-selected", replacement: null }
-    : { reason: null, replacement };
+  if (replacement === undefined) return { reason: "spawn-selected", replacement: null };
+  const replacementEnergy = exactSpawnEnergy(replacement);
+  return replacementEnergy === null
+    ? { reason: "replacement-pending", replacement: null }
+    : { reason: null, replacement, replacementEnergy, targetEnergy };
+}
+
+function hasUnrelatedSpawnEndpoint(
+  input: {
+    readonly activeLeasedWorkTargetIds?: ReadonlySet<string>;
+    readonly activeLogisticsEndpoints?: readonly {
+      readonly counterpartId: string | null;
+      readonly flowId: string | null;
+      readonly targetId: string;
+      readonly version: number;
+    }[];
+    readonly activeLogisticsTargetIds?: ReadonlySet<string>;
+  },
+  identity: { readonly replacementId: string; readonly sourceId: string },
+  allowedFlowId: string | null,
+): boolean {
+  const migrationIds = new Set([identity.sourceId, identity.replacementId]);
+  const related = (input.activeLogisticsEndpoints ?? []).filter(
+    ({ counterpartId, targetId }) =>
+      migrationIds.has(targetId) || (counterpartId !== null && migrationIds.has(counterpartId)),
+  );
+  if (
+    related.some(
+      ({ counterpartId, flowId, targetId, version }) =>
+        allowedFlowId === null ||
+        version !== 3 ||
+        flowId !== allowedFlowId ||
+        counterpartId === null ||
+        targetId === counterpartId ||
+        !migrationIds.has(targetId) ||
+        !migrationIds.has(counterpartId),
+    )
+  )
+    return true;
+  const exactEndpointIds = new Set(
+    related.flatMap(({ counterpartId, targetId }) =>
+      counterpartId === null ? [] : [targetId, counterpartId],
+    ),
+  );
+  for (const id of migrationIds) {
+    if (input.activeLeasedWorkTargetIds?.has(id) === true && !exactEndpointIds.has(id)) return true;
+  }
+  return false;
 }
 
 function exactSpawnEnergy(spawn: RoomSnapshot["ownedSpawns"][number]): number | null {
