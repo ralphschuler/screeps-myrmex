@@ -82,6 +82,56 @@ describe("owned-room-layout-v1", () => {
       );
   });
 
+  it("restores committed spawn geometry only when redundant spawn service is available", () => {
+    const input = fixture(8);
+    const external = structure("spawn", 35, 35, "owned");
+    const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
+    if (planned.status !== "complete") throw new Error("expected complete layout");
+    const unlocks = input.policy.unlocks;
+    if (unlocks === null) throw new Error("expected RCL unlocks");
+    const convergent = projectLayoutConvergencePlacements({
+      commitment: planned.commitment,
+      current: planned.placements,
+      roomName: input.roomName,
+      sourceCount: input.sources.length,
+      sources: input.sources,
+      unlocks,
+    });
+
+    expect(planned.placements).toContainEqual(
+      expect.objectContaining({
+        adoption: "compatible-external",
+        pos: external.pos,
+        structureType: "spawn",
+      }),
+    );
+    expect(convergent.filter(({ structureType }) => structureType === "spawn")).toHaveLength(3);
+    expect(
+      convergent.some(
+        ({ pos, structureType }) =>
+          structureType === "spawn" && pos.x === external.pos.x && pos.y === external.pos.y,
+      ),
+    ).toBe(false);
+
+    const rcl6 = fixture(6);
+    const rcl6Planned = planOwnedRoomLayout({
+      ...rcl6,
+      structures: [...rcl6.structures, external],
+    });
+    if (rcl6Planned.status !== "complete") throw new Error("expected complete RCL6 layout");
+    if (rcl6.policy.unlocks === null) throw new Error("expected RCL6 unlocks");
+    expect(
+      projectLayoutConvergencePlacements({
+        commitment: rcl6Planned.commitment,
+        current: rcl6Planned.placements,
+        roomName: rcl6.roomName,
+        sourceCount: rcl6.sources.length,
+        sources: rcl6.sources,
+        unlocks: rcl6.policy.unlocks,
+      }),
+    ).toEqual(rcl6Planned.placements);
+  });
+
   it("restores committed tower geometry for replacement-first defensive convergence", () => {
     const input = fixture(5);
     const external = structure("tower", 35, 35, "owned");

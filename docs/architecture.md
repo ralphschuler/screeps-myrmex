@@ -145,9 +145,13 @@ exact durable `ready` reaction handoff. Issue
 handoff; unresolved boost work remains removal-blocking until exact effect settlement. Storage
 precedence, no-send evidence, fresh complete delivery, retired work, and unchanged handoff evidence
 remain mandatory. Industry blocks every internal send from or to the room until removal is safe.
+Issue [#355](https://github.com/ralphschuler/screeps-myrmex/issues/355) restores committed spawn
+geometry at RCL7/RCL8 and permits one idle empty external spawn only when full allowance retains
+allowance-minus-one active committed spawns, current SpawnBroker selection leaves the target and one
+exact replacement idle, and no assigned/active contract endpoint names the target.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
-`Structure.destroy`. Every extension, container, tower, link, and lab result reuses the same fixed
-receipt.
+`Structure.destroy`. Every extension, container, spawn, tower, link, and lab result reuses the same
+fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1502,7 +1506,7 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V14
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V15
 `layouts` owner. V3 adds the optional source-migration identity, V4 adds one optional source-service
 issuance coordinate, and V5 adds one generic bounded removal receipt. Site `OK` waits for observed
 world change; full and unexpected faults back off; RCL, target, and ownership failures wait for the
@@ -1515,14 +1519,15 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V14 layouts owner; V8 adds
+commitments and bounded receipts stage through the owner-local schema V15 layouts owner; V8 adds
 `link` to the existing removal-receipt discriminator, V9 adds one optional fixed-shape reserve-link
 evacuation, V10 adds `lab` to the fixed receipt discriminator, V11 adds one optional fixed-shape
 lab-energy evacuation, V12 adds its single-kind mineral/storage variant, V13 adds the paired
-energy/mineral variant, and V14 adds one terminal discriminator to either mineral-bearing form.
-Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and
-authorizes no command. Every observed owned layout site enters the existing funded survival-growth
-build flow, while controller risk, recovery, maintenance, and protected reserves retain precedence.
+energy/mineral variant, V14 adds one terminal discriminator to either mineral-bearing form, and V15
+adds `spawn` to the fixed removal-receipt discriminator without another migration record. Degraded,
+unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
+command. Every observed owned layout site enters the existing funded survival-growth build flow,
+while controller risk, recovery, maintenance, and protected reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -1807,6 +1812,16 @@ reaction continuation; and
 [ADR 0065](adr/0065-boost-handoff-idle-terminal-lab-mixed-stock-evacuation.md) records the
 equivalent explicit-boost continuation. Autonomous boost manifest production, defensive migration,
 general multi-step migration, and creep dismantling remain issue #99 and fail closed.
+
+Issue #355 restores source-defined primary spawn geometry only when current allowance is at least
+two. At full allowance, `ConstructionPlanner` may remove one active idle empty external spawn only
+while exactly allowance minus one active spawns occupy distinct committed positions, one exact
+replacement remains idle and absent from the current SpawnBroker selections, the target was not
+selected, and no assigned/active contract endpoint names it. `StructureDestroyExecutor` rechecks
+both idle states and the target's exact empty 300-energy Store. Layouts owner V15 adds only the
+spawn receipt discriminator; observed disappearance exposes the final committed spawn site through
+the ordinary construction chain. [ADR 0066](adr/0066-replacement-first-idle-spawn-removal.md)
+records this cross-authority evidence boundary.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2403,6 +2418,10 @@ Required architecture assertions include:
 - a stocked obsolete extension persists at most one bounded layout-owned evacuation, uses the sole
   funded logistics/lease path, suppresses ordinary target refill, and cannot authorize removal
   before fresh delivered/empty evidence and flow retirement;
+- obsolete-spawn removal requires RCL7/RCL8 full allowance, allowance-minus-one active committed
+  spawns, an active idle exact-empty external target, current SpawnBroker evidence that selects
+  neither the target nor every idle retained spawn, no assigned/active contract endpoint naming the
+  target, and the same global one-command and reset-safe receipt ceilings;
 - obsolete-tower removal requires full allowance of at least two, allowance-minus-one active
   committed towers, an active empty unshared target, an exact active committed replacement with at
   least 10 energy, current safety, and the same global one-command ceiling; stocked targets first
@@ -2446,8 +2465,8 @@ Required architecture assertions include:
   sole-authority funded logistics flows, and requires fresh empty-target, every delivered
   replacement gain, and retired flow/endpoint evidence before removal; a source-specific handoff
   additionally preserves one different exact selected service and static-mining identity;
-- every extension/container/tower destroy result persists at most one exact receipt per room, `OK`
-  waits for fresh disappearance, failures retry only at capped eligibility ticks and stop after
+- every extension/container/spawn/tower destroy result persists at most one exact receipt per room,
+  `OK` waits for fresh disappearance, failures retry only at capped eligibility ticks and stop after
   three attempts, reset/reorder preserves evidence, and a blocked room leaves the global slot
   available;
 - observer selection admits at most one intent per observer and `OK` settles only from exact

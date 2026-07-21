@@ -167,6 +167,45 @@ describe("StructureRemovalArbiter", () => {
     ).toBe("invalid-proposal");
   });
 
+  it("preserves typed idle spawn-service terms and rejects untyped spawn removal", () => {
+    const spawn = {
+      ...proposal("spawn-obsolete"),
+      replacementId: "spawn-exact",
+      replacementRequiresIdle: true,
+      replacementStructureType: "spawn",
+      stableId: "remove-spawn/spawn-obsolete",
+      targetRequiresIdle: true,
+      targetStructureType: "spawn",
+    } as const satisfies LayoutMigrationProposal;
+    const result = arbitrateStructureRemovals({
+      authorizations: [authorization(spawn)],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: [spawn],
+    });
+    expect(result.intents).toEqual([
+      expect.objectContaining({
+        replacementId: "spawn-exact",
+        replacementRequiresIdle: true,
+        replacementStructureType: "spawn",
+        targetId: "spawn-obsolete",
+        targetRequiresEmptyStore: true,
+        targetRequiresIdle: true,
+        targetStructureType: "spawn",
+      }),
+    ]);
+    for (const untyped of [
+      { ...spawn, targetRequiresIdle: false },
+      { ...spawn, replacementRequiresIdle: false },
+    ] as unknown as LayoutMigrationProposal[])
+      expect(
+        arbitrateStructureRemovals({
+          authorizations: [authorization(untyped)],
+          limits: STRUCTURE_REMOVAL_LIMITS,
+          proposals: [untyped],
+        }).rejected[0]?.reason,
+      ).toBe("invalid-proposal");
+  });
+
   it("preserves typed empty-idle link terms in the sole removal intent", () => {
     const link = {
       ...proposal("link-reserve-external"),

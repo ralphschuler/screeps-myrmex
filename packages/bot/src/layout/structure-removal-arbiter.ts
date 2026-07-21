@@ -76,18 +76,24 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
   const terms: {
     readonly replacementExpectedEnergy?: number;
     readonly replacementId: string | null;
+    readonly replacementRequiresIdle?: boolean;
     readonly replacementStructureType: string;
     readonly replacementRequiresZeroCooldown?: boolean;
     readonly targetRequiresEmptyStore: boolean;
+    readonly targetRequiresIdle?: boolean;
     readonly targetRequiresZeroCooldown?: boolean;
     readonly targetStructureType: string;
   } = proposal;
   const validMigrationTerms =
-    ["container", "extension", "lab", "link", "tower"].includes(terms.targetStructureType) &&
+    ["container", "extension", "lab", "link", "spawn", "tower"].includes(
+      terms.targetStructureType,
+    ) &&
     terms.replacementStructureType === terms.targetStructureType &&
     typeof terms.replacementId === "string" &&
     terms.replacementId.length > 0 &&
     terms.targetRequiresEmptyStore &&
+    (terms.targetStructureType !== "spawn" ||
+      (terms.targetRequiresIdle === true && terms.replacementRequiresIdle === true)) &&
     (terms.targetStructureType !== "lab" || terms.targetRequiresZeroCooldown === true) &&
     (terms.targetStructureType !== "link" ||
       (Number.isSafeInteger(terms.replacementExpectedEnergy) &&
@@ -135,6 +141,16 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
       replacementStructureType: "extension",
       targetRequiresEmptyStore: true,
       targetStructureType: "extension",
+    };
+  if (proposal.targetStructureType === "spawn")
+    return {
+      ...envelope,
+      replacementId: proposal.replacementId,
+      replacementRequiresIdle: true,
+      replacementStructureType: "spawn",
+      targetRequiresEmptyStore: true,
+      targetRequiresIdle: true,
+      targetStructureType: "spawn",
     };
   if (proposal.targetStructureType === "tower")
     return {
