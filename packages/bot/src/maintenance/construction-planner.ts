@@ -2224,7 +2224,6 @@ function labMigrationEvidence(input: {
     Number.isSafeInteger(handoff.objectiveRevision) &&
     handoff.objectiveRevision > 0 &&
     !input.view.activity.includes("pending-attempt") &&
-    (targetEnergy === 0 || target.mineralAmount === 0) &&
     (target.mineralAmount === 0
       ? target.mineralType === null
       : typeof target.mineralType === "string" &&

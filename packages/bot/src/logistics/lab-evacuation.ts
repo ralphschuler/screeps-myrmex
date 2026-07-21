@@ -80,7 +80,7 @@ export function projectLayoutLabEvacuations(input: {
     const activeReaction =
       migration === undefined || shape === null
         ? false
-        : activeReactionMigration(record, migration, evacuation, shape);
+        : activeReactionMigration(record, migration, evacuation);
     if (
       room?.controller?.ownership !== "owned" ||
       room.observedAt !== input.tick ||
@@ -342,7 +342,6 @@ function activeReactionMigration(
   record: LayoutRecord,
   migration: LabMigrationRoomView,
   evacuation: LayoutLabEvacuation,
-  shape: NonNullable<ReturnType<typeof labEvacuationShape>>,
 ): boolean {
   const handoff = migration.assignmentHandoff;
   const current = migration.assignment;
@@ -350,8 +349,6 @@ function activeReactionMigration(
     current === null ||
     migration.quiescent ||
     !migration.activity.includes("commitment") ||
-    Number(shape.energyAmount > 0) + Number(shape.mineralAmount > 0) !== 1 ||
-    "energyAmount" in evacuation ||
     handoff?.status !== "ready" ||
     handoff.targetLabId !== evacuation.sourceId ||
     handoff.layoutFingerprint !== record.fingerprint ||
