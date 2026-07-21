@@ -25,9 +25,10 @@ logistics, contract, and command authorities.
   discriminator to the existing mineral-only lab evacuation. Its absence preserves V12/V13 storage
   semantics. V1-V13 migration invents no terminal evidence; V13 code rejects and preserves V14 owner
   bytes.
-- Terminal destinations remain unavailable to boost handoffs and mixed energy/mineral evacuations.
-  ADR 0061 subsequently permits only the mineral-only active-reaction handoff to reuse this exact
-  V14 destination under storage-absence and current no-send evidence.
+- Terminal destinations remain unavailable to mixed energy/mineral evacuations. ADR 0061
+  subsequently permits the mineral-only active-reaction handoff to reuse this exact V14 destination;
+  ADR 0062 permits the equivalent exact ready explicit-boost handoff under the same storage-absence
+  and current no-send evidence.
 - A persisted terminal-bound evacuation reserves its room against every internally planned send,
   whether the room would be the source or destination. `IndustryDirector` remains the sole send
   policy owner and reports `terminal-reserved`; no terminal command authority is added.

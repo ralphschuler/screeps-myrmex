@@ -109,16 +109,17 @@ publication; removal waits for fresh target emptiness, baseline-plus-amount repl
 retired flow/endpoints, and unchanged quiescence, cluster, and safety evidence. A zero-energy target
 holding one mineral kind may instead use the exact active owned storage published by the industry
 view when its general-purpose Store has complete aggregate capacity. If no active storage exists, a
-quiescent mineral-only target or one under an exact durable `ready` reaction handoff may use one
-exact active idle terminal with complete 300,000-unit aggregate capacity. Industry suppresses every
-internal send from or to that room while the V14 terminal commitment exists. One funded mineral flow
-suppresses the obsolete lab's ordinary source/refill publication; removal waits for fresh lab
-emptiness, baseline-plus-amount destination stock, retired work, and unchanged destination,
-quiescence or handoff, cluster, and safety evidence. Active boost handoffs and mixed stock remain
-storage-only. A target holding both energy and one mineral kind combines those exact destinations in
-one bounded commitment: energy and mineral flows are admitted as an atomic pair, and removal waits
-for both destination gains plus complete work retirement. One active reaction may continue only when
-the external target has no current or post-removal role, the retained nine labs keep byte-identical
+quiescent mineral-only target or one under an exact durable `ready` reaction or boost handoff may
+use one exact active idle terminal with complete 300,000-unit aggregate capacity. Industry
+suppresses every internal send from or to that room while the V14 terminal commitment exists. One
+funded mineral flow suppresses the obsolete lab's ordinary source/refill publication; removal waits
+for fresh lab emptiness, baseline-plus-amount destination stock, retired work, and unchanged
+destination, quiescence or handoff, cluster, and safety evidence. A current boost intent or matching
+pending effect allows evacuation to continue but blocks removal. Mixed stock remains storage-only. A
+target holding both energy and one mineral kind combines those exact destinations in one bounded
+commitment: energy and mineral flows are admitted as an atomic pair, and removal waits for both
+destination gains plus complete work retirement. One active reaction may continue only when the
+external target has no current or post-removal role, the retained nine labs keep byte-identical
 reagent/product/boost IDs, and Industry durably advances only the assignment fingerprint before any
 reaction, migration, or destroy command. An empty target proceeds directly. A positive energy-only
 target first reuses the existing V13 evacuation: one funded optional-growth creep flow moves the
@@ -126,9 +127,9 @@ exact amount to the canonical retained lab while reaction work continues, and re
 fresh target emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, unchanged
 handoff evidence, and no pending reaction attempt. A zero-energy target holding one mineral kind
 instead reuses the V13 mineral evacuation and exact active storage. Only when no active storage
-exists, the same reaction handoff may reuse the V14 exact idle-terminal destination under current
-no-send evidence. One funded flow moves the complete amount under aggregate capacity, and removal
-waits for the exact destination gain, retired flow/endpoints, unchanged destination/handoff
+exists, the same reaction or boost handoff may reuse the V14 exact idle-terminal destination under
+current no-send evidence. One funded flow moves the complete amount under aggregate capacity, and
+removal waits for the exact destination gain, retired flow/endpoints, unchanged destination/handoff
 evidence, and no pending attempt. A target holding both forms reuses the V13 mixed record: both
 existing funded flows are admitted atomically, reaction work continues, and removal waits for both
 exact destination gains plus complete work retirement. Pending predecessor effects settle first; the
@@ -142,7 +143,7 @@ body plus 30-mineral/ 20-energy corroboration; partial effects resume and confli
 the commitment. A supplied funded manifest remains non-quiescent until completion even if invalid
 creep or objective evidence suppresses its commitment; runtime does not yet produce autonomous boost
 manifests. A uniquely reconstructible durable rebound is held without staging, lab command, removal,
-or layout revision while retained-lab staging or source-layout evidence is unavailable. Boost/mixed
+or layout revision while retained-lab staging or source-layout evidence is unavailable. Mixed
 terminal destinations, contaminated, cooling, target-role-assigned, ambiguous, malformed,
 capacity-lost, cluster-breaking, or pressured labs remain.
 

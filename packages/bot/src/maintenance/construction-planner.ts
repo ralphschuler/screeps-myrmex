@@ -986,6 +986,14 @@ export class ConstructionPlanner {
             break;
           }
         }
+        if (lab.removalBlockedByIndustry) {
+          pushMigrationBlocker(blockers, {
+            reason: "industry-active",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
         admitRemoval({
           colonyId: input.colony.id,
           layoutFingerprint: input.commitment.fingerprint,
@@ -2132,6 +2140,7 @@ function labMigrationEvidence(input: {
   | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
   | {
       readonly activeHandoff: boolean;
+      readonly removalBlockedByIndustry: boolean;
       readonly destination:
         | NonNullable<RoomSnapshot["ownedStorages"]>[number]
         | NonNullable<RoomSnapshot["ownedTerminals"]>[number]
@@ -2240,8 +2249,7 @@ function labMigrationEvidence(input: {
     handoff.objectiveId.length <= 160 &&
     Number.isSafeInteger(handoff.objectiveRevision) &&
     handoff.objectiveRevision > 0 &&
-    !input.view.activity.includes("pending-attempt") &&
-    !(handoff.kind === "boost" && input.view.activity.includes("intent")) &&
+    !(handoff.kind === "reaction" && input.view.activity.includes("pending-attempt")) &&
     (target.mineralAmount === 0
       ? target.mineralType === null
       : typeof target.mineralType === "string" &&
@@ -2253,7 +2261,11 @@ function labMigrationEvidence(input: {
     JSON.stringify(handoff.assignment) === JSON.stringify(postRemoval);
   if (!input.view.quiescent && !activeHandoff)
     return { reason: "industry-active", replacement: null };
-  const activeTerminalHandoff = activeHandoff && handoff.kind === "reaction";
+  const removalBlockedByIndustry =
+    activeHandoff &&
+    handoff.kind === "boost" &&
+    (input.view.activity.includes("pending-attempt") || input.view.activity.includes("intent"));
+  const activeTerminalHandoff = activeHandoff && targetEnergy === 0;
   const clusterIds = [
     ...postRemoval.reagentLabIds,
     ...postRemoval.productLabIds,
@@ -2315,6 +2327,7 @@ function labMigrationEvidence(input: {
   }
   return {
     activeHandoff,
+    removalBlockedByIndustry,
     destination,
     destinationFreeCapacity,
     destinationResourceAmount,

@@ -482,6 +482,71 @@ describe("composed lab runtime", () => {
     expect(overflow.migrationRooms[0]?.quiescent).toBe(false);
   });
 
+  it("publishes an idle terminal only for a durable mineral-only boost handoff", () => {
+    const initial = boostHandoffWorld(100);
+    const first = composeBoostHandoff(initial.snapshot, initial.manifest);
+    const previous = required(first.policy.commitments[0]);
+    if (previous.kind !== "boost") throw new Error("expected boost commitment");
+
+    const reboundWorld = withTerminalOnly(
+      withExternalMineral(boostHandoffWorld(101, true).snapshot, 100),
+    );
+    const rebound = composeBoostHandoff(reboundWorld, initial.manifest, [previous], [], new Set());
+    expect(rebound.migrationRooms[0]?.assignmentHandoff?.status).toBe("pending");
+    expect(rebound.migrationRooms[0]?.evacuationTerminalId).toBeNull();
+
+    const durable = roundTrip(rebound.policy.commitments);
+    const readyWorld = withTerminalOnly(
+      withExternalMineral(boostHandoffWorld(102, true).snapshot, 100),
+    );
+    const ready = composeBoostHandoff(readyWorld, initial.manifest, durable, [], new Set());
+    expect(ready.migrationRooms[0]).toMatchObject({
+      evacuationStorageId: null,
+      evacuationTerminalId: "terminal",
+      quiescent: false,
+    });
+    expect(ready.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      kind: "boost",
+      status: "ready",
+      targetLabId: "external",
+    });
+
+    const intent = required(ready.intents[0]);
+    const attempt = required(createPendingLabAttempt(intent, "OK"));
+    const awaiting = composeBoostHandoff(
+      readyWorld,
+      initial.manifest,
+      durable,
+      [attempt],
+      new Set(),
+    );
+    expect(awaiting.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(awaiting.migrationRooms[0]?.evacuationTerminalId).toBe("terminal");
+
+    expect(
+      composeBoostHandoff(readyWorld, initial.manifest, durable, [], new Set(["W1N1"]))
+        .migrationRooms[0]?.evacuationTerminalId,
+    ).toBeNull();
+    expect(
+      composeBoostHandoff(
+        withExternalMineral(boostHandoffWorld(102, true).snapshot, 100),
+        initial.manifest,
+        durable,
+        [],
+        new Set(),
+      ).migrationRooms[0]?.evacuationTerminalId,
+    ).toBeNull();
+    expect(
+      composeBoostHandoff(
+        withTerminalOnly(withExternalMixedStock(boostHandoffWorld(102, true).snapshot, 1, 100)),
+        initial.manifest,
+        durable,
+        [],
+        new Set(),
+      ).migrationRooms[0]?.evacuationTerminalId,
+    ).toBeNull();
+  });
+
   it("durably rebinds one reaction before publishing retained-lab work", () => {
     const objectiveValue = { ...objective("forward"), amount: 30 };
     const first = composeHandoff(handoffWorld(100), objectiveValue);

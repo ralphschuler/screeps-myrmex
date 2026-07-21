@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { planStaticMining } from "../src/economy";
-import { assignLabCluster, fingerprintLabLayout, type LabMigrationRoomView } from "../src/industry";
+import {
+  assignLabCluster,
+  createPendingLabAttempt,
+  fingerprintLabLayout,
+  type LabMigrationRoomView,
+} from "../src/industry";
 import {
   STRUCTURE_REMOVAL_LIMITS,
   StructureDestroyExecutor,
@@ -29,6 +34,10 @@ import { projectLayoutContainerMigrations } from "../src/logistics/container-mig
 import { projectLayoutLabEvacuations } from "../src/logistics/lab-evacuation";
 import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "../src/maintenance";
 import type { RoomSnapshot, StructureSnapshot, WorldSnapshot } from "../src/world/snapshot";
+import {
+  composeBoostHandoffFixture,
+  labBoostHandoffFixtureWorld,
+} from "./support/lab-composition-fixture";
 
 describe("ConstructionPlanner", () => {
   it("prioritizes critical layout flows before ordinary damage deterministically", () => {
@@ -1551,6 +1560,198 @@ describe("ConstructionPlanner", () => {
         room: completeFixture.room,
       }).proposals,
     ).toEqual([]);
+  });
+
+  it("evacuates mineral to an idle terminal without racing active boost work", () => {
+    const fixture = labTerminalEvacuationFixture(750, 1_000, 10_000, 100);
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      labMigration: activeBoostLabMigration(fixture),
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.labEvacuation).toEqual({
+      amount: 750,
+      destinationId: "terminal",
+      destinationInitialAmount: 1_000,
+      destinationStructureType: "terminal",
+      expiresAt: 250,
+      replacementId: fixture.replacementId,
+      resourceType: "XGH2O",
+      sourceId: "lab-external",
+      startedAt: 100,
+    });
+    const evacuation = staged.labEvacuation;
+    if (evacuation === null) throw new Error("expected active-boost terminal evacuation");
+
+    const partial = labTerminalEvacuationFixture(300, 1_450, 10_450, 102, fixture.replacementId);
+    const flowIds = layoutLabEvacuationFlowIds("W1N1", evacuation);
+    if (flowIds === null) throw new Error("expected active-boost terminal flow identity");
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(flowIds),
+        activeLogisticsTargetIds: new Set(["lab-external", "terminal"]),
+        colony: partial.colony,
+        labEvacuation: JSON.parse(JSON.stringify(evacuation)) as typeof evacuation,
+        labMigration: activeBoostLabMigration(partial, ["commitment", "pending-attempt"]),
+        logisticsEvidenceReady: true,
+        placements: [...partial.placements].reverse(),
+        room: {
+          ...partial.room,
+          ownedLabs: [...(partial.room.ownedLabs ?? [])].reverse(),
+          ownedTerminals: [...(partial.room.ownedTerminals ?? [])].reverse(),
+          structures: [...(partial.room.structures ?? [])].reverse(),
+        },
+      }),
+    ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+
+    const completeFixture = labTerminalEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      103,
+      fixture.replacementId,
+    );
+    for (const activity of [
+      ["commitment", "intent"],
+      ["commitment", "pending-attempt"],
+    ] as const)
+      expect(
+        planMigration({
+          activeLogisticsFlowIds: new Set(),
+          activeLogisticsTargetIds: new Set(),
+          colony: completeFixture.colony,
+          labEvacuation: evacuation,
+          labMigration: activeBoostLabMigration(completeFixture, activity),
+          logisticsEvidenceReady: true,
+          placements: completeFixture.placements,
+          room: completeFixture.room,
+        }).proposals,
+      ).toEqual([]);
+
+    const settled = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: completeFixture.colony,
+      labEvacuation: evacuation,
+      labMigration: completeFixture.labMigration,
+      logisticsEvidenceReady: true,
+      placements: completeFixture.placements,
+      room: completeFixture.room,
+    });
+    expect(settled.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: fixture.replacementId,
+        targetId: "lab-external",
+      }),
+    ]);
+
+    const mixed = labTerminalEvacuationFixture(750, 1_000, 10_000, 100, undefined, 1);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: mixed.colony,
+        labMigration: activeBoostLabMigration(mixed),
+        logisticsEvidenceReady: true,
+        placements: mixed.placements,
+        room: mixed.room,
+      }),
+    ).toMatchObject({ labEvacuation: null, proposals: [] });
+  });
+
+  it("carries a real boost handoff through V14 persistence and partial logistics", () => {
+    const initial = labBoostHandoffFixtureWorld(100);
+    const first = composeBoostHandoffFixture(initial.snapshot, initial.manifest);
+    const previous = first.policy.commitments[0];
+    if (previous?.kind !== "boost") throw new Error("expected initial boost commitment");
+
+    const reboundWorld = boostTerminalSnapshot(101, true, 100, 0);
+    const rebound = composeBoostHandoffFixture(
+      reboundWorld,
+      initial.manifest,
+      [previous],
+      [],
+      new Set(),
+    );
+    expect(rebound.migrationRooms[0]?.assignmentHandoff?.status).toBe("pending");
+    expect(rebound.migrationRooms[0]?.evacuationTerminalId).toBeNull();
+
+    const durable = JSON.parse(
+      JSON.stringify(rebound.policy.commitments),
+    ) as typeof rebound.policy.commitments;
+    const readyWorld = boostTerminalSnapshot(102, false, 100, 0);
+    const ready = composeBoostHandoffFixture(readyWorld, initial.manifest, durable, [], new Set());
+    const migration = ready.migrationRooms[0];
+    const handoff = migration?.assignmentHandoff;
+    if (migration === undefined || handoff?.kind !== "boost" || handoff.status !== "ready")
+      throw new Error("expected durable ready boost handoff");
+    expect(migration.evacuationTerminalId).toBe("terminal");
+    const retainedIds = [
+      ...handoff.assignment.reagentLabIds,
+      ...handoff.assignment.productLabIds,
+      ...handoff.assignment.boostLabIds,
+    ].sort();
+    const replacementId = retainedIds[0];
+    if (replacementId === undefined) throw new Error("expected retained replacement lab");
+    const evacuation = {
+      amount: 100,
+      destinationId: "terminal",
+      destinationInitialAmount: 0,
+      destinationStructureType: "terminal" as const,
+      expiresAt: 251,
+      replacementId,
+      resourceType: "Z",
+      sourceId: "external",
+      startedAt: 101,
+    };
+    const commitment = { ...migrationCommitment, fingerprint: "layout-commitment" };
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    owner = persistLayoutLabEvacuation(owner, "W1N1", evacuation);
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const record = owner.records[0];
+    if (record === undefined) throw new Error("expected persisted V14 layout record");
+
+    const readyProjection = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [migration],
+      records: [record],
+      snapshot: logisticsLabSnapshot(readyWorld),
+      tick: 102,
+    });
+    expect(readyProjection.authorizedFlowIds).toHaveLength(1);
+
+    const intent = ready.intents[0];
+    if (intent === undefined) throw new Error("expected retained boost intent");
+    const attempt = createPendingLabAttempt(intent, "OK");
+    if (attempt === null) throw new Error("expected pending boost attempt");
+    const partialWorld = boostTerminalSnapshot(103, true, 40, 60);
+    const partial = composeBoostHandoffFixture(
+      partialWorld,
+      initial.manifest,
+      durable,
+      [attempt],
+      new Set(),
+    );
+    expect(partial.migrationRooms[0]?.evacuationTerminalId).toBe("terminal");
+    expect(partial.migrationRooms[0]?.activity).toContain("commitment");
+    expect(partial.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: readyProjection.budgets.map((budget) => ({
+          ...budget,
+          status: "active",
+        })),
+        migrationRooms: partial.migrationRooms,
+        records: [record],
+        snapshot: logisticsLabSnapshot(partialWorld),
+        tick: 103,
+      }).authorizedFlowIds,
+    ).toEqual(readyProjection.authorizedFlowIds);
   });
 
   it("evacuates mixed stock atomically while a rebound reaction remains active", () => {
@@ -3992,25 +4193,40 @@ function activeReactionLabMigration(fixture: {
   readonly labMigration: LabMigrationRoomView;
   readonly room: RoomSnapshot;
 }) {
+  return activeLabMigration(fixture, "reaction", ["commitment", "intent"]);
+}
+
+function activeBoostLabMigration(
+  fixture: { readonly labMigration: LabMigrationRoomView; readonly room: RoomSnapshot },
+  activity: LabMigrationRoomView["activity"] = ["commitment", "intent"],
+) {
+  return activeLabMigration(fixture, "boost", activity);
+}
+
+function activeLabMigration(
+  fixture: { readonly labMigration: LabMigrationRoomView; readonly room: RoomSnapshot },
+  kind: "boost" | "reaction",
+  activity: LabMigrationRoomView["activity"],
+) {
   const retained = (fixture.room.ownedLabs ?? []).filter(({ id }) => id !== "lab-external");
   const currentAssignment = fixture.labMigration.assignment;
-  if (currentAssignment === null) throw new Error("expected active-reaction current assignment");
+  if (currentAssignment === null) throw new Error("expected active-commitment current assignment");
   const assignment = assignLabCluster({
     labs: retained,
     layoutFingerprint: fingerprintLabLayout("W1N1", retained),
     limits: fixture.labMigration.limits,
     roomName: "W1N1",
   }).assignment;
-  if (assignment === null) throw new Error("expected active-reaction retained assignment");
+  if (assignment === null) throw new Error("expected active-commitment retained assignment");
   return {
     ...fixture.labMigration,
-    activity: ["commitment", "intent"] as const,
+    activity,
     assignmentHandoff: {
       assignment,
       fromFingerprint: currentAssignment.fingerprint,
-      kind: "reaction" as const,
+      kind,
       layoutFingerprint: migrationCommitment.fingerprint,
-      objectiveId: "reaction",
+      objectiveId: kind,
       objectiveRevision: 1,
       status: "ready" as const,
       targetLabId: "lab-external",
@@ -4090,6 +4306,7 @@ function labTerminalEvacuationFixture(
   terminalUsed: number,
   observedAt: number,
   requiredReplacementId?: string,
+  targetEnergy = 0,
 ) {
   const base = labMineralEvacuationFixture(
     targetMineral,
@@ -4097,6 +4314,7 @@ function labTerminalEvacuationFixture(
     terminalUsed,
     observedAt,
     requiredReplacementId,
+    targetEnergy,
   );
   const storage = base.room.ownedStorages?.[0];
   if (storage === undefined) throw new Error("expected terminal source fixture");
@@ -4123,6 +4341,79 @@ function labTerminalEvacuationFixture(
       ownedTerminals: [terminal],
     } as RoomSnapshot,
   };
+}
+
+function boostTerminalSnapshot(
+  tick: number,
+  reversed: boolean,
+  targetMineral: number,
+  terminalMineral: number,
+): WorldSnapshot {
+  const snapshot = labBoostHandoffFixtureWorld(tick, reversed).snapshot;
+  const room = snapshot.ownedRooms[0];
+  const storage = room?.ownedStorages?.[0];
+  if (room === undefined || storage === undefined) throw new Error("expected boost terminal world");
+  const terminalUsed = storage.store.usedCapacity + terminalMineral;
+  return {
+    ...snapshot,
+    ownedRooms: [
+      {
+        ...room,
+        ownedLabs: (room.ownedLabs ?? []).map((lab) =>
+          lab.id === "external"
+            ? {
+                ...lab,
+                energy: 0,
+                mineralAmount: targetMineral,
+                mineralType: targetMineral === 0 ? null : "Z",
+                store: {
+                  capacity: 5_000,
+                  freeCapacity: 5_000 - targetMineral,
+                  resources:
+                    targetMineral === 0 ? [] : [{ amount: targetMineral, resourceType: "Z" }],
+                  usedCapacity: targetMineral,
+                },
+              }
+            : lab,
+        ),
+        ownedStorages: [],
+        ownedTerminals: [
+          {
+            ...storage,
+            cooldown: 0,
+            id: "terminal",
+            store: {
+              capacity: 300_000,
+              freeCapacity: 300_000 - terminalUsed,
+              resources: [
+                ...storage.store.resources,
+                ...(terminalMineral === 0 ? [] : [{ amount: terminalMineral, resourceType: "Z" }]),
+              ],
+              usedCapacity: terminalUsed,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function logisticsLabSnapshot(snapshot: WorldSnapshot): WorldSnapshot {
+  const room = snapshot.ownedRooms[0];
+  if (room === undefined) throw new Error("expected logistics lab room");
+  return {
+    ...snapshot,
+    rooms: [
+      {
+        ...room,
+        constructionSites: [],
+        controller: { level: 8, ownership: "owned" as const },
+        hostileCreeps: [],
+        ownedSpawns: [],
+        structures: [],
+      },
+    ],
+  } as unknown as WorldSnapshot;
 }
 
 function migrationColony(
