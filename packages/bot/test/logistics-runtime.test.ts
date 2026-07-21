@@ -1050,6 +1050,111 @@ describe("logistics runtime adapter", () => {
       sinkCapacity: terminal.store.freeCapacity,
       sourceAmount: 0,
     });
+
+    const mixedTerminalRoom = terminalWorld.rooms[0];
+    if (mixedTerminalRoom === undefined)
+      throw new Error("mixed terminal evacuation fixture missing");
+    const mixedTerminalWorld = {
+      ...terminalWorld,
+      rooms: [
+        {
+          ...mixedTerminalRoom,
+          ownedLabs: mixedLabs,
+          storedStructures: [
+            ...mixedTerminalRoom.storedStructures.filter(({ id }) => !labIds.has(id)),
+            ...mixedLabs.map((value) => ({
+              hits: value.hits,
+              hitsMax: value.hitsMax,
+              id: value.id,
+              ownerUsername: "me",
+              ownership: "owned" as const,
+              pos: value.pos,
+              store: value.store,
+              structureType: "lab",
+              ticksToDecay: null,
+            })),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const mixedTerminalTerms = {
+      ...mixedTerms,
+      destinationId: terminal.id,
+      destinationStructureType: "terminal" as const,
+    };
+    const mixedTerminalRecord = {
+      ...record,
+      labEvacuation: mixedTerminalTerms,
+    } as const satisfies LayoutRecord;
+    const mixedTerminalProjection = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [
+        {
+          ...migrationRooms[0],
+          evacuationStorageId: null,
+          evacuationTerminalId: terminal.id,
+        },
+      ],
+      records: [mixedTerminalRecord],
+      snapshot: mixedTerminalWorld,
+      tick: 11,
+    });
+    const mixedTerminalRuntime = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: mixedTerminalProjection.demands,
+      snapshot: mixedTerminalWorld,
+      tick: 11,
+    });
+    expect(mixedTerminalProjection.authorizedFlowIds).toHaveLength(2);
+    const mixedTerminalCommitments = mixedTerminalRuntime.contracts.commitments.filter(
+      ({ flowId }) => mixedTerminalProjection.authorizedFlowIds.includes(flowId),
+    );
+    expect(mixedTerminalCommitments).toHaveLength(2);
+    expect(mixedTerminalCommitments[0]?.request).toMatchObject({
+      execution: { counterpartId: replacementId },
+    });
+    expect(mixedTerminalCommitments[1]?.request).toMatchObject({
+      execution: {
+        counterpartId: terminal.id,
+        resourceType: "XGH2O",
+        version: 3,
+      },
+    });
+    expect(mixedTerminalRuntime.plan.reservations).toContainEqual({
+      nodeId: "store-capacity/4:W1N1/8:terminal",
+      sinkCapacity: terminal.store.freeCapacity,
+      sourceAmount: 0,
+    });
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [
+          {
+            ...migrationRooms[0],
+            activity: ["commitment"] as const,
+            assignmentHandoff: {
+              assignment,
+              fromFingerprint: assignment.fingerprint,
+              kind: "reaction" as const,
+              layoutFingerprint: record.fingerprint,
+              objectiveId: "reaction",
+              objectiveRevision: 1,
+              status: "ready" as const,
+              targetLabId: "lab-obsolete",
+            },
+            evacuationStorageId: null,
+            evacuationTerminalId: terminal.id,
+            quiescent: false,
+          },
+        ],
+        records: [mixedTerminalRecord],
+        snapshot: mixedTerminalWorld,
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual([]);
+
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],

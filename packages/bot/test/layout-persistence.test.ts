@@ -372,10 +372,31 @@ describe("layout persistence and cache", () => {
     expect(owner.schemaVersion).toBe(14);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 13 })).toBeNull();
+
+    const mixedTerminal = {
+      destinationId: "terminal",
+      destinationInitialAmount: 296_500,
+      destinationStructureType: "terminal",
+      energyAmount: 500,
+      expiresAt: 160,
+      mineralAmount: 3_000,
+      replacementId: "lab-replacement",
+      replacementInitialEnergy: 250,
+      resourceType: "XGH2O",
+      sourceId: "lab-obsolete",
+      startedAt: 10,
+    } as const;
+    const mixedOwner = {
+      ...owner,
+      records: [{ ...owner.records[0], labEvacuation: mixedTerminal }],
+    };
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(mixedOwner)))).toEqual(mixedOwner);
+
     for (const invalid of [
       { ...terminal, destinationInitialAmount: 297_001 },
       { ...terminal, destinationStructureType: "storage" },
-      { ...terminal, energyAmount: 1, mineralAmount: terminal.amount, amount: undefined },
+      { ...mixedTerminal, destinationInitialAmount: 297_001 },
+      { ...mixedTerminal, destinationStructureType: "storage" },
     ])
       expect(
         parseLayoutsOwner({

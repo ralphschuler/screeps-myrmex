@@ -560,7 +560,6 @@ function validLabEvacuation(value: unknown): value is LayoutLabEvacuation {
   if (mixed) {
     return (
       value.amount === undefined &&
-      !("destinationStructureType" in value) &&
       positiveInteger(value.energyAmount) &&
       value.energyAmount <= MAX_LAYOUT_LAB_ENERGY &&
       positiveInteger(value.mineralAmount) &&

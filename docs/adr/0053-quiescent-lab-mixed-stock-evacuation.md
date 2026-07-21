@@ -49,9 +49,11 @@ interrupting active lab work. Each room still persists at most one fixed lab eva
 work remains bounded by 64 layout records, 64 total lab evacuation flows, 128 nodes/endpoints, the
 existing two-room migration window, 128 removal candidates, and one global destroy command.
 
-Terminal destinations, active-work-preserving lab handoff, multiple labs, general layout-revision
-migration, and creep dismantling remain separate. Rolling back to V12 preserves V13 bytes and fails
-closed; redeploying V13 resumes bounded evidence.
+ADR 0063 subsequently permits this quiescent mixed form to use one exact idle terminal for mineral
+when no active storage exists; energy still moves to the retained lab and both flows remain atomic.
+Active-work mixed terminal destinations, multiple labs, general layout-revision migration, and creep
+dismantling remain separate. Rolling back to V12 preserves V13/V14 bytes and fails closed;
+redeploying current code resumes bounded evidence.
 
 ## Mechanics sources
 

@@ -133,6 +133,8 @@ export interface LayoutLabMineralEvacuation {
 export interface LayoutLabMixedEvacuation {
   readonly destinationId: string;
   readonly destinationInitialAmount: number;
+  /** Absent preserves V13 storage semantics; terminal is the only V14 alternative. */
+  readonly destinationStructureType?: "terminal";
   readonly energyAmount: number;
   readonly expiresAt: number;
   readonly mineralAmount: number;
