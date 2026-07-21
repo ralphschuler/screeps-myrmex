@@ -221,18 +221,20 @@ function hasOperationalReplacementEnergy(
   intent: DestroyOwnedStructureIntent,
   replacement: Structure,
 ): boolean {
-  if (intent.replacementStructureType !== "tower") return true;
+  const required =
+    intent.replacementStructureType === "tower"
+      ? MINIMUM_OPERATIONAL_TOWER_ENERGY
+      : intent.replacementStructureType === "spawn"
+        ? (intent.replacementMinimumEnergy ?? 0)
+        : 0;
+  if (required === 0) return true;
   const store = (
     replacement as Structure & {
       readonly store?: { getUsedCapacity(resource?: string): number | null };
     }
   ).store;
   const energy = store?.getUsedCapacity("energy");
-  return (
-    typeof energy === "number" &&
-    Number.isSafeInteger(energy) &&
-    energy >= MINIMUM_OPERATIONAL_TOWER_ENERGY
-  );
+  return typeof energy === "number" && Number.isSafeInteger(energy) && energy >= required;
 }
 function normalizeReturnCode(code: number): StructureDestroyExecutionCode {
   if (code === 0) return "OK";

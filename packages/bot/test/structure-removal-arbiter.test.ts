@@ -171,6 +171,7 @@ describe("StructureRemovalArbiter", () => {
     const spawn = {
       ...proposal("spawn-obsolete"),
       replacementId: "spawn-exact",
+      replacementMinimumEnergy: 300,
       replacementRequiresIdle: true,
       replacementStructureType: "spawn",
       stableId: "remove-spawn/spawn-obsolete",
@@ -185,6 +186,7 @@ describe("StructureRemovalArbiter", () => {
     expect(result.intents).toEqual([
       expect.objectContaining({
         replacementId: "spawn-exact",
+        replacementMinimumEnergy: 300,
         replacementRequiresIdle: true,
         replacementStructureType: "spawn",
         targetId: "spawn-obsolete",
@@ -196,6 +198,7 @@ describe("StructureRemovalArbiter", () => {
     for (const untyped of [
       { ...spawn, targetRequiresIdle: false },
       { ...spawn, replacementRequiresIdle: false },
+      { ...spawn, replacementMinimumEnergy: 301 },
     ] as unknown as LayoutMigrationProposal[])
       expect(
         arbitrateStructureRemovals({

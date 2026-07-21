@@ -22,6 +22,7 @@ import {
   parseLayoutsOwner,
   persistLayoutCommitment,
   persistLayoutLinkEvacuation,
+  persistLayoutSpawnEvacuation,
   persistLayoutTowerEvacuation,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
@@ -320,9 +321,21 @@ describe("composed layout runtime", () => {
       removalReceipt: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"] = null,
       activeLeasedWorkTargetIds: ReadonlySet<string> = new Set(),
       activeLogisticsTargetIds: ReadonlySet<string> = activeLeasedWorkTargetIds,
+      spawnEvacuation: Parameters<
+        ConstructionPlanner["planMigration"]
+      >[0]["spawnEvacuation"] = null,
+      activeLogisticsEndpoints: readonly {
+        readonly counterpartId: string | null;
+        readonly flowId: string | null;
+        readonly targetId: string;
+        readonly version: number;
+      }[] = [],
+      activeLogisticsFlowIds: ReadonlySet<string> = new Set(),
     ) =>
       new ConstructionPlanner().planMigration({
         activeLeasedWorkTargetIds,
+        activeLogisticsEndpoints,
+        activeLogisticsFlowIds,
         activeLogisticsTargetIds,
         ...(activeSpawnClaimIds === undefined ? {} : { activeSpawnClaimIds }),
         colony,
@@ -334,6 +347,7 @@ describe("composed layout runtime", () => {
         policyFingerprint: "policy-spawn",
         removalReceipt,
         room: room(ownedSpawns, observedAt),
+        spawnEvacuation,
       });
     const ready = plan([obsolete, exactB, exactA], 101, new Set([exactA.id]));
     expect(ready.proposals).toEqual([
@@ -370,10 +384,120 @@ describe("composed layout runtime", () => {
     expect(
       plan([obsolete, exactB, exactA], 101, new Set(), null, new Set([obsolete.id])).proposals,
     ).toEqual([]);
+    const stocked = spawn(obsolete.id, obsolete.name, obsolete.pos, 300);
+    const staged = plan([stocked, exactB, exactA], 101, new Set([exactA.id]));
+    expect(staged).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "target-stocked" })],
+      proposals: [],
+      spawnEvacuation: {
+        amount: 300,
+        expiresAt: 251,
+        replacementId: exactB.id,
+        replacementInitialEnergy: 0,
+        sourceId: obsolete.id,
+        startedAt: 101,
+      },
+    });
+    const spawnEvacuation = staged.spawnEvacuation;
+    if (spawnEvacuation === null) throw new Error("expected staged spawn evacuation");
+    const spawnFlowId = `layout-spawn-evacuation:${roomName}:${obsolete.id}:${exactB.id}`;
+    const exactEndpoints = [
+      { counterpartId: exactB.id, flowId: spawnFlowId, targetId: obsolete.id, version: 3 },
+    ];
+    const partial = plan(
+      [
+        spawn(obsolete.id, obsolete.name, obsolete.pos, 150),
+        spawn(exactB.id, exactB.name, exactB.pos, 150),
+        exactA,
+      ],
+      102,
+      new Set(),
+      null,
+      new Set([obsolete.id, exactB.id]),
+      new Set([obsolete.id, exactB.id]),
+      spawnEvacuation,
+      exactEndpoints,
+      new Set([spawnFlowId]),
+    );
+    expect(partial).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "target-stocked" })],
+      proposals: [],
+      spawnEvacuation,
+    });
+    expect(
+      JSON.stringify(
+        plan(
+          [
+            exactA,
+            spawn(exactB.id, exactB.name, exactB.pos, 150),
+            spawn(obsolete.id, obsolete.name, obsolete.pos, 150),
+          ],
+          102,
+          new Set(),
+          null,
+          new Set([exactB.id, obsolete.id]),
+          new Set([exactB.id, obsolete.id]),
+          spawnEvacuation,
+          exactEndpoints,
+          new Set([spawnFlowId]),
+        ),
+      ),
+    ).toBe(JSON.stringify(partial));
+    const transferred = [
+      spawn(obsolete.id, obsolete.name, obsolete.pos, 0),
+      spawn(exactB.id, exactB.name, exactB.pos, 300),
+      exactA,
+    ];
+    expect(
+      plan(
+        transferred,
+        103,
+        new Set(),
+        null,
+        new Set([obsolete.id, exactB.id]),
+        new Set([obsolete.id, exactB.id]),
+        spawnEvacuation,
+        exactEndpoints,
+        new Set([spawnFlowId]),
+      ),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-pending" })],
+      proposals: [],
+    });
+    const settled = plan(transferred, 104, new Set(), null, new Set(), new Set(), spawnEvacuation);
+    expect(settled.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: exactB.id,
+        replacementMinimumEnergy: 300,
+        targetId: obsolete.id,
+      }),
+    ]);
+    expect(
+      plan(
+        transferred,
+        104,
+        new Set(),
+        null,
+        new Set([obsolete.id]),
+        new Set([obsolete.id]),
+        spawnEvacuation,
+        [
+          {
+            counterpartId: exactB.id,
+            flowId: "unrelated",
+            targetId: obsolete.id,
+            version: 3,
+          },
+        ],
+      ).proposals,
+    ).toEqual([]);
+    expect(
+      plan(transferred, 251, new Set(), null, new Set(), new Set(), spawnEvacuation).proposals,
+    ).toEqual([]);
     expect(
       plan([spawn(obsolete.id, obsolete.name, obsolete.pos, 1), exactB, exactA], 101, new Set())
-        .proposals,
-    ).toEqual([]);
+        .spawnEvacuation,
+    ).toMatchObject({ amount: 1 });
     expect(
       plan(
         [
@@ -405,14 +529,16 @@ describe("composed layout runtime", () => {
       plan([obsolete, exactA, exactB], 103, new Set([exactA.id]), failedReceipt).proposals,
     ).toEqual([expect.objectContaining({ replacementId: exactB.id })]);
 
-    if (ready.authorization === null) throw new Error("expected spawn removal authorization");
+    if (settled.authorization === null)
+      throw new Error("expected stocked spawn removal authorization");
     const arbitration = arbitrateStructureRemovals({
-      authorizations: [ready.authorization],
+      authorizations: [settled.authorization],
       limits: STRUCTURE_REMOVAL_LIMITS,
-      proposals: ready.proposals,
+      proposals: settled.proposals,
     });
     const removalIntent = arbitration.intents[0];
     if (removalIntent === undefined) throw new Error("expected spawn removal intent");
+    expect(removalIntent).toMatchObject({ replacementMinimumEnergy: 300 });
     const destroy = vi.fn(() => 0);
     const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
     const liveSpawn = (value: ReturnType<typeof spawn>, command = vi.fn(() => 0)) => ({
@@ -433,46 +559,58 @@ describe("composed layout runtime", () => {
       },
       structureType: "spawn",
     });
+    const emptyObsolete = transferred[0];
+    const fundedReplacement = transferred[1];
+    if (emptyObsolete === undefined || fundedReplacement === undefined)
+      throw new Error("expected transferred spawn fixtures");
     const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
       hasCurrentHostiles: () => false,
       isCurrentCommitment: () => true,
       resolveRoom: () => liveRoom,
       resolveStructure: (id) =>
         id === obsolete.id
-          ? (liveSpawn(obsolete, destroy) as unknown as Structure)
+          ? (liveSpawn(emptyObsolete, destroy) as unknown as Structure)
           : id === exactB.id
-            ? (liveSpawn(exactB) as unknown as Structure)
+            ? (liveSpawn(fundedReplacement) as unknown as Structure)
             : null,
     });
-    let owner = reconcileStructureDestroyExecution(
-      persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
-      execution,
-      101,
-    ).owner;
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    owner = persistLayoutSpawnEvacuation(owner, roomName, spawnEvacuation);
+    owner = reconcileStructureDestroyExecution(owner, execution, 104).owner;
     owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
     const receipt = owner.records[0]?.removalReceipt ?? null;
     expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
     expect(destroy).toHaveBeenCalledOnce();
-    expect(plan([exactA, obsolete, exactB], 102, new Set(), receipt)).toMatchObject({
+    expect(
+      plan(transferred, 105, new Set(), receipt, new Set(), new Set(), spawnEvacuation),
+    ).toMatchObject({
       blockers: [expect.objectContaining({ reason: "removal-pending" })],
       proposals: [],
     });
 
-    const postRemoval = plan([exactB, exactA], 103, new Set(), receipt);
+    const postRemoval = plan(
+      [fundedReplacement, exactA],
+      106,
+      new Set(),
+      receipt,
+      new Set(),
+      new Set(),
+      spawnEvacuation,
+    );
     expect(postRemoval.removalReceipt).toBeNull();
     const finalDiff = diffOwnedRoomLayout({
       colonyId: roomName,
       commitment,
       commitmentConflicted: false,
       constructionSites: [],
-      observationFingerprint: "obs-spawn-103",
+      observationFingerprint: "obs-spawn-106",
       placements: desiredSpawns,
       policy: spawnPolicy,
       policyEnabled: true,
       policyFingerprint: "policy-spawn",
       roomName,
       roomStatus: "owned",
-      structures: room([exactB, exactA], 103).structures ?? [],
+      structures: room([fundedReplacement, exactA], 106).structures ?? [],
     });
     expect(finalDiff.proposals.filter(({ structureType }) => structureType === "spawn")).toEqual([
       expect.objectContaining({ pos: desiredSpawnC.pos, structureType: "spawn" }),
@@ -484,14 +622,14 @@ describe("composed layout runtime", () => {
         commitment,
         commitmentConflicted: false,
         constructionSites: [],
-        observationFingerprint: "obs-spawn-104",
+        observationFingerprint: "obs-spawn-107",
         placements: desiredSpawns,
         policy: spawnPolicy,
         policyEnabled: true,
         policyFingerprint: "policy-spawn",
         roomName,
         roomStatus: "owned",
-        structures: room([exactA, exactB, restored], 104).structures ?? [],
+        structures: room([exactA, fundedReplacement, restored], 107).structures ?? [],
       }).proposals.filter(({ structureType }) => structureType === "spawn"),
     ).toEqual([]);
   });

@@ -148,7 +148,16 @@ remain mandatory. Industry blocks every internal send from or to the room until 
 Issue [#355](https://github.com/ralphschuler/screeps-myrmex/issues/355) restores committed spawn
 geometry at RCL7/RCL8 and permits one idle empty external spawn only when full allowance retains
 allowance-minus-one active committed spawns, current SpawnBroker selection leaves the target and one
-exact replacement idle, and no assigned/active contract endpoint names the target.
+exact replacement idle, and no assigned/active contract endpoint names the target. Issue
+[#357](https://github.com/ralphschuler/screeps-myrmex/issues/357) advances layouts owner-local
+schema V16 with one exact 150-tick stocked-spawn evacuation. Its pure projection enters the sole
+funded V3 logistics path, reserves replacement capacity once, and suppresses target refill across
+both survival and general logistics. The operational agent view excludes every lease naming a
+currently suppressed spawn and every stale spawn-evacuation flow; `migration.layout` re-admits only
+its exact current authorized V3 lease. Missing owner terms cancel, suspend, or fail the orphaned
+contract before it can resume. Removal additionally requires fresh baseline-plus-amount replacement
+energy and retired exact flow/endpoints; unrelated endpoints naming either spawn fail closed.
+[ADR 0067](adr/0067-stocked-obsolete-spawn-evacuation.md) records this handoff.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, tower, link, and lab result reuses the same
 fixed receipt.
@@ -564,6 +573,7 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `safety.foundation`        | Safety    | mandatory, recovery-safe        |         0.10 |
 | `colony.director`          | Plan      | mandatory, recovery-safe        |         1.50 |
 | `industry.publish`         | Plan      | optional economic               |         0.50 |
+| `migration.layout`         | Plan      | optional economic               |         1.50 |
 | `cache.sweep`              | Plan      | surplus maintenance, cadence 25 |         0.25 |
 | `execution.arbitrate`      | Execute   | mandatory tail                  |         0.50 |
 | `industry.execute`         | Execute   | mandatory tail                  |         0.25 |
@@ -584,11 +594,15 @@ budget-consuming contract reconciliation. When admitted, operational `contracts.
 its owner transaction before mandatory-tail `state.reconcile`; only the latter commits the
 `Memory.myrmex` root. `industry.execute` follows shared intent arbitration in the mandatory Execute
 tail; `industry.reconcile` stages terminal, lab, mature, and observer effects through one industry
-owner transaction before `state.reconcile`. On the rare explicit selected-source handoff,
-`layout.handoff-reconcile` stages the complete layout draft before its root commit; the following
-tick's contract reconciliation consumes that durable coordinate. It is a continuation of the same
-layout owner, not a second planner or state authority. Later outcomes replace their own foundation
-markers without adding another loop.
+owner transaction before `state.reconcile`. The operational `agents.plan` pass excludes persisted
+spawn-evacuation leases; optional `migration.layout` continues only its exact current
+planner-authorized terms through the same Logistics/ContractLedger/lease-agent path. A skipped or
+failed continuation therefore emits no new spawn-evacuation request, funding transition, or action;
+ordinary Logistics retirement may still fail closed when its projected flow disappears. On the rare
+explicit selected-source handoff, `layout.handoff-reconcile` stages the complete layout draft before
+its root commit; the following tick's contract reconciliation consumes that durable coordinate. It
+is a continuation of the same layout owner, not a second planner or state authority. Later outcomes
+replace their own foundation markers without adding another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -1492,7 +1506,7 @@ projection, evaluates at most two rooms per tick, 256 anchors, eight transforms,
 cells per candidate, and publishes only complete `owned-room-layout-v1` plans.
 
 The distinct `layouts` persistent owner stores only algorithm revision, anchor/transform,
-fingerprint, bounded blocker/commitment metadata, at most one compact extension, tower,
+fingerprint, bounded blocker/commitment metadata, at most one compact extension, spawn, tower,
 reserve-link, and lab-energy evacuation, and at most one compact container handoff per room; the
 latter may identify a general target or one redundant source target. Reconstructible placements
 remain heap data. `layout.compiled.v1` is a `CacheManager` namespace stamped by exact algorithm,
@@ -1506,7 +1520,7 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V15
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V16
 `layouts` owner. V3 adds the optional source-migration identity, V4 adds one optional source-service
 issuance coordinate, and V5 adds one generic bounded removal receipt. Site `OK` waits for observed
 world change; full and unexpected faults back off; RCL, target, and ownership failures wait for the
@@ -1519,15 +1533,16 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V15 layouts owner; V8 adds
+commitments and bounded receipts stage through the owner-local schema V16 layouts owner; V8 adds
 `link` to the existing removal-receipt discriminator, V9 adds one optional fixed-shape reserve-link
 evacuation, V10 adds `lab` to the fixed receipt discriminator, V11 adds one optional fixed-shape
 lab-energy evacuation, V12 adds its single-kind mineral/storage variant, V13 adds the paired
-energy/mineral variant, V14 adds one terminal discriminator to either mineral-bearing form, and V15
-adds `spawn` to the fixed removal-receipt discriminator without another migration record. Degraded,
-unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
-command. Every observed owned layout site enters the existing funded survival-growth build flow,
-while controller risk, recovery, maintenance, and protected reserves retain precedence.
+energy/mineral variant, V14 adds one terminal discriminator to either mineral-bearing form, V15 adds
+`spawn` to the fixed removal-receipt discriminator, and V16 adds one optional fixed-shape spawn
+evacuation. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments
+and authorizes no command. Every observed owned layout site enters the existing funded
+survival-growth build flow, while controller risk, recovery, maintenance, and protected reserves
+retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -2419,9 +2434,12 @@ Required architecture assertions include:
   funded logistics/lease path, suppresses ordinary target refill, and cannot authorize removal
   before fresh delivered/empty evidence and flow retirement;
 - obsolete-spawn removal requires RCL7/RCL8 full allowance, allowance-minus-one active committed
-  spawns, an active idle exact-empty external target, current SpawnBroker evidence that selects
-  neither the target nor every idle retained spawn, no assigned/active contract endpoint naming the
-  target, and the same global one-command and reset-safe receipt ceilings;
+  spawns, an active idle external target, current SpawnBroker evidence that selects neither
+  migration spawn and leaves retained service executable, no unrelated assigned/active endpoint
+  naming either spawn, and the same global one-command and reset-safe receipt ceilings; stocked
+  targets first use one exact bounded funded V3 evacuation and require fresh target-empty,
+  baseline-plus-amount replacement energy, retired exact work/endpoints, and live replacement-energy
+  revalidation;
 - obsolete-tower removal requires full allowance of at least two, allowance-minus-one active
   committed towers, an active empty unshared target, an exact active committed replacement with at
   least 10 energy, current safety, and the same global one-command ceiling; stocked targets first

@@ -4,13 +4,14 @@ import {
   ContractLedger,
   serializeContractLedgerState,
   workforceActorFromCreep,
+  type ContractExecutionView,
   type ContractFundingView,
   type ContractPlanningView,
   type WorkContractRequest,
 } from "../src/contracts";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony";
 import { FEATURE_GATE_IDS } from "../src/config";
-import { planSurvivalFlow } from "../src/economy";
+import { planSurvivalFlow, type SurvivalFlowCandidate } from "../src/economy";
 import {
   LAYOUT_ALGORITHM_REVISION,
   emptyLayoutsOwner,
@@ -19,9 +20,12 @@ import {
 import {
   projectActiveLeaseTargetIds,
   projectActiveSpawnClaimIds,
+  orphanedSpawnEvacuationTransition,
   projectCommittedLabLayouts,
   projectPinnedLabHandoffLayout,
   runTick,
+  withoutSuppressedLeaseTargets,
+  withoutSuppressedSurvivalTransfers,
 } from "../src/runtime/tick";
 import type { RuntimeGame } from "../src/runtime/context";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
@@ -114,6 +118,72 @@ describe("tick lifecycle", () => {
     ]);
   });
 
+  it("suppresses every migration-spawn lease endpoint and retires orphaned flow states", () => {
+    const execution = {
+      status: "ready",
+      leases: [
+        {
+          actorId: "worker-a",
+          execution: {
+            action: "transfer",
+            completion: "target-full",
+            counterpartId: "spawn-obsolete",
+            resourceType: "energy",
+            version: 1,
+          },
+          targetId: "source-a",
+        },
+        {
+          actorId: "worker-b",
+          execution: {
+            action: "withdraw",
+            completion: "flow-complete",
+            counterpartId: "spawn-replacement",
+            flowId: "layout-spawn-evacuation:W1N1:spawn-obsolete:spawn-replacement",
+            recommendedCarry: 1,
+            recommendedMove: 1,
+            reservedAmount: 300,
+            resourceType: "energy",
+            stage: "acquire",
+            version: 3,
+          },
+          targetId: "spawn-obsolete",
+        },
+        {
+          actorId: "worker-c",
+          execution: {
+            action: "harvest",
+            completion: "continuous",
+            counterpartId: null,
+            resourceType: null,
+            version: 1,
+          },
+          targetId: "source-safe",
+        },
+      ],
+    } as unknown as ContractExecutionView;
+
+    const filtered = withoutSuppressedLeaseTargets(
+      execution,
+      new Set(["spawn-obsolete", "spawn-replacement"]),
+    );
+    expect(filtered.leases.map(({ actorId }) => actorId)).toEqual(["worker-c"]);
+    const survival = withoutSuppressedSurvivalTransfers(
+      [
+        { action: "transfer", targetId: "spawn-obsolete" },
+        { action: "transfer", targetId: "spawn-safe" },
+        { action: "harvest", targetId: "source-safe" },
+      ] as unknown as readonly SurvivalFlowCandidate[],
+      new Set(["spawn-obsolete"]),
+    );
+    expect(survival.map(({ targetId }) => targetId)).toEqual(["spawn-safe", "source-safe"]);
+    expect(orphanedSpawnEvacuationTransition("proposed")).toBe("cancelled");
+    expect(orphanedSpawnEvacuationTransition("funded")).toBe("suspended");
+    expect(orphanedSpawnEvacuationTransition("assigned")).toBe("failed");
+    expect(orphanedSpawnEvacuationTransition("active")).toBe("failed");
+    expect(orphanedSpawnEvacuationTransition("suspended")).toBe("failed");
+  });
+
   it("fails spawn-removal claim evidence closed unless the broker completed planning", () => {
     const planned = {
       status: "planned",
@@ -143,10 +213,22 @@ describe("tick lifecycle", () => {
     const planOrder = outcome.kernel.systems
       .map(({ systemId }) => systemId)
       .filter((systemId) =>
-        ["colony.director", "layout.plan", "links.plan", "migration.layout"].includes(systemId),
+        [
+          "agents.plan",
+          "colony.director",
+          "layout.plan",
+          "links.plan",
+          "migration.layout",
+        ].includes(systemId),
       );
 
-    expect(planOrder).toEqual(["colony.director", "layout.plan", "links.plan", "migration.layout"]);
+    expect(planOrder).toEqual([
+      "colony.director",
+      "agents.plan",
+      "layout.plan",
+      "links.plan",
+      "migration.layout",
+    ]);
   });
 
   it("reconstructs and pins exact committed RCL8 lab handoff geometry", () => {

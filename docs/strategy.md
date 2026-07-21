@@ -154,12 +154,20 @@ ambiguous, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
 
 Spawn convergence begins only at RCL7, where redundant service exists. Source-defined committed
 spawn positions replace compatible external geometry for ordinary site planning. At full allowance,
-one active idle empty external spawn may be removed only when exactly allowance minus one active
-spawns occupy committed positions, the current SpawnBroker result selects neither the target nor
-every idle retained spawn, and no assigned/active contract endpoint names the target. The executor
-rechecks both idle states and the target's exact empty 300-energy Store; observed disappearance then
-exposes the final committed site. A busy, stocked, selected, sole/replacementless, endpoint-bound,
-unsafe, or drifted spawn remains.
+one active idle external spawn may be removed only when exactly allowance minus one active spawns
+occupy committed positions, current SpawnBroker evidence selects neither migration spawn and leaves
+an idle retained spawn executable, and no unrelated assigned/active endpoint names either migration
+spawn. A stocked target first persists one exact 150-tick amount/baseline handoff and uses the sole
+funded V3 Logistics, workforce, lease, arbiter, and executor chain. Target refill is suppressed;
+replacement refill remains suppressed until acquisition empties the target, then may restore gain
+consumed from the room-wide spawn-energy pool. No survival or ordinary-logistics lease may bypass
+currently suppressed migration endpoints; only the exact current authorized V3 flow is re-admitted,
+and owner-term loss retires its orphaned contract. Removal waits for fresh target emptiness,
+baseline-plus-amount replacement energy, exact flow/endpoint retirement, unchanged safety and
+geometry, and live minimum-energy revalidation. Observed disappearance exposes the final committed
+site. A busy, selected, sole/replacementless, endpoint-bound, expired, unsafe, capacity-lost, or
+drifted spawn remains. [ADR 0067](adr/0067-stocked-obsolete-spawn-evacuation.md) records the stocked
+handoff.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

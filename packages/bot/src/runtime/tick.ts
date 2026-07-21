@@ -132,8 +132,10 @@ import {
   emptyLayoutsOwner,
   freshSourceServicePlacements,
   layoutCacheDependencies,
+  isLayoutSpawnEvacuationFlowId,
   layoutLabEvacuationFlowIds,
   layoutLinkEvacuationFlowId,
+  layoutSpawnEvacuationFlowId,
   parseLayoutsOwner,
   persistLayoutCommitment,
   persistLayoutContainerMigration,
@@ -141,6 +143,7 @@ import {
   persistLayoutLabEvacuation,
   persistLayoutLinkEvacuation,
   persistLayoutRemovalReceipt,
+  persistLayoutSpawnEvacuation,
   persistLayoutTowerEvacuation,
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
@@ -156,15 +159,17 @@ import {
   type LayoutMigrationBlockerRecord,
   type LayoutMigrationProposal,
   type LayoutPlacement,
+  type LayoutRecord,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV15,
+  type LayoutsOwnerV16,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
 import {
   CPU_MODES,
   RuntimeKernel,
+  type CpuBudget,
   type CpuMode,
   type KernelTickReport,
   type StagedSystemResult,
@@ -189,6 +194,10 @@ import {
   projectLayoutLabEvacuations,
 } from "../logistics/lab-evacuation";
 import { projectLayoutLinkEvacuations } from "../logistics/link-evacuation";
+import {
+  authorizedLayoutSpawnEvacuationBudgets,
+  projectLayoutSpawnEvacuations,
+} from "../logistics/spawn-evacuation";
 import { projectLayoutTowerEvacuations } from "../logistics/tower-evacuation";
 import type { LogisticsResourceDemandProjection } from "../logistics/resource-demands";
 import {
@@ -463,7 +472,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV15 | null;
+  owner: LayoutsOwnerV16 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -566,6 +575,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     input.manager,
   );
   let authorizedLinkEvacuationFlowIds: ReadonlySet<string> = new Set();
+  let activeSpawnEvacuationFlowIds: ReadonlySet<string> = persistedLayoutSpawnEvacuationFlowIds(
+    input.manager,
+  );
+  let candidateSpawnEvacuationFlowIds: ReadonlySet<string> = new Set();
+  let suppressedSpawnEvacuationTargetIds: ReadonlySet<string> = new Set();
   let linkDraft = emptyLinkRuntimeResult();
   let maintenanceBudget: MaintenanceBudgetProjection = Object.freeze({
     budgets: Object.freeze([]),
@@ -751,6 +765,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         authorizedLabEvacuations,
         activeLinkEvacuations,
         authorizedLinkEvacuations,
+        activeSpawnEvacuations,
+        authorizedSpawnEvacuations,
+        suppressedSpawnEvacuationTargets,
       ) => {
         survivalCandidates = economy;
         maintenanceCandidates = maintenance;
@@ -764,6 +781,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         authorizedLabEvacuationFlowIds = authorizedLabEvacuations;
         activeLinkEvacuationFlowIds = activeLinkEvacuations;
         authorizedLinkEvacuationFlowIds = authorizedLinkEvacuations;
+        activeSpawnEvacuationFlowIds = activeSpawnEvacuations;
+        candidateSpawnEvacuationFlowIds = authorizedSpawnEvacuations;
+        suppressedSpawnEvacuationTargetIds = suppressedSpawnEvacuationTargets;
       },
     ),
     industryPublicationSystem(input, industryDraft),
@@ -872,7 +892,17 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
       },
     },
-    layoutMigrationPlanningSystem(input, layoutDraft, () => linkDraft),
+    layoutMigrationPlanningSystem(
+      input,
+      layoutDraft,
+      () => linkDraft,
+      () => candidateSpawnEvacuationFlowIds,
+      () => logisticsRuntime,
+      () => leaseAgentPlan,
+      (planned) => {
+        leaseAgentPlan = planned;
+      },
+    ),
     {
       descriptor: {
         id: "mining.contracts",
@@ -965,6 +995,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           const request = commitment.request;
           if (
             request !== null &&
+            (request.execution?.version !== 3 ||
+              !isLayoutSpawnEvacuationFlowId(request.execution.flowId)) &&
             funded.has(
               `${request.owner.id}\u0000${request.budgetBinding.category}\u0000${request.budgetBinding.issuer}`,
             )
@@ -974,6 +1006,20 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         for (const transition of logisticsRuntime.contracts.retirements)
           scope.producer.transition(transition);
         for (const contract of context.contractPlanning.contracts) {
+          if (
+            contract.execution.version === 3 &&
+            isLayoutSpawnEvacuationFlowId(contract.execution.flowId)
+          ) {
+            if (!activeSpawnEvacuationFlowIds.has(contract.execution.flowId)) {
+              scope.producer.transition({
+                contractId: contract.contractId,
+                reason: "layout-spawn-evacuation-orphaned",
+                tick: context.tick,
+                to: orphanedSpawnEvacuationTransition(contract.state),
+              });
+            }
+            continue;
+          }
           if (
             contract.execution.version === 3 &&
             contract.issuer.startsWith("logistics/") &&
@@ -1120,18 +1166,28 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
             });
           });
         }
+        const blockedSpawnEvacuationFlowIds = context.contractExecution.leases.flatMap(
+          ({ execution }) =>
+            execution.version === 3 && isLayoutSpawnEvacuationFlowId(execution.flowId)
+              ? [execution.flowId]
+              : [],
+        );
         const planned = planLeaseAgents({
           availablePathCpu: localPathSearchAllowance(budget),
-          execution: executableLogisticsView(
-            context.contractExecution,
-            new Set([
-              ...[...activeLabEvacuationFlowIds].filter(
-                (flowId) => !authorizedLabEvacuationFlowIds.has(flowId),
-              ),
-              ...[...activeLinkEvacuationFlowIds].filter(
-                (flowId) => !authorizedLinkEvacuationFlowIds.has(flowId),
-              ),
-            ]),
+          execution: withoutSuppressedLeaseTargets(
+            executableLogisticsView(
+              context.contractExecution,
+              new Set([
+                ...[...activeLabEvacuationFlowIds].filter(
+                  (flowId) => !authorizedLabEvacuationFlowIds.has(flowId),
+                ),
+                ...[...activeLinkEvacuationFlowIds].filter(
+                  (flowId) => !authorizedLinkEvacuationFlowIds.has(flowId),
+                ),
+                ...blockedSpawnEvacuationFlowIds,
+              ]),
+            ),
+            suppressedSpawnEvacuationTargetIds,
           ),
           paths: context.localPathPlanning,
           snapshot: context.snapshot,
@@ -1866,6 +1922,19 @@ function layoutPlanningSystem(
       const activeLeasedWorkTargetIds = projectActiveLeaseTargetIds(
         context.contractPlanning.contracts,
       );
+      const activeLogisticsEndpoints = context.contractPlanning.contracts.flatMap(
+        ({ execution, state, targetId }) =>
+          state === "assigned" || state === "active"
+            ? [
+                {
+                  counterpartId: execution.counterpartId,
+                  flowId: execution.version === 3 ? execution.flowId : null,
+                  targetId,
+                  version: execution.version,
+                },
+              ]
+            : [],
+      );
       const activeLogisticsTargetIds = new Set(activeLeasedWorkTargetIds);
       for (const commitment of currentLogistics().contracts.commitments) {
         const request = commitment.request;
@@ -2048,6 +2117,7 @@ function layoutPlanningSystem(
               });
         migrationInputs.push({
           activeLeasedWorkTargetIds,
+          activeLogisticsEndpoints,
           activeLogisticsFlowIds,
           activeLogisticsTargetIds,
           ...(activeSpawnClaimIds === null ? {} : { activeSpawnClaimIds }),
@@ -2064,6 +2134,8 @@ function layoutPlanningSystem(
             owner.records.find(({ roomName }) => roomName === room.name)?.labEvacuation ?? null,
           linkEvacuation:
             owner.records.find(({ roomName }) => roomName === room.name)?.linkEvacuation ?? null,
+          spawnEvacuation:
+            owner.records.find(({ roomName }) => roomName === room.name)?.spawnEvacuation ?? null,
           towerEvacuation:
             owner.records.find(({ roomName }) => roomName === room.name)?.towerEvacuation ?? null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
@@ -2161,6 +2233,10 @@ function layoutMigrationPlanningSystem(
   input: CompositionInput,
   draft: LayoutTickDraft,
   currentLinks: () => LinkRuntimeResult,
+  currentAuthorizedSpawnEvacuations: () => ReadonlySet<string>,
+  currentLogistics: () => LogisticsRuntimeProjection,
+  currentLeaseAgentPlan: () => LeaseAgentPlan,
+  publishLeaseAgentPlan: (plan: LeaseAgentPlan) => void,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -2168,17 +2244,18 @@ function layoutMigrationPlanningSystem(
       phase: "plan",
       criticality: "economic",
       cadence: 1,
-      estimate: 0.5,
+      estimate: 1.5,
       admitInRecovery: false,
       mandatoryTail: false,
     },
-    run: () => {
+    run: ({ context, budget }) => {
       if (draft.status !== "planned" || draft.owner === null) return staged(() => undefined);
       const initialOwner = draft.owner;
       let owner = initialOwner;
       const authorizations: LayoutMigrationAuthorization[] = [];
       const blockers: LayoutMigrationBlockerRecord[] = [];
       const proposals: LayoutMigrationProposal[] = [];
+      const authorizedSpawnEvacuations = new Set<string>();
       let scannedCandidates = 0;
       let truncatedCandidates = 0;
       for (const migrationInput of draft.migrationInputs) {
@@ -2189,7 +2266,28 @@ function layoutMigrationPlanningSystem(
           ...migrationInput,
           linkRuntime,
         });
-        if (migration.authorization !== null) authorizations.push(migration.authorization);
+        if (migration.authorization !== null) {
+          authorizations.push(migration.authorization);
+          if (migration.spawnEvacuation !== null) {
+            const flowId = layoutSpawnEvacuationFlowId(
+              migrationInput.room.name,
+              migration.spawnEvacuation,
+            );
+            const evacuationCanExecute =
+              migration.blockers.length > 0 &&
+              migration.blockers.every(
+                ({ reason, targetId }) =>
+                  targetId === migration.spawnEvacuation?.sourceId &&
+                  (reason === "target-stocked" || reason === "evacuation-pending"),
+              );
+            if (
+              flowId !== null &&
+              currentAuthorizedSpawnEvacuations().has(flowId) &&
+              evacuationCanExecute
+            )
+              authorizedSpawnEvacuations.add(flowId);
+          }
+        }
         let migrationOwner = persistLayoutContainerMigration(
           owner,
           migrationInput.room.name,
@@ -2209,6 +2307,11 @@ function layoutMigrationPlanningSystem(
           migrationOwner,
           migrationInput.room.name,
           migration.linkEvacuation,
+        );
+        migrationOwner = persistLayoutSpawnEvacuation(
+          migrationOwner,
+          migrationInput.room.name,
+          migration.spawnEvacuation,
         );
         migrationOwner = persistLayoutTowerEvacuation(
           migrationOwner,
@@ -2231,25 +2334,179 @@ function layoutMigrationPlanningSystem(
         limits: STRUCTURE_REMOVAL_LIMITS,
         proposals,
       });
-      return staged(() => {
-        draft.changed ||= owner !== initialOwner;
-        draft.migrationArbitration = arbitration;
-        draft.migrationBlockers = Object.freeze(blockers);
-        draft.migrationExecution = Object.freeze([]);
-        draft.migrationProposals = Object.freeze(proposals);
-        draft.migrationScannedCandidates = scannedCandidates;
-        draft.migrationTruncatedCandidates = truncatedCandidates;
-        draft.owner = owner;
-        input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
+      const spawnFlowContinuation = prepareSpawnEvacuationFlowContinuation({
+        authorizedFlowIds: authorizedSpawnEvacuations,
+        budget,
+        context,
+        composition: input,
+        currentLeaseAgentPlan,
+        logistics: currentLogistics(),
+        publishLeaseAgentPlan,
       });
+      return staged(
+        () => {
+          draft.changed ||= owner !== initialOwner;
+          draft.migrationArbitration = arbitration;
+          draft.migrationBlockers = Object.freeze(blockers);
+          draft.migrationExecution = Object.freeze([]);
+          draft.migrationProposals = Object.freeze(proposals);
+          draft.migrationScannedCandidates = scannedCandidates;
+          draft.migrationTruncatedCandidates = truncatedCandidates;
+          draft.owner = owner;
+          spawnFlowContinuation.commit();
+          input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
+        },
+        () => {
+          spawnFlowContinuation.discard();
+        },
+      );
     },
   };
+}
+
+/** Prepares the exact authorized spawn-evacuation continuation inside `migration.layout`. */
+function prepareSpawnEvacuationFlowContinuation(input: {
+  readonly authorizedFlowIds: ReadonlySet<string>;
+  readonly budget: CpuBudget;
+  readonly composition: CompositionInput;
+  readonly context: TickContext;
+  readonly currentLeaseAgentPlan: () => LeaseAgentPlan;
+  readonly logistics: LogisticsRuntimeProjection;
+  readonly publishLeaseAgentPlan: (plan: LeaseAgentPlan) => void;
+}): { readonly commit: () => void; readonly discard: () => void } {
+  if (
+    !isFeatureEnabled(input.context.config, "phase2.mining") ||
+    input.authorizedFlowIds.size === 0
+  )
+    return { commit: () => undefined, discard: () => undefined };
+
+  const funded = new Set(
+    input.context.colony.reservations
+      .filter(({ status }) => status === "active")
+      .map(({ category, colonyId, issuer }) => `${colonyId}\u0000${category}\u0000${issuer}`),
+  );
+  const scope = input.composition.contractChannel.openProducer("migration.spawn-flow");
+  for (const commitment of input.logistics.contracts.commitments) {
+    const request = commitment.request;
+    if (
+      request !== null &&
+      input.authorizedFlowIds.has(commitment.flowId) &&
+      funded.has(
+        `${request.owner.id}\u0000${request.budgetBinding.category}\u0000${request.budgetBinding.issuer}`,
+      )
+    )
+      scope.producer.submit(request);
+  }
+  for (const contract of input.context.contractPlanning.contracts) {
+    if (
+      contract.execution.version === 3 &&
+      input.authorizedFlowIds.has(contract.execution.flowId) &&
+      contract.issuer.startsWith("logistics/") &&
+      (contract.state === "proposed" || contract.state === "suspended") &&
+      funded.has(
+        `${contract.owner.id}\u0000${contract.budgetBinding.category}\u0000${contract.budgetBinding.issuer}`,
+      )
+    )
+      scope.producer.transition({
+        contractId: contract.contractId,
+        reason: "logistics-funded",
+        tick: input.context.tick,
+        to: "funded",
+      });
+  }
+  const stagedRequests = scope.stage();
+  const planned = isFeatureEnabled(input.context.config, "phase1.agents")
+    ? planLeaseAgents({
+        availablePathCpu: localPathSearchAllowance(input.budget),
+        execution: spawnEvacuationExecutionView(
+          input.context.contractExecution,
+          input.authorizedFlowIds,
+        ),
+        paths: input.context.localPathPlanning,
+        snapshot: input.context.snapshot,
+        tick: input.context.tick,
+      })
+    : null;
+
+  return {
+    commit: () => {
+      stagedRequests.commit();
+      if (planned === null) return;
+      for (const intent of planned.actions)
+        input.composition.movementRuntime.actionProducer.submit(intent);
+      for (const intent of planned.movement)
+        input.composition.movementRuntime.movementProducer.submit(intent);
+      input.publishLeaseAgentPlan(mergeLeaseAgentPlans(input.currentLeaseAgentPlan(), planned));
+    },
+    discard: () => {
+      stagedRequests.discard();
+    },
+  };
+}
+
+export function withoutSuppressedSurvivalTransfers(
+  candidates: readonly SurvivalFlowCandidate[],
+  suppressedTargetIds: ReadonlySet<string>,
+): readonly SurvivalFlowCandidate[] {
+  if (suppressedTargetIds.size === 0) return candidates;
+  return Object.freeze(
+    candidates.filter(
+      ({ action, targetId }) => action !== "transfer" || !suppressedTargetIds.has(targetId),
+    ),
+  );
+}
+
+export function orphanedSpawnEvacuationTransition(
+  state: ContractPlanningView["contracts"][number]["state"],
+): "cancelled" | "failed" | "suspended" {
+  if (state === "proposed") return "cancelled";
+  if (state === "funded") return "suspended";
+  return "failed";
+}
+
+export function withoutSuppressedLeaseTargets(
+  execution: ContractExecutionView,
+  suppressedTargetIds: ReadonlySet<string>,
+): ContractExecutionView {
+  if (execution.status !== "ready" || suppressedTargetIds.size === 0) return execution;
+  return Object.freeze({
+    leases: Object.freeze(
+      execution.leases.filter(
+        ({ execution: terms, targetId }) =>
+          !suppressedTargetIds.has(targetId) &&
+          (terms.counterpartId === null || !suppressedTargetIds.has(terms.counterpartId)),
+      ),
+    ),
+    status: execution.status,
+  });
+}
+
+function spawnEvacuationExecutionView(
+  execution: ContractExecutionView,
+  authorizedFlowIds: ReadonlySet<string>,
+): ContractExecutionView {
+  return Object.freeze({
+    leases: Object.freeze(
+      execution.leases.filter(
+        ({ execution: terms }) => terms.version === 3 && authorizedFlowIds.has(terms.flowId),
+      ),
+    ),
+    status: execution.status,
+  });
+}
+
+function mergeLeaseAgentPlans(left: LeaseAgentPlan, right: LeaseAgentPlan): LeaseAgentPlan {
+  return Object.freeze({
+    actions: Object.freeze([...left.actions, ...right.actions]),
+    dispositions: Object.freeze([...left.dispositions, ...right.dispositions]),
+    movement: Object.freeze([...left.movement, ...right.movement]),
+  });
 }
 
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV15 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV16 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2262,14 +2519,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV15 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV16 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV15["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV16["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -2386,6 +2643,9 @@ function colonyDirectorSystem(
     authorizedLabEvacuations: ReadonlySet<string>,
     activeLinkEvacuations: ReadonlySet<string>,
     authorizedLinkEvacuations: ReadonlySet<string>,
+    activeSpawnEvacuations: ReadonlySet<string>,
+    authorizedSpawnEvacuations: ReadonlySet<string>,
+    suppressedSpawnEvacuationTargets: ReadonlySet<string>,
   ) => void,
 ): TickSystem<TickContext> {
   return {
@@ -2531,6 +2791,19 @@ function colonyDirectorSystem(
         snapshot: context.snapshot,
         tick: context.tick,
       });
+      const layoutSpawnEvacuations = projectLayoutSpawnEvacuations({
+        existingBudgets: priorLedger,
+        records: layoutRecords,
+        snapshot: context.snapshot,
+        tick: context.tick,
+      });
+      const suppressedSpawnEvacuationTargets = new Set(
+        layoutSpawnEvacuations.demands.suppressedSinkTargetIds,
+      );
+      economyCandidates = withoutSuppressedSurvivalTransfers(
+        economyCandidates,
+        suppressedSpawnEvacuationTargets,
+      );
       const layoutTowerEvacuations = projectLayoutTowerEvacuations({
         existingBudgets: priorLedger,
         records: layoutRecords,
@@ -2615,6 +2888,7 @@ function colonyDirectorSystem(
             layoutEvacuations.demands,
             layoutLabEvacuations.demands,
             layoutLinkEvacuations.demands,
+            layoutSpawnEvacuations.demands,
             layoutTowerEvacuations.demands,
           ),
           snapshot: context.snapshot,
@@ -2693,6 +2967,10 @@ function colonyDirectorSystem(
         new Set(layoutLinkEvacuations.demands.edges.map(({ id }) => id)),
         logistics,
       );
+      const executableSpawnEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
+        new Set(layoutSpawnEvacuations.demands.edges.map(({ id }) => id)),
+        logistics,
+      );
       const enabledHealthDomains = new Set(
         [
           ["layout", "phase2.layout"],
@@ -2761,6 +3039,10 @@ function colonyDirectorSystem(
         ...(executableLinkEvacuationFlowIds.size === layoutLinkEvacuations.demands.edges.length
           ? layoutLinkEvacuations.budgets
           : []),
+        ...authorizedLayoutSpawnEvacuationBudgets(
+          layoutSpawnEvacuations,
+          executableSpawnEvacuationFlowIds,
+        ),
         ...layoutTowerEvacuations.budgets,
         ...provisionalMaintenance.budgets,
         ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
@@ -2805,6 +3087,27 @@ function colonyDirectorSystem(
           })
         : null;
       const selections = brokerResult?.selections ?? [];
+      const authorizedSpawnEvacuationFlows = authorizeLayoutSpawnEvacuationFlowIds(
+        layoutRecords,
+        executableSpawnEvacuationFlowIds,
+        new Set(selections.map(({ spawnId }) => spawnId)),
+      );
+      const authorizedSpawnEvacuationBudgets = authorizedLayoutSpawnEvacuationBudgets(
+        layoutSpawnEvacuations,
+        authorizedSpawnEvacuationFlows,
+      );
+      const projectedSpawnEvacuationBudgetIssuers = new Set(
+        layoutSpawnEvacuations.budgets.map(({ issuer }) => issuer),
+      );
+      const authorizedSpawnEvacuationBudgetIssuers = new Set(
+        authorizedSpawnEvacuationBudgets.map(({ issuer }) => issuer),
+      );
+      const exactBudgetRequests = budgetRequests.filter(
+        ({ category, issuer }) =>
+          category !== "optional-growth" ||
+          !projectedSpawnEvacuationBudgetIssuers.has(issuer) ||
+          authorizedSpawnEvacuationBudgetIssuers.has(issuer),
+      );
       const satisfiedObjectiveIds =
         brokerResult?.decisions
           .filter(
@@ -2820,7 +3123,8 @@ function colonyDirectorSystem(
       const session =
         spawnEnabled &&
         !hasFundedRecoveryObjective &&
-        !selections.some(({ category }) => category === "funded-workforce")
+        !selections.some(({ category }) => category === "funded-workforce") &&
+        exactBudgetRequests.length === budgetRequests.length
           ? provisional
           : colonyDirector.begin({
               tick: context.tick,
@@ -2829,7 +3133,7 @@ function colonyDirectorSystem(
               owner,
               cpuMode: mode,
               cpuBudget: budget,
-              requests: budgetRequests,
+              requests: exactBudgetRequests,
               recoverySpawnSelections: selections
                 .filter(({ category }) => category === "emergency-recovery")
                 .map((selection) => ({
@@ -2854,6 +3158,20 @@ function colonyDirectorSystem(
               population: bindPopulationReservations(input.contractPopulation, owner),
               domainHealth,
             });
+      const activeSpawnEvacuationBudgetIssuers = new Set(
+        session.result.reservations.flatMap(({ category, issuer, status }) =>
+          category === "optional-growth" && status === "active" ? [issuer] : [],
+        ),
+      );
+      const fundedAuthorizedSpawnEvacuationFlows = new Set(
+        layoutSpawnEvacuations.demands.edges.flatMap(({ budgetBinding, id }) =>
+          authorizedSpawnEvacuationFlows.has(id) &&
+          budgetBinding !== undefined &&
+          activeSpawnEvacuationBudgetIssuers.has(budgetBinding.issuer)
+            ? [id]
+            : [],
+        ),
+      );
       let executableLabEvacuationFlowIds: ReadonlySet<string> =
         logisticsExecutableLabEvacuationFlowIds;
       if (logisticsExecutableLabEvacuationFlowIds.size > 0) {
@@ -2890,6 +3208,9 @@ function colonyDirectorSystem(
         executableLabEvacuationFlowIds,
         persistedLayoutLinkEvacuationFlowIds(input.manager),
         executableLinkEvacuationFlowIds,
+        persistedLayoutSpawnEvacuationFlowIds(input.manager),
+        fundedAuthorizedSpawnEvacuationFlows,
+        suppressedSpawnEvacuationTargets,
       );
       const intents = authorizedSpawnIntents(session, selections, context.tick);
       spawnDraft.session = session;
@@ -2922,6 +3243,38 @@ function persistedLayoutLabEvacuationFlowIds(manager: MemoryManager | null): Rea
     owner.records.flatMap(({ labEvacuation, roomName }) => {
       if (labEvacuation === undefined) return [];
       return layoutLabEvacuationFlowIds(roomName, labEvacuation) ?? [];
+    }),
+  );
+}
+
+function persistedLayoutSpawnEvacuationFlowIds(manager: MemoryManager | null): ReadonlySet<string> {
+  if (manager === null) return new Set();
+  const owner = parseLayoutsOwner(manager.ownerView("layouts"));
+  if (owner === null) return new Set();
+  return new Set(
+    owner.records.flatMap(({ roomName, spawnEvacuation }) => {
+      if (spawnEvacuation === undefined) return [];
+      const id = layoutSpawnEvacuationFlowId(roomName, spawnEvacuation);
+      return id === null ? [] : [id];
+    }),
+  );
+}
+
+export function authorizeLayoutSpawnEvacuationFlowIds(
+  records: readonly LayoutRecord[],
+  executableFlowIds: ReadonlySet<string>,
+  selectedSpawnIds: ReadonlySet<string>,
+): ReadonlySet<string> {
+  return new Set(
+    records.flatMap(({ roomName, spawnEvacuation }) => {
+      if (
+        spawnEvacuation === undefined ||
+        selectedSpawnIds.has(spawnEvacuation.sourceId) ||
+        selectedSpawnIds.has(spawnEvacuation.replacementId)
+      )
+        return [];
+      const id = layoutSpawnEvacuationFlowId(roomName, spawnEvacuation);
+      return id !== null && executableFlowIds.has(id) ? [id] : [];
     }),
   );
 }
@@ -2961,7 +3314,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV15["records"][number] | undefined;
+  readonly record: LayoutsOwnerV16["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -2988,7 +3341,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV15 | null,
+  owner: LayoutsOwnerV16 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (
