@@ -332,7 +332,6 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     const activeTerminalHandoff =
       assignmentHandoff?.status === "ready" &&
       handoffTarget !== undefined &&
-      (handoffTarget.energy === 0 || assignmentHandoff.kind === "reaction") &&
       rebindableHandoffTarget(handoffTarget);
     const terminalIdle =
       input.terminalSendRoomNames !== undefined && !input.terminalSendRoomNames.has(room.name);

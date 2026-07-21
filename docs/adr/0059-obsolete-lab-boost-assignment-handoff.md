@@ -67,10 +67,10 @@ or future planner must withdraw an invalid explicit manifest before the room can
 this preserves stock and objective safety over migration progress. Rollback requires only reverting
 code and checked evidence because `IndustryOwnerV5` and layouts owner V13 remain compatible.
 
-Autonomous boost-manifest production, different role IDs or compounds, mixed-stock terminal
-destinations, multiple obsolete labs, general layout-revision migration, defensive migration, and
-creep dismantling remain outside this decision and issue #341. ADR 0062 subsequently permits the
-mineral-only V14 terminal destination during the same exact ready handoff.
+Autonomous boost-manifest production, different role IDs or compounds, multiple obsolete labs,
+general layout-revision migration, defensive migration, and creep dismantling remain outside this
+decision and issue #341. ADR 0062 subsequently permits the mineral-only V14 terminal destination
+during the same exact ready handoff, and ADR 0065 permits the mixed-stock form.
 
 ## Mechanics sources
 

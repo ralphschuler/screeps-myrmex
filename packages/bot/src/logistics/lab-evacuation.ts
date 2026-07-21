@@ -368,9 +368,7 @@ function activeCommitmentMigration(
 ): boolean {
   const handoff = migration.assignmentHandoff;
   const current = migration.assignment;
-  const terminalDestination = "destinationStructureType" in evacuation;
   if (
-    (terminalDestination && "energyAmount" in evacuation && handoff?.kind !== "reaction") ||
     current === null ||
     migration.quiescent ||
     !migration.activity.includes("commitment") ||

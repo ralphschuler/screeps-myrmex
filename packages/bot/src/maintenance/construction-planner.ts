@@ -940,11 +940,7 @@ export class ConstructionPlanner {
               ? 0
               : (lab.destinationResources.get(mineralTerms.resourceType) ?? 0);
           let reason: LayoutMigrationBlocker | null = null;
-          if (
-            mixedTerminal &&
-            input.labMigration?.quiescent !== true &&
-            !(lab.activeHandoff && input.labMigration?.assignmentHandoff?.kind === "reaction")
-          )
+          if (mixedTerminal && input.labMigration?.quiescent !== true && !lab.activeHandoff)
             reason = "industry-active";
           else if (
             input.activeLogisticsFlowIds === undefined ||
@@ -2271,12 +2267,8 @@ function labMigrationEvidence(input: {
     JSON.stringify(handoff.assignment) === JSON.stringify(postRemoval);
   if (!input.view.quiescent && !activeHandoff)
     return { reason: "industry-active", replacement: null };
-  const removalBlockedByIndustry =
-    activeHandoff &&
-    handoff.kind === "boost" &&
-    (input.view.activity.includes("pending-attempt") || input.view.activity.includes("intent"));
-  const activeTerminalHandoff =
-    activeHandoff && (targetEnergy === 0 || handoff.kind === "reaction");
+  const removalBlockedByIndustry = activeHandoff && handoff.kind === "boost";
+  const activeTerminalHandoff = activeHandoff;
   const clusterIds = [
     ...postRemoval.reagentLabIds,
     ...postRemoval.productLabIds,
