@@ -970,6 +970,138 @@ describe("logistics runtime adapter", () => {
       }).demands.edges,
     ).toEqual([]);
 
+    const terminal = {
+      ...storage,
+      cooldown: 0,
+      id: "terminal",
+      store: {
+        capacity: 300_000,
+        freeCapacity: 800,
+        resources: [
+          { amount: 298_200, resourceType: "energy" },
+          { amount: 1_000, resourceType: "XGH2O" },
+        ],
+        usedCapacity: 299_200,
+      },
+    } as const;
+    const terminalRoom = mineralWorld.rooms[0];
+    if (terminalRoom === undefined) throw new Error("terminal evacuation fixture missing");
+    const terminalWorld = {
+      ...mineralWorld,
+      rooms: [
+        {
+          ...terminalRoom,
+          ownedStorages: [],
+          ownedTerminals: [terminal],
+          storedStructures: terminalRoom.storedStructures.map((value) =>
+            value.id === storage.id
+              ? {
+                  ...value,
+                  id: terminal.id,
+                  store: terminal.store,
+                  structureType: "terminal",
+                }
+              : value,
+          ),
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const terminalTerms = {
+      ...mineralTerms,
+      destinationId: terminal.id,
+      destinationStructureType: "terminal" as const,
+    };
+    const terminalRecord = {
+      ...record,
+      labEvacuation: terminalTerms,
+    } as const satisfies LayoutRecord;
+    const terminalProjection = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: [
+        {
+          ...migrationRooms[0],
+          evacuationStorageId: null,
+          evacuationTerminalId: terminal.id,
+        },
+      ],
+      records: [terminalRecord],
+      snapshot: terminalWorld,
+      tick: 11,
+    });
+    const terminalRuntime = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: terminalProjection.demands,
+      snapshot: terminalWorld,
+      tick: 11,
+    });
+    expect(terminalProjection.authorizedFlowIds).toHaveLength(1);
+    expect(
+      terminalRuntime.contracts.commitments.find(({ flowId }) =>
+        terminalProjection.authorizedFlowIds.includes(flowId),
+      )?.request,
+    ).toMatchObject({
+      execution: { counterpartId: terminal.id, resourceType: "XGH2O", version: 3 },
+      targetId: "lab-obsolete",
+    });
+    expect(terminalRuntime.plan.reservations).toContainEqual({
+      nodeId: "store-capacity/4:W1N1/8:terminal",
+      sinkCapacity: terminal.store.freeCapacity,
+      sourceAmount: 0,
+    });
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [
+          {
+            ...migrationRooms[0],
+            evacuationStorageId: null,
+            evacuationTerminalId: terminal.id,
+          },
+        ],
+        records: [terminalRecord],
+        snapshot: {
+          ...terminalWorld,
+          rooms: terminalWorld.rooms.map((value) => ({
+            ...value,
+            ownedTerminals: value.ownedTerminals.map((candidate) => ({
+              ...candidate,
+              store: { ...candidate.store, capacity: 1_000_000, freeCapacity: 700_800 },
+            })),
+          })),
+        },
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual([]);
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [
+          {
+            ...migrationRooms[0],
+            activity: ["commitment"],
+            assignmentHandoff: {
+              assignment,
+              fromFingerprint: assignment.fingerprint,
+              kind: "reaction",
+              layoutFingerprint: record.fingerprint,
+              objectiveId: "reaction",
+              objectiveRevision: 1,
+              status: "ready",
+              targetLabId: "lab-obsolete",
+            },
+            evacuationStorageId: null,
+            evacuationTerminalId: terminal.id,
+            quiescent: false,
+          },
+        ],
+        records: [terminalRecord],
+        snapshot: terminalWorld,
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual([]);
+
     const empty = {
       authorizedFlowIds: [],
       budgets: [],

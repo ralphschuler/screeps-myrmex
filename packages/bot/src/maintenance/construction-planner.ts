@@ -24,6 +24,7 @@ import {
   MAX_LAYOUT_LINK_ENERGY,
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_RESOURCES,
+  MAX_LAYOUT_TERMINAL_CAPACITY,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
@@ -806,9 +807,15 @@ export class ConstructionPlanner {
           layoutFingerprint: input.commitment.fingerprint,
           logisticsEvidenceReady: input.logisticsEvidenceReady === true,
           ownedEvacuationTargetIds,
-          requiredEvacuationStorageId:
+          requiredEvacuationDestination:
             labEvacuation !== null && "resourceType" in labEvacuation
-              ? labEvacuation.destinationId
+              ? {
+                  id: labEvacuation.destinationId,
+                  structureType:
+                    "destinationStructureType" in labEvacuation
+                      ? ("terminal" as const)
+                      : ("storage" as const),
+                }
               : null,
           room: input.room,
           target: candidate.target,
@@ -851,6 +858,9 @@ export class ConstructionPlanner {
                       amount: lab.targetMineralAmount,
                       destinationId: lab.destination.id,
                       destinationInitialAmount: lab.destinationResourceAmount,
+                      ...(lab.destinationStructureType === "terminal"
+                        ? { destinationStructureType: "terminal" as const }
+                        : {}),
                       expiresAt,
                       replacementId: lab.replacement.id,
                       resourceType: lab.targetMineralType,
@@ -2111,7 +2121,10 @@ function labMigrationEvidence(input: {
   readonly layoutFingerprint: string;
   readonly logisticsEvidenceReady: boolean;
   readonly ownedEvacuationTargetIds: ReadonlySet<string>;
-  readonly requiredEvacuationStorageId: string | null;
+  readonly requiredEvacuationDestination: {
+    readonly id: string;
+    readonly structureType: "storage" | "terminal";
+  } | null;
   readonly room: RoomSnapshot;
   readonly target: StructureSnapshot;
   readonly view: LabMigrationRoomView | null;
@@ -2119,8 +2132,12 @@ function labMigrationEvidence(input: {
   | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
   | {
       readonly activeHandoff: boolean;
-      readonly destination: NonNullable<RoomSnapshot["ownedStorages"]>[number] | null;
+      readonly destination:
+        | NonNullable<RoomSnapshot["ownedStorages"]>[number]
+        | NonNullable<RoomSnapshot["ownedTerminals"]>[number]
+        | null;
       readonly destinationFreeCapacity: number;
+      readonly destinationStructureType: "storage" | "terminal" | null;
       readonly destinationResourceAmount: number;
       readonly destinationResources: ReadonlyMap<string, number>;
       readonly reason: null;
@@ -2245,21 +2262,46 @@ function labMigrationEvidence(input: {
   const replacementEnergy = replacement === undefined ? null : exactLabEnergy(replacement);
   if (replacement === undefined || replacementEnergy === null)
     return { reason: "lab-cluster-invalid", replacement: null };
-  let destination: NonNullable<RoomSnapshot["ownedStorages"]>[number] | null = null;
+  let destination:
+    | NonNullable<RoomSnapshot["ownedStorages"]>[number]
+    | NonNullable<RoomSnapshot["ownedTerminals"]>[number]
+    | null = null;
   let destinationFreeCapacity = 0;
   let destinationResourceAmount = 0;
   let destinationResources: ReadonlyMap<string, number> = new Map();
-  if (target.mineralAmount > 0 || input.requiredEvacuationStorageId !== null) {
-    const activeStorages = (input.room.ownedStorages ?? []).filter(({ active }) => active);
-    const requiredStorageId = input.requiredEvacuationStorageId ?? input.view.evacuationStorageId;
+  let destinationStructureType: "storage" | "terminal" | null = null;
+  if (target.mineralAmount > 0 || input.requiredEvacuationDestination !== null) {
+    const required =
+      input.requiredEvacuationDestination ??
+      (typeof input.view.evacuationStorageId === "string"
+        ? { id: input.view.evacuationStorageId, structureType: "storage" as const }
+        : input.view.quiescent && typeof input.view.evacuationTerminalId === "string"
+          ? { id: input.view.evacuationTerminalId, structureType: "terminal" as const }
+          : null);
+    if (required === null || (activeHandoff && required.structureType === "terminal"))
+      return { reason: "industry-unavailable", replacement: null };
+    const activeDestinations =
+      required.structureType === "terminal"
+        ? (input.room.ownedTerminals ?? []).filter(({ active }) => active)
+        : (input.room.ownedStorages ?? []).filter(({ active }) => active);
+    const publishedId =
+      required.structureType === "terminal"
+        ? input.view.evacuationTerminalId
+        : input.view.evacuationStorageId;
     destination =
-      activeStorages.length === 1 &&
-      activeStorages[0]?.id === requiredStorageId &&
-      input.view.evacuationStorageId === requiredStorageId
-        ? activeStorages[0]
+      activeDestinations.length === 1 &&
+      activeDestinations[0]?.id === required.id &&
+      publishedId === required.id
+        ? activeDestinations[0]
         : null;
-    const destinationStore = destination === null ? null : exactStorage(destination);
+    const expectedCapacity =
+      required.structureType === "terminal"
+        ? MAX_LAYOUT_TERMINAL_CAPACITY
+        : MAX_LAYOUT_STORAGE_CAPACITY;
+    const destinationStore =
+      destination === null ? null : exactInventoryStore(destination, expectedCapacity);
     if (destinationStore === null) return { reason: "industry-unavailable", replacement: null };
+    destinationStructureType = required.structureType;
     destinationFreeCapacity = destinationStore.freeCapacity;
     destinationResources = destinationStore.resources;
     destinationResourceAmount = destinationResources.get(target.mineralType ?? "") ?? 0;
@@ -2270,6 +2312,7 @@ function labMigrationEvidence(input: {
     destinationFreeCapacity,
     destinationResourceAmount,
     destinationResources,
+    destinationStructureType,
     reason: null,
     replacement,
     replacementEnergy,
@@ -2327,18 +2370,23 @@ function exactLabEnergy(lab: NonNullable<RoomSnapshot["ownedLabs"]>[number]): nu
   return lab.energy;
 }
 
-function exactStorage(storage: NonNullable<RoomSnapshot["ownedStorages"]>[number]): {
+function exactInventoryStore(
+  storage:
+    | NonNullable<RoomSnapshot["ownedStorages"]>[number]
+    | NonNullable<RoomSnapshot["ownedTerminals"]>[number],
+  expectedCapacity: number,
+): {
   readonly freeCapacity: number;
   readonly resources: ReadonlyMap<string, number>;
 } | null {
   if (
-    storage.store.capacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    storage.store.capacity !== expectedCapacity ||
     !Number.isSafeInteger(storage.store.usedCapacity) ||
     storage.store.usedCapacity < 0 ||
     !Number.isSafeInteger(storage.store.freeCapacity) ||
     storage.store.freeCapacity === null ||
     storage.store.freeCapacity < 0 ||
-    storage.store.usedCapacity + storage.store.freeCapacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    storage.store.usedCapacity + storage.store.freeCapacity !== expectedCapacity ||
     storage.store.resources.length > MAX_LAYOUT_STORAGE_RESOURCES
   )
     return null;

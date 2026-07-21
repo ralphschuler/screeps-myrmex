@@ -103,6 +103,25 @@ describe("IndustryDirector stock policy", () => {
     ).toContainEqual({ count: 1, reason: "missing-destination" });
   });
 
+  it("suppresses every send involving a terminal reserved by layout migration", () => {
+    const director = new IndustryDirector();
+    const rooms = [
+      room("W1N1", { mineralStock: 800, terminalEnergy: 500 }),
+      room("W2N2", { mineralStock: 100, terminalEnergy: 300 }),
+    ];
+    const request = send("send-H", "H", 400);
+
+    for (const reservedRoom of ["W1N1", "W2N2"]) {
+      const planned = director.plan({
+        ...input(rooms, [request]),
+        terminalSendBlockedRoomNames: new Set([reservedRoom]),
+      });
+
+      expect(planned.sends).toEqual([]);
+      expect(planned.deferrals).toContainEqual({ count: 1, reason: "terminal-reserved" });
+    }
+  });
+
   it("is capped and identical after reorder and JSON reset", () => {
     const rooms = [
       room("W2N2", { mineralStock: 100 }),

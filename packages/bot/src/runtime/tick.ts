@@ -158,7 +158,7 @@ import {
   type LayoutPlacement,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV13,
+  type LayoutsOwnerV14,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -463,7 +463,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV13 | null;
+  owner: LayoutsOwnerV14 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -2229,7 +2229,7 @@ function layoutMigrationPlanningSystem(
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV13 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV14 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2242,14 +2242,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV13 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV14 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV13["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV14["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -2427,13 +2427,44 @@ function colonyDirectorSystem(
       let logisticsCpuUsed = 0;
       let logisticsPlan = emptyLogisticsRuntimeProjection();
       const priorLedger = resolveColoniesOwner(owner).owner?.ledger ?? [];
+      // Persistent terminal reservations remain safety inputs even when optional layout work is disabled.
+      const persistedLayoutRecords =
+        parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null)?.records ?? [];
       const layoutRecords =
         isFeatureEnabled(context.config, "phase2.layout") &&
         isFeatureEnabled(context.config, "phase2.logistics") &&
         context.contractExecution.status === "ready" &&
         context.contractPlanning.status === "ready"
-          ? (parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null)?.records ?? [])
+          ? persistedLayoutRecords
           : [];
+      const terminalSendBlockedRoomNames = new Set(
+        persistedLayoutRecords.flatMap(({ labEvacuation, roomName }) =>
+          labEvacuation !== undefined && "destinationStructureType" in labEvacuation
+            ? [roomName]
+            : [],
+        ),
+      );
+      const industryProjection = isFeatureEnabled(context.config, "phase2.industry")
+        ? projectIndustryTickPlan({
+            policy: context.config.policy.industry,
+            previous: industryDraft.owner.commands,
+            snapshot: context.snapshot,
+            terminalSendBlockedRoomNames,
+            tick: context.tick,
+            transactionCost: (amount, sourceRoom, destinationRoom) =>
+              input.game.market?.calcTransactionCost(amount, sourceRoom, destinationRoom) ??
+              Number.MAX_SAFE_INTEGER,
+          })
+        : emptyIndustryProjection();
+      industryDraft.plan = industryProjection.plan;
+      industryDraft.eligiblePlan = industryProjection.eligiblePlan;
+      industryDraft.rooms = industryProjection.rooms;
+      const terminalSendRoomNames = new Set(
+        industryProjection.eligiblePlan.sends.flatMap(({ destinationRoom, sourceRoom }) => [
+          destinationRoom,
+          sourceRoom,
+        ]),
+      );
       const layoutContainerMigrations = projectLayoutContainerMigrations({
         existingBudgets: priorLedger,
         records: layoutRecords,
@@ -2512,6 +2543,7 @@ function colonyDirectorSystem(
             reactionTimes: typeof REACTION_TIME === "undefined" ? {} : REACTION_TIME,
             snapshot: context.snapshot,
             snapshotRevision: snapshotRevision(context.snapshot),
+            terminalSendRoomNames,
           })
         : emptyLabCompositionProjection();
       industryDraft.labs = labs;
@@ -2575,20 +2607,6 @@ function colonyDirectorSystem(
         logisticsPlan,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
       );
-      const industryProjection = isFeatureEnabled(context.config, "phase2.industry")
-        ? projectIndustryTickPlan({
-            policy: context.config.policy.industry,
-            previous: industryDraft.owner.commands,
-            snapshot: context.snapshot,
-            tick: context.tick,
-            transactionCost: (amount, sourceRoom, destinationRoom) =>
-              input.game.market?.calcTransactionCost(amount, sourceRoom, destinationRoom) ??
-              Number.MAX_SAFE_INTEGER,
-          })
-        : emptyIndustryProjection();
-      industryDraft.plan = industryProjection.plan;
-      industryDraft.eligiblePlan = industryProjection.eligiblePlan;
-      industryDraft.rooms = industryProjection.rooms;
       const provisionalMaintenance = projectMaintenanceBudgets({
         existing: resolveColoniesOwner(owner).owner?.ledger ?? [],
         planning: isFeatureEnabled(context.config, "phase2.maintenance")
@@ -2923,7 +2941,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV13["records"][number] | undefined;
+  readonly record: LayoutsOwnerV14["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -2950,7 +2968,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV13 | null,
+  owner: LayoutsOwnerV14 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (
@@ -3115,6 +3133,7 @@ export function projectIndustryTickPlan(input: {
   readonly policy: RuntimeConfig["policy"]["industry"];
   readonly previous: readonly IndustryCommandState[];
   readonly snapshot: WorldSnapshot;
+  readonly terminalSendBlockedRoomNames?: ReadonlySet<string>;
   readonly tick: number;
   readonly transactionCost: (amount: number, sourceRoom: string, destinationRoom: string) => number;
 }): IndustryTickProjection {
@@ -3157,6 +3176,9 @@ export function projectIndustryTickPlan(input: {
     },
     requests: industrySendRequests(rooms, resourceTypes, input.policy, input.tick),
     rooms,
+    ...(input.terminalSendBlockedRoomNames === undefined
+      ? {}
+      : { terminalSendBlockedRoomNames: input.terminalSendBlockedRoomNames }),
     tick: input.tick,
     transactionCost: (amount, sourceRoom, destinationRoom) => {
       const cost = input.transactionCost(amount, sourceRoom, destinationRoom);
