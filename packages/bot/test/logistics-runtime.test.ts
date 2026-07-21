@@ -1074,30 +1074,55 @@ describe("logistics runtime adapter", () => {
         tick: 11,
       }).authorizedFlowIds,
     ).toEqual([]);
+    const activeTerminalMigration = {
+      ...migrationRooms[0],
+      activity: ["commitment", "pending-attempt"] as const,
+      assignmentHandoff: {
+        assignment,
+        fromFingerprint: assignment.fingerprint,
+        kind: "reaction" as const,
+        layoutFingerprint: record.fingerprint,
+        objectiveId: "reaction",
+        objectiveRevision: 1,
+        status: "ready" as const,
+        targetLabId: "lab-obsolete",
+      },
+      evacuationStorageId: null,
+      evacuationTerminalId: terminal.id,
+      quiescent: false,
+    };
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [activeTerminalMigration],
+        records: [terminalRecord],
+        snapshot: terminalWorld,
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual(terminalProjection.authorizedFlowIds);
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],
         migrationRooms: [
           {
-            ...migrationRooms[0],
-            activity: ["commitment"],
-            assignmentHandoff: {
-              assignment,
-              fromFingerprint: assignment.fingerprint,
-              kind: "reaction",
-              layoutFingerprint: record.fingerprint,
-              objectiveId: "reaction",
-              objectiveRevision: 1,
-              status: "ready",
-              targetLabId: "lab-obsolete",
-            },
-            evacuationStorageId: null,
-            evacuationTerminalId: terminal.id,
-            quiescent: false,
+            ...activeTerminalMigration,
+            assignmentHandoff: { ...activeTerminalMigration.assignmentHandoff, kind: "boost" },
           },
         ],
         records: [terminalRecord],
         snapshot: terminalWorld,
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual([]);
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [activeTerminalMigration],
+        records: [terminalRecord],
+        snapshot: {
+          ...terminalWorld,
+          rooms: terminalWorld.rooms.map((value) => ({ ...value, ownedStorages: [storage] })),
+        },
         tick: 11,
       }).authorizedFlowIds,
     ).toEqual([]);

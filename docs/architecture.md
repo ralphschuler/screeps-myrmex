@@ -131,12 +131,15 @@ The current boost intent and any pending lab attempt block removal. Removal also
 applicable exact destination gain and retired flow/endpoints. Source assignment attempts settle
 before rebound; pending retained assignment attempts, unresolved explicit boost work, role drift,
 malformed stock, cooldown, logistics drift, or unsafe colony evidence preserve the target. Issue
-[#343](https://github.com/ralphschuler/screeps-myrmex/issues/343) permits only the quiescent
-mineral-only form to use one exact active idle terminal when no active storage exists. Layouts V14
-records that terminal discriminator; Industry blocks every internal send from or to the room until
-fresh complete delivery and retired work permit removal. `StructureRemovalArbiter` alone authorizes
-removal and `StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container,
-tower, link, and lab result reuses the same fixed receipt.
+[#343](https://github.com/ralphschuler/screeps-myrmex/issues/343) permits the quiescent mineral-only
+form to use one exact active idle terminal when no active storage exists. Issue
+[#345](https://github.com/ralphschuler/screeps-myrmex/issues/345) reuses that V14 destination for an
+exact durable `ready` reaction handoff while retained labs continue work. Storage precedence,
+no-send evidence, fresh complete delivery, retired work, and unchanged handoff evidence remain
+mandatory. Industry blocks every internal send from or to the room until removal is safe.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`. Every extension, container, tower, link, and lab result reuses the same fixed
+receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1375,19 +1378,20 @@ any optional demand batch would exceed the bounded observed graph's node, endpoi
 complete demand batch is omitted before graph admission so optional work cannot displace observed
 survival logistics.
 
-Quiescent lab stock migration also uses that authority. One layouts-owned V14 record projects one or
-two `optional-growth` edges only while the current industry-owned migration view remains quiescent
-and contains the exact replacement assignment. Energy moves to that replacement lab while both labs'
-ordinary sources and refill sinks are suppressed. One mineral kind normally moves to the exact
-active owned storage published by Industry. When no active storage exists, the mineral-only form may
-instead use one exact active idle terminal only while no eligible internal send involves that room;
-the persisted commitment then blocks every internal send from or to the room. Either sink shares its
+Lab stock migration also uses that authority. One layouts-owned V14 record projects one or two
+`optional-growth` edges while the current Industry migration view is quiescent or exposes the exact
+supported durable handoff and replacement assignment. Energy moves to that replacement lab while
+both labs' ordinary sources and refill sinks are suppressed. One mineral kind normally moves to the
+exact active owned storage published by Industry. When no active storage exists, the mineral-only
+form may instead use one exact active idle terminal only while no eligible internal send involves
+that room; the persisted commitment then blocks every internal send from or to the room. Issue #345
+permits that terminal form during only an exact `ready` reaction handoff. Either sink shares its
 general-purpose Store aggregate-capacity key while the obsolete lab's ordinary source/refill
 projections are suppressed. A mixed target remains storage-only and atomically admits both distinct
-flow identities, or neither when the complete bounded batch cannot fit. Loss of quiescence,
-destination continuity, either baseline, capacity, or graph admission excludes the mixed projection
-from same-tick agent execution; removal waits for fresh empty/delivered evidence and all V3 work to
-retire. Issues #333, #335, #337, and #341 permit the corresponding energy, mineral, or mixed record
+flow identities, or neither when the complete bounded batch cannot fit. Loss of quiescence or exact
+handoff, destination continuity, either baseline, capacity, or graph admission excludes the
+projection from same-tick agent execution; removal waits for fresh empty/delivered evidence and all
+V3 work to retire. Issues #333, #335, #337, #341, and #345 permit the corresponding supported record
 during one exact durable `ready` reaction or explicit-boost handoff; every destination, role,
 layout, and safety proof remains current, mixed admission remains atomic, and a pending lab effect
 blocks only removal rather than evacuation.
@@ -1766,15 +1770,18 @@ attempt both block removal. An unresolved funded manifest cannot become quiescen
 invalid evidence suppresses its commitment.
 [ADR 0059](adr/0059-obsolete-lab-boost-assignment-handoff.md) records the boundary.
 
-Issue #343 permits only one quiescent, mineral-only external lab to use an exact active terminal
-when no active storage exists. Industry withholds the terminal while an eligible internal send
-involves the room and suppresses all sends from or to the room once layouts V14 persists the
-terminal-bound commitment. The sole funded LogisticsPlanner/V3 path reserves exact 300,000-unit
-aggregate capacity; removal requires fresh target emptiness, baseline-plus-amount terminal stock,
-retired work, unchanged quiescence/destination/cluster/safety evidence, and no timeout.
-[ADR 0060](adr/0060-idle-terminal-lab-mineral-evacuation.md) records the boundary. Autonomous boost
-manifest production, defensive migration, active/mixed terminal destinations, general multi-step
-migration, and creep dismantling remain issue #99 and fail closed.
+Issue #343 permits one quiescent, mineral-only external lab to use an exact active terminal when no
+active storage exists. Issue #345 permits the same existing V14 destination only during an exact
+`ready` reaction handoff with zero target energy and role-identical retained labs. Industry
+withholds the terminal while an eligible internal send involves the room and suppresses all sends
+from or to the room once the commitment persists. The sole funded LogisticsPlanner/V3 path reserves
+exact 300,000-unit aggregate capacity; removal requires fresh target emptiness, baseline-plus-amount
+terminal stock, retired work, unchanged handoff/destination/cluster/safety evidence, and no timeout.
+[ADR 0060](adr/0060-idle-terminal-lab-mineral-evacuation.md) records the original quiescent
+boundary; [ADR 0061](adr/0061-active-reaction-idle-terminal-lab-mineral-evacuation.md) records the
+active-reaction continuation. Autonomous boost manifest production, defensive migration, boost/mixed
+terminal destinations, general multi-step migration, and creep dismantling remain issue #99 and fail
+closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2389,17 +2396,17 @@ Required architecture assertions include:
   energy-only target first uses one bounded funded logistics evacuation and requires fresh
   empty-target, baseline-plus-amount replacement energy, and retired flow/endpoints; a zero-energy,
   single-kind mineral target instead requires the Industry-published exact active storage or, only
-  while quiescent with no storage/send contention, one exact active terminal; one funded mineral
-  flow, exact aggregate capacity, baseline-plus-amount destination stock, retired work, and
-  unchanged destination evidence remain mandatory, and a terminal commitment suppresses internal
-  sends from or to its room; a target holding both resources atomically admits those two flow forms
-  and requires both exact destination gains plus all flow/endpoint retirement; one empty, exact
-  energy-only, exact zero-energy single-kind-mineral, or exact mixed external target may remain
-  under active reaction or explicit funded boost work only when Industry durably rebinds the same
-  role IDs and commitment progress to the nine retained labs before any command or migration; each
-  stocked path additionally requires its existing exact funded evacuation, every applicable
-  destination gain, retired flow/endpoints, unchanged destination evidence, and no pending attempt
-  before removal;
+  while quiescent or under an exact `ready` reaction handoff with no storage/send contention, one
+  exact active terminal; one funded mineral flow, exact aggregate capacity, baseline-plus-amount
+  destination stock, retired work, and unchanged destination evidence remain mandatory, and a
+  terminal commitment suppresses internal sends from or to its room; a target holding both resources
+  atomically admits those two flow forms and requires both exact destination gains plus all
+  flow/endpoint retirement; one empty, exact energy-only, exact zero-energy single-kind-mineral, or
+  exact mixed external target may remain under active reaction or explicit funded boost work only
+  when Industry durably rebinds the same role IDs and commitment progress to the nine retained labs
+  before any command or migration; each stocked path additionally requires its existing exact funded
+  evacuation, every applicable destination gain, retired flow/endpoints, unchanged destination
+  evidence, and no pending attempt before removal;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;

@@ -25,8 +25,9 @@ logistics, contract, and command authorities.
   discriminator to the existing mineral-only lab evacuation. Its absence preserves V12/V13 storage
   semantics. V1-V13 migration invents no terminal evidence; V13 code rejects and preserves V14 owner
   bytes.
-- Terminal destinations remain unavailable to active reaction/boost handoffs and mixed
-  energy/mineral evacuations. Those existing forms remain storage-bound.
+- Terminal destinations remain unavailable to boost handoffs and mixed energy/mineral evacuations.
+  ADR 0061 subsequently permits only the mineral-only active-reaction handoff to reuse this exact
+  V14 destination under storage-absence and current no-send evidence.
 - A persisted terminal-bound evacuation reserves its room against every internally planned send,
   whether the room would be the source or destination. `IndustryDirector` remains the sole send
   policy owner and reports `terminal-reserved`; no terminal command authority is added.
@@ -48,8 +49,9 @@ layout convergence without a second logistics or terminal path. Partial delivery
 reset, and structure reordering retain the same bounded commitment.
 
 Internal sends cannot race the reserved terminal. External incoming transfers, other Store activity,
-capacity loss, stock consumption, terminal inactivity, active lab work, threat, malformed evidence,
-or timeout reduce progress and authorize no destruction. Fresh Store evidence, not an `OK` command,
+capacity loss, stock consumption, terminal inactivity, unauthorized active lab work, threat,
+malformed evidence, or timeout reduce progress and authorize no destruction. ADR 0061's exact ready
+reaction handoff is the only active-work exception. Fresh Store evidence, not an `OK` command,
 proves preservation.
 
 The persistent cost is one optional fixed discriminator in the existing single lab evacuation per

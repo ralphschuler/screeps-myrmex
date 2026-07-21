@@ -170,7 +170,9 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   boost work block removal. Issue #343 lets one quiescent mineral-only target use one exact active
   idle terminal only when no active storage exists; the V14 commitment suppresses internal sends
   from or to that room and retains the existing funded logistics and fresh-delivery removal gates.
-  Autonomous boost manifest production, active/mixed terminal destinations, general multi-step
+  Issue #345 reuses that exact destination only for a durable `ready` reaction handoff, preserving
+  reaction progress while retaining storage precedence, no-send evidence, and every removal gate.
+  Autonomous boost manifest production, boost/mixed terminal destinations, general multi-step
   migration, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
