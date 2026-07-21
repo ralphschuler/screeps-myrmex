@@ -513,6 +513,7 @@ describe("ConstructionPlanner", () => {
       assignmentHandoff: {
         assignment: postRemovalAssignment,
         fromFingerprint: assignment.fingerprint,
+        kind: "reaction" as const,
         layoutFingerprint: "layout-migration-a",
         objectiveId: "reaction",
         objectiveRevision: 1,
@@ -532,6 +533,27 @@ describe("ConstructionPlanner", () => {
     expect(activeResult.proposals).toHaveLength(1);
     expect(activeResult.proposals[0]?.stableId).toContain("remove-active-reaction-lab-v1");
     expect(activeResult.proposals[0]?.targetId).toBe("lab-external");
+    const boostIntentResult = planMigration({
+      activeLogisticsTargetIds: new Set(),
+      colony,
+      labMigration: {
+        ...activeHandoff,
+        assignmentHandoff: {
+          ...activeHandoff.assignmentHandoff,
+          kind: "boost" as const,
+          objectiveId: "boost",
+        },
+      },
+      logisticsEvidenceReady: true,
+      placements: desiredLabs,
+      room,
+    });
+    expect(boostIntentResult.proposals).toEqual([]);
+    expect(boostIntentResult.blockers).toContainEqual({
+      reason: "industry-active",
+      roomName: "W1N1",
+      targetId: "lab-external",
+    });
     for (const assignmentHandoff of [
       { ...activeHandoff.assignmentHandoff, status: "pending" as const },
       { ...activeHandoff.assignmentHandoff, status: "blocked" as const },
@@ -3738,6 +3760,7 @@ function activeReactionLabMigration(fixture: {
     assignmentHandoff: {
       assignment,
       fromFingerprint: currentAssignment.fingerprint,
+      kind: "reaction" as const,
       layoutFingerprint: migrationCommitment.fingerprint,
       objectiveId: "reaction",
       objectiveRevision: 1,

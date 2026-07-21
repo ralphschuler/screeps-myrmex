@@ -41,7 +41,7 @@ export function completeExecutableLayoutLabEvacuationFlowIds(input: {
   return complete;
 }
 
-/** Projects quiescent or exact active-reaction layout-owned lab evacuation terms. */
+/** Projects quiescent or exact active-commitment layout-owned lab evacuation terms. */
 export function projectLayoutLabEvacuations(input: {
   readonly existingBudgets: readonly {
     readonly category: string;
@@ -77,10 +77,10 @@ export function projectLayoutLabEvacuations(input: {
     const migration = input.migrationRooms.find(({ roomName }) => roomName === record.roomName);
     const shape = labEvacuationShape(evacuation);
     const quiescent = migration === undefined ? false : quiescentMigration(migration);
-    const activeReaction =
+    const activeCommitment =
       migration === undefined || shape === null
         ? false
-        : activeReactionMigration(record, migration, evacuation);
+        : activeCommitmentMigration(record, migration, evacuation);
     if (
       room?.controller?.ownership !== "owned" ||
       room.observedAt !== input.tick ||
@@ -88,10 +88,10 @@ export function projectLayoutLabEvacuations(input: {
       migration?.observedAt !== input.tick ||
       migration.assignment === null ||
       shape === null ||
-      (!quiescent && !activeReaction)
+      (!quiescent && !activeCommitment)
     )
       continue;
-    const effectiveAssignment = activeReaction
+    const effectiveAssignment = activeCommitment
       ? (migration.assignmentHandoff?.assignment ?? migration.assignment)
       : migration.assignment;
     const assignedIds = new Set([
@@ -338,7 +338,7 @@ function quiescentMigration(migration: LabMigrationRoomView): boolean {
   return migration.quiescent && migration.activity.length === 0;
 }
 
-function activeReactionMigration(
+function activeCommitmentMigration(
   record: LayoutRecord,
   migration: LabMigrationRoomView,
   evacuation: LayoutLabEvacuation,

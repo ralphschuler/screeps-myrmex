@@ -170,6 +170,69 @@ describe("bounded lab policy", () => {
     ]);
   });
 
+  it("rebinds only a boost assignment fingerprint and emits no staging while blocked", () => {
+    const first = reconcile({ boostManifests: [boost()] });
+    const previous = required(first.commitments[0]);
+    if (previous.kind !== "boost") throw new Error("expected boost commitment");
+    const nextAssignment = {
+      ...ASSIGNMENT,
+      fingerprint: "lab-cluster-v1:post-removal",
+      layoutFingerprint: "layout-v2",
+    } as const;
+    const advanced = { ...previous, settledParts: 1 } as const;
+    const rebound = reconcile({
+      boostManifests: [boost()],
+      commitments: [advanced],
+      rooms: [
+        room({
+          assignmentHandoff: {
+            assignment: nextAssignment,
+            blocked: true,
+            fromFingerprint: ASSIGNMENT.fingerprint,
+            targetLabId: "lab-external",
+          },
+        }),
+      ],
+    });
+
+    expect(rebound.dispositions).toEqual([
+      expect.objectContaining({ objectiveId: "boost", reason: null, status: "ready" }),
+    ]);
+    expect(rebound.commitments).toEqual([
+      { ...advanced, assignmentFingerprint: nextAssignment.fingerprint },
+    ]);
+    expect(rebound.demands).toEqual([]);
+
+    const observedDuringRebound = reconcile({
+      boostManifests: [boost()],
+      commitments: [advanced],
+      rooms: [
+        room({
+          assignmentHandoff: {
+            assignment: nextAssignment,
+            blocked: true,
+            fromFingerprint: ASSIGNMENT.fingerprint,
+            targetLabId: "lab-external",
+          },
+          creeps: [
+            {
+              ...required(room().creeps[0]),
+              body: [
+                { boost: "XUH2O", type: "attack" },
+                { boost: "XUH2O", type: "attack" },
+                { boost: null, type: "attack" },
+                { boost: null, type: "move" },
+              ],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(observedDuringRebound.commitments).toEqual([
+      { ...advanced, assignmentFingerprint: nextAssignment.fingerprint },
+    ]);
+  });
+
   it("drains the exact observed product-lab contaminant through normal logistics", () => {
     const result = reconcile({
       reactionObjectives: [reaction()],

@@ -123,12 +123,17 @@ that source record or degrades. Issue #333 permits the initial target to contain
 only amount, then reuses the V13 funded lab-energy evacuation during the durable ready handoff.
 Issue #335 permits one zero-energy, single-kind-mineral target and reuses the V13 mineral evacuation
 to the exact Industry-published active storage. Issue #337 permits one target containing both exact
-forms and atomically reuses both V13 flows after the same durable handoff. Removal waits for every
-applicable exact destination gain, retired flow/endpoints, and no pending reaction attempt. Pending
-old-assignment attempts, boost work, role drift, malformed stock, cooldown, logistics drift, or
-unsafe colony evidence preserve the target. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, tower, link,
-and lab result reuses the same fixed receipt.
+forms and atomically reuses both V13 flows after the same durable handoff. Issue #341 permits one
+explicit funded boost commitment to use the same role identical handoff while preserving its creep,
+compound, body target, deadline, and settled part terms. The first rebound emits no staging or lab
+intent; prior Industry owner plus current intent or pending attempt evidence makes it executable.
+The current boost intent and any pending lab attempt block removal. Removal also waits for every
+applicable exact destination gain and retired flow/endpoints. Source assignment attempts settle
+before rebound; pending retained assignment attempts, unresolved explicit boost work, role drift,
+malformed stock, cooldown, logistics drift, or unsafe colony evidence preserve the target.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`. Every extension, container, tower, link, and lab result reuses the same fixed
+receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1376,10 +1381,10 @@ obsolete lab's ordinary source/refill projections are suppressed. A mixed target
 both distinct flow identities, or neither when the complete bounded batch cannot fit. Loss of
 quiescence, destination continuity, either baseline, capacity, or graph admission excludes the mixed
 projection from same-tick agent execution; removal waits for fresh empty/delivered evidence and all
-V3 work to retire. Issues #333, #335, and #337 permit the corresponding energy, mineral, or mixed
-record during one exact durable `ready` reaction handoff; every destination, role, layout, and
-safety proof remains current, mixed admission remains atomic, and a pending reaction effect blocks
-only removal rather than evacuation.
+V3 work to retire. Issues #333, #335, #337, and #341 permit the corresponding energy, mineral, or
+mixed record during one exact durable `ready` reaction or explicit-boost handoff; every destination,
+role, layout, and safety proof remains current, mixed admission remains atomic, and a pending lab
+effect blocks only removal rather than evacuation.
 
 ### 12.4 MovementArbiter
 
@@ -1743,7 +1748,18 @@ for both exact gains, all flow/endpoint retirement, unchanged destination/roles/
 pending attempt. [ADR 0057](adr/0057-active-reaction-lab-mixed-stock-evacuation.md) records the
 boundary.
 
-Boost-work handoff, defensive migration, terminal-destination migration, general multi-step
+Issue #341 extends only the assignment continuation to one existing explicit funded boost
+commitment. Current and post-removal reagent, product, and boost IDs remain byte-identical; only the
+assignment fingerprint advances. Objective, creep/body, compound, part count, deadline, and settled
+part terms remain unchanged. The rebound tick emits no staging demand or boost intent; durable prior
+Industry owner evidence plus one current executable intent or matching pending attempt enables the
+handoff, and exact next-observation body plus 30-mineral/20-energy deltas retain settlement
+authority. Existing commitments advance only through that corroborated attempt, exactly once;
+conflicting deltas preserve unchanged progress. A current boost intent and its kind matched pending
+attempt both block removal. An unresolved funded manifest cannot become quiescent merely because
+invalid evidence suppresses its commitment.
+[ADR 0059](adr/0059-obsolete-lab-boost-assignment-handoff.md) records the boundary. Autonomous boost
+manifest production, defensive migration, terminal-destination migration, general multi-step
 migration, and creep dismantling remain issue #99 and fail closed.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
@@ -1932,19 +1948,25 @@ observation from durable retry-ready state, while bounded observer telemetry rep
 blockers, exact settlement, retries, and cancellations. Each exact settlement also emits one fixed
 energy-input/resource-input/resource-output row: forward and reverse reaction ratios remain
 distinct, and boost mineral/energy consumption cannot be mislabeled as produced compound. Checked
-`phase2-labs-results.json` schema 2 evidence includes composed reaction, reverse-reaction, and boost
-commands plus exact boost settlement across reset/reordered observation. It keeps `phase2.labs`
-source-available under `runtime-config-source-v26` without enabling factory behavior.
+`phase2-labs-results.json` schema 3 evidence includes composed reaction, reverse-reaction, boost,
+and boost-assignment-handoff commands plus exact boost settlement across reset/reordered
+observation. It keeps `phase2.labs` source-available under `runtime-config-source-v26` without
+enabling factory behavior.
 
-For issues #330, #333, #335, and #337 only, the same policy consumes a tick-local committed-lab
-geometry view from runtime composition. A role-identical nine-lab result may advance one existing
-reaction commitment's assignment fingerprint without changing its objective or settlement counters.
-First publication is non-executable; only prior-owner evidence makes the handoff ready.
-Old-assignment attempts settle before rebinding, while post-handoff attempts remain bound to the
-retained assignment during structure-removal retry or observation. An initial target may be empty,
-contain one exact energy-only amount, contain one exact zero-energy mineral kind, or contain both
-exact forms; the stocked forms use their existing layout/logistics evacuation after durable rebound.
-Boost commitments and malformed targets cannot use this path.
+For issues #330, #333, #335, #337, and #341 only, the same policy consumes a tick local committed
+lab geometry view from runtime composition. A role identical nine lab result may advance one
+existing reaction or explicit funded boost commitment's assignment fingerprint without changing its
+objective or settlement counters. First publication is nonexecutable; prior Industry owner evidence
+makes a reaction ready, while a boost additionally requires one current executable intent or its
+matching pending attempt. Old assignment attempts settle before rebinding, while kind matched post
+handoff attempts remain bound to the retained assignment during structure removal retry or
+observation. Exact boost progress is projected into policy only from the matching attempt and is not
+added a second time during reconciliation; conflicting deltas preserve the commitment. A current
+boost intent also blocks same tick removal. An initial target may be empty, contain one exact
+energy-only amount, contain one exact zero-energy mineral kind, or contain both exact forms; the
+stocked forms use their existing layout/logistics evacuation after durable rebound. An unresolved
+supplied boost manifest remains nonquiescent even when invalid current creep or objective evidence
+suppresses its commitment. Runtime adds no autonomous boost manifest producer.
 
 Funded `ready` factory and power-processing commitments enter one bounded mature command projection.
 Both intent kinds claim the canonical physical-structure exclusive key before the shared channel's
@@ -2355,10 +2377,11 @@ Required architecture assertions include:
   unchanged destination evidence; a target holding both resources atomically admits those two flow
   forms and requires both exact destination gains plus all flow/endpoint retirement; one empty,
   exact energy-only, exact zero-energy single-kind-mineral, or exact mixed external target may
-  remain under active reaction work only when Industry durably rebinds the same role IDs and
-  commitment progress to the nine retained labs before any command or migration; each stocked path
-  additionally requires its existing exact funded evacuation, every applicable destination gain,
-  retired flow/endpoints, unchanged destination evidence, and no pending attempt before removal;
+  remain under active reaction or explicit funded boost work only when Industry durably rebinds the
+  same role IDs and commitment progress to the nine retained labs before any command or migration;
+  each stocked path additionally requires its existing exact funded evacuation, every applicable
+  destination gain, retired flow/endpoints, unchanged destination evidence, and no pending attempt
+  before removal;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
   and the existing one-command ceiling;

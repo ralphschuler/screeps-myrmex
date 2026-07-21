@@ -127,9 +127,18 @@ storage gain, retired flow/endpoints, unchanged destination/handoff evidence, an
 attempt. A target holding both forms reuses the V13 mixed record: both existing funded flows are
 admitted atomically, reaction work continues, and removal waits for both exact destination gains
 plus complete work retirement. Pending predecessor effects settle first; the objective and settled
-amount never restart. A uniquely reconstructible durable rebound is held without staging, reaction,
-removal, or layout revision while retained-lab staging or source-layout evidence is unavailable.
-Terminal-only, contaminated, cooling, boost-assigned, ambiguous, malformed, capacity-lost,
+amount never restart. One existing explicit funded boost may use the same role-identical handoff:
+only its assignment fingerprint advances, while creep/body identity, compound, part target,
+deadline, and settled parts remain fixed. The rebound tick emits neither staging nor a boost
+command; durable prior Industry owner evidence plus a current executable intent or matching pending
+attempt enables the retained boost handoff. That current intent and its matching pending effect both
+block removal. Existing progress advances once only from exact next-observation body plus
+30-mineral/ 20-energy corroboration; partial effects resume and conflicting deltas retain the
+commitment. A supplied funded manifest remains non-quiescent until completion even if invalid creep
+or objective evidence suppresses its commitment; runtime does not yet produce autonomous boost
+manifests. A uniquely reconstructible durable rebound is held without staging, lab command, removal,
+or layout revision while retained-lab staging or source-layout evidence is unavailable.
+Terminal-only, contaminated, cooling, target-role-assigned, ambiguous, malformed, capacity-lost,
 cluster-breaking, or pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
