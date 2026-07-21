@@ -1438,6 +1438,121 @@ describe("ConstructionPlanner", () => {
     ).toEqual([]);
   });
 
+  it("evacuates mineral to an idle terminal while a rebound reaction remains active", () => {
+    const fixture = labTerminalEvacuationFixture(750, 1_000, 10_000, 100);
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      labMigration: activeReactionLabMigration(fixture),
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.labEvacuation).toEqual({
+      amount: 750,
+      destinationId: "terminal",
+      destinationInitialAmount: 1_000,
+      destinationStructureType: "terminal",
+      expiresAt: 250,
+      replacementId: fixture.replacementId,
+      resourceType: "XGH2O",
+      sourceId: "lab-external",
+      startedAt: 100,
+    });
+    const reordered = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      labMigration: activeReactionLabMigration(fixture),
+      logisticsEvidenceReady: true,
+      placements: [...fixture.placements].reverse(),
+      room: {
+        ...fixture.room,
+        ownedLabs: [...(fixture.room.ownedLabs ?? [])].reverse(),
+        ownedTerminals: [...(fixture.room.ownedTerminals ?? [])].reverse(),
+        structures: [...(fixture.room.structures ?? [])].reverse(),
+      },
+    });
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(staged));
+    const evacuation = staged.labEvacuation;
+    if (evacuation === null) throw new Error("expected active-reaction terminal evacuation");
+
+    const partial = labTerminalEvacuationFixture(300, 1_450, 10_450, 102, fixture.replacementId);
+    const flowIds = layoutLabEvacuationFlowIds("W1N1", evacuation);
+    if (flowIds === null) throw new Error("expected active-reaction terminal flow identity");
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(flowIds),
+        activeLogisticsTargetIds: new Set(["lab-external", "terminal"]),
+        colony: partial.colony,
+        labEvacuation: JSON.parse(JSON.stringify(evacuation)) as typeof evacuation,
+        labMigration: activeReactionLabMigration(partial),
+        logisticsEvidenceReady: true,
+        placements: partial.placements,
+        room: partial.room,
+      }),
+    ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+
+    const storageFixture = labMineralEvacuationFixture(750, 1_000, 10_000, 100);
+    const storageAppeared = {
+      ...fixture,
+      room: { ...fixture.room, ownedStorages: storageFixture.room.ownedStorages ?? [] },
+    };
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: fixture.colony,
+        labMigration: activeReactionLabMigration(storageAppeared),
+        logisticsEvidenceReady: true,
+        placements: fixture.placements,
+        room: storageAppeared.room,
+      }),
+    ).toMatchObject({ labEvacuation: null, proposals: [] });
+
+    const completeFixture = labTerminalEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      103,
+      fixture.replacementId,
+    );
+    const complete = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: completeFixture.colony,
+      labEvacuation: evacuation,
+      labMigration: activeReactionLabMigration(completeFixture),
+      logisticsEvidenceReady: true,
+      placements: completeFixture.placements,
+      room: completeFixture.room,
+    });
+    expect(complete.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: fixture.replacementId,
+        targetId: "lab-external",
+      }),
+    ]);
+    expect(complete.proposals[0]?.stableId).toContain("remove-active-reaction-lab-v1");
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: completeFixture.colony,
+        labEvacuation: evacuation,
+        labMigration: {
+          ...activeReactionLabMigration(completeFixture),
+          activity: ["commitment", "pending-attempt"] as const,
+        },
+        logisticsEvidenceReady: true,
+        placements: completeFixture.placements,
+        room: completeFixture.room,
+      }).proposals,
+    ).toEqual([]);
+  });
+
   it("evacuates mixed stock atomically while a rebound reaction remains active", () => {
     const fixture = labMineralEvacuationFixture(750, 1_000, 10_000, 100, undefined, 500, 250);
     const staged = planMigration({

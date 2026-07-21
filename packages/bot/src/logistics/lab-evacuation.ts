@@ -153,9 +153,10 @@ export function projectLayoutLabEvacuations(input: {
       );
       const destinationPublished =
         shape.destinationStructureType === "terminal"
-          ? migration.evacuationStorageId === null &&
+          ? !(room.ownedStorages ?? []).some(({ active }) => active) &&
+            migration.evacuationStorageId === null &&
             migration.evacuationTerminalId === shape.destinationId &&
-            quiescent
+            (quiescent || activeCommitment)
           : migration.evacuationStorageId === shape.destinationId &&
             (migration.evacuationTerminalId === null ||
               migration.evacuationTerminalId === undefined);
@@ -367,8 +368,9 @@ function activeCommitmentMigration(
 ): boolean {
   const handoff = migration.assignmentHandoff;
   const current = migration.assignment;
+  const terminalDestination = "destinationStructureType" in evacuation;
   if (
-    "destinationStructureType" in evacuation ||
+    (terminalDestination && ("energyAmount" in evacuation || handoff?.kind !== "reaction")) ||
     current === null ||
     migration.quiescent ||
     !migration.activity.includes("commitment") ||

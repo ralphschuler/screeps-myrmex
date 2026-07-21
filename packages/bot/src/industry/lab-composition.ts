@@ -324,6 +324,17 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     const activity: LabMigrationActivity[] = [];
     const activeStorages = (room.ownedStorages ?? []).filter(({ active }) => active);
     const activeTerminals = (room.ownedTerminals ?? []).filter(({ active }) => active);
+    const assignmentHandoff =
+      handoffViews.find(({ assignment }) => assignment.roomName === room.name) ?? null;
+    const handoffTarget = (room.ownedLabs ?? []).find(
+      ({ id }) => id === assignmentHandoff?.targetLabId,
+    );
+    const activeReactionMineralHandoff =
+      assignmentHandoff?.kind === "reaction" &&
+      assignmentHandoff.status === "ready" &&
+      handoffTarget !== undefined &&
+      handoffTarget.energy === 0 &&
+      rebindableHandoffTarget(handoffTarget);
     const terminalIdle =
       input.terminalSendRoomNames !== undefined && !input.terminalSendRoomNames.has(room.name);
     const unresolvedFundedBoost =
@@ -353,11 +364,10 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
     return {
       activity: freeze(activity),
       assignment: currentAssignments.find(({ roomName }) => roomName === room.name) ?? null,
-      assignmentHandoff:
-        handoffViews.find(({ assignment }) => assignment.roomName === room.name) ?? null,
+      assignmentHandoff,
       evacuationStorageId: activeStorages.length === 1 ? (activeStorages[0]?.id ?? null) : null,
       evacuationTerminalId:
-        activity.length === 0 &&
+        (activity.length === 0 || activeReactionMineralHandoff) &&
         activeStorages.length === 0 &&
         activeTerminals.length === 1 &&
         terminalIdle

@@ -610,9 +610,13 @@ describe("composed lab runtime", () => {
     if (previous.kind !== "reaction") throw new Error("expected reaction commitment");
 
     const pending = composeHandoff(
-      withExternalMineral(handoffWorld(101, true), 100),
+      withTerminalOnly(withExternalMineral(handoffWorld(101, true), 100)),
       objectiveValue,
       [{ ...previous, settledAmount: 5 }],
+      [],
+      undefined,
+      [],
+      new Set(),
     );
     expect(pending.intents).toEqual([]);
     expect(pending.policy.commitments).toEqual([
@@ -626,19 +630,36 @@ describe("composed lab runtime", () => {
       status: "pending",
       targetLabId: "external",
     });
+    expect(pending.migrationRooms[0]?.evacuationTerminalId).toBeNull();
 
     const durable = roundTrip(pending.policy.commitments);
-    const ready = composeHandoff(
-      withExternalMineral(handoffWorld(102), 100),
-      objectiveValue,
-      durable,
-    );
+    const readyWorld = withTerminalOnly(withExternalMineral(handoffWorld(102), 100));
+    const ready = composeHandoff(readyWorld, objectiveValue, durable, [], undefined, [], new Set());
     const reordered = composeHandoff(
-      withExternalMineral(handoffWorld(102, true), 100),
+      withTerminalOnly(withExternalMineral(handoffWorld(102, true), 100)),
       objectiveValue,
       durable,
+      [],
+      undefined,
+      [],
+      new Set(),
+    );
+    const sendContended = composeHandoff(
+      readyWorld,
+      objectiveValue,
+      durable,
+      [],
+      undefined,
+      [],
+      new Set(["W1N1"]),
     );
     expect(ready.migrationRooms[0]?.assignmentHandoff?.status).toBe("ready");
+    expect(ready.migrationRooms[0]).toMatchObject({
+      evacuationStorageId: null,
+      evacuationTerminalId: "terminal",
+      quiescent: false,
+    });
+    expect(sendContended.migrationRooms[0]?.evacuationTerminalId).toBeNull();
     expect(ready.intents).toEqual([expect.objectContaining({ kind: "lab.run-reaction" })]);
     expect(JSON.stringify(reordered.policy)).toBe(JSON.stringify(ready.policy));
   });
@@ -860,6 +881,7 @@ function composeHandoff(
   pendingAttempts = [] as Parameters<typeof composeLabRuntime>[0]["pendingAttempts"],
   committedLabIds?: readonly string[],
   boostManifests = [] as readonly BoostManifest[],
+  terminalSendRoomNames?: ReadonlySet<string>,
 ) {
   const labs = required(snapshot.ownedRooms[0]?.ownedLabs);
   const committed =
@@ -890,6 +912,7 @@ function composeHandoff(
     reactionTimes,
     snapshot,
     snapshotRevision: `snapshot/${String(snapshot.observation.tick)}`,
+    ...(terminalSendRoomNames === undefined ? {} : { terminalSendRoomNames }),
   });
 }
 
@@ -1006,6 +1029,25 @@ function withExternalMineral(snapshot: WorldSnapshot, mineralAmount: number): Wo
         ),
       },
     ],
+  };
+}
+
+function withTerminalOnly(snapshot: WorldSnapshot): WorldSnapshot {
+  const room = required(snapshot.ownedRooms[0]);
+  const storage = required(room.ownedStorages?.[0]);
+  const terminal = {
+    ...storage,
+    cooldown: 0,
+    id: "terminal",
+    store: {
+      ...storage.store,
+      capacity: 300_000,
+      freeCapacity: 300_000 - storage.store.usedCapacity,
+    },
+  };
+  return {
+    ...snapshot,
+    ownedRooms: [{ ...room, ownedStorages: [], ownedTerminals: [terminal] }],
   };
 }
 

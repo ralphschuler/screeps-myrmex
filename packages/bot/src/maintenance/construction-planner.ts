@@ -2253,6 +2253,7 @@ function labMigrationEvidence(input: {
     JSON.stringify(handoff.assignment) === JSON.stringify(postRemoval);
   if (!input.view.quiescent && !activeHandoff)
     return { reason: "industry-active", replacement: null };
+  const activeTerminalHandoff = activeHandoff && handoff.kind === "reaction";
   const clusterIds = [
     ...postRemoval.reagentLabIds,
     ...postRemoval.productLabIds,
@@ -2275,10 +2276,16 @@ function labMigrationEvidence(input: {
       input.requiredEvacuationDestination ??
       (typeof input.view.evacuationStorageId === "string"
         ? { id: input.view.evacuationStorageId, structureType: "storage" as const }
-        : input.view.quiescent && typeof input.view.evacuationTerminalId === "string"
+        : (input.view.quiescent || activeTerminalHandoff) &&
+            typeof input.view.evacuationTerminalId === "string"
           ? { id: input.view.evacuationTerminalId, structureType: "terminal" as const }
           : null);
-    if (required === null || (activeHandoff && required.structureType === "terminal"))
+    if (
+      required === null ||
+      (!input.view.quiescent && required.structureType === "terminal" && !activeTerminalHandoff) ||
+      (required.structureType === "terminal" &&
+        (input.room.ownedStorages ?? []).some(({ active }) => active))
+    )
       return { reason: "industry-unavailable", replacement: null };
     const activeDestinations =
       required.structureType === "terminal"
