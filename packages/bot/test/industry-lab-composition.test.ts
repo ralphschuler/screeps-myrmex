@@ -13,6 +13,7 @@ import {
   type ReactionObjective,
 } from "../src/industry";
 import type { CreepSnapshot, WorldSnapshot } from "../src/world/snapshot";
+import { composeBoostFixture, labFixtureBoostWorld } from "./support/lab-composition-fixture";
 
 const reactions = { H: { O: "OH" } };
 const reactionTimes = { OH: 10 };
@@ -130,6 +131,72 @@ describe("composed lab runtime", () => {
     expect(reverse.policy.dispositions).toEqual([
       expect.objectContaining({ status: "ready", objectiveId: "objective/reverse" }),
     ]);
+  });
+
+  it("settles an exact composed boost after its expected body annotation changes", () => {
+    const initial = labFixtureBoostWorld(false);
+    const first = composeBoostFixture(initial.snapshot, initial.manifest);
+    const intent = required(first.intents[0]);
+    expect(intent.kind).toBe("lab.boost-creep");
+    const pending = required(createPendingLabAttempt(intent, "OK"));
+    const observed = labFixtureBoostWorld(true, 101);
+    const exact = composeBoostFixture(
+      {
+        ...observed.snapshot,
+        ownedRooms: observed.snapshot.ownedRooms.map((room) => ({
+          ...room,
+          ownedLabs: [...(room.ownedLabs ?? [])].reverse(),
+        })),
+      },
+      initial.manifest,
+      roundTrip(first.policy.commitments),
+      roundTrip([pending]),
+    );
+
+    expect(exact.settlements).toEqual([
+      expect.objectContaining({
+        accounting: { energyInput: 20, resourceInput: 30, resourceOutput: 0 },
+        reason: "exact-effect",
+        settledAmount: 1,
+        status: "settled",
+      }),
+    ]);
+    expect(projectLabTelemetry(exact, []).accounting).toEqual([20, 30, 0]);
+  });
+
+  it("fails composed boost settlement closed for missing or immutable-drifted creeps", () => {
+    const initial = labFixtureBoostWorld(false);
+    const first = composeBoostFixture(initial.snapshot, initial.manifest);
+    const pending = required(createPendingLabAttempt(required(first.intents[0]), "OK"));
+    const observed = labFixtureBoostWorld(true, 101).snapshot;
+    const room = required(observed.ownedRooms[0]);
+    const creep = required(room.ownedCreeps[0]);
+    const project = (snapshot: WorldSnapshot) =>
+      composeBoostFixture(
+        snapshot,
+        initial.manifest,
+        roundTrip(first.policy.commitments),
+        roundTrip([pending]),
+      );
+
+    expect(
+      project({ ...observed, ownedRooms: [{ ...room, ownedCreeps: [] }] }).settlements[0],
+    ).toMatchObject({ reason: "lost-creep", status: "cancelled" });
+    for (const changed of [
+      { ...creep, name: "replacement-name" },
+      {
+        ...creep,
+        body: {
+          ...creep.body,
+          activeParts: 2,
+          move: { active: 1, boosted: 0, total: 1 },
+          size: 2,
+        },
+      },
+    ])
+      expect(
+        project({ ...observed, ownedRooms: [{ ...room, ownedCreeps: [changed] }] }).settlements[0],
+      ).toMatchObject({ reason: "fingerprint-changed", status: "cancelled" });
   });
 
   it("durably rebinds one reaction before publishing retained-lab work", () => {
@@ -729,7 +796,7 @@ function withBoostCandidate(snapshot: WorldSnapshot): {
   return {
     manifest: {
       colonyId: "W1N1",
-      compound: "OH",
+      compound: "XUH2O",
       creepFingerprint: fingerprintCreepSnapshot(creep),
       creepId: creep.id,
       deadline: 110,

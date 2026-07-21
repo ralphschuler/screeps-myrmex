@@ -168,6 +168,13 @@ describe("next-observation lab settlement", () => {
     expect(
       reconcilePendingLabAttempts({ ...base, creepFingerprints: new Map([["creep", "other"]]) })[0],
     ).toMatchObject({ reason: "fingerprint-changed", status: "cancelled" });
+    expect(
+      reconcilePendingLabAttempts({
+        ...base,
+        creepFingerprints: new Map([["creep", "creep:v1"]]),
+        snapshot: snapshot({ tick: 101, boostCount: 1 }),
+      })[0],
+    ).toMatchObject({ reason: "conflicting-effect", status: "cancelled" });
     const replay = reconcilePendingLabAttempts({
       ...roundTrip(base),
       creepFingerprints: new Map([["creep", "creep:v1"]]),

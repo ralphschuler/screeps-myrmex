@@ -1915,8 +1915,12 @@ lab-cluster exclusive key; boosts use defense priority while discretionary react
 speculation. The shared intent arbiter is final authority, and the sole `LabExecutor` revalidates
 the exact live preconditions before one Screeps API call. Normalized `OK` records only a pending
 attempt in `IndustryOwnerV5`; exact next-observation body/resource deltas settle the effect, while
-drift, timeout, and retry exhaustion fail closed.
-[ADR 0024](adr/0024-lab-execution-and-settlement.md) records this command and settlement boundary
+drift, timeout, and retry exhaustion fail closed. The boost manifest and executor bind one canonical
+creep ID/name/body-part-count fingerprint. Mutable boost annotations are excluded because they are
+the expected effect evidence; settlement instead requires their exact target-group increase plus 30
+mineral and 20 energy consumed per part. Immutable actor/body drift still rejects the command or
+attempt. [ADR 0058](adr/0058-boost-insensitive-creep-fingerprint.md) records this correction.
+[ADR 0024](adr/0024-lab-execution-and-settlement.md) records the command and settlement authority
 without activating the industry gate.
 
 The complete lab path is composed by one pure projection before static tick publication. Current
@@ -1928,8 +1932,9 @@ observation from durable retry-ready state, while bounded observer telemetry rep
 blockers, exact settlement, retries, and cancellations. Each exact settlement also emits one fixed
 energy-input/resource-input/resource-output row: forward and reverse reaction ratios remain
 distinct, and boost mineral/energy consumption cannot be mislabeled as produced compound. Checked
-`phase2-labs-results.json` evidence makes `phase2.labs` source-available under
-`runtime-config-source-v26` without enabling factory behavior.
+`phase2-labs-results.json` schema 2 evidence includes composed reaction, reverse-reaction, and boost
+commands plus exact boost settlement across reset/reordered observation. It keeps `phase2.labs`
+source-available under `runtime-config-source-v26` without enabling factory behavior.
 
 For issues #330, #333, #335, and #337 only, the same policy consumes a tick-local committed-lab
 geometry view from runtime composition. A role-identical nine-lab result may advance one existing

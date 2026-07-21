@@ -160,9 +160,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   for one zero-energy, single-kind-mineral target; removal requires exact storage gain, retired
   work, unchanged destination/roles/safety, and no pending attempt. Issue #337 composes those two
   destinations for one active mixed target, atomically admitting both existing flows and requiring
-  both exact gains plus complete work retirement before removal. Boost-work handoff, terminal
-  destinations, general multi-step migration, defensive migration, and creep dismantling remain
-  issue #99.
+  both exact gains plus complete work retirement before removal. Issue #339 repairs the already
+  available lab gate's composed boost settlement: actor fingerprints now retain immutable identity
+  and body shape across the expected boost annotation, while exact target-part and 30-mineral/
+  20-energy deltas remain mandatory. Boost-work handoff, terminal destinations, general multi-step
+  migration, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

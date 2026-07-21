@@ -904,16 +904,12 @@ function bodyCounts(creep: CreepSnapshot): readonly [string, number][] {
   ];
 }
 
+/** Stable actor/body identity; mutable boost groups are validated as command-effect evidence. */
 export function fingerprintCreepSnapshot(creep: CreepSnapshot): string {
   return fingerprint([
     creep.id,
     creep.name,
     ...bodyCounts(creep).flatMap(([type, count]) => [type, String(count)]),
-    ...[...(creep.boosts ?? [])]
-      .sort((left, right) =>
-        `${left.bodyPart}/${left.compound}`.localeCompare(`${right.bodyPart}/${right.compound}`),
-      )
-      .flatMap(({ bodyPart, compound, count }) => [bodyPart, compound, String(count)]),
   ]);
 }
 

@@ -46,27 +46,15 @@ export interface LabExecutionAdapter {
   readonly resolveLab: (id: string) => StructureLab | null;
 }
 
+/** Live mirror of the boost-insensitive snapshot actor/body fingerprint. */
 export function fingerprintLiveLabCreep(creep: Creep): string {
   const types = ["attack", "carry", "claim", "heal", "move", "ranged_attack", "tough", "work"];
   const counts = new Map(types.map((type) => [type, 0]));
-  const boosts = new Map<string, number>();
-  for (const part of creep.body) {
-    counts.set(part.type, (counts.get(part.type) ?? 0) + 1);
-    if (part.boost !== undefined) {
-      const key = `${part.type}/${String(part.boost)}`;
-      boosts.set(key, (boosts.get(key) ?? 0) + 1);
-    }
-  }
+  for (const part of creep.body) counts.set(part.type, (counts.get(part.type) ?? 0) + 1);
   return liveFingerprint([
     creep.id,
     creep.name,
     ...types.flatMap((type) => [type, String(counts.get(type) ?? 0)]),
-    ...[...boosts]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .flatMap(([key, count]) => {
-        const [type = "", compound = ""] = key.split("/");
-        return [type, compound, String(count)];
-      }),
   ]);
 }
 
