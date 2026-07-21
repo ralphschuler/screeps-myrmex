@@ -87,7 +87,8 @@ export type IndustryDeferralReason =
   | "rcl"
   | "regenerating"
   | "scan-limit"
-  | "stock-limit";
+  | "stock-limit"
+  | "terminal-reserved";
 export interface IndustryPlan {
   readonly accounting: {
     readonly consumed: number;
@@ -111,6 +112,8 @@ export interface IndustryPlannerInput {
   readonly limits: IndustryPlannerLimits;
   readonly requests: readonly InternalSendRequest[];
   readonly rooms: readonly IndustryRoomState[];
+  /** Layout-owned terminal destinations that cannot participate in an internal send. */
+  readonly terminalSendBlockedRoomNames?: ReadonlySet<string>;
   readonly tick: number;
   readonly transactionCost: (amount: number, sourceRoom: string, destinationRoom: string) => number;
 }
@@ -145,6 +148,7 @@ export function planIndustry(input: IndustryPlannerInput): IndustryPlan {
   const sends = planSends(
     requests,
     roomMap,
+    input.terminalSendBlockedRoomNames ?? new Set(),
     input.tick,
     integer(input.limits.maxSendProposals),
     input.transactionCost,
@@ -237,6 +241,7 @@ function planExtraction(
 function planSends(
   requests: readonly InternalSendRequest[],
   rooms: ReadonlyMap<string, MutableRoom>,
+  terminalSendBlockedRoomNames: ReadonlySet<string>,
   tick: number,
   limit: number,
   transactionCost: IndustryPlannerInput["transactionCost"],
@@ -249,6 +254,11 @@ function planSends(
     const destination = rooms.get(request.destinationRoom);
     let reason: IndustryDeferralReason | undefined;
     if (seen.has(request.id)) reason = "duplicate-request";
+    else if (
+      terminalSendBlockedRoomNames.has(request.sourceRoom) ||
+      terminalSendBlockedRoomNames.has(request.destinationRoom)
+    )
+      reason = "terminal-reserved";
     else if (request.deadline < tick) reason = "expired";
     else if (proposals.length >= limit) reason = "proposal-limit";
     else if (source === undefined) reason = "missing-source";

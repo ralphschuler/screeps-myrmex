@@ -24,6 +24,26 @@ describe("industry tick composition", () => {
     ]);
   });
 
+  it("suppresses sends from or to a layout-reserved terminal room", () => {
+    const policy = buildRuntimeConfig().policy.industry;
+    for (const roomName of ["W1N1", "W2N2"]) {
+      const projection = projectIndustryTickPlan({
+        policy,
+        previous: [],
+        snapshot: snapshot(8_000, 0),
+        terminalSendBlockedRoomNames: new Set([roomName]),
+        tick: 100,
+        transactionCost: () => 250,
+      });
+
+      expect(projection.plan.sends).toEqual([]);
+      expect(projection.plan.deferrals).toContainEqual({
+        count: 1,
+        reason: "terminal-reserved",
+      });
+    }
+  });
+
   it("suppresses backoff sends and rejects transaction costs above the configured ceiling", () => {
     const policy = buildRuntimeConfig().policy.industry;
     const baseline = projectIndustryTickPlan({

@@ -7,12 +7,18 @@ import {
   MAX_LAYOUT_LAB_MINERAL,
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_RESOURCES,
+  MAX_LAYOUT_TERMINAL_CAPACITY,
   layoutLabEvacuationBudgetIssuers,
   layoutLabEvacuationFlowIds,
   type LayoutLabEvacuation,
   type LayoutRecord,
 } from "../layout";
-import type { OwnedLabSnapshot, OwnedStorageSnapshot, WorldSnapshot } from "../world/snapshot";
+import type {
+  OwnedLabSnapshot,
+  OwnedStorageSnapshot,
+  OwnedTerminalSnapshot,
+  WorldSnapshot,
+} from "../world/snapshot";
 import { aggregateStoreCapacityReservationKey } from "./planner";
 import type { LogisticsResourceDemandProjection } from "./resource-demands";
 
@@ -125,22 +131,38 @@ export function projectLayoutLabEvacuations(input: {
     )
       continue;
 
-    let destination: OwnedStorageSnapshot | null = null;
+    let destination: OwnedStorageSnapshot | OwnedTerminalSnapshot | null = null;
     let destinationFreeCapacity = 0;
     let destinationResourceAmount = 0;
     if (shape.mineralAmount > 0) {
-      const activeStorages = (room.ownedStorages ?? []).filter(({ active }) => active);
-      destination = activeStorages.find(({ id }) => id === shape.destinationId) ?? null;
-      const destinationStore = destination === null ? null : exactStorage(destination);
+      const activeDestinations =
+        shape.destinationStructureType === "terminal"
+          ? (room.ownedTerminals ?? []).filter(({ active }) => active)
+          : (room.ownedStorages ?? []).filter(({ active }) => active);
+      destination = activeDestinations.find(({ id }) => id === shape.destinationId) ?? null;
+      const destinationCapacity =
+        shape.destinationStructureType === "terminal"
+          ? MAX_LAYOUT_TERMINAL_CAPACITY
+          : MAX_LAYOUT_STORAGE_CAPACITY;
+      const destinationStore =
+        destination === null ? null : exactInventoryStore(destination, destinationCapacity);
       destinationResourceAmount = destinationStore?.resources.get(shape.resourceType ?? "") ?? 0;
       const remainingMineral = Math.max(
         source.mineralAmount,
         shape.destinationInitialAmount + shape.mineralAmount - destinationResourceAmount,
       );
+      const destinationPublished =
+        shape.destinationStructureType === "terminal"
+          ? migration.evacuationStorageId === null &&
+            migration.evacuationTerminalId === shape.destinationId &&
+            quiescent
+          : migration.evacuationStorageId === shape.destinationId &&
+            (migration.evacuationTerminalId === null ||
+              migration.evacuationTerminalId === undefined);
       if (
-        activeStorages.length !== 1 ||
+        activeDestinations.length !== 1 ||
         destination === null ||
-        migration.evacuationStorageId !== shape.destinationId ||
+        !destinationPublished ||
         destinationStore === null ||
         destinationResourceAmount < shape.destinationInitialAmount ||
         destinationStore.freeCapacity < remainingMineral
@@ -346,6 +368,7 @@ function activeCommitmentMigration(
   const handoff = migration.assignmentHandoff;
   const current = migration.assignment;
   if (
+    "destinationStructureType" in evacuation ||
     current === null ||
     migration.quiescent ||
     !migration.activity.includes("commitment") ||
@@ -381,6 +404,7 @@ function sameAssignmentRoles(
 function labEvacuationShape(evacuation: LayoutLabEvacuation): {
   readonly destinationId: string | null;
   readonly destinationInitialAmount: number;
+  readonly destinationStructureType: "storage" | "terminal" | null;
   readonly energyAmount: number;
   readonly mineralAmount: number;
   readonly replacementInitialEnergy: number;
@@ -394,8 +418,19 @@ function labEvacuationShape(evacuation: LayoutLabEvacuation): {
     "replacementInitialEnergy" in evacuation ? evacuation.replacementInitialEnergy : 0;
   const destinationId = mineral ? evacuation.destinationId : null;
   const destinationInitialAmount = mineral ? evacuation.destinationInitialAmount : 0;
+  const destinationStructureType = mineral
+    ? "destinationStructureType" in evacuation
+      ? "terminal"
+      : "storage"
+    : null;
+  const destinationCapacity =
+    destinationStructureType === "terminal"
+      ? MAX_LAYOUT_TERMINAL_CAPACITY
+      : MAX_LAYOUT_STORAGE_CAPACITY;
   const resourceType = mineral ? evacuation.resourceType : null;
+  const destinationTypeInvalid = "destinationStructureType" in evacuation && mixed;
   if (
+    destinationTypeInvalid ||
     !Number.isSafeInteger(energyAmount) ||
     energyAmount < 0 ||
     energyAmount > MAX_LAYOUT_LAB_ENERGY ||
@@ -417,12 +452,13 @@ function labEvacuationShape(evacuation: LayoutLabEvacuation): {
         destinationId === evacuation.replacementId ||
         !Number.isSafeInteger(destinationInitialAmount) ||
         destinationInitialAmount < 0 ||
-        destinationInitialAmount + mineralAmount > MAX_LAYOUT_STORAGE_CAPACITY))
+        destinationInitialAmount + mineralAmount > destinationCapacity))
   )
     return null;
   return {
     destinationId,
     destinationInitialAmount,
+    destinationStructureType,
     energyAmount,
     mineralAmount,
     replacementInitialEnergy,
@@ -463,18 +499,21 @@ function exactLabEnergy(lab: OwnedLabSnapshot): number | null {
     : null;
 }
 
-function exactStorage(storage: OwnedStorageSnapshot): {
+function exactInventoryStore(
+  storage: OwnedStorageSnapshot | OwnedTerminalSnapshot,
+  expectedCapacity: number,
+): {
   readonly freeCapacity: number;
   readonly resources: ReadonlyMap<string, number>;
 } | null {
   if (
-    storage.store.capacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    storage.store.capacity !== expectedCapacity ||
     storage.store.freeCapacity === null ||
     !Number.isSafeInteger(storage.store.freeCapacity) ||
     storage.store.freeCapacity < 0 ||
     !Number.isSafeInteger(storage.store.usedCapacity) ||
     storage.store.usedCapacity < 0 ||
-    storage.store.freeCapacity + storage.store.usedCapacity !== MAX_LAYOUT_STORAGE_CAPACITY ||
+    storage.store.freeCapacity + storage.store.usedCapacity !== expectedCapacity ||
     storage.store.resources.length > MAX_LAYOUT_STORAGE_RESOURCES
   )
     return null;

@@ -71,8 +71,10 @@ export interface LabMigrationRoomView {
   /** Current assignment over every observed lab, retained for independent migration validation. */
   readonly assignment: LabClusterAssignment | null;
   readonly assignmentHandoff?: LabAssignmentHandoffView | null;
-  /** Exact active general-purpose destination selected by the industry observation boundary. */
+  /** Exact active storage destination selected by the industry observation boundary. */
   readonly evacuationStorageId: string | null;
+  /** Exact active idle terminal selected only when no storage destination is available. */
+  readonly evacuationTerminalId?: string | null;
   readonly limits: LabClusterLimits;
   readonly observedAt: number;
   readonly quiescent: boolean;
@@ -122,6 +124,8 @@ export interface ComposeLabRuntimeInput {
   readonly reactionTimes: unknown;
   readonly snapshot: WorldSnapshot;
   readonly snapshotRevision: string;
+  /** Rooms participating in a current eligible internal terminal send. Unknown evidence fails closed. */
+  readonly terminalSendRoomNames?: ReadonlySet<string>;
 }
 
 export function emptyLabCompositionProjection(): LabCompositionProjection {
@@ -319,6 +323,9 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
   const migrationRooms = input.snapshot.ownedRooms.map((room): LabMigrationRoomView => {
     const activity: LabMigrationActivity[] = [];
     const activeStorages = (room.ownedStorages ?? []).filter(({ active }) => active);
+    const activeTerminals = (room.ownedTerminals ?? []).filter(({ active }) => active);
+    const terminalIdle =
+      input.terminalSendRoomNames !== undefined && !input.terminalSendRoomNames.has(room.name);
     const unresolvedFundedBoost =
       policyInputOverCap ||
       boostManifests.some(
@@ -349,6 +356,13 @@ export function composeLabRuntime(input: ComposeLabRuntimeInput): LabComposition
       assignmentHandoff:
         handoffViews.find(({ assignment }) => assignment.roomName === room.name) ?? null,
       evacuationStorageId: activeStorages.length === 1 ? (activeStorages[0]?.id ?? null) : null,
+      evacuationTerminalId:
+        activity.length === 0 &&
+        activeStorages.length === 0 &&
+        activeTerminals.length === 1 &&
+        terminalIdle
+          ? (activeTerminals[0]?.id ?? null)
+          : null,
       limits,
       observedAt: room.observedAt,
       quiescent: activity.length === 0,

@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 13 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 14 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -21,6 +21,7 @@ export const MAX_LAYOUT_LAB_ENERGY = 2_000 as const;
 export const MAX_LAYOUT_LAB_MINERAL = 3_000 as const;
 export const MAX_LAYOUT_LAB_EVACUATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_STORAGE_CAPACITY = 1_000_000 as const;
+export const MAX_LAYOUT_TERMINAL_CAPACITY = 300_000 as const;
 export const MAX_LAYOUT_STORAGE_RESOURCES = 64 as const;
 export const MAX_LAYOUT_LINK_ENERGY = 800 as const;
 export const MAX_LAYOUT_TOWER_ENERGY = 1_000 as const;
@@ -120,6 +121,8 @@ export interface LayoutLabMineralEvacuation {
   readonly amount: number;
   readonly destinationId: string;
   readonly destinationInitialAmount: number;
+  /** Absent preserves V12/V13 storage semantics; terminal is the only V14 alternative. */
+  readonly destinationStructureType?: "terminal";
   readonly expiresAt: number;
   /** Canonical post-removal cluster member retained for safe structure removal. */
   readonly replacementId: string;
@@ -739,7 +742,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV13 {
+export interface LayoutsOwnerV14 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

@@ -46,6 +46,7 @@ describe("composed lab runtime", () => {
     expect(idle.migrationRooms[0]).toMatchObject({
       activity: [],
       evacuationStorageId: "storage",
+      evacuationTerminalId: null,
       observedAt: 100,
       quiescent: true,
       roomName: "W1N1",
@@ -79,6 +80,69 @@ describe("composed lab runtime", () => {
         }).migrationRooms[0]?.evacuationStorageId,
       ).toBeNull();
     }
+    const storage = required(room.ownedStorages?.[0]);
+    const terminal = {
+      ...storage,
+      cooldown: 0,
+      id: "terminal",
+      store: { ...storage.store, capacity: 300_000, freeCapacity: 299_990 },
+    };
+    const terminalOnly = composeLabRuntime({
+      fundedBudgetIds: new Set(),
+      pendingAttempts: [],
+      policy: buildRuntimeConfig().policy.industry,
+      previousCommitments: [],
+      reactionObjectives: [],
+      reactions,
+      reactionTimes,
+      snapshot: {
+        ...snapshot,
+        ownedRooms: [{ ...room, ownedStorages: [], ownedTerminals: [terminal] }],
+      },
+      snapshotRevision: "snapshot/100",
+      terminalSendRoomNames: new Set(),
+    });
+    expect(terminalOnly.migrationRooms[0]).toMatchObject({
+      evacuationStorageId: null,
+      evacuationTerminalId: "terminal",
+      quiescent: true,
+    });
+    const terminalObjective = objective("forward");
+    expect(
+      composeLabRuntime({
+        fundedBudgetIds: new Set([terminalObjective.industryBudgetId]),
+        pendingAttempts: [],
+        policy: buildRuntimeConfig().policy.industry,
+        previousCommitments: [],
+        reactionObjectives: [terminalObjective],
+        reactions,
+        reactionTimes,
+        snapshot: {
+          ...snapshot,
+          ownedRooms: [{ ...room, ownedStorages: [], ownedTerminals: [terminal] }],
+        },
+        snapshotRevision: "snapshot/100",
+        terminalSendRoomNames: new Set(),
+      }).migrationRooms[0],
+    ).toMatchObject({ evacuationTerminalId: null, quiescent: false });
+    expect(
+      composeLabRuntime({
+        fundedBudgetIds: new Set(),
+        pendingAttempts: [],
+        policy: buildRuntimeConfig().policy.industry,
+        previousCommitments: [],
+        reactionObjectives: [],
+        reactions,
+        reactionTimes,
+        snapshot: {
+          ...snapshot,
+          ownedRooms: [{ ...room, ownedStorages: [], ownedTerminals: [terminal] }],
+        },
+        snapshotRevision: "snapshot/100",
+        terminalSendRoomNames: new Set([room.name]),
+      }).migrationRooms[0]?.evacuationTerminalId,
+    ).toBeNull();
+
     expect(active.migrationRooms[0]).toMatchObject({
       observedAt: 100,
       quiescent: false,
