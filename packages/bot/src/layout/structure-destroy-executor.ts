@@ -2,6 +2,7 @@ import {
   MAX_LAYOUT_LAB_ENERGY,
   MAX_LAYOUT_LAB_MINERAL,
   MAX_LAYOUT_LINK_ENERGY,
+  MAX_LAYOUT_SPAWN_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   type DestroyOwnedStructureIntent,
   type StructureDestroyExecutionCode,
@@ -45,6 +46,8 @@ export class StructureDestroyExecutor {
         return result(intent, false, "ERR_INVALID_TARGET", "target-mismatch");
       if (!hasEmptyCurrentStore(target, intent.targetStructureType))
         return result(intent, false, "ERR_INVALID_TARGET", "target-not-empty");
+      if (intent.targetStructureType === "spawn" && !isIdleSpawn(target))
+        return result(intent, false, "ERR_BUSY", "target-busy");
       if (
         (intent.targetStructureType === "lab" || intent.targetStructureType === "link") &&
         !hasZeroCooldown(target)
@@ -55,6 +58,10 @@ export class StructureDestroyExecutor {
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-absent");
       if (!matchesReplacement(intent, replacement))
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-mismatch");
+      if (intent.replacementStructureType === "spawn" && !hasExactSpawnStore(replacement, false))
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-store-mismatch");
+      if (intent.replacementStructureType === "spawn" && !isIdleSpawn(replacement))
+        return result(intent, false, "ERR_BUSY", "replacement-busy");
       if (
         intent.replacementStructureType === "link" &&
         !hasExpectedLinkEnergy(replacement, intent.replacementExpectedEnergy)
@@ -103,6 +110,7 @@ function hasEmptyCurrentStore(
   const removableInOwnedRoom = targetStructureType === "container" || candidate.my === true;
   if (!removableInOwnedRoom || !candidate.isActive() || used !== 0) return false;
   if (targetStructureType === "lab") return hasExactEmptyLabStore(target);
+  if (targetStructureType === "spawn") return hasExactSpawnStore(target, true);
   if (targetStructureType !== "link") return true;
   const store = candidate.store as
     | {
@@ -118,6 +126,33 @@ function hasEmptyCurrentStore(
     store.getFreeCapacity("energy") === MAX_LAYOUT_LINK_ENERGY &&
     store.getUsedCapacity("energy") === 0
   );
+}
+function hasExactSpawnStore(structure: Structure, requireEmpty: boolean): boolean {
+  const store = (
+    structure as Structure & {
+      readonly store?: {
+        getCapacity(resource?: string): number | null;
+        getFreeCapacity(resource?: string): number | null;
+        getUsedCapacity(resource?: string): number | null;
+      };
+    }
+  ).store;
+  const used = store?.getUsedCapacity("energy");
+  return (
+    typeof used === "number" &&
+    Number.isSafeInteger(used) &&
+    used >= 0 &&
+    used <= MAX_LAYOUT_SPAWN_ENERGY &&
+    (!requireEmpty || used === 0) &&
+    store?.getCapacity() === MAX_LAYOUT_SPAWN_ENERGY &&
+    store.getCapacity("energy") === MAX_LAYOUT_SPAWN_ENERGY &&
+    store.getFreeCapacity() === MAX_LAYOUT_SPAWN_ENERGY - used &&
+    store.getFreeCapacity("energy") === MAX_LAYOUT_SPAWN_ENERGY - used &&
+    store.getUsedCapacity() === used
+  );
+}
+function isIdleSpawn(structure: Structure): boolean {
+  return (structure as Structure & { readonly spawning?: unknown }).spawning === null;
 }
 function hasExactEmptyLabStore(structure: Structure): boolean {
   const candidate = structure as Structure & {

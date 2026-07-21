@@ -47,7 +47,7 @@ describe("layout persistence and cache", () => {
       structureType: "container",
     } as const;
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const { issuerSequence: _sequence, ...legacyService } = placement.service;
@@ -64,10 +64,31 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(legacy)).toEqual({
       ...legacy,
-      schemaVersion: 14,
+      schemaVersion: 15,
       revision: owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
+  });
+
+  it("migrates V14 without inventing spawn removal evidence and rejects spoofed receipts", () => {
+    const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 14 })).toEqual({
+      ...owner,
+      revision: owner.revision + 1,
+      schemaVersion: 15,
+    });
+    const receipt = {
+      attempt: 1,
+      code: "ERR_BUSY",
+      nextEligibleTick: 13,
+      observedAt: 11,
+      replacementId: "spawn-exact",
+      targetId: "spawn-obsolete",
+      targetStructureType: "spawn",
+    } as const;
+    const records = [{ ...owner.records[0], removalReceipt: receipt }];
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 14, records })).toBeNull();
+    expect(parseLayoutsOwner({ ...owner, records })).toEqual({ ...owner, records });
   });
 
   it("drops an old algorithm commitment as stale rebuild work instead of rejecting the owner", () => {
@@ -132,7 +153,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutTowerEvacuation(owner, "W1N1", evacuation);
 
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 7 })).toEqual({
       ...owner,
@@ -182,7 +203,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutLinkEvacuation(owner, "W1N1", evacuation);
 
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.linkEvacuation).toEqual(
       evacuation,
@@ -213,7 +234,7 @@ describe("layout persistence and cache", () => {
 
   it("migrates V10 without inventing lab evacuation and preserves bounded energy terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 10 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
@@ -259,7 +280,7 @@ describe("layout persistence and cache", () => {
 
   it("migrates V11 energy terms and persists one bounded V12 mineral evacuation", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     const energy = {
       amount: 750,
       expiresAt: 160,
@@ -311,7 +332,7 @@ describe("layout persistence and cache", () => {
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 12 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
-      schemaVersion: 14,
+      schemaVersion: 15,
     });
 
     const mixed = {
@@ -327,7 +348,7 @@ describe("layout persistence and cache", () => {
       startedAt: 10,
     } as const;
     owner = persistLayoutLabEvacuation(owner, "W1N1", mixed);
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 12 })).toBeNull();
 
@@ -353,7 +374,7 @@ describe("layout persistence and cache", () => {
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 13 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
-      schemaVersion: 14,
+      schemaVersion: 15,
     });
 
     const terminal = {
@@ -369,7 +390,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutLabEvacuation(owner, "W1N1", terminal);
 
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 13 })).toBeNull();
 
@@ -408,7 +429,7 @@ describe("layout persistence and cache", () => {
 
   it("migrates V9 without inventing lab receipts and rejects spoofed legacy evidence", () => {
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(14);
+    expect(owner.schemaVersion).toBe(15);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 9 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
@@ -624,7 +645,7 @@ describe("layout persistence and cache", () => {
     });
     expect(migrated).toMatchObject({
       revision: owner.revision + 1,
-      schemaVersion: 14,
+      schemaVersion: 15,
       records: [
         {
           removalReceipt: {
@@ -758,6 +779,29 @@ describe("layout persistence and cache", () => {
       ...extension.owner,
       revision: extension.owner.revision + 1,
     });
+
+    const spawnIntent = {
+      ...intent,
+      replacementId: "spawn-exact",
+      replacementRequiresIdle: true,
+      replacementStructureType: "spawn",
+      stableId: "remove-spawn-v1:test",
+      targetId: "spawn-obsolete",
+      targetRequiresIdle: true,
+      targetStructureType: "spawn",
+    } as const satisfies DestroyOwnedStructureIntent;
+    const spawn = reconcileStructureDestroyExecution(
+      persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment),
+      [{ called: true, code: "ERR_BUSY", fault: null, intent: spawnIntent }],
+      11,
+    );
+    expect(spawn.owner.records[0]?.removalReceipt).toMatchObject({
+      replacementId: "spawn-exact",
+      targetId: "spawn-obsolete",
+      targetStructureType: "spawn",
+    });
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(spawn.owner)))).toEqual(spawn.owner);
+    expect(parseLayoutsOwner({ ...spawn.owner, schemaVersion: 14 })).toBeNull();
 
     const towerIntent = {
       ...intent,

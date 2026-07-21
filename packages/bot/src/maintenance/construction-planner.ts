@@ -22,6 +22,7 @@ import {
   MAX_LAYOUT_LAB_ENERGY,
   MAX_LAYOUT_LAB_MINERAL,
   MAX_LAYOUT_LINK_ENERGY,
+  MAX_LAYOUT_SPAWN_ENERGY,
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_RESOURCES,
   MAX_LAYOUT_TERMINAL_CAPACITY,
@@ -233,8 +234,10 @@ export class ConstructionPlanner {
 
   /** Plans bounded container and extension convergence. */
   planMigration(input: {
+    readonly activeLeasedWorkTargetIds?: ReadonlySet<string>;
     readonly activeLogisticsFlowIds?: ReadonlySet<string>;
     readonly activeLogisticsTargetIds?: ReadonlySet<string>;
+    readonly activeSpawnClaimIds?: ReadonlySet<string>;
     readonly colony: ColonyView;
     readonly commitment: LayoutCommitment;
     readonly containerMigration?: LayoutContainerMigration | null;
@@ -269,6 +272,9 @@ export class ConstructionPlanner {
         (placement) => placement.layer === "primary" && placement.structureType === "extension",
       )
       .sort(comparePlacement);
+    const desiredSpawns = input.placements
+      .filter((placement) => placement.layer === "primary" && placement.structureType === "spawn")
+      .sort(comparePlacement);
     const desiredTowers = input.placements
       .filter((placement) => placement.layer === "primary" && placement.structureType === "tower")
       .sort(comparePlacement);
@@ -283,6 +289,12 @@ export class ConstructionPlanner {
         structure.ownership === "owned" &&
         structure.structureType === "extension" &&
         !desiredExtensions.some(({ pos }) => samePosition(pos, structure.pos)),
+    );
+    const spawnCandidates = (input.room.structures ?? []).filter(
+      (structure) =>
+        structure.ownership === "owned" &&
+        structure.structureType === "spawn" &&
+        !desiredSpawns.some(({ pos }) => samePosition(pos, structure.pos)),
     );
     const towerCandidates = (input.room.structures ?? []).filter(
       (structure) =>
@@ -342,6 +354,7 @@ export class ConstructionPlanner {
       ...extensionCandidates.map((target) => ({ kind: "extension" as const, target })),
       ...labCandidates.map((target) => ({ kind: "lab" as const, target })),
       ...linkCandidates.map((target) => ({ kind: "link" as const, target })),
+      ...spawnCandidates.map((target) => ({ kind: "spawn" as const, target })),
       ...towerCandidates.map((target) => ({ kind: "tower" as const, target })),
     ].sort((left, right) => {
       const leftReceiptTarget = left.target.id === removalReceipt?.targetId;
@@ -469,6 +482,69 @@ export class ConstructionPlanner {
       return false;
     };
     for (const candidate of considered) {
+      if (candidate.kind === "spawn") {
+        if (
+          input.logisticsEvidenceReady !== true ||
+          input.activeLeasedWorkTargetIds === undefined
+        ) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-unavailable",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (input.activeLeasedWorkTargetIds.has(candidate.target.id)) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-active",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        const spawn = spawnMigrationEvidence(
+          input.room,
+          candidate.target,
+          desiredSpawns,
+          input.colony.rclPolicy.unlocks?.spawns ?? 0,
+          input.activeSpawnClaimIds,
+          removalReceipt?.targetId === candidate.target.id &&
+            removalReceipt.targetStructureType === "spawn"
+            ? removalReceipt.replacementId
+            : undefined,
+        );
+        if (spawn.replacement === null) {
+          pushMigrationBlocker(blockers, {
+            reason: spawn.reason,
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        admitRemoval({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementId: spawn.replacement.id,
+          replacementRequiresIdle: true,
+          replacementStructureType: "spawn",
+          stableId: [
+            "remove-spawn-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            candidate.target.id,
+            spawn.replacement.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetRequiresIdle: true,
+          targetStructureType: "spawn",
+        });
+        break;
+      }
+
       if (candidate.kind === "source-container") {
         if (containerMigration !== null && containerMigration.targetId !== candidate.target.id)
           continue;
@@ -1451,6 +1527,7 @@ type MigrationCandidate =
   | { readonly kind: "extension"; readonly target: StructureSnapshot }
   | { readonly kind: "lab"; readonly target: StructureSnapshot }
   | { readonly kind: "link"; readonly target: StructureSnapshot }
+  | { readonly kind: "spawn"; readonly target: StructureSnapshot }
   | { readonly kind: "tower"; readonly target: StructureSnapshot };
 
 function assessRemovalReceipt(
@@ -2430,6 +2507,87 @@ function exactInventoryStore(
   }
   return used === storage.store.usedCapacity
     ? { freeCapacity: storage.store.freeCapacity, resources }
+    : null;
+}
+
+function spawnMigrationEvidence(
+  room: RoomSnapshot,
+  target: StructureSnapshot,
+  desiredSpawns: readonly LayoutPlacement[],
+  allowance: number,
+  activeSpawnClaimIds: ReadonlySet<string> | undefined,
+  requiredReplacementId: string | undefined,
+):
+  | { readonly reason: LayoutMigrationBlocker; readonly replacement: null }
+  | { readonly reason: null; readonly replacement: RoomSnapshot["ownedSpawns"][number] } {
+  const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
+  if (
+    occupying.length !== 1 ||
+    occupying[0]?.id !== target.id ||
+    room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
+  )
+    return { reason: "target-shared", replacement: null };
+  const observedTargets = room.ownedSpawns.filter(({ id }) => id === target.id);
+  const observedTarget = observedTargets[0];
+  if (
+    observedTargets.length !== 1 ||
+    observedTarget === undefined ||
+    !samePosition(observedTarget.pos, target.pos) ||
+    !observedTarget.active ||
+    observedTarget.spawning !== null ||
+    exactSpawnEnergy(observedTarget) !== 0
+  )
+    return { reason: "target-unavailable", replacement: null };
+  if (activeSpawnClaimIds === undefined || activeSpawnClaimIds.has(target.id))
+    return { reason: "spawn-selected", replacement: null };
+  const desiredPositions = new Set(desiredSpawns.map(({ pos }) => positionKey(pos)));
+  const exact = room.ownedSpawns
+    .filter(
+      (spawn) =>
+        spawn.id !== target.id && spawn.active && desiredPositions.has(positionKey(spawn.pos)),
+    )
+    .sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x || a.id.localeCompare(b.id));
+  if (
+    allowance < 2 ||
+    room.ownedSpawns.length !== allowance ||
+    new Set(room.ownedSpawns.map(({ id }) => id)).size !== allowance ||
+    new Set(room.ownedSpawns.map(({ pos }) => positionKey(pos))).size !== allowance ||
+    desiredSpawns.length !== allowance ||
+    desiredPositions.size !== allowance ||
+    exact.length !== allowance - 1 ||
+    new Set(exact.map(({ id }) => id)).size !== exact.length ||
+    new Set(exact.map(({ pos }) => positionKey(pos))).size !== exact.length
+  )
+    return { reason: "replacement-pending", replacement: null };
+  const replacement = exact.find(
+    (spawn) =>
+      (requiredReplacementId === undefined || spawn.id === requiredReplacementId) &&
+      spawn.spawning === null &&
+      !activeSpawnClaimIds.has(spawn.id) &&
+      exactSpawnEnergy(spawn) !== null,
+  );
+  return replacement === undefined
+    ? { reason: "spawn-selected", replacement: null }
+    : { reason: null, replacement };
+}
+
+function exactSpawnEnergy(spawn: RoomSnapshot["ownedSpawns"][number]): number | null {
+  if (
+    spawn.store.capacity !== MAX_LAYOUT_SPAWN_ENERGY ||
+    spawn.store.resources.length > 1 ||
+    spawn.store.resources.some(
+      ({ amount, resourceType }) =>
+        resourceType !== "energy" || !Number.isSafeInteger(amount) || amount <= 0,
+    )
+  )
+    return null;
+  const energy = spawn.store.resources[0]?.amount ?? 0;
+  return energy === spawn.store.usedCapacity &&
+    spawn.store.freeCapacity === MAX_LAYOUT_SPAWN_ENERGY - energy &&
+    Number.isSafeInteger(energy) &&
+    energy >= 0 &&
+    energy <= MAX_LAYOUT_SPAWN_ENERGY
+    ? energy
     : null;
 }
 

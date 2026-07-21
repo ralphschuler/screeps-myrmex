@@ -179,6 +179,323 @@ describe("composed layout runtime", () => {
     ).toBe(JSON.stringify(planOwnedRoomLayout(planningInput)));
   });
 
+  it("retains executable spawn service while replacing one idle obsolete spawn", () => {
+    const projectedPolicy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 8,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 12_900,
+      energyCapacityAvailable: 12_900,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "mature",
+      visibility: "visible",
+    });
+    const spawnPolicy = {
+      ...projectedPolicy,
+      progression: { authorized: true, reasonCode: "sustaining", status: "sustaining" },
+    } as ColonyView["rclPolicy"];
+    const colony = {
+      activeThreat: false,
+      controllerRisk: false,
+      id: roomName,
+      legalWorkforce: true,
+      rclPolicy: spawnPolicy,
+      roomName,
+      state: "mature",
+      visibility: "visible",
+    } as ColonyView;
+    const commitment = { ...complete().commitment, fingerprint: "layout-spawn-migration-a" };
+    const spawnUnlocks = spawnPolicy.unlocks;
+    if (spawnUnlocks === null) throw new Error("expected RCL8 spawn unlocks");
+    const desiredSpawns = projectLayoutConvergencePlacements({
+      commitment,
+      current: [],
+      roomName,
+      sourceCount: 0,
+      sources: [],
+      unlocks: spawnUnlocks,
+    }).filter(({ structureType }) => structureType === "spawn");
+    expect(desiredSpawns).toHaveLength(3);
+    const desiredSpawnA = desiredSpawns[0];
+    const desiredSpawnB = desiredSpawns[1];
+    const desiredSpawnC = desiredSpawns[2];
+    if (desiredSpawnA === undefined || desiredSpawnB === undefined || desiredSpawnC === undefined)
+      throw new Error("expected three committed spawn placements");
+    const spawn = (
+      id: string,
+      name: string,
+      position: ReturnType<typeof pos>,
+      usedCapacity = 0,
+      spawning: {
+        readonly creepName: string;
+        readonly needTime: number;
+        readonly remainingTime: number;
+      } | null = null,
+    ) => ({
+      active: true,
+      hits: 5_000,
+      hitsMax: 5_000,
+      id,
+      name,
+      pos: position,
+      spawning,
+      store: {
+        capacity: 300,
+        freeCapacity: 300 - usedCapacity,
+        resources: usedCapacity === 0 ? [] : [{ amount: usedCapacity, resourceType: "energy" }],
+        usedCapacity,
+      },
+    });
+    const genericSpawn = (value: ReturnType<typeof spawn>) => ({
+      hits: value.hits,
+      hitsMax: value.hitsMax,
+      id: value.id,
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: value.pos,
+      structureType: "spawn",
+    });
+    const exactA = spawn("spawn-exact-a", "ExactA", desiredSpawnA.pos);
+    const exactB = spawn("spawn-exact-b", "ExactB", desiredSpawnB.pos);
+    const obsolete = spawn("spawn-obsolete", "Obsolete", pos(30, 30));
+    const room = (ownedSpawns: readonly ReturnType<typeof spawn>[], observedAt: number) =>
+      ({
+        constructionSites: [],
+        controller: { level: 8, ownership: "owned" as const },
+        hostileCreeps: [],
+        name: roomName,
+        observedAt,
+        ownedCreeps: [],
+        ownedExtensions: [],
+        ownedSpawns,
+        ownedTowers: [],
+        sources: [],
+        storedStructures: [],
+        structures: ownedSpawns.map(genericSpawn),
+      }) as unknown as WorldSnapshot["rooms"][number];
+
+    const convergence = projectLayoutConvergencePlacements({
+      commitment,
+      current: [
+        { ...desiredSpawnA, adoption: "exact" },
+        {
+          adoption: "compatible-external",
+          layer: "primary",
+          minimumRcl: 1,
+          pos: obsolete.pos,
+          structureType: "spawn",
+        },
+      ],
+      roomName,
+      sourceCount: 0,
+      sources: [],
+      unlocks: spawnUnlocks,
+    });
+    expect(convergence.filter(({ structureType }) => structureType === "spawn")).toEqual(
+      desiredSpawns,
+    );
+    expect(
+      diffOwnedRoomLayout({
+        colonyId: roomName,
+        commitment,
+        commitmentConflicted: false,
+        constructionSites: [],
+        observationFingerprint: "obs-spawn-100",
+        placements: convergence,
+        policy: spawnPolicy,
+        policyEnabled: true,
+        policyFingerprint: "policy-spawn",
+        roomName,
+        roomStatus: "owned",
+        structures: room([exactA, obsolete], 100).structures ?? [],
+      }).proposals.filter(({ structureType }) => structureType === "spawn"),
+    ).toEqual([expect.objectContaining({ pos: desiredSpawnB.pos, structureType: "spawn" })]);
+
+    const plan = (
+      ownedSpawns: readonly ReturnType<typeof spawn>[],
+      observedAt: number,
+      activeSpawnClaimIds: ReadonlySet<string> | undefined,
+      removalReceipt: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"] = null,
+      activeLeasedWorkTargetIds: ReadonlySet<string> = new Set(),
+      activeLogisticsTargetIds: ReadonlySet<string> = activeLeasedWorkTargetIds,
+    ) =>
+      new ConstructionPlanner().planMigration({
+        activeLeasedWorkTargetIds,
+        activeLogisticsTargetIds,
+        ...(activeSpawnClaimIds === undefined ? {} : { activeSpawnClaimIds }),
+        colony,
+        commitment,
+        globalOwnedSiteCount: 0,
+        logisticsEvidenceReady: true,
+        observationFingerprint: `obs-spawn-${String(observedAt)}`,
+        placements: desiredSpawns,
+        policyFingerprint: "policy-spawn",
+        removalReceipt,
+        room: room(ownedSpawns, observedAt),
+      });
+    const ready = plan([obsolete, exactB, exactA], 101, new Set([exactA.id]));
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: exactB.id,
+        targetId: obsolete.id,
+        targetStructureType: "spawn",
+      }),
+    ]);
+    expect(JSON.stringify(plan([exactA, obsolete, exactB], 101, new Set([exactA.id])))).toBe(
+      JSON.stringify(ready),
+    );
+    expect(plan([obsolete, exactB, exactA], 101, new Set([obsolete.id])).proposals).toEqual([]);
+    expect(
+      plan([obsolete, exactB, exactA], 101, new Set([exactA.id, exactB.id])).proposals,
+    ).toEqual([]);
+    expect(
+      plan(
+        [obsolete, exactB, exactA],
+        101,
+        new Set([exactA.id]),
+        null,
+        new Set(),
+        new Set([obsolete.id]),
+      ).proposals,
+    ).toEqual(ready.proposals);
+    expect(plan([obsolete, exactB, exactA], 101, undefined).proposals).toEqual([]);
+    expect(
+      plan([obsolete, { ...exactB, id: exactA.id }, exactA], 101, new Set()).proposals,
+    ).toEqual([]);
+    expect(
+      plan([obsolete, { ...exactB, pos: exactA.pos }, exactA], 101, new Set()).proposals,
+    ).toEqual([]);
+    expect(
+      plan([obsolete, exactB, exactA], 101, new Set(), null, new Set([obsolete.id])).proposals,
+    ).toEqual([]);
+    expect(
+      plan([spawn(obsolete.id, obsolete.name, obsolete.pos, 1), exactB, exactA], 101, new Set())
+        .proposals,
+    ).toEqual([]);
+    expect(
+      plan(
+        [
+          spawn(obsolete.id, obsolete.name, obsolete.pos, 0, {
+            creepName: "pending",
+            needTime: 3,
+            remainingTime: 3,
+          }),
+          exactB,
+          exactA,
+        ],
+        101,
+        new Set(),
+      ).proposals,
+    ).toEqual([]);
+    const failedReceipt = {
+      attempt: 1,
+      code: "ERR_BUSY" as const,
+      nextEligibleTick: 103,
+      observedAt: 101,
+      replacementId: exactB.id,
+      targetId: obsolete.id,
+      targetStructureType: "spawn" as const,
+    };
+    expect(
+      plan([obsolete, exactA, exactB], 103, new Set([exactB.id]), failedReceipt),
+    ).toMatchObject({ proposals: [], removalReceipt: failedReceipt });
+    expect(
+      plan([obsolete, exactA, exactB], 103, new Set([exactA.id]), failedReceipt).proposals,
+    ).toEqual([expect.objectContaining({ replacementId: exactB.id })]);
+
+    if (ready.authorization === null) throw new Error("expected spawn removal authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [ready.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: ready.proposals,
+    });
+    const removalIntent = arbitration.intents[0];
+    if (removalIntent === undefined) throw new Error("expected spawn removal intent");
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveSpawn = (value: ReturnType<typeof spawn>, command = vi.fn(() => 0)) => ({
+      destroy: command,
+      id: value.id,
+      isActive: () => value.active,
+      my: true,
+      pos: value.pos,
+      room: liveRoom,
+      spawning: value.spawning,
+      store: {
+        getCapacity: (resource?: string) =>
+          resource === undefined || resource === "energy" ? 300 : null,
+        getFreeCapacity: (resource?: string) =>
+          resource === undefined || resource === "energy" ? value.store.freeCapacity : null,
+        getUsedCapacity: (resource?: string) =>
+          resource === undefined || resource === "energy" ? value.store.usedCapacity : 0,
+      },
+      structureType: "spawn",
+    });
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) =>
+        id === obsolete.id
+          ? (liveSpawn(obsolete, destroy) as unknown as Structure)
+          : id === exactB.id
+            ? (liveSpawn(exactB) as unknown as Structure)
+            : null,
+    });
+    let owner = reconcileStructureDestroyExecution(
+      persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
+      execution,
+      101,
+    ).owner;
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const receipt = owner.records[0]?.removalReceipt ?? null;
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(plan([exactA, obsolete, exactB], 102, new Set(), receipt)).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "removal-pending" })],
+      proposals: [],
+    });
+
+    const postRemoval = plan([exactB, exactA], 103, new Set(), receipt);
+    expect(postRemoval.removalReceipt).toBeNull();
+    const finalDiff = diffOwnedRoomLayout({
+      colonyId: roomName,
+      commitment,
+      commitmentConflicted: false,
+      constructionSites: [],
+      observationFingerprint: "obs-spawn-103",
+      placements: desiredSpawns,
+      policy: spawnPolicy,
+      policyEnabled: true,
+      policyFingerprint: "policy-spawn",
+      roomName,
+      roomStatus: "owned",
+      structures: room([exactB, exactA], 103).structures ?? [],
+    });
+    expect(finalDiff.proposals.filter(({ structureType }) => structureType === "spawn")).toEqual([
+      expect.objectContaining({ pos: desiredSpawnC.pos, structureType: "spawn" }),
+    ]);
+    const restored = spawn("spawn-exact-c", "ExactC", desiredSpawnC.pos);
+    expect(
+      diffOwnedRoomLayout({
+        colonyId: roomName,
+        commitment,
+        commitmentConflicted: false,
+        constructionSites: [],
+        observationFingerprint: "obs-spawn-104",
+        placements: desiredSpawns,
+        policy: spawnPolicy,
+        policyEnabled: true,
+        policyFingerprint: "policy-spawn",
+        roomName,
+        roomStatus: "owned",
+        structures: room([exactA, exactB, restored], 104).structures ?? [],
+      }).proposals.filter(({ structureType }) => structureType === "spawn"),
+    ).toEqual([]);
+  });
+
   it("builds lab capacity, removes one quiescent empty external lab, and resumes canonical geometry", () => {
     const projectedPolicy = projectColonyRclPolicy({
       activeThreat: false,

@@ -152,6 +152,15 @@ durable rebound is held without staging, lab command, removal, or layout revisio
 staging or source-layout evidence is unavailable. Contaminated, cooling, target-role-assigned,
 ambiguous, malformed, capacity-lost, cluster-breaking, or pressured labs remain.
 
+Spawn convergence begins only at RCL7, where redundant service exists. Source-defined committed
+spawn positions replace compatible external geometry for ordinary site planning. At full allowance,
+one active idle empty external spawn may be removed only when exactly allowance minus one active
+spawns occupy committed positions, the current SpawnBroker result selects neither the target nor
+every idle retained spawn, and no assigned/active contract endpoint names the target. The executor
+rechecks both idle states and the target's exact empty 300-energy Store; observed disappearance then
+exposes the final committed site. A busy, stocked, selected, sole/replacementless, endpoint-bound,
+unsafe, or drifted spawn remains.
+
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;

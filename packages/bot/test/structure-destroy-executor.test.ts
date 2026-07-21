@@ -74,6 +74,24 @@ const labIntent: DestroyOwnedStructureIntent = {
   x: 10,
   y: 11,
 };
+const spawnIntent: DestroyOwnedStructureIntent = {
+  colonyId: "W1N1",
+  kind: "destroy-owned-structure",
+  layoutFingerprint: "layout-a",
+  observationFingerprint: "observation-a",
+  policyFingerprint: "policy-a",
+  replacementId: "spawn-exact",
+  replacementRequiresIdle: true,
+  replacementStructureType: "spawn",
+  roomName: "W1N1",
+  stableId: "remove-spawn/spawn-obsolete",
+  targetId: "spawn-obsolete",
+  targetRequiresEmptyStore: true,
+  targetRequiresIdle: true,
+  targetStructureType: "spawn",
+  x: 10,
+  y: 11,
+};
 const towerIntent: DestroyOwnedStructureIntent = {
   colonyId: "W1N1",
   kind: "destroy-owned-structure",
@@ -257,6 +275,71 @@ describe("StructureDestroyExecutor", () => {
         called: false,
         fault,
       });
+  });
+
+  it("revalidates one idle empty spawn and one idle exact active replacement", () => {
+    const room = { controller: { my: true }, name: "W1N1" } as unknown as Room;
+    const destroy = vi.fn(() => 0);
+    const spawn = (
+      id: string,
+      options: {
+        readonly active?: boolean;
+        readonly capacity?: number;
+        readonly spawning?: object | null;
+        readonly used?: number;
+      } = {},
+    ) => {
+      const capacity = options.capacity ?? 300;
+      const used = options.used ?? 0;
+      return {
+        destroy: id === spawnIntent.targetId ? destroy : vi.fn(() => 0),
+        id,
+        isActive: () => options.active ?? true,
+        my: true,
+        pos: { roomName: "W1N1", x: id === spawnIntent.targetId ? 10 : 12, y: 11 },
+        room,
+        spawning: options.spawning ?? null,
+        store: {
+          getCapacity: (resource?: string) =>
+            resource === undefined || resource === "energy" ? capacity : null,
+          getFreeCapacity: (resource?: string) =>
+            resource === undefined || resource === "energy" ? capacity - used : null,
+          getUsedCapacity: (resource?: string) =>
+            resource === undefined || resource === "energy" ? used : 0,
+        },
+        structureType: "spawn",
+      } as unknown as Structure;
+    };
+    const adapter = (target = spawn("spawn-obsolete"), replacement = spawn("spawn-exact")) => ({
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => room,
+      resolveStructure: (id: string) =>
+        id === spawnIntent.targetId
+          ? target
+          : id === spawnIntent.replacementId
+            ? replacement
+            : null,
+    });
+
+    expect(new StructureDestroyExecutor().execute([spawnIntent], adapter())[0]).toMatchObject({
+      called: true,
+      code: "OK",
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+    for (const [value, fault] of [
+      [adapter(spawn("spawn-obsolete", { used: 1 })), "target-not-empty"],
+      [adapter(spawn("spawn-obsolete", { capacity: 299 })), "target-not-empty"],
+      [adapter(spawn("spawn-obsolete", { spawning: {} })), "target-busy"],
+      [adapter(undefined, spawn("spawn-exact", { capacity: 299 })), "replacement-store-mismatch"],
+      [adapter(undefined, spawn("spawn-exact", { spawning: {} })), "replacement-busy"],
+      [adapter(undefined, spawn("spawn-exact", { active: false })), "replacement-mismatch"],
+    ] as const)
+      expect(new StructureDestroyExecutor().execute([spawnIntent], value)[0]).toMatchObject({
+        called: false,
+        fault,
+      });
+    expect(destroy).toHaveBeenCalledOnce();
   });
 
   it("revalidates an empty active tower and one immediately operational replacement", () => {

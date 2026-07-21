@@ -5,6 +5,7 @@ import {
   serializeContractLedgerState,
   workforceActorFromCreep,
   type ContractFundingView,
+  type ContractPlanningView,
   type WorkContractRequest,
 } from "../src/contracts";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony";
@@ -16,6 +17,8 @@ import {
   persistLayoutCommitment,
 } from "../src/layout";
 import {
+  projectActiveLeaseTargetIds,
+  projectActiveSpawnClaimIds,
   projectCommittedLabLayouts,
   projectPinnedLabHandoffLayout,
   runTick,
@@ -47,7 +50,86 @@ describe("tick lifecycle", () => {
     vi.unstubAllGlobals();
   });
 
-  it("runs layout and link planning before the layout-migration continuation", () => {
+  it("projects every assigned or active contract endpoint before irreversible migration", () => {
+    const contracts = [
+      {
+        execution: {
+          action: "transfer",
+          completion: "continuous",
+          counterpartId: "spawn-obsolete",
+          resourceType: "energy",
+          version: 1,
+        },
+        state: "active",
+        targetId: "source-a",
+      },
+      {
+        execution: {
+          action: "transfer",
+          completion: "target-full",
+          counterpartId: "spawn-other",
+          flowId: "flow-a",
+          recommendedCarry: 1,
+          recommendedMove: 1,
+          reservedAmount: 50,
+          resourceType: "energy",
+          stage: "deliver",
+          version: 3,
+        },
+        state: "assigned",
+        targetId: "storage-a",
+      },
+      {
+        execution: {
+          action: "harvest",
+          completion: "continuous",
+          counterpartId: "spawn-v2",
+          resourceType: null,
+          version: 2,
+          workPosition: { roomName: "W1N1", x: 10, y: 10 },
+        },
+        state: "assigned",
+        targetId: "source-v2",
+      },
+      {
+        execution: {
+          action: "repair",
+          completion: "work-complete",
+          counterpartId: null,
+          resourceType: "energy",
+          version: 1,
+        },
+        state: "funded",
+        targetId: "spawn-unleased",
+      },
+    ] as unknown as ContractPlanningView["contracts"];
+
+    expect([...projectActiveLeaseTargetIds(contracts)].sort()).toEqual([
+      "source-a",
+      "source-v2",
+      "spawn-obsolete",
+      "spawn-other",
+      "spawn-v2",
+      "storage-a",
+    ]);
+  });
+
+  it("fails spawn-removal claim evidence closed unless the broker completed planning", () => {
+    const planned = {
+      status: "planned",
+      selections: [{ spawnId: "spawn-selected" }],
+    } as unknown as NonNullable<ReturnType<typeof runTick>["spawn"]["broker"]>;
+    const invalid = {
+      status: "invalid",
+      selections: [],
+    } as unknown as NonNullable<ReturnType<typeof runTick>["spawn"]["broker"]>;
+
+    expect(projectActiveSpawnClaimIds(planned)).toEqual(new Set(["spawn-selected"]));
+    expect(projectActiveSpawnClaimIds(invalid)).toBeNull();
+    expect(projectActiveSpawnClaimIds(null)).toBeNull();
+  });
+
+  it("publishes spawn selections, layout, and links before the layout-migration continuation", () => {
     const outcome = runTick({
       game: {
         cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
@@ -60,9 +142,11 @@ describe("tick lifecycle", () => {
     });
     const planOrder = outcome.kernel.systems
       .map(({ systemId }) => systemId)
-      .filter((systemId) => ["layout.plan", "links.plan", "migration.layout"].includes(systemId));
+      .filter((systemId) =>
+        ["colony.director", "layout.plan", "links.plan", "migration.layout"].includes(systemId),
+      );
 
-    expect(planOrder).toEqual(["layout.plan", "links.plan", "migration.layout"]);
+    expect(planOrder).toEqual(["colony.director", "layout.plan", "links.plan", "migration.layout"]);
   });
 
   it("reconstructs and pins exact committed RCL8 lab handoff geometry", () => {
