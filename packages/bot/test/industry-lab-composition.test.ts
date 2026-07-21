@@ -482,7 +482,7 @@ describe("composed lab runtime", () => {
     expect(overflow.migrationRooms[0]?.quiescent).toBe(false);
   });
 
-  it("publishes an idle terminal only for a durable mineral-only boost handoff", () => {
+  it("publishes an idle terminal for durable boost-handoff evacuation continuity", () => {
     const initial = boostHandoffWorld(100);
     const first = composeBoostHandoff(initial.snapshot, initial.manifest);
     const previous = required(first.policy.commitments[0]);
@@ -544,7 +544,16 @@ describe("composed lab runtime", () => {
         [],
         new Set(),
       ).migrationRooms[0]?.evacuationTerminalId,
-    ).toBeNull();
+    ).toBe("terminal");
+    expect(
+      composeBoostHandoff(
+        withTerminalOnly(withExternalEnergy(boostHandoffWorld(102, true).snapshot, 1)),
+        initial.manifest,
+        durable,
+        [],
+        new Set(),
+      ).migrationRooms[0]?.evacuationTerminalId,
+    ).toBe("terminal");
   });
 
   it("durably rebinds one reaction before publishing retained-lab work", () => {

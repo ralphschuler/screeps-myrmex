@@ -52,9 +52,9 @@ Storage appearance, internal-send contention, terminal identity/activity/capacit
 energy, mixed stock, assignment or layout drift, threat, timeout, or missing work-retirement
 evidence fails closed. Rollback requires only reverting code and documentation because layouts V14
 and Industry owner V5 are unchanged. ADR 0063 subsequently permits quiescent mixed terminal stock,
-and ADR 0064 permits the exact active-reaction form. Mixed-terminal boost stock, autonomous boost-
-manifest production, general multi-step migration, defensive migration, and creep dismantling remain
-issue #99.
+ADR 0064 permits the exact active-reaction form, and ADR 0065 permits the mixed-terminal boost form.
+Autonomous boost-manifest production, general multi-step migration, defensive migration, and creep
+dismantling remain issue #99.
 
 ## Mechanics sources
 

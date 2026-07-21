@@ -1169,7 +1169,7 @@ describe("logistics runtime adapter", () => {
         snapshot: mixedTerminalWorld,
         tick: 11,
       }).authorizedFlowIds,
-    ).toEqual([]);
+    ).toEqual(mixedTerminalProjection.authorizedFlowIds);
 
     expect(
       projectLayoutLabEvacuations({

@@ -54,8 +54,9 @@ evacuation flows, 128 nodes/endpoints and removal candidates, and one global des
 33-record mixed batch exceeds the flow ceiling and publishes no prefix. Rollback requires only
 reverting code: Industry owner V5 and layouts owner V13 remain unchanged. ADR 0064 subsequently
 permits this exact reaction handoff to send mineral to one idle terminal when no active storage
-exists while energy still moves to the retained lab. Mixed-terminal boost work, multiple labs,
-general layout-revision migration, defensive migration, and creep dismantling remain issue #99.
+exists while energy still moves to the retained lab. ADR 0065 permits the equivalent explicit-boost
+handoff. Multiple labs, general layout-revision migration, defensive migration, and creep
+dismantling remain issue #99.
 
 ## Mechanics sources
 

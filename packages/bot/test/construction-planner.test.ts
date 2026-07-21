@@ -1822,7 +1822,22 @@ describe("ConstructionPlanner", () => {
         placements: mixed.placements,
         room: mixed.room,
       }),
-    ).toMatchObject({ labEvacuation: null, proposals: [] });
+    ).toMatchObject({
+      labEvacuation: {
+        destinationId: "terminal",
+        destinationInitialAmount: 1_000,
+        destinationStructureType: "terminal",
+        energyAmount: 1,
+        expiresAt: 250,
+        mineralAmount: 750,
+        replacementId: mixed.replacementId,
+        replacementInitialEnergy: 250,
+        resourceType: "XGH2O",
+        sourceId: "lab-external",
+        startedAt: 100,
+      },
+      proposals: [],
+    });
   });
 
   it("keeps a real pending reaction mixed-terminal evacuation funded while blocking removal", () => {
@@ -1965,13 +1980,13 @@ describe("ConstructionPlanner", () => {
     ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
   });
 
-  it("carries a real boost handoff through V14 persistence and partial logistics", () => {
+  it("carries a real mixed-stock boost handoff through V14 logistics and exact settlement", () => {
     const initial = labBoostHandoffFixtureWorld(100);
     const first = composeBoostHandoffFixture(initial.snapshot, initial.manifest);
     const previous = first.policy.commitments[0];
     if (previous?.kind !== "boost") throw new Error("expected initial boost commitment");
 
-    const reboundWorld = boostTerminalSnapshot(101, true, 100, 0);
+    const reboundWorld = boostTerminalSnapshot(101, true, 100, 0, 100, 1_000);
     const rebound = composeBoostHandoffFixture(
       reboundWorld,
       initial.manifest,
@@ -1985,7 +2000,7 @@ describe("ConstructionPlanner", () => {
     const durable = JSON.parse(
       JSON.stringify(rebound.policy.commitments),
     ) as typeof rebound.policy.commitments;
-    const readyWorld = boostTerminalSnapshot(102, false, 100, 0);
+    const readyWorld = boostTerminalSnapshot(102, false, 100, 0, 100, 1_000);
     const ready = composeBoostHandoffFixture(readyWorld, initial.manifest, durable, [], new Set());
     const migration = ready.migrationRooms[0];
     const handoff = migration?.assignmentHandoff;
@@ -2000,15 +2015,17 @@ describe("ConstructionPlanner", () => {
     const replacementId = retainedIds[0];
     if (replacementId === undefined) throw new Error("expected retained replacement lab");
     const evacuation = {
-      amount: 100,
       destinationId: "terminal",
       destinationInitialAmount: 0,
       destinationStructureType: "terminal" as const,
-      expiresAt: 251,
+      energyAmount: 100,
+      expiresAt: 252,
+      mineralAmount: 100,
       replacementId,
+      replacementInitialEnergy: 1_000,
       resourceType: "Z",
       sourceId: "external",
-      startedAt: 101,
+      startedAt: 102,
     };
     const commitment = { ...migrationCommitment, fingerprint: "layout-commitment" };
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
@@ -2024,13 +2041,13 @@ describe("ConstructionPlanner", () => {
       snapshot: logisticsLabSnapshot(readyWorld),
       tick: 102,
     });
-    expect(readyProjection.authorizedFlowIds).toHaveLength(1);
+    expect(readyProjection.authorizedFlowIds).toEqual([]);
 
     const intent = ready.intents[0];
     if (intent === undefined) throw new Error("expected retained boost intent");
     const attempt = createPendingLabAttempt(intent, "OK");
     if (attempt === null) throw new Error("expected pending boost attempt");
-    const partialWorld = boostTerminalSnapshot(103, true, 40, 60);
+    const partialWorld = boostTerminalSnapshot(103, true, 40, 60, 40, 1_060);
     const partial = composeBoostHandoffFixture(
       partialWorld,
       initial.manifest,
@@ -2041,18 +2058,69 @@ describe("ConstructionPlanner", () => {
     expect(partial.migrationRooms[0]?.evacuationTerminalId).toBe("terminal");
     expect(partial.migrationRooms[0]?.activity).toContain("commitment");
     expect(partial.migrationRooms[0]?.activity).toContain("pending-attempt");
+    const partialProjection = projectLayoutLabEvacuations({
+      existingBudgets: [],
+      migrationRooms: partial.migrationRooms,
+      records: [record],
+      snapshot: logisticsLabSnapshot(partialWorld),
+      tick: 103,
+    });
+    expect(partialProjection.authorizedFlowIds).toHaveLength(2);
+
+    const mineralFirstWorld = boostTerminalSnapshot(103, false, 0, 100, 40, 1_060);
+    const mineralFirst = composeBoostHandoffFixture(
+      mineralFirstWorld,
+      initial.manifest,
+      durable,
+      [attempt],
+      new Set(),
+    );
+    expect(mineralFirst.migrationRooms[0]?.evacuationTerminalId).toBe("terminal");
     expect(
       projectLayoutLabEvacuations({
-        existingBudgets: readyProjection.budgets.map((budget) => ({
+        existingBudgets: [],
+        migrationRooms: mineralFirst.migrationRooms,
+        records: [record],
+        snapshot: logisticsLabSnapshot(mineralFirstWorld),
+        tick: 103,
+      }).authorizedFlowIds,
+    ).toEqual([partialProjection.authorizedFlowIds[0]]);
+
+    const settledWorld = boostTerminalSnapshot(103, false, 0, 100, 0, 1_100, true);
+    const settled = composeBoostHandoffFixture(
+      settledWorld,
+      initial.manifest,
+      durable,
+      [attempt],
+      new Set(),
+    );
+    expect(settled.settlements).toEqual([
+      expect.objectContaining({ reason: "exact-effect", settledAmount: 1, status: "settled" }),
+    ]);
+    expect(settled.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(settled.migrationRooms[0]?.quiescent).toBe(false);
+
+    const completeWorld = boostTerminalSnapshot(104, true, 0, 100, 0, 1_100, true);
+    const complete = composeBoostHandoffFixture(
+      completeWorld,
+      initial.manifest,
+      settled.policy.commitments,
+      [],
+      new Set(),
+    );
+    expect(complete.migrationRooms[0]).toMatchObject({ activity: [], quiescent: true });
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: partialProjection.budgets.map((budget) => ({
           ...budget,
           status: "active",
         })),
-        migrationRooms: partial.migrationRooms,
+        migrationRooms: complete.migrationRooms,
         records: [record],
-        snapshot: logisticsLabSnapshot(partialWorld),
-        tick: 103,
+        snapshot: logisticsLabSnapshot(completeWorld),
+        tick: 104,
       }).authorizedFlowIds,
-    ).toEqual(readyProjection.authorizedFlowIds);
+    ).toEqual([]);
   });
 
   it("evacuates mixed stock atomically while a rebound reaction remains active", () => {
@@ -2349,17 +2417,91 @@ describe("ConstructionPlanner", () => {
     ).toEqual([]);
 
     const boost = labTerminalEvacuationFixture(750, 1_000, 10_000, 100, undefined, 500, 250);
+    const boostStaged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: boost.colony,
+      labMigration: activeBoostLabMigration(boost),
+      logisticsEvidenceReady: true,
+      placements: boost.placements,
+      room: boost.room,
+    });
+    expect(boostStaged).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+
+    const boostPartial = labTerminalEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      102,
+      boost.replacementId,
+      200,
+      550,
+    );
+    const boostPartialResult = planMigration({
+      activeLogisticsFlowIds: new Set([flowIds[0] ?? ""]),
+      activeLogisticsTargetIds: new Set(["lab-external", boost.replacementId]),
+      colony: boostPartial.colony,
+      labEvacuation: JSON.parse(JSON.stringify(evacuation)) as typeof evacuation,
+      labMigration: activeBoostLabMigration(boostPartial, ["commitment", "pending-attempt"]),
+      logisticsEvidenceReady: true,
+      placements: [...boostPartial.placements].reverse(),
+      room: {
+        ...boostPartial.room,
+        ownedLabs: [...(boostPartial.room.ownedLabs ?? [])].reverse(),
+        ownedTerminals: [...(boostPartial.room.ownedTerminals ?? [])].reverse(),
+        structures: [...(boostPartial.room.structures ?? [])].reverse(),
+      },
+    });
+    expect(boostPartialResult).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+    expect(boostPartialResult.blockers).toContainEqual(
+      expect.objectContaining({ reason: "target-stocked" }),
+    );
+    expect(boostPartialResult.blockers).not.toContainEqual(
+      expect.objectContaining({ reason: "industry-unavailable" }),
+    );
+
+    const boostComplete = labTerminalEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      103,
+      boost.replacementId,
+      0,
+      750,
+    );
+    for (const activity of [
+      ["commitment", "intent"],
+      ["commitment", "pending-attempt"],
+    ] as const)
+      expect(
+        planMigration({
+          activeLogisticsFlowIds: new Set(),
+          activeLogisticsTargetIds: new Set(),
+          colony: boostComplete.colony,
+          labEvacuation: evacuation,
+          labMigration: activeBoostLabMigration(boostComplete, activity),
+          logisticsEvidenceReady: true,
+          placements: boostComplete.placements,
+          room: boostComplete.room,
+        }).proposals,
+      ).toEqual([]);
     expect(
       planMigration({
         activeLogisticsFlowIds: new Set(),
         activeLogisticsTargetIds: new Set(),
-        colony: boost.colony,
-        labMigration: activeBoostLabMigration(boost),
+        colony: boostComplete.colony,
+        labEvacuation: evacuation,
+        labMigration: boostComplete.labMigration,
         logisticsEvidenceReady: true,
-        placements: boost.placements,
-        room: boost.room,
+        placements: boostComplete.placements,
+        room: boostComplete.room,
+      }).proposals,
+    ).toEqual([
+      expect.objectContaining({
+        replacementId: boost.replacementId,
+        targetId: "lab-external",
       }),
-    ).toMatchObject({ labEvacuation: null, proposals: [] });
+    ]);
   });
 
   it("persists and completes one mineral-only quiescent-lab evacuation into active storage", () => {
@@ -4886,34 +5028,68 @@ function boostTerminalSnapshot(
   reversed: boolean,
   targetMineral: number,
   terminalMineral: number,
+  targetEnergy = 0,
+  replacementEnergy = 2_000,
+  boostSettled = false,
 ): WorldSnapshot {
-  const snapshot = labBoostHandoffFixtureWorld(tick, reversed).snapshot;
+  const snapshot = labBoostHandoffFixtureWorld(tick, reversed, boostSettled).snapshot;
   const room = snapshot.ownedRooms[0];
   const storage = room?.ownedStorages?.[0];
   if (room === undefined || storage === undefined) throw new Error("expected boost terminal world");
+  const retained = (room.ownedLabs ?? []).filter(({ id }) => id !== "external");
+  const assignment = assignLabCluster({
+    labs: retained,
+    layoutFingerprint: fingerprintLabLayout("W1N1", retained),
+    limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
+    roomName: "W1N1",
+  }).assignment;
+  const replacementId =
+    assignment === null
+      ? undefined
+      : [
+          ...assignment.reagentLabIds,
+          ...assignment.productLabIds,
+          ...assignment.boostLabIds,
+        ].sort()[0];
+  if (replacementId === undefined) throw new Error("expected boost terminal replacement lab");
   const terminalUsed = storage.store.usedCapacity + terminalMineral;
   return {
     ...snapshot,
     ownedRooms: [
       {
         ...room,
-        ownedLabs: (room.ownedLabs ?? []).map((lab) =>
-          lab.id === "external"
-            ? {
-                ...lab,
-                energy: 0,
-                mineralAmount: targetMineral,
-                mineralType: targetMineral === 0 ? null : "Z",
-                store: {
-                  capacity: 5_000,
-                  freeCapacity: 5_000 - targetMineral,
-                  resources:
-                    targetMineral === 0 ? [] : [{ amount: targetMineral, resourceType: "Z" }],
-                  usedCapacity: targetMineral,
-                },
-              }
-            : lab,
-        ),
+        ownedLabs: (room.ownedLabs ?? []).map((lab) => {
+          if (lab.id === "external")
+            return {
+              ...lab,
+              energy: targetEnergy,
+              mineralAmount: targetMineral,
+              mineralType: targetMineral === 0 ? null : "Z",
+              store: {
+                capacity: 5_000,
+                freeCapacity: 5_000 - targetEnergy - targetMineral,
+                resources: [
+                  ...(targetEnergy === 0 ? [] : [{ amount: targetEnergy, resourceType: "energy" }]),
+                  ...(targetMineral === 0 ? [] : [{ amount: targetMineral, resourceType: "Z" }]),
+                ],
+                usedCapacity: targetEnergy + targetMineral,
+              },
+            };
+          if (lab.id !== replacementId) return lab;
+          return {
+            ...lab,
+            energy: replacementEnergy,
+            store: {
+              ...lab.store,
+              freeCapacity: 5_000 - replacementEnergy - lab.mineralAmount,
+              resources: [
+                { amount: replacementEnergy, resourceType: "energy" },
+                ...lab.store.resources.filter(({ resourceType }) => resourceType !== "energy"),
+              ],
+              usedCapacity: replacementEnergy + lab.mineralAmount,
+            },
+          };
+        }),
         ownedStorages: [],
         ownedTerminals: [
           {

@@ -61,9 +61,10 @@ Rolling back only this decision to the ADR 0063 implementation preserves and rec
 layouts-V14 record, continues terminal-send suppression, and rejects active projection and removal
 until supporting code returns. A rollback to code older than ADR 0063 still requires disabling
 `phase2.industry` first because that code cannot derive the mixed-terminal reservation. Redeploying
-supporting code resumes from the same bounded record. Mixed-terminal boost handoff, autonomous
-boost-manifest production, general multi-step migration, defensive migration, and creep dismantling
-remain parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99).
+supporting code resumes from the same bounded record. ADR 0065 subsequently permits the equivalent
+explicit-boost handoff. Autonomous boost-manifest production, general multi-step migration,
+defensive migration, and creep dismantling remain parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99).
 
 ## Mechanics sources
 
