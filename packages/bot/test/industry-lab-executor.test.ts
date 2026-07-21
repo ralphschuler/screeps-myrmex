@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   executeLabIntents,
+  fingerprintCreepSnapshot,
+  fingerprintLiveLabCreep,
   type LabBoostCreepIntent,
   type LabRunReactionIntent,
 } from "../src/industry";
 import type { ArbitrationBatch } from "../src/execution";
+import { labFixtureBoostWorld } from "./support/lab-composition-fixture";
 
 describe("lab executor", () => {
   it("issues one accepted reaction and preserves exact return-code normalization", () => {
@@ -56,6 +59,24 @@ describe("lab executor", () => {
     expect(results[0]).toMatchObject({ status: "executed", reason: "OK" });
   });
 
+  it("fingerprints immutable actor shape without treating boost annotations as identity drift", () => {
+    const initialObserved = labFixtureBoostWorld(false).snapshot.ownedRooms[0]?.ownedCreeps[0];
+    const boostedObserved = labFixtureBoostWorld(true).snapshot.ownedRooms[0]?.ownedCreeps[0];
+    if (initialObserved === undefined || boostedObserved === undefined)
+      throw new Error("expected boost fixture creep");
+    const fingerprint = fingerprintCreepSnapshot(initialObserved);
+
+    expect(fingerprint).toBe("lab-composition-v1:98c7334e");
+    expect(fingerprintCreepSnapshot(boostedObserved)).toBe(fingerprint);
+    expect(fingerprintLiveLabCreep(fingerprintCreep())).toBe(fingerprint);
+    expect(fingerprintLiveLabCreep(fingerprintCreep({ boosted: true }))).toBe(fingerprint);
+    expect(fingerprintLiveLabCreep(fingerprintCreep({ body: ["attack", "move"] }))).not.toBe(
+      fingerprint,
+    );
+    expect(fingerprintLiveLabCreep(fingerprintCreep({ id: "other" }))).not.toBe(fingerprint);
+    expect(fingerprintLiveLabCreep(fingerprintCreep({ name: "other" }))).not.toBe(fingerprint);
+  });
+
   it("never executes rejected or unrelated intents", () => {
     const product = lab("product", null, 0, 0);
     const runReaction = vi.fn((): ScreepsReturnCode => 0);
@@ -69,6 +90,25 @@ describe("lab executor", () => {
     expect(runReaction).not.toHaveBeenCalled();
   });
 });
+
+function fingerprintCreep(
+  options: {
+    readonly body?: readonly ("attack" | "move")[];
+    readonly boosted?: boolean;
+    readonly id?: string;
+    readonly name?: string;
+  } = {},
+): Creep {
+  return {
+    body: (options.body ?? ["attack"]).map((type) => ({
+      ...(options.boosted === true && type === "attack" ? { boost: "XUH2O" } : {}),
+      hits: 100,
+      type,
+    })),
+    id: options.id ?? "boost-creep",
+    name: options.name ?? "boost-creep",
+  } as unknown as Creep;
+}
 
 function reactionIntent(): LabRunReactionIntent {
   return {

@@ -256,7 +256,9 @@ Reaction and boost staging share one policy. Explicit funded boost manifests pre
 reaction objectives; otherwise the policy selects one bounded canonical forward dependency chain.
 Commitments survive reset but remain bound to current cluster and catalog fingerprints. Exact
 staging completion yields `ready`, not a command. Active reaction completion requires later executor
-evidence and re-observation rather than an unrelated increase in aggregate stock.
+evidence and re-observation rather than an unrelated increase in aggregate stock. A boost binds the
+creep's immutable ID, name, and body-part counts; its expected boost annotation is settled only when
+the exact target-part increase and matching 30-mineral/20-energy-per-part deltas are observed.
 
 Factory and power processing follow the same funded-readiness rule. Their current capability status,
 together with observer and capped nuker capability, contributes direct RCL8 health without making

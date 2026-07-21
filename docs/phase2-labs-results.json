@@ -1,6 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "deterministic": {
+    "boostExecution": "executed",
+    "boostIntent": "lab.boost-creep",
+    "boostResetAndReorderEquivalent": true,
+    "exactBoostParts": 1,
     "exactReverseAmount": 5,
     "forwardIntent": "lab.run-reaction",
     "resetAndReorderEquivalent": true,
@@ -25,8 +29,29 @@
     "retries": 0,
     "settledAmount": 5
   },
+  "boostCommandTelemetry": {
+    "cancelled": 0,
+    "commands": { "executed": 1, "failed": 0, "rejected": 0 },
+    "commitments": 1,
+    "intents": 1,
+    "readinessBlockers": 0,
+    "resourceDemands": 2,
+    "retries": 0,
+    "settledAmount": 0
+  },
+  "boostSettlementTelemetry": {
+    "accounting": [20, 30, 0],
+    "cancelled": 0,
+    "commands": { "executed": 0, "failed": 0, "rejected": 0 },
+    "commitments": 0,
+    "intents": 0,
+    "readinessBlockers": 0,
+    "resourceDemands": 0,
+    "retries": 0,
+    "settledAmount": 1
+  },
   "boundaries": {
-    "commandKinds": ["lab.reverse-reaction", "lab.run-reaction"],
+    "commandKinds": ["lab.boost-creep", "lab.reverse-reaction", "lab.run-reaction"],
     "gate": "phase2.labs",
     "maximumCommandsPerRoom": 1
   }
