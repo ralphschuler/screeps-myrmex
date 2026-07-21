@@ -646,6 +646,18 @@ function rebindableHandoffTarget(lab: OwnedLabSnapshot): boolean {
   const energyResources = lab.store.resources.filter(
     ({ resourceType }) => resourceType === "energy",
   );
+  const mineralResources = lab.store.resources.filter(
+    ({ resourceType }) => resourceType !== "energy",
+  );
+  const mineralResource = mineralResources[0];
+  const mineralTypeValid =
+    lab.mineralAmount === 0
+      ? lab.mineralType === null
+      : typeof lab.mineralType === "string" &&
+        lab.mineralType.length > 0 &&
+        lab.mineralType.length <= 64 &&
+        lab.mineralType === lab.mineralType.trim() &&
+        lab.mineralType !== "energy";
   return (
     lab.active &&
     lab.cooldown === 0 &&
@@ -654,12 +666,20 @@ function rebindableHandoffTarget(lab: OwnedLabSnapshot): boolean {
     Number.isSafeInteger(lab.energy) &&
     lab.energy >= 0 &&
     lab.energy <= lab.energyCapacity &&
-    lab.mineralAmount === 0 &&
-    lab.mineralType === null &&
-    lab.store.usedCapacity === lab.energy &&
-    lab.store.resources.length === Number(lab.energy > 0) &&
+    Number.isSafeInteger(lab.mineralAmount) &&
+    lab.mineralAmount >= 0 &&
+    lab.mineralAmount <= lab.mineralCapacity &&
+    (lab.energy === 0 || lab.mineralAmount === 0) &&
+    mineralTypeValid &&
+    lab.store.usedCapacity === lab.energy + lab.mineralAmount &&
+    lab.store.resources.length === Number(lab.energy > 0) + Number(lab.mineralAmount > 0) &&
     energyResources.length === Number(lab.energy > 0) &&
-    (lab.energy === 0 || energyResources[0]?.amount === lab.energy)
+    mineralResources.length === Number(lab.mineralAmount > 0) &&
+    (lab.energy === 0 || energyResources[0]?.amount === lab.energy) &&
+    (lab.mineralAmount === 0 ||
+      (mineralResource !== undefined &&
+        mineralResource.resourceType === lab.mineralType &&
+        mineralResource.amount === lab.mineralAmount))
   );
 }
 

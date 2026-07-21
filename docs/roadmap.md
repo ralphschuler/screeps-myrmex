@@ -156,8 +156,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   next-observation settlement. Issue #333 extends that exact role-identical handoff to one positive
   energy-only target, reusing the existing V13 funded creep-logistics evacuation while retained labs
   continue reaction work; removal waits for delivered replacement gain, retired flow/endpoints, and
-  no pending lab attempt. Active mineral/mixed stock, boost-work handoff, terminal destinations,
-  general multi-step migration, defensive migration, and creep dismantling remain issue #99.
+  no pending lab attempt. Issue #335 reuses the same durable handoff and V13 mineral-to-storage flow
+  for one zero-energy, single-kind-mineral target; removal requires exact storage gain, retired
+  work, unchanged destination/roles/safety, and no pending attempt. Active mixed stock, boost-work
+  handoff, terminal destinations, general multi-step migration, defensive migration, and creep
+  dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

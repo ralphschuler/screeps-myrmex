@@ -2224,8 +2224,14 @@ function labMigrationEvidence(input: {
     Number.isSafeInteger(handoff.objectiveRevision) &&
     handoff.objectiveRevision > 0 &&
     !input.view.activity.includes("pending-attempt") &&
-    target.mineralAmount === 0 &&
-    target.mineralType === null &&
+    (targetEnergy === 0 || target.mineralAmount === 0) &&
+    (target.mineralAmount === 0
+      ? target.mineralType === null
+      : typeof target.mineralType === "string" &&
+        target.mineralType.length > 0 &&
+        target.mineralType.length <= 64 &&
+        target.mineralType === target.mineralType.trim() &&
+        target.mineralType !== "energy") &&
     sameLabAssignmentRoles(currentAssignment, postRemoval) &&
     JSON.stringify(handoff.assignment) === JSON.stringify(postRemoval);
   if (!input.view.quiescent && !activeHandoff)

@@ -5,12 +5,14 @@ import {
   composeLabRuntime,
   createPendingLabAttempt,
   executeLabIntents,
+  fingerprintCreepSnapshot,
   projectLabTelemetry,
   settleLabComposition,
+  type BoostManifest,
   type LabCommandIntent,
   type ReactionObjective,
 } from "../src/industry";
-import type { WorldSnapshot } from "../src/world/snapshot";
+import type { CreepSnapshot, WorldSnapshot } from "../src/world/snapshot";
 
 const reactions = { H: { O: "OH" } };
 const reactionTimes = { OH: 10 };
@@ -251,7 +253,47 @@ describe("composed lab runtime", () => {
     expect(JSON.stringify(reordered.policy)).toBe(JSON.stringify(ready.policy));
   });
 
-  it("keeps assignment handoff closed for pending effects, mineral stock, and changed roles", () => {
+  it("durably rebinds one reaction around a mineral-only external lab", () => {
+    const objectiveValue = { ...objective("forward"), amount: 30 };
+    const first = composeHandoff(handoffWorld(100), objectiveValue);
+    const previous = required(first.policy.commitments[0]);
+    if (previous.kind !== "reaction") throw new Error("expected reaction commitment");
+
+    const pending = composeHandoff(
+      withExternalMineral(handoffWorld(101, true), 100),
+      objectiveValue,
+      [{ ...previous, settledAmount: 5 }],
+    );
+    expect(pending.intents).toEqual([]);
+    expect(pending.policy.commitments).toEqual([
+      {
+        ...previous,
+        assignmentFingerprint: pending.assignments[0]?.fingerprint,
+        settledAmount: 5,
+      },
+    ]);
+    expect(pending.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      status: "pending",
+      targetLabId: "external",
+    });
+
+    const durable = roundTrip(pending.policy.commitments);
+    const ready = composeHandoff(
+      withExternalMineral(handoffWorld(102), 100),
+      objectiveValue,
+      durable,
+    );
+    const reordered = composeHandoff(
+      withExternalMineral(handoffWorld(102, true), 100),
+      objectiveValue,
+      durable,
+    );
+    expect(ready.migrationRooms[0]?.assignmentHandoff?.status).toBe("ready");
+    expect(ready.intents).toEqual([expect.objectContaining({ kind: "lab.run-reaction" })]);
+    expect(JSON.stringify(reordered.policy)).toBe(JSON.stringify(ready.policy));
+  });
+
+  it("keeps assignment handoff closed for pending effects, mixed stock, and changed roles", () => {
     const objectiveValue = { ...objective("forward"), amount: 30 };
     const first = composeHandoff(handoffWorld(100), objectiveValue);
     const previous = required(first.policy.commitments[0]);
@@ -260,11 +302,41 @@ describe("composed lab runtime", () => {
     expect(pending.migrationRooms[0]?.assignmentHandoff).toBeNull();
     expect(pending.policy.commitments).toEqual([previous]);
 
-    const stocked = composeHandoff(withExternalMineral(handoffWorld(101), 100), objectiveValue, [
-      previous,
-    ]);
+    const stocked = composeHandoff(
+      withExternalMixedStock(handoffWorld(101), 100, 100),
+      objectiveValue,
+      [previous],
+    );
     expect(stocked.migrationRooms[0]?.assignmentHandoff).toBeNull();
     expect(stocked.policy.commitments).toEqual([previous]);
+
+    const malformedWorld = withExternalMineral(handoffWorld(101), 100);
+    const malformedRoom = required(malformedWorld.ownedRooms[0]);
+    const malformed = composeHandoff(
+      {
+        ...malformedWorld,
+        ownedRooms: [
+          {
+            ...malformedRoom,
+            ownedLabs: (malformedRoom.ownedLabs ?? []).map((lab) =>
+              lab.id === "external"
+                ? { ...lab, store: { ...lab.store, usedCapacity: lab.store.usedCapacity + 1 } }
+                : lab,
+            ),
+          },
+        ],
+      },
+      objectiveValue,
+      [previous],
+    );
+    expect(malformed.migrationRooms[0]?.assignmentHandoff).toBeNull();
+
+    const boost = withBoostCandidate(withExternalMineral(handoffWorld(101), 100));
+    const boostActive = composeHandoff(boost.snapshot, objectiveValue, [previous], [], undefined, [
+      boost.manifest,
+    ]);
+    expect(boostActive.migrationRooms[0]?.assignmentHandoff).toBeNull();
+    expect(boostActive.policy.commitments).toEqual([expect.objectContaining({ kind: "boost" })]);
 
     const changedRoles = composeHandoff(
       handoffWorld(101),
@@ -405,6 +477,7 @@ function composeHandoff(
   previousCommitments = [] as ReturnType<typeof composeLabRuntime>["policy"]["commitments"],
   pendingAttempts = [] as Parameters<typeof composeLabRuntime>[0]["pendingAttempts"],
   committedLabIds?: readonly string[],
+  boostManifests = [] as readonly BoostManifest[],
 ) {
   const labs = required(snapshot.ownedRooms[0]?.ownedLabs);
   const committed =
@@ -412,6 +485,7 @@ function composeHandoff(
       ? labs.filter(({ id }) => id !== "external")
       : labs.filter(({ id }) => committedLabIds.includes(id));
   return composeLabRuntime({
+    boostManifests,
     committedLabLayouts: [
       {
         labPositions: [
@@ -422,7 +496,10 @@ function composeHandoff(
         roomName: "W1N1",
       },
     ],
-    fundedBudgetIds: new Set([reactionObjective.industryBudgetId]),
+    fundedBudgetIds: new Set([
+      reactionObjective.industryBudgetId,
+      ...boostManifests.map(({ industryBudgetId }) => industryBudgetId),
+    ]),
     pendingAttempts,
     policy: buildRuntimeConfig().policy.industry,
     previousCommitments,
@@ -547,6 +624,95 @@ function withExternalMineral(snapshot: WorldSnapshot, mineralAmount: number): Wo
         ),
       },
     ],
+  };
+}
+
+function withExternalMixedStock(
+  snapshot: WorldSnapshot,
+  energy: number,
+  mineralAmount: number,
+): WorldSnapshot {
+  const room = required(snapshot.ownedRooms[0]);
+  return {
+    ...snapshot,
+    ownedRooms: [
+      {
+        ...room,
+        ownedLabs: (room.ownedLabs ?? []).map((value) =>
+          value.id === "external"
+            ? {
+                ...value,
+                energy,
+                mineralAmount,
+                mineralType: "Z",
+                store: {
+                  ...value.store,
+                  capacity: null,
+                  freeCapacity: null,
+                  resources: [
+                    { amount: energy, resourceType: "energy" },
+                    { amount: mineralAmount, resourceType: "Z" },
+                  ],
+                  usedCapacity: energy + mineralAmount,
+                },
+              }
+            : value,
+        ),
+      },
+    ],
+  };
+}
+
+function withBoostCandidate(snapshot: WorldSnapshot): {
+  readonly manifest: BoostManifest;
+  readonly snapshot: WorldSnapshot;
+} {
+  const room = required(snapshot.ownedRooms[0]);
+  const none = { active: 0, boosted: 0, total: 0 };
+  const creep: CreepSnapshot = {
+    body: {
+      activeParts: 1,
+      attack: { active: 1, boosted: 0, total: 1 },
+      carry: none,
+      claim: none,
+      heal: none,
+      move: none,
+      rangedAttack: none,
+      size: 1,
+      tough: none,
+      work: none,
+    },
+    boosts: [],
+    fatigue: 0,
+    hits: 100,
+    hitsMax: 100,
+    id: "boost-creep",
+    name: "boost-creep",
+    ownerUsername: "me",
+    pos: { roomName: "W1N1", x: 20, y: 20 },
+    spawning: false,
+    store: { capacity: 0, freeCapacity: 0, resources: [], usedCapacity: 0 },
+    ticksToLive: 1_000,
+  };
+  return {
+    manifest: {
+      colonyId: "W1N1",
+      compound: "OH",
+      creepFingerprint: fingerprintCreepSnapshot(creep),
+      creepId: creep.id,
+      deadline: 110,
+      funded: true,
+      id: "boost",
+      industryBudgetId: "budget/boost",
+      partCount: 1,
+      partType: "attack",
+      priority: 100,
+      revision: 1,
+    },
+    snapshot: {
+      ...snapshot,
+      ownedRooms: [{ ...room, ownedCreeps: [creep] }],
+    },
   };
 }
 
