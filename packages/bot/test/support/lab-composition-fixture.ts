@@ -62,10 +62,45 @@ export function composeBoostHandoffFixture(
   pendingAttempts: readonly PendingLabAttempt[] = [],
   terminalSendRoomNames?: ReadonlySet<string>,
 ) {
+  return composeHandoffFixture(
+    snapshot,
+    [],
+    [manifest],
+    previousCommitments,
+    pendingAttempts,
+    terminalSendRoomNames,
+  );
+}
+
+export function composeReactionHandoffFixture(
+  snapshot: WorldSnapshot,
+  objective: ReactionObjective,
+  previousCommitments: readonly LabPolicyCommitment[] = [],
+  pendingAttempts: readonly PendingLabAttempt[] = [],
+  terminalSendRoomNames?: ReadonlySet<string>,
+) {
+  return composeHandoffFixture(
+    snapshot,
+    [objective],
+    [],
+    previousCommitments,
+    pendingAttempts,
+    terminalSendRoomNames,
+  );
+}
+
+function composeHandoffFixture(
+  snapshot: WorldSnapshot,
+  reactionObjectives: readonly ReactionObjective[],
+  boostManifests: readonly BoostManifest[],
+  previousCommitments: readonly LabPolicyCommitment[],
+  pendingAttempts: readonly PendingLabAttempt[],
+  terminalSendRoomNames?: ReadonlySet<string>,
+) {
   const labs = snapshot.ownedRooms[0]?.ownedLabs;
-  if (labs === undefined) throw new Error("expected boost-handoff labs");
+  if (labs === undefined) throw new Error("expected handoff labs");
   return composeLabRuntime({
-    boostManifests: [manifest],
+    boostManifests,
     committedLabLayouts: [
       {
         labPositions: [
@@ -76,11 +111,14 @@ export function composeBoostHandoffFixture(
         roomName: "W1N1",
       },
     ],
-    fundedBudgetIds: new Set([manifest.industryBudgetId]),
+    fundedBudgetIds: new Set([
+      ...reactionObjectives.map(({ industryBudgetId }) => industryBudgetId),
+      ...boostManifests.map(({ industryBudgetId }) => industryBudgetId),
+    ]),
     pendingAttempts,
     policy: buildRuntimeConfig().policy.industry,
     previousCommitments,
-    reactionObjectives: [],
+    reactionObjectives,
     reactions: { H: { O: "OH" } },
     reactionTimes: { OH: 10 },
     snapshot,

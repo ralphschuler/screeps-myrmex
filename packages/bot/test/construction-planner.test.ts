@@ -36,7 +36,10 @@ import { ConstructionPlanner, DEFAULT_CONSTRUCTION_MAINTENANCE_POLICY } from "..
 import type { RoomSnapshot, StructureSnapshot, WorldSnapshot } from "../src/world/snapshot";
 import {
   composeBoostHandoffFixture,
+  composeReactionHandoffFixture,
   labBoostHandoffFixtureWorld,
+  labFixtureObjective,
+  labHandoffFixtureWorld,
 } from "./support/lab-composition-fixture";
 
 describe("ConstructionPlanner", () => {
@@ -1234,22 +1237,30 @@ describe("ConstructionPlanner", () => {
         targetStructureType: "lab",
       }),
     ]);
-    for (const activeMigration of [
-      activeReactionLabMigration(completeFixture),
-      activeBoostLabMigration(completeFixture, ["commitment"]),
-    ])
-      expect(
-        planMigration({
-          activeLogisticsFlowIds: new Set(),
-          activeLogisticsTargetIds: new Set(),
-          colony: completeFixture.colony,
-          labEvacuation: evacuation,
-          labMigration: activeMigration,
-          logisticsEvidenceReady: true,
-          placements: completeFixture.placements,
-          room: completeFixture.room,
-        }).proposals,
-      ).toEqual([]);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: completeFixture.colony,
+        labEvacuation: evacuation,
+        labMigration: activeReactionLabMigration(completeFixture),
+        logisticsEvidenceReady: true,
+        placements: completeFixture.placements,
+        room: completeFixture.room,
+      }).proposals,
+    ).toEqual([expect.objectContaining({ targetId: "lab-external" })]);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: completeFixture.colony,
+        labEvacuation: evacuation,
+        labMigration: activeBoostLabMigration(completeFixture, ["commitment"]),
+        logisticsEvidenceReady: true,
+        placements: completeFixture.placements,
+        room: completeFixture.room,
+      }).proposals,
+    ).toEqual([]);
   });
 
   it("evacuates energy from an obsolete lab while a rebound reaction remains active", () => {
@@ -1814,6 +1825,146 @@ describe("ConstructionPlanner", () => {
     ).toMatchObject({ labEvacuation: null, proposals: [] });
   });
 
+  it("keeps a real pending reaction mixed-terminal evacuation funded while blocking removal", () => {
+    const seed = labHandoffFixtureWorld(100);
+    const retained = (seed.ownedRooms[0]?.ownedLabs ?? []).filter(({ id }) => id !== "external");
+    const retainedAssignment = assignLabCluster({
+      labs: retained,
+      layoutFingerprint: fingerprintLabLayout("W1N1", retained),
+      limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
+      roomName: "W1N1",
+    }).assignment;
+    if (retainedAssignment === null) throw new Error("expected retained reaction assignment");
+    const replacementId = [
+      ...retainedAssignment.reagentLabIds,
+      ...retainedAssignment.productLabIds,
+      ...retainedAssignment.boostLabIds,
+    ].sort()[0];
+    if (replacementId === undefined) throw new Error("expected reaction replacement lab");
+    const objective = { ...labFixtureObjective("forward"), amount: 30 };
+    const first = composeReactionHandoffFixture(
+      reactionTerminalSnapshot(100, false, 0, 0, 0, replacementId, 1_000),
+      objective,
+    );
+    const previous = first.policy.commitments[0];
+    if (previous?.kind !== "reaction") throw new Error("expected reaction commitment");
+
+    const rebound = composeReactionHandoffFixture(
+      reactionTerminalSnapshot(101, true, 100, 100, 0, replacementId, 1_000),
+      objective,
+      [{ ...previous, settledAmount: 5 }],
+      [],
+      new Set(),
+    );
+    expect(rebound.migrationRooms[0]?.assignmentHandoff?.status).toBe("pending");
+    expect(rebound.migrationRooms[0]?.evacuationTerminalId).toBeNull();
+    const durable = JSON.parse(
+      JSON.stringify(rebound.policy.commitments),
+    ) as typeof rebound.policy.commitments;
+    const readyWorld = reactionTerminalSnapshot(102, false, 100, 100, 0, replacementId, 1_000);
+    const ready = composeReactionHandoffFixture(readyWorld, objective, durable, [], new Set());
+    expect(ready.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      kind: "reaction",
+      status: "ready",
+      targetLabId: "external",
+    });
+    expect(ready.migrationRooms[0]?.evacuationTerminalId).toBe("terminal");
+    const intent = ready.intents[0];
+    if (intent === undefined) throw new Error("expected retained reaction intent");
+    const attempt = createPendingLabAttempt(intent, "OK");
+    if (attempt === null) throw new Error("expected pending reaction attempt");
+
+    const evacuation = {
+      destinationId: "terminal",
+      destinationInitialAmount: 0,
+      destinationStructureType: "terminal" as const,
+      energyAmount: 100,
+      expiresAt: 252,
+      mineralAmount: 100,
+      replacementId,
+      replacementInitialEnergy: 1_000,
+      resourceType: "Z",
+      sourceId: "external",
+      startedAt: 102,
+    };
+    const record = {
+      algorithmRevision: "owned-room-layout-v2-source-services",
+      anchor: { roomName: "W1N1", x: 25, y: 25 },
+      blockers: [],
+      committedAt: 1,
+      fingerprint: "layout-commitment",
+      labEvacuation: evacuation,
+      roomName: "W1N1",
+      transform: 0,
+    } as const;
+    const partialWorld = reactionTerminalSnapshot(103, true, 40, 60, 40, replacementId, 1_060);
+    const partial = composeReactionHandoffFixture(
+      partialWorld,
+      objective,
+      durable,
+      [attempt],
+      new Set(),
+    );
+    expect(partial.migrationRooms[0]?.activity).toContain("pending-attempt");
+    expect(partial.migrationRooms[0]?.evacuationTerminalId).toBe("terminal");
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: partial.migrationRooms,
+        records: [record],
+        snapshot: logisticsLabSnapshot(partialWorld),
+        tick: 103,
+      }).authorizedFlowIds,
+    ).toHaveLength(2);
+
+    const completeWorld = reactionTerminalSnapshot(103, false, 0, 0, 100, replacementId, 1_100);
+    const completeComposition = composeReactionHandoffFixture(
+      completeWorld,
+      objective,
+      durable,
+      [attempt],
+      new Set(),
+    );
+    const completeMigration = completeComposition.migrationRooms[0];
+    if (completeMigration === undefined) throw new Error("expected pending reaction migration");
+    expect(completeMigration.activity).toContain("pending-attempt");
+    const completeRoom = completeWorld.ownedRooms[0];
+    if (completeRoom === undefined) throw new Error("expected complete reaction room");
+    const room = {
+      ...migrationRoom(),
+      ...completeRoom,
+      constructionSites: [],
+      controller: { level: 8, ownership: "owned" as const },
+      hostileCreeps: [],
+      name: "W1N1",
+      observedAt: 103,
+      structures: (completeRoom.ownedLabs ?? []).map((value) =>
+        structure(value.id, "lab", value.hits, value.hitsMax, value.pos.x, value.pos.y),
+      ),
+    } as unknown as RoomSnapshot;
+    const placements = [
+      ...retained.map(({ pos }) => ({
+        ...placement("lab", pos.x, pos.y),
+        adoption: "exact" as const,
+        minimumRcl: 6,
+      })),
+      { ...placement("lab", 13, 12), minimumRcl: 6 },
+    ];
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: labTerminalEvacuationFixture(0, 100, 160, 103).colony,
+        commitment: { ...migrationCommitment, fingerprint: "layout-commitment" },
+        labEvacuation: evacuation,
+        labMigration: completeMigration,
+        logisticsEvidenceReady: true,
+        placements,
+        room,
+      }),
+    ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+  });
+
   it("carries a real boost handoff through V14 persistence and partial logistics", () => {
     const initial = labBoostHandoffFixtureWorld(100);
     const first = composeBoostHandoffFixture(initial.snapshot, initial.manifest);
@@ -2048,6 +2199,167 @@ describe("ConstructionPlanner", () => {
         room: completeFixture.room,
       }).proposals,
     ).toEqual([]);
+  });
+
+  it("evacuates mixed stock through an idle terminal while a rebound reaction remains active", () => {
+    const fixture = labTerminalEvacuationFixture(750, 1_000, 10_000, 100, undefined, 500, 250);
+    const staged = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: fixture.colony,
+      labMigration: activeReactionLabMigration(fixture),
+      logisticsEvidenceReady: true,
+      placements: fixture.placements,
+      room: fixture.room,
+    });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.labEvacuation).toEqual({
+      destinationId: "terminal",
+      destinationInitialAmount: 1_000,
+      destinationStructureType: "terminal",
+      energyAmount: 500,
+      expiresAt: 250,
+      mineralAmount: 750,
+      replacementId: fixture.replacementId,
+      replacementInitialEnergy: 250,
+      resourceType: "XGH2O",
+      sourceId: "lab-external",
+      startedAt: 100,
+    });
+    const evacuation = staged.labEvacuation;
+    if (evacuation === null || !("energyAmount" in evacuation))
+      throw new Error("expected active mixed terminal evacuation");
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", migrationCommitment);
+    owner = persistLayoutLabEvacuation(owner, "W1N1", evacuation);
+    owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
+    const persisted = owner.records[0]?.labEvacuation;
+    if (persisted === undefined) throw new Error("expected persisted active mixed terminal record");
+    const flowIds = layoutLabEvacuationFlowIds("W1N1", persisted);
+    if (flowIds === null || flowIds.length !== 2)
+      throw new Error("expected active mixed terminal flow pair");
+
+    const following = labTerminalEvacuationFixture(
+      750,
+      1_000,
+      10_000,
+      101,
+      fixture.replacementId,
+      500,
+      250,
+    );
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [activeReactionLabMigration(following)],
+        records: owner.records,
+        snapshot: { rooms: [following.room] } as unknown as WorldSnapshot,
+        tick: 101,
+      }),
+    ).toMatchObject({
+      authorizedFlowIds: flowIds,
+      budgets: [expect.any(Object), expect.any(Object)],
+      demands: {
+        edges: [
+          expect.objectContaining({ id: flowIds[0], maximumAmount: 500 }),
+          expect.objectContaining({ id: flowIds[1], maximumAmount: 750 }),
+        ],
+      },
+    });
+
+    const partial = labTerminalEvacuationFixture(
+      300,
+      1_450,
+      10_450,
+      102,
+      fixture.replacementId,
+      200,
+      550,
+    );
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(flowIds),
+        activeLogisticsTargetIds: new Set(["lab-external", fixture.replacementId, "terminal"]),
+        colony: partial.colony,
+        labEvacuation: JSON.parse(JSON.stringify(persisted)) as typeof evacuation,
+        labMigration: activeReactionLabMigration(partial),
+        logisticsEvidenceReady: true,
+        placements: [...partial.placements].reverse(),
+        room: {
+          ...partial.room,
+          ownedLabs: [...(partial.room.ownedLabs ?? [])].reverse(),
+          ownedTerminals: [...(partial.room.ownedTerminals ?? [])].reverse(),
+          structures: [...(partial.room.structures ?? [])].reverse(),
+        },
+      }),
+    ).toMatchObject({ labEvacuation: evacuation, proposals: [] });
+
+    const completeFixture = labTerminalEvacuationFixture(
+      0,
+      1_750,
+      10_750,
+      103,
+      fixture.replacementId,
+      0,
+      750,
+    );
+    const completeMigration = activeReactionLabMigration(completeFixture);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set([flowIds[0] ?? ""]),
+        activeLogisticsTargetIds: new Set(),
+        colony: completeFixture.colony,
+        labEvacuation: evacuation,
+        labMigration: completeMigration,
+        logisticsEvidenceReady: true,
+        placements: completeFixture.placements,
+        room: completeFixture.room,
+      }).proposals,
+    ).toEqual([]);
+    const complete = planMigration({
+      activeLogisticsFlowIds: new Set(),
+      activeLogisticsTargetIds: new Set(),
+      colony: completeFixture.colony,
+      labEvacuation: evacuation,
+      labMigration: completeMigration,
+      logisticsEvidenceReady: true,
+      placements: completeFixture.placements,
+      room: completeFixture.room,
+    });
+    expect(complete.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: fixture.replacementId,
+        targetId: "lab-external",
+      }),
+    ]);
+    expect(complete.proposals[0]?.stableId).toContain("remove-active-reaction-lab-v1");
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: completeFixture.colony,
+        labEvacuation: evacuation,
+        labMigration: {
+          ...completeMigration,
+          activity: ["commitment", "intent", "pending-attempt"],
+        },
+        logisticsEvidenceReady: true,
+        placements: completeFixture.placements,
+        room: completeFixture.room,
+      }).proposals,
+    ).toEqual([]);
+
+    const boost = labTerminalEvacuationFixture(750, 1_000, 10_000, 100, undefined, 500, 250);
+    expect(
+      planMigration({
+        activeLogisticsFlowIds: new Set(),
+        activeLogisticsTargetIds: new Set(),
+        colony: boost.colony,
+        labMigration: activeBoostLabMigration(boost),
+        logisticsEvidenceReady: true,
+        placements: boost.placements,
+        room: boost.room,
+      }),
+    ).toMatchObject({ labEvacuation: null, proposals: [] });
   });
 
   it("persists and completes one mineral-only quiescent-lab evacuation into active storage", () => {
@@ -4492,6 +4804,80 @@ function labTerminalEvacuationFixture(
       ownedStorages: [],
       ownedTerminals: [terminal],
     } as RoomSnapshot,
+  };
+}
+
+function reactionTerminalSnapshot(
+  tick: number,
+  reversed: boolean,
+  targetEnergy: number,
+  targetMineral: number,
+  terminalMineral: number,
+  replacementId: string,
+  replacementEnergy: number,
+): WorldSnapshot {
+  const snapshot = labHandoffFixtureWorld(tick, reversed);
+  const room = snapshot.ownedRooms[0];
+  const storage = room?.ownedStorages?.[0];
+  if (room === undefined || storage === undefined)
+    throw new Error("expected reaction terminal world");
+  const terminalUsed = storage.store.usedCapacity + terminalMineral;
+  return {
+    ...snapshot,
+    ownedRooms: [
+      {
+        ...room,
+        ownedLabs: (room.ownedLabs ?? []).map((value) => {
+          if (value.id === "external")
+            return {
+              ...value,
+              energy: targetEnergy,
+              mineralAmount: targetMineral,
+              mineralType: targetMineral === 0 ? null : "Z",
+              store: {
+                capacity: 5_000,
+                freeCapacity: 5_000 - targetEnergy - targetMineral,
+                resources: [
+                  ...(targetEnergy === 0 ? [] : [{ amount: targetEnergy, resourceType: "energy" }]),
+                  ...(targetMineral === 0 ? [] : [{ amount: targetMineral, resourceType: "Z" }]),
+                ],
+                usedCapacity: targetEnergy + targetMineral,
+              },
+            };
+          if (value.id !== replacementId) return value;
+          return {
+            ...value,
+            energy: replacementEnergy,
+            store: {
+              ...value.store,
+              freeCapacity: 5_000 - replacementEnergy - value.mineralAmount,
+              resources: [
+                { amount: replacementEnergy, resourceType: "energy" },
+                ...value.store.resources.filter(({ resourceType }) => resourceType !== "energy"),
+              ],
+              usedCapacity: replacementEnergy + value.mineralAmount,
+            },
+          };
+        }),
+        ownedStorages: [],
+        ownedTerminals: [
+          {
+            ...storage,
+            cooldown: 0,
+            id: "terminal",
+            store: {
+              capacity: 300_000,
+              freeCapacity: 300_000 - terminalUsed,
+              resources: [
+                ...storage.store.resources,
+                ...(terminalMineral === 0 ? [] : [{ amount: terminalMineral, resourceType: "Z" }]),
+              ],
+              usedCapacity: terminalUsed,
+            },
+          },
+        ],
+      },
+    ],
   };
 }
 

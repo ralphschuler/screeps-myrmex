@@ -729,16 +729,20 @@ describe("composed lab runtime", () => {
     expect(JSON.stringify(reordered.policy)).toBe(JSON.stringify(ready.policy));
   });
 
-  it("durably rebinds one reaction around a mixed-stock external lab", () => {
+  it("publishes an idle terminal for one durable mixed-stock reaction handoff", () => {
     const objectiveValue = { ...objective("forward"), amount: 30 };
     const first = composeHandoff(handoffWorld(100), objectiveValue);
     const previous = required(first.policy.commitments[0]);
     if (previous.kind !== "reaction") throw new Error("expected reaction commitment");
 
     const pending = composeHandoff(
-      withExternalMixedStock(handoffWorld(101, true), 100, 100),
+      withTerminalOnly(withExternalMixedStock(handoffWorld(101, true), 100, 100)),
       objectiveValue,
       [{ ...previous, settledAmount: 5 }],
+      [],
+      undefined,
+      [],
+      new Set(),
     );
     expect(pending.intents).toEqual([]);
     expect(pending.policy.commitments).toEqual([
@@ -752,21 +756,37 @@ describe("composed lab runtime", () => {
       status: "pending",
       targetLabId: "external",
     });
+    expect(pending.migrationRooms[0]?.evacuationTerminalId).toBeNull();
 
     const durable = roundTrip(pending.policy.commitments);
-    const ready = composeHandoff(
-      withExternalMixedStock(handoffWorld(102), 100, 100),
-      objectiveValue,
-      durable,
-    );
+    const readyWorld = withTerminalOnly(withExternalMixedStock(handoffWorld(102), 100, 100));
+    const ready = composeHandoff(readyWorld, objectiveValue, durable, [], undefined, [], new Set());
     const reordered = composeHandoff(
-      withExternalMixedStock(handoffWorld(102, true), 100, 100),
+      withTerminalOnly(withExternalMixedStock(handoffWorld(102, true), 100, 100)),
       objectiveValue,
       durable,
+      [],
+      undefined,
+      [],
+      new Set(),
     );
-    expect(ready.migrationRooms[0]?.assignmentHandoff?.status).toBe("ready");
+    expect(ready.migrationRooms[0]).toMatchObject({
+      evacuationStorageId: null,
+      evacuationTerminalId: "terminal",
+      quiescent: false,
+    });
+    expect(ready.migrationRooms[0]?.assignmentHandoff).toMatchObject({
+      kind: "reaction",
+      status: "ready",
+      targetLabId: "external",
+    });
     expect(ready.intents).toEqual([expect.objectContaining({ kind: "lab.run-reaction" })]);
     expect(JSON.stringify(reordered.policy)).toBe(JSON.stringify(ready.policy));
+    expect(reordered.migrationRooms[0]?.evacuationTerminalId).toBe("terminal");
+    expect(
+      composeHandoff(readyWorld, objectiveValue, durable, [], undefined, [], new Set(["W1N1"]))
+        .migrationRooms[0]?.evacuationTerminalId,
+    ).toBeNull();
   });
 
   it("keeps assignment handoff closed for pending effects, malformed stock, and changed roles", () => {

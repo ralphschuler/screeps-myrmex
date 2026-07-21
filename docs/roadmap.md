@@ -175,9 +175,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   Issue #347 extends the same mineral-only V14 destination to an exact `ready` boost handoff while
   current boost intents and pending effects continue to block removal. Issue #349 composes the
   quiescent mixed form with that terminal destination: energy still moves to the retained lab,
-  mineral moves to the terminal, and both flows must admit and settle atomically. Autonomous boost
-  manifest production, active-work mixed terminal destinations, general multi-step migration,
-  defensive migration, and creep dismantling remain issue #99.
+  mineral moves to the terminal, and both flows must admit and settle atomically. Issue #351 reuses
+  that mixed V14 destination during one exact durable `ready` reaction handoff while retained labs
+  continue work. Autonomous boost manifest production, mixed-terminal boost work, general multi-
+  step migration, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
