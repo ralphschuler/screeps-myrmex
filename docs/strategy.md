@@ -120,12 +120,15 @@ fingerprint before any reaction, migration, or destroy command. An empty target 
 positive energy-only target first reuses the existing V13 evacuation: one funded optional-growth
 creep flow moves the exact amount to the canonical retained lab while reaction work continues, and
 removal waits for fresh target emptiness, baseline-plus-amount replacement energy, retired
-flow/endpoints, unchanged handoff evidence, and no pending reaction attempt. Pending predecessor
-effects settle first; the objective and settled amount never restart. A uniquely reconstructible
-durable rebound is held without staging, reaction, removal, or layout revision while retained-lab
-staging or source-layout evidence is unavailable. Terminal-only, mineral/mixed-stock active,
-contaminated, cooling, boost-assigned, ambiguous, malformed, capacity-lost, cluster-breaking, or
-pressured labs remain.
+flow/endpoints, unchanged handoff evidence, and no pending reaction attempt. A zero-energy target
+holding one mineral kind instead reuses the V13 mineral evacuation and exact active storage: one
+funded flow moves the complete amount under aggregate capacity, and removal waits for the exact
+storage gain, retired flow/endpoints, unchanged destination/handoff evidence, and no pending
+attempt. Pending predecessor effects settle first; the objective and settled amount never restart. A
+uniquely reconstructible durable rebound is held without staging, reaction, removal, or layout
+revision while retained-lab staging or source-layout evidence is unavailable. Terminal-only,
+mixed-stock active, contaminated, cooling, boost-assigned, ambiguous, malformed, capacity-lost,
+cluster-breaking, or pressured labs remain.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

@@ -80,7 +80,7 @@ export function projectLayoutLabEvacuations(input: {
     const activeReaction =
       migration === undefined || shape === null
         ? false
-        : activeReactionEnergyMigration(record, migration, evacuation, shape);
+        : activeReactionMigration(record, migration, evacuation, shape);
     if (
       room?.controller?.ownership !== "owned" ||
       room.observedAt !== input.tick ||
@@ -338,7 +338,7 @@ function quiescentMigration(migration: LabMigrationRoomView): boolean {
   return migration.quiescent && migration.activity.length === 0;
 }
 
-function activeReactionEnergyMigration(
+function activeReactionMigration(
   record: LayoutRecord,
   migration: LabMigrationRoomView,
   evacuation: LayoutLabEvacuation,
@@ -350,9 +350,8 @@ function activeReactionEnergyMigration(
     current === null ||
     migration.quiescent ||
     !migration.activity.includes("commitment") ||
-    shape.energyAmount <= 0 ||
-    shape.mineralAmount !== 0 ||
-    "resourceType" in evacuation ||
+    Number(shape.energyAmount > 0) + Number(shape.mineralAmount > 0) !== 1 ||
+    "energyAmount" in evacuation ||
     handoff?.status !== "ready" ||
     handoff.targetLabId !== evacuation.sourceId ||
     handoff.layoutFingerprint !== record.fingerprint ||
