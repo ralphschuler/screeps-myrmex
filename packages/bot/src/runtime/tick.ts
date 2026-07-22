@@ -137,7 +137,7 @@ import {
   layoutLabEvacuationFlowIds,
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationFlowId,
-  layoutStorageEvacuationFlowId,
+  layoutStorageEvacuationFlowIds,
   layoutTerminalEvacuationFlowIds,
   parseLayoutsOwner,
   persistLayoutCommitment,
@@ -167,7 +167,7 @@ import {
   type LayoutRecord,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV21,
+  type LayoutsOwnerV22,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -203,7 +203,11 @@ import {
   authorizedLayoutSpawnEvacuationBudgets,
   projectLayoutSpawnEvacuations,
 } from "../logistics/spawn-evacuation";
-import { projectLayoutStorageEvacuations } from "../logistics/storage-evacuation";
+import {
+  authorizeLayoutStorageEvacuationFlowIds,
+  completeExecutableLayoutStorageEvacuationFlowIds,
+  projectLayoutStorageEvacuations,
+} from "../logistics/storage-evacuation";
 import {
   completeExecutableLayoutTerminalEvacuationFlowIds,
   projectLayoutTerminalEvacuations,
@@ -484,7 +488,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV21 | null;
+  owner: LayoutsOwnerV22 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -2702,7 +2706,7 @@ function mergeLeaseAgentPlans(left: LeaseAgentPlan, right: LeaseAgentPlan): Leas
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV21 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV22 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2715,14 +2719,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV21 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV22 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV21["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV22["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -3216,10 +3220,17 @@ function colonyDirectorSystem(
       const projectedStorageEvacuationFlowIds = new Set(
         layoutStorageEvacuations.demands.edges.map(({ id }) => id),
       );
-      const logisticsExecutableStorageEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
-        projectedStorageEvacuationFlowIds,
-        logistics,
-      );
+      const logisticsExecutableStorageEvacuationFlowIds =
+        projectedStorageEvacuationFlowIds.size === 0
+          ? new Set<string>()
+          : completeExecutableLayoutStorageEvacuationFlowIds({
+              executableFlowIds: currentlyExecutableLogisticsFlowIds(
+                projectedStorageEvacuationFlowIds,
+                logistics,
+              ),
+              projectedFlowIds: projectedStorageEvacuationFlowIds,
+              records: layoutRecords,
+            });
       const projectedTerminalEvacuationFlowIds = new Set(
         layoutTerminalEvacuations.demands.edges.map(({ id }) => id),
       );
@@ -3454,15 +3465,20 @@ function colonyDirectorSystem(
           category === "optional-growth" && status === "active" ? [issuer] : [],
         ),
       );
-      const executableStorageEvacuationFlowIds = new Set(
+      const fundedStorageEvacuationFlowIds = new Set(
         layoutStorageEvacuations.demands.edges.flatMap(({ budgetBinding, id }) =>
-          logisticsExecutableStorageEvacuationFlowIds.has(id) &&
           budgetBinding !== undefined &&
           activeStorageEvacuationBudgetIssuers.has(budgetBinding.issuer)
             ? [id]
             : [],
         ),
       );
+      const executableStorageEvacuationFlowIds = authorizeLayoutStorageEvacuationFlowIds({
+        fundedFlowIds: fundedStorageEvacuationFlowIds,
+        logisticsExecutableFlowIds: logisticsExecutableStorageEvacuationFlowIds,
+        projectedFlowIds: projectedStorageEvacuationFlowIds,
+        records: layoutRecords,
+      });
       const activeTerminalEvacuationBudgetIssuers = new Set(
         session.result.reservations.flatMap(({ category, issuer, status }) =>
           category === "optional-growth" && status === "active" ? [issuer] : [],
@@ -3587,8 +3603,7 @@ function persistedLayoutStorageEvacuationFlowIds(
   return new Set(
     owner.records.flatMap(({ roomName, storageEvacuation }) => {
       if (storageEvacuation === undefined) return [];
-      const id = layoutStorageEvacuationFlowId(roomName, storageEvacuation);
-      return id === null ? [] : [id];
+      return layoutStorageEvacuationFlowIds(roomName, storageEvacuation) ?? [];
     }),
   );
 }
@@ -3716,7 +3731,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV21["records"][number] | undefined;
+  readonly record: LayoutsOwnerV22["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -3743,7 +3758,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV21 | null,
+  owner: LayoutsOwnerV22 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (

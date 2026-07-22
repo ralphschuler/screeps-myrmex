@@ -8,8 +8,10 @@ import {
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
   layoutStorageEvacuationFlowId,
+  layoutStorageEvacuationFlowIds,
   parseLayoutsOwner,
   persistLayoutCommitment,
+  persistLayoutStorageEvacuation,
   reconcileStructureDestroyExecution,
   type LayoutCommitment,
   type LayoutPlacement,
@@ -75,6 +77,15 @@ function store(capacity: number, usedCapacity = 0) {
     capacity,
     freeCapacity: capacity - usedCapacity,
     resources: usedCapacity === 0 ? [] : [{ amount: usedCapacity, resourceType: "energy" }],
+    usedCapacity,
+  };
+}
+function resourceStore(capacity: number, resources: readonly (readonly [string, number])[]) {
+  const usedCapacity = resources.reduce((total, [, amount]) => total + amount, 0);
+  return {
+    capacity,
+    freeCapacity: capacity - usedCapacity,
+    resources: resources.map(([resourceType, amount]) => ({ amount, resourceType })),
     usedCapacity,
   };
 }
@@ -334,7 +345,7 @@ describe("empty obsolete-storage relocation", () => {
 
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = reconcileStructureDestroyExecution(owner, execution, 100).owner;
-    expect(owner.schemaVersion).toBe(21);
+    expect(owner.schemaVersion).toBe(22);
     const parsed = parseLayoutsOwner(JSON.parse(JSON.stringify(owner)));
     if (parsed === null) throw new Error("expected valid storage removal receipt");
     owner = parsed;
@@ -395,6 +406,215 @@ describe("empty obsolete-storage relocation", () => {
       terminalId,
       terminalInitialAmount: 25_000,
     });
+  });
+
+  it("persists canonical mixed-resource terms across resource and structure reordering", () => {
+    const targetResources = [
+      ["energy", 2_000],
+      ["H", 1_000],
+    ] as const;
+    const terminalResources = [
+      ["energy", 25_000],
+      ["H", 500],
+    ] as const;
+    const forward = plan({
+      room: room({
+        target: storage({ store: resourceStore(1_000_000, targetResources) }),
+        terminals: [terminal({ store: resourceStore(300_000, terminalResources) })],
+      }),
+    });
+    const reversed = plan({
+      room: room({
+        target: storage({ store: resourceStore(1_000_000, [...targetResources].reverse()) }),
+        terminals: [terminal({ store: resourceStore(300_000, [...terminalResources].reverse()) })],
+      }),
+    });
+
+    expect(forward.proposals).toEqual([]);
+    expect(forward.storageEvacuation).toEqual({
+      expiresAt: 250,
+      resourceManifest: [
+        ["H", 1_000, 500],
+        ["energy", 2_000, 25_000],
+      ],
+      sourceId: targetId,
+      startedAt: 100,
+      terminalId,
+    });
+    expect(JSON.parse(JSON.stringify(reversed.storageEvacuation))).toEqual(
+      JSON.parse(JSON.stringify(forward.storageEvacuation)),
+    );
+  });
+
+  it("rejects over-kind, over-total, and aggregate terminal-capacity mixed stock", () => {
+    const overKinds = Array.from({ length: 9 }, (_, index) => [`R${String(index)}`, 1] as const);
+    const overTotal = [
+      ["H", 1_500],
+      ["energy", 1_501],
+    ] as const;
+    const noCapacity = [
+      ["H", 1_000],
+      ["energy", 2_000],
+    ] as const;
+    for (const result of [
+      plan({ room: room({ target: storage({ store: resourceStore(1_000_000, overKinds) }) }) }),
+      plan({ room: room({ target: storage({ store: resourceStore(1_000_000, overTotal) }) }) }),
+      plan({
+        room: room({
+          target: storage({ store: resourceStore(1_000_000, noCapacity) }),
+          terminals: [terminal({ store: store(300_000, 298_000) })],
+        }),
+      }),
+    ]) {
+      expect(result.proposals).toEqual([]);
+      expect(result.storageEvacuation).toBeNull();
+    }
+  });
+
+  it("resumes a mixed evacuation and waits for every flow and endpoint to retire", () => {
+    const staged = plan({
+      room: room({
+        target: storage({
+          store: resourceStore(1_000_000, [
+            ["H", 1_000],
+            ["energy", 2_000],
+          ]),
+        }),
+        terminals: [
+          terminal({
+            store: resourceStore(300_000, [
+              ["H", 500],
+              ["energy", 25_000],
+            ]),
+          }),
+        ],
+      }),
+    }).storageEvacuation;
+    if (staged === null) throw new Error("expected mixed storage evacuation");
+    const flowIds = layoutStorageEvacuationFlowIds(roomName, staged);
+    if (flowIds === null) throw new Error("expected bounded mixed storage flows");
+    const partiallyDelivered = room({
+      observedAt: 101,
+      target: storage({ store: resourceStore(1_000_000, [["energy", 2_000]]) }),
+      terminals: [
+        terminal({
+          store: resourceStore(300_000, [
+            ["H", 1_500],
+            ["energy", 25_000],
+          ]),
+        }),
+      ],
+    });
+    let resetOwner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    resetOwner = persistLayoutStorageEvacuation(resetOwner, roomName, staged);
+    const reconstructedOwner = parseLayoutsOwner(JSON.parse(JSON.stringify(resetOwner)));
+    const reconstructed = reconstructedOwner?.records[0]?.storageEvacuation;
+    if (reconstructed === undefined) throw new Error("expected reconstructed mixed evacuation");
+    expect(
+      plan({
+        activeFlowIds: new Set([flowIds[1] as string]),
+        room: partiallyDelivered,
+        storageEvacuation: reconstructed,
+      }),
+    ).toMatchObject({ blockers: [expect.objectContaining({ reason: "target-stocked" })] });
+
+    const delivered = room({
+      observedAt: 102,
+      target: storage(),
+      terminals: [
+        terminal({
+          store: resourceStore(300_000, [
+            ["energy", 27_000],
+            ["H", 1_500],
+          ]),
+        }),
+      ],
+    });
+    expect(
+      plan({
+        activeFlowIds: new Set([flowIds[1] as string]),
+        room: delivered,
+        storageEvacuation: staged,
+      }),
+    ).toMatchObject({ blockers: [expect.objectContaining({ reason: "evacuation-pending" })] });
+    const completed = plan({ room: delivered, storageEvacuation: staged });
+    expect(completed.proposals).toHaveLength(1);
+    expect(completed.proposals[0]?.stableId).toContain("remove-storage-v2");
+    if (completed.authorization === null) throw new Error("expected mixed removal authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [completed.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: completed.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveStore = (capacity: number, used: number) => ({
+      getCapacity: () => capacity,
+      getFreeCapacity: () => capacity - used,
+      getUsedCapacity: () => used,
+    });
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) =>
+        id === targetId
+          ? ({
+              destroy,
+              id: targetId,
+              isActive: () => true,
+              my: true,
+              pos: pos(30, 30),
+              room: liveRoom,
+              store: liveStore(1_000_000, 0),
+              structureType: "storage",
+            } as unknown as Structure)
+          : id === terminalId
+            ? ({
+                id: terminalId,
+                isActive: () => true,
+                my: true,
+                pos: pos(21, 20),
+                room: liveRoom,
+                store: liveStore(300_000, 28_500),
+                structureType: "terminal",
+              } as unknown as Structure)
+            : null,
+    });
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    owner = persistLayoutStorageEvacuation(owner, roomName, staged);
+    owner = reconcileStructureDestroyExecution(owner, execution, 102).owner;
+    const receipt = owner.records[0]?.removalReceipt;
+    if (receipt === undefined) throw new Error("expected mixed removal receipt");
+    expect(
+      plan({ removalReceipt: receipt, room: delivered, storageEvacuation: staged }).proposals,
+    ).toEqual([]);
+    const disappeared = plan({
+      removalReceipt: receipt,
+      room: room({ observedAt: 103, target: null }),
+      storageEvacuation: staged,
+    });
+    expect(disappeared).toMatchObject({ removalReceipt: null, storageEvacuation: null });
+    const finalRoom = room({ observedAt: 103, target: null });
+    expect(
+      diffOwnedRoomLayout({
+        colonyId: roomName,
+        commitment,
+        commitmentConflicted: false,
+        constructionSites: [],
+        observationFingerprint: "obs-103",
+        placements: [storagePlacement, terminalPlacement],
+        policy: colony.rclPolicy,
+        policyEnabled: true,
+        policyFingerprint: "policy-storage",
+        roomName,
+        roomStatus: "owned",
+        structures: finalRoom.structures ?? [],
+      }).proposals,
+    ).toEqual([expect.objectContaining({ pos: storagePlacement.pos, structureType: "storage" })]);
   });
 
   it("resumes partial evacuation and waits for exact work retirement before removal", () => {
@@ -629,8 +849,9 @@ describe("empty obsolete-storage relocation", () => {
     ];
     for (const result of cases) expect(result.proposals).toEqual([]);
     expect(cases[2]?.storageEvacuation).not.toBeNull();
+    expect(cases[4]?.storageEvacuation).not.toBeNull();
     for (const [index, result] of cases.entries())
-      if (index !== 2) expect(result.storageEvacuation).toBeNull();
+      if (index !== 2 && index !== 4) expect(result.storageEvacuation).toBeNull();
     expect(cases.map(({ blockers }) => blockers[0]?.reason)).toEqual([
       "replacement-pending",
       "target-unavailable",

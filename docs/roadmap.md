@@ -217,7 +217,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   with one 150-tick evacuation for exactly one storage resource kind totaling at most 3,000 units:
   the sole funded V3 Logistics path moves it to the exact terminal, suppresses both endpoints and
   internal sends, and requires exact delivery plus work retirement before the unchanged removal
-  path. Mixed/larger storage stock, uninterrupted storage/terminal service, broad dynamic
+  path. Issue #375 advances layouts V22 with a canonical two-to-eight-resource alternative under the
+  same 3,000-unit and 150-tick limits: each current row receives a distinct funded V3 flow, every
+  terminal sink shares one aggregate-capacity reservation, current rows admit atomically through
+  Logistics and colony funding, and removal waits for every exact gain plus complete work
+  retirement. Larger storage stock, uninterrupted storage/terminal service, broad dynamic
   movement/pathfinding proof, autonomous boost manifest production, defensive migration, and creep
   dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
