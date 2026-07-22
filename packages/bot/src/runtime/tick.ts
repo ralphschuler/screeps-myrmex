@@ -167,7 +167,7 @@ import {
   type LayoutRecord,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV23,
+  type LayoutsOwnerV24,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -188,6 +188,7 @@ import {
   currentlyExecutableLogisticsFlowIds,
   emptyLogisticsRuntimeProjection,
   executableLogisticsView,
+  logisticsAcquireAdmissionLimits,
   planLogisticsRuntime,
   renewLogisticsBudgets,
   type LogisticsRuntimeProjection,
@@ -488,7 +489,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV23 | null;
+  owner: LayoutsOwnerV24 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -1299,6 +1300,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 ),
                 ...blockedSpawnEvacuationFlowIds,
               ]),
+              logisticsAcquireAdmissionLimits(context.contractExecution, logisticsRuntime),
             ),
             new Set([
               ...suppressedSpawnEvacuationTargetIds,
@@ -2716,7 +2718,7 @@ function mergeLeaseAgentPlans(left: LeaseAgentPlan, right: LeaseAgentPlan): Leas
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV23 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV24 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2729,14 +2731,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV23 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV24 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV23["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV24["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -3741,7 +3743,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV23["records"][number] | undefined;
+  readonly record: LayoutsOwnerV24["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -3768,7 +3770,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV23 | null,
+  owner: LayoutsOwnerV24 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (

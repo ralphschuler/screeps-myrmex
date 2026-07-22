@@ -240,16 +240,20 @@ use the same path only when it contains two through eight canonical resource row
 the same 3,000-unit total. Each incomplete row receives a distinct funded V3 flow, all rows share
 one aggregate terminal-capacity reservation, and the complete current set admits atomically before
 and after funding. Asymmetric delivery resumes only the incomplete subset; removal waits for every
-exact terminal gain and every flow/endpoint to retire. More than eight kinds or larger mixed stock
-is not admitted. One single resource totaling 3,001–6,000 units instead uses exactly two batches:
-3,000 units followed by the exact remainder. Each batch has a distinct funded flow and budget
-identity under one nonrenewing 300-tick deadline; the second cannot publish until fresh first-batch
-delivery and complete prior-work retirement advance the durable cursor. Suppression remains
-continuous, and removal still requires the complete original terminal gain plus final work
-retirement. [ADR 0072](adr/0072-single-resource-stocked-storage-evacuation.md) records the scalar
-bound; [ADR 0073](adr/0073-mixed-resource-stocked-storage-evacuation.md) records the manifest
-composition; [ADR 0074](adr/0074-two-batch-single-resource-stocked-storage-evacuation.md) records
-the sequential extension.
+exact terminal gain and every flow/endpoint to retire. More than eight kinds is not admitted. One
+single resource or canonical two-to-eight-resource manifest totaling 3,001–6,000 units instead uses
+exactly two aggregate batches: the first 3,000 units in binary resource order followed by the exact
+remainder. Every current row has a distinct resource- and batch-qualified funded flow and budget
+identity under one nonrenewing 300-tick deadline; a boundary-crossing row cannot reuse retired work.
+The second batch cannot publish until fresh per-resource first-batch delivery and complete
+prior-work retirement advance the durable cursor. Suppression remains continuous, and removal still
+requires every complete original terminal gain plus final work retirement.
+[ADR 0072](adr/0072-single-resource-stocked-storage-evacuation.md) records the scalar bound;
+[ADR 0073](adr/0073-mixed-resource-stocked-storage-evacuation.md) records the manifest composition;
+[ADR 0074](adr/0074-two-batch-single-resource-stocked-storage-evacuation.md) records the scalar
+sequential extension; and
+[ADR 0075](adr/0075-two-batch-mixed-resource-stocked-storage-evacuation.md) records its mixed
+composition.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

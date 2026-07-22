@@ -226,9 +226,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   exact gain plus complete work retirement. Issue #379 advances layouts V23 for one single resource
   totaling 3,001–6,000 units: exactly two batch-qualified flows execute sequentially under one fixed
   300-tick deadline, and batch two waits for fresh first-batch delivery plus complete prior-work
-  retirement. Mixed storage stock above 3,000 units, uninterrupted storage/terminal service, broad
-  dynamic movement/pathfinding proof, autonomous boost manifest production, defensive migration, and
-  creep dismantling remain issue #99.
+  retirement. Issue #381 advances layouts V24 with the same bounded cursor for a canonical
+  two-to-eight-resource manifest totaling 3,001–6,000 units: binary resource order defines the two
+  aggregate batches, every current row receives a distinct batch-qualified identity, and fresh exact
+  per-resource delivery plus complete work retirement gates the second batch and removal.
+  Uninterrupted storage/terminal service, broad dynamic movement/pathfinding proof, autonomous boost
+  manifest production, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

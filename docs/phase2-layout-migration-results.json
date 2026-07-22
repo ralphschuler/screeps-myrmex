@@ -113,7 +113,7 @@
     "maximumActiveSites": 1,
     "maximumCpuPerTick": 0.25,
     "maximumEnergyPerTick": 100,
-    "persistentSchemaVersion": 23
+    "persistentSchemaVersion": 24
   },
   "safety": {
     "minimumActiveExtensions": 9,
@@ -215,23 +215,23 @@
       "siteCount": 0
     },
     "directProgressMutation": false,
-    "finalGameplayPersistentHash": "fnv1a64-utf16:4820f60c03a19f76",
+    "finalGameplayPersistentHash": "fnv1a64-utf16:8215110c23b2ba57",
     "maximumModeledCpuPerTick": 0.129,
     "maximumPersistentBytes": 13477,
     "semanticBytesIdentical": true,
     "semanticHashes": {
-      "reordered": "fnv1a64-utf16:9141a107004c5b06",
-      "reset": "fnv1a64-utf16:9141a107004c5b06",
-      "warm": "fnv1a64-utf16:9141a107004c5b06"
+      "reordered": "fnv1a64-utf16:2f0c454169415c6d",
+      "reset": "fnv1a64-utf16:2f0c454169415c6d",
+      "warm": "fnv1a64-utf16:2f0c454169415c6d"
     },
     "siteObservedAbsentAfterCompletion": true
   },
   "equivalence": {
     "semanticBytesIdentical": true,
     "outcomeHashes": {
-      "warm": "fnv1a64-utf16:4d6105ff18154b31",
-      "reset": "fnv1a64-utf16:4d6105ff18154b31",
-      "reordered": "fnv1a64-utf16:4d6105ff18154b31"
+      "warm": "fnv1a64-utf16:a302e798bbc135d1",
+      "reset": "fnv1a64-utf16:a302e798bbc135d1",
+      "reordered": "fnv1a64-utf16:a302e798bbc135d1"
     },
     "semanticHashes": {
       "warm": "fnv1a64-utf16:5401faa924f0fd35",

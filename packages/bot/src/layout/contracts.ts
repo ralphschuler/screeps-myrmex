@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 23 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 24 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -152,12 +152,23 @@ export interface LayoutStorageResourceManifestEvacuation extends LayoutStorageEv
   /** Canonical binary-ordered tuples for two through eight resource kinds. */
   readonly resourceManifest: readonly LayoutStorageEvacuationResource[];
   readonly resourceType?: never;
+  readonly settledAmount?: never;
+  readonly terminalInitialAmount?: never;
+}
+export interface LayoutStorageSequentialResourceManifestEvacuation extends LayoutStorageEvacuationCommon {
+  readonly amount?: never;
+  /** Original canonical manifest; the settled cursor partitions it without storing batch arrays. */
+  readonly resourceManifest: readonly LayoutStorageEvacuationResource[];
+  readonly resourceType?: never;
+  /** Exact completed first-batch amount; zero while the first batch is current. */
+  readonly settledAmount: number;
   readonly terminalInitialAmount?: never;
 }
 export type LayoutStorageEvacuation =
   | LayoutStorageSingleResourceEvacuation
   | LayoutStorageSequentialEvacuation
-  | LayoutStorageResourceManifestEvacuation;
+  | LayoutStorageResourceManifestEvacuation
+  | LayoutStorageSequentialResourceManifestEvacuation;
 export type LayoutTerminalEvacuationResource = readonly [
   resourceType: string,
   amount: number,
@@ -516,14 +527,24 @@ export function layoutStorageEvacuationCurrentBatchResources(
 ): readonly LayoutStorageEvacuationResource[] {
   const resources = layoutStorageEvacuationResources(evacuation);
   if (!("settledAmount" in evacuation)) return resources;
-  const remaining = evacuation.amount - evacuation.settledAmount;
-  return [
-    [
-      evacuation.resourceType,
-      Math.min(MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT, remaining),
-      evacuation.terminalInitialAmount + evacuation.settledAmount,
-    ],
-  ];
+  const batchStart = evacuation.settledAmount;
+  const totalAmount = resources.reduce((total, [, amount]) => total + amount, 0);
+  const batchEnd = Math.min(totalAmount, batchStart + MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT);
+  const current: LayoutStorageEvacuationResource[] = [];
+  let resourceStart = 0;
+  for (const [resourceType, amount, terminalInitialAmount] of resources) {
+    const resourceEnd = resourceStart + amount;
+    const currentAmount = Math.max(
+      0,
+      Math.min(resourceEnd, batchEnd) - Math.max(resourceStart, batchStart),
+    );
+    if (currentAmount > 0) {
+      const priorAmount = Math.max(0, Math.min(amount, batchStart - resourceStart));
+      current.push([resourceType, currentAmount, terminalInitialAmount + priorAmount]);
+    }
+    resourceStart = resourceEnd;
+  }
+  return current;
 }
 
 export function layoutStorageEvacuationFlowIds(
@@ -1070,7 +1091,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV23 {
+export interface LayoutsOwnerV24 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

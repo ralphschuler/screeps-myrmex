@@ -51,6 +51,7 @@ import {
   layoutSpawnEvacuationBudgetIssuer,
   layoutSpawnEvacuationFlowId,
   layoutStorageEvacuationBudgetIssuers,
+  layoutStorageEvacuationCurrentBatchResources,
   layoutStorageEvacuationFlowIds,
   layoutStorageEvacuationResources,
   layoutTerminalEvacuationBudgetIssuers,
@@ -72,7 +73,6 @@ import {
   type LayoutSpawnEvacuation,
   type LayoutStorageEvacuation,
   type LayoutStorageEvacuationResource,
-  type LayoutStorageSequentialEvacuation,
   type LayoutStructureRemovalReceipt,
   type LayoutTerminalEvacuation,
   type LayoutTerminalEvacuationResource,
@@ -1532,14 +1532,12 @@ export class ConstructionPlanner {
             });
             break;
           }
-          const sequentialSingleResource =
-            storage.targetResources.length === 1 &&
+          const sequentialEvacuation =
             storage.targetAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
             storage.targetAmount <= MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT;
           if (
             storage.targetResources.length > MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES ||
-            (storage.targetAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
-              !sequentialSingleResource)
+            (storage.targetAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT && !sequentialEvacuation)
           ) {
             pushMigrationBlocker(blockers, {
               reason: "target-stocked",
@@ -1573,30 +1571,36 @@ export class ConstructionPlanner {
                   amount: resourceManifest[0]?.[1] ?? 0,
                   expiresAt:
                     input.room.observedAt +
-                    (sequentialSingleResource
+                    (sequentialEvacuation
                       ? LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_TIMEOUT_TICKS
                       : LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS),
                   resourceType: resourceManifest[0]?.[0] ?? "",
-                  ...(sequentialSingleResource ? { settledAmount: 0 } : {}),
+                  ...(sequentialEvacuation ? { settledAmount: 0 } : {}),
                   sourceId: candidate.target.id,
                   startedAt: input.room.observedAt,
                   terminalId: storage.terminal.id,
                   terminalInitialAmount: resourceManifest[0]?.[2] ?? 0,
                 }
               : {
-                  expiresAt: input.room.observedAt + LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS,
+                  expiresAt:
+                    input.room.observedAt +
+                    (sequentialEvacuation
+                      ? LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_TIMEOUT_TICKS
+                      : LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS),
                   resourceManifest,
+                  ...(sequentialEvacuation ? { settledAmount: 0 } : {}),
                   sourceId: candidate.target.id,
                   startedAt: input.room.observedAt,
                   terminalId: storage.terminal.id,
                 };
+          const currentBatch = layoutStorageEvacuationCurrentBatchResources(nextEvacuation);
           const flowIds = layoutStorageEvacuationFlowIds(input.room.name, nextEvacuation);
           const issuers = layoutStorageEvacuationBudgetIssuers(input.room.name, nextEvacuation);
           if (
             flowIds === null ||
             issuers === null ||
-            flowIds.length !== resourceManifest.length ||
-            issuers.length !== resourceManifest.length ||
+            flowIds.length !== currentBatch.length ||
+            issuers.length !== currentBatch.length ||
             new Set(flowIds).size !== flowIds.length ||
             new Set(issuers).size !== issuers.length
           ) {
@@ -1670,6 +1674,7 @@ export class ConstructionPlanner {
             break;
           }
           const terms = layoutStorageEvacuationResources(storageEvacuation);
+          const currentBatch = layoutStorageEvacuationCurrentBatchResources(storageEvacuation);
           const flowIds = layoutStorageEvacuationFlowIds(input.room.name, storageEvacuation);
           const sourceByResource = new Map(storage.targetResources);
           const terminalByResource = new Map(storage.terminalResources);
@@ -1706,16 +1711,18 @@ export class ConstructionPlanner {
           const sequentialEvacuation = isSequentialStorageEvacuation(storageEvacuation)
             ? storageEvacuation
             : null;
-          const [sourceResource] = storage.targetResources;
+          const currentBatchByResource = new Map(
+            currentBatch.map(([resourceType, amount]) => [resourceType, amount]),
+          );
           const firstBatchComplete =
             sequentialEvacuation?.settledAmount === 0 &&
-            storage.targetResources.length === 1 &&
-            sourceResource !== undefined &&
-            sourceResource[0] === sequentialEvacuation.resourceType &&
-            sourceResource[1] ===
-              sequentialEvacuation.amount - MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
-            (terminalByResource.get(sequentialEvacuation.resourceType) ?? 0) ===
-              sequentialEvacuation.terminalInitialAmount + MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT;
+            terms.every(([resourceType, amount, initialAmount]) => {
+              const batchAmount = currentBatchByResource.get(resourceType) ?? 0;
+              return (
+                (sourceByResource.get(resourceType) ?? 0) === amount - batchAmount &&
+                (terminalByResource.get(resourceType) ?? 0) === initialAmount + batchAmount
+              );
+            });
           const endpointsRetired =
             !input.activeLeasedWorkTargetIds.has(storageEvacuation.sourceId) &&
             !input.activeLeasedWorkTargetIds.has(storageEvacuation.terminalId) &&
@@ -1729,7 +1736,8 @@ export class ConstructionPlanner {
                 counterpartId === storageEvacuation?.terminalId,
             );
           let reason: LayoutMigrationBlocker | null = null;
-          if (flowIds === null || flowIds.length !== terms.length) reason = "logistics-unavailable";
+          if (flowIds === null || flowIds.length !== currentBatch.length)
+            reason = "logistics-unavailable";
           else if (input.room.observedAt <= storageEvacuation.startedAt)
             reason = "migration-pending";
           else if (input.room.observedAt >= storageEvacuation.expiresAt)
@@ -3386,7 +3394,7 @@ function spawnMigrationEvidence(
 
 function isSequentialStorageEvacuation(
   evacuation: LayoutStorageEvacuation,
-): evacuation is LayoutStorageSequentialEvacuation {
+): evacuation is LayoutStorageEvacuation & { readonly settledAmount: number } {
   return "settledAmount" in evacuation && typeof evacuation.settledAmount === "number";
 }
 
