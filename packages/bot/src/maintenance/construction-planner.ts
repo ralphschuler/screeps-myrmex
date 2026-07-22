@@ -30,6 +30,7 @@ import {
   MAX_LAYOUT_STORAGE_RESOURCES,
   MAX_LAYOUT_TERMINAL_CAPACITY,
   MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT,
+  MAX_LAYOUT_TERMINAL_EVACUATION_RESOURCES,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
@@ -44,8 +45,9 @@ import {
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationBudgetIssuer,
   layoutSpawnEvacuationFlowId,
-  layoutTerminalEvacuationBudgetIssuer,
-  layoutTerminalEvacuationFlowId,
+  layoutTerminalEvacuationBudgetIssuers,
+  layoutTerminalEvacuationFlowIds,
+  layoutTerminalEvacuationResources,
   layoutTowerEvacuationBudgetIssuer,
   layoutTowerEvacuationFlowId,
   type LayoutCommitment,
@@ -62,6 +64,7 @@ import {
   type LayoutSpawnEvacuation,
   type LayoutStructureRemovalReceipt,
   type LayoutTerminalEvacuation,
+  type LayoutTerminalEvacuationResource,
   type LayoutTowerEvacuation,
 } from "../layout";
 import type {
@@ -254,6 +257,7 @@ export class ConstructionPlanner {
     readonly activeLogisticsFlowIds?: ReadonlySet<string>;
     readonly activeLogisticsTargetIds?: ReadonlySet<string>;
     readonly activeSpawnClaimIds?: ReadonlySet<string>;
+    readonly activeTerminalLogisticsTargetIds?: ReadonlySet<string>;
     readonly colony: ColonyView;
     readonly commitment: LayoutCommitment;
     readonly containerMigration?: LayoutContainerMigration | null;
@@ -1424,7 +1428,8 @@ export class ConstructionPlanner {
           input.logisticsEvidenceReady !== true ||
           input.activeLogisticsEndpoints === undefined ||
           input.activeLogisticsFlowIds === undefined ||
-          input.activeLogisticsTargetIds === undefined
+          input.activeLogisticsTargetIds === undefined ||
+          input.activeTerminalLogisticsTargetIds === undefined
         ) {
           pushMigrationBlocker(blockers, {
             reason: "logistics-unavailable",
@@ -1449,7 +1454,6 @@ export class ConstructionPlanner {
         const terminal = terminalMigrationEvidence({
           allowance: input.colony.rclPolicy.unlocks?.terminal ?? 0,
           desiredTerminals,
-          requiredResourceType: terminalEvacuation?.resourceType ?? null,
           requiredStorageId:
             terminalEvacuation?.replacementId ??
             (removalReceipt?.targetId === candidate.target.id &&
@@ -1467,23 +1471,43 @@ export class ConstructionPlanner {
           });
           break;
         }
-        const resourceType = terminalEvacuation?.resourceType ?? terminal.targetResourceType;
-        const identity =
-          resourceType === null
-            ? null
-            : {
-                replacementId: terminal.storage.id,
-                resourceType,
-                sourceId: candidate.target.id,
-              };
         if (terminalEvacuation === null && terminal.targetAmount > 0) {
-          const flowId =
-            identity === null ? null : layoutTerminalEvacuationFlowId(input.room.name, identity);
-          const issuer =
-            identity === null
-              ? null
-              : layoutTerminalEvacuationBudgetIssuer(input.room.name, identity);
-          if (identity === null || flowId === null || issuer === null) {
+          const replacementByResource = new Map(terminal.storageResources);
+          const resourceManifest = terminal.targetResources.map(
+            ([resourceType, amount]): LayoutTerminalEvacuationResource => [
+              resourceType,
+              amount,
+              replacementByResource.get(resourceType) ?? 0,
+            ],
+          );
+          const nextEvacuation: LayoutTerminalEvacuation =
+            resourceManifest.length === 1
+              ? {
+                  amount: resourceManifest[0]?.[1] ?? 0,
+                  expiresAt: input.room.observedAt + LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS,
+                  replacementId: terminal.storage.id,
+                  replacementInitialAmount: resourceManifest[0]?.[2] ?? 0,
+                  resourceType: resourceManifest[0]?.[0] ?? "",
+                  sourceId: candidate.target.id,
+                  startedAt: input.room.observedAt,
+                }
+              : {
+                  expiresAt: input.room.observedAt + LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS,
+                  replacementId: terminal.storage.id,
+                  resourceManifest,
+                  sourceId: candidate.target.id,
+                  startedAt: input.room.observedAt,
+                };
+          const flowIds = layoutTerminalEvacuationFlowIds(input.room.name, nextEvacuation);
+          const issuers = layoutTerminalEvacuationBudgetIssuers(input.room.name, nextEvacuation);
+          if (
+            flowIds === null ||
+            issuers === null ||
+            flowIds.length !== resourceManifest.length ||
+            issuers.length !== resourceManifest.length ||
+            new Set(flowIds).size !== flowIds.length ||
+            new Set(issuers).size !== issuers.length
+          ) {
             pushMigrationBlocker(blockers, {
               reason: "logistics-unavailable",
               roomName: input.room.name,
@@ -1502,7 +1526,14 @@ export class ConstructionPlanner {
             });
             break;
           }
-          if (hasUnrelatedMigrationEndpoint(input, identity, null)) {
+          if (
+            hasUnrelatedMigrationEndpoint(
+              input,
+              nextEvacuation,
+              null,
+              input.activeTerminalLogisticsTargetIds,
+            )
+          ) {
             pushMigrationBlocker(blockers, {
               reason: "logistics-active",
               roomName: input.room.name,
@@ -1510,15 +1541,7 @@ export class ConstructionPlanner {
             });
             break;
           }
-          terminalEvacuation = {
-            amount: terminal.targetAmount,
-            expiresAt: input.room.observedAt + LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS,
-            replacementId: terminal.storage.id,
-            replacementInitialAmount: terminal.storageResourceAmount,
-            resourceType: identity.resourceType,
-            sourceId: candidate.target.id,
-            startedAt: input.room.observedAt,
-          };
+          terminalEvacuation = nextEvacuation;
           pushMigrationBlocker(blockers, {
             reason: "target-stocked",
             roomName: input.room.name,
@@ -1527,35 +1550,52 @@ export class ConstructionPlanner {
           break;
         }
         if (terminalEvacuation !== null) {
-          const flowId = layoutTerminalEvacuationFlowId(input.room.name, terminalEvacuation);
-          const flowActive = flowId !== null && input.activeLogisticsFlowIds.has(flowId);
+          const terms = layoutTerminalEvacuationResources(terminalEvacuation);
+          const flowIds = layoutTerminalEvacuationFlowIds(input.room.name, terminalEvacuation);
+          const targetByResource = new Map(terminal.targetResources);
+          const storageByResource = new Map(terminal.storageResources);
+          const termResourceTypes = new Set(terms.map(([resourceType]) => resourceType));
+          const flowActive =
+            flowIds !== null &&
+            flowIds.some((flowId) => input.activeLogisticsFlowIds?.has(flowId) === true);
+          const conservationInvalid =
+            terminal.targetResources.some(
+              ([resourceType]) => !termResourceTypes.has(resourceType),
+            ) ||
+            terms.some(([resourceType, amount, replacementInitialAmount]) => {
+              const targetAmount = targetByResource.get(resourceType) ?? 0;
+              const storageAmount = storageByResource.get(resourceType) ?? 0;
+              const delivered = storageAmount - replacementInitialAmount;
+              return (
+                delivered < 0 ||
+                delivered > amount ||
+                targetAmount > amount - delivered ||
+                targetAmount + delivered > amount
+              );
+            });
+          const delivered = terms.every(
+            ([resourceType, amount, replacementInitialAmount]) =>
+              (storageByResource.get(resourceType) ?? 0) === replacementInitialAmount + amount,
+          );
           let reason: LayoutMigrationBlocker | null = null;
-          if (flowId === null) reason = "logistics-unavailable";
+          if (flowIds === null || flowIds.length !== terms.length) reason = "logistics-unavailable";
           else if (input.room.observedAt <= terminalEvacuation.startedAt)
             reason = "migration-pending";
           else if (input.room.observedAt >= terminalEvacuation.expiresAt)
             reason = "evacuation-expired";
+          else if (conservationInvalid) reason = "evacuation-incomplete";
           else if (
-            terminal.targetResourceType !==
-              (terminal.targetAmount === 0 ? null : terminalEvacuation.resourceType) ||
-            terminal.storageResourceAmount < terminalEvacuation.replacementInitialAmount ||
-            terminal.storageResourceAmount >
-              terminalEvacuation.replacementInitialAmount + terminalEvacuation.amount ||
-            terminal.targetAmount +
-              terminal.storageResourceAmount -
-              terminalEvacuation.replacementInitialAmount >
-              terminalEvacuation.amount
+            hasUnrelatedMigrationEndpoint(
+              input,
+              terminalEvacuation,
+              new Set(flowIds),
+              input.activeTerminalLogisticsTargetIds,
+            )
           )
-            reason = "evacuation-incomplete";
-          else if (hasUnrelatedMigrationEndpoint(input, terminalEvacuation, flowId))
             reason = "logistics-active";
           else if (terminal.targetAmount > 0) reason = "target-stocked";
           else if (flowActive) reason = "evacuation-pending";
-          else if (
-            terminal.storageResourceAmount !==
-            terminalEvacuation.replacementInitialAmount + terminalEvacuation.amount
-          )
-            reason = "evacuation-incomplete";
+          else if (!delivered) reason = "evacuation-incomplete";
           if (reason !== null) {
             pushMigrationBlocker(blockers, {
               reason,
@@ -1565,7 +1605,7 @@ export class ConstructionPlanner {
             break;
           }
         } else if (
-          input.activeLogisticsTargetIds.has(candidate.target.id) ||
+          input.activeTerminalLogisticsTargetIds.has(candidate.target.id) ||
           input.activeLogisticsEndpoints.some(
             ({ counterpartId, targetId }) =>
               targetId === candidate.target.id || counterpartId === candidate.target.id,
@@ -2938,11 +2978,17 @@ function hasUnrelatedMigrationEndpoint(
       readonly targetId: string;
       readonly version: number;
     }[];
-    readonly activeLogisticsTargetIds?: ReadonlySet<string>;
   },
   identity: { readonly replacementId: string; readonly sourceId: string },
-  allowedFlowId: string | null,
+  allowedFlowIds: string | ReadonlySet<string> | null,
+  pendingTargetIds: ReadonlySet<string> | null = null,
 ): boolean {
+  const allowed =
+    allowedFlowIds === null
+      ? null
+      : typeof allowedFlowIds === "string"
+        ? new Set([allowedFlowIds])
+        : allowedFlowIds;
   const migrationIds = new Set([identity.sourceId, identity.replacementId]);
   const related = (input.activeLogisticsEndpoints ?? []).filter(
     ({ counterpartId, targetId }) =>
@@ -2951,9 +2997,10 @@ function hasUnrelatedMigrationEndpoint(
   if (
     related.some(
       ({ counterpartId, flowId, targetId, version }) =>
-        allowedFlowId === null ||
+        allowed === null ||
         version !== 3 ||
-        flowId !== allowedFlowId ||
+        flowId === null ||
+        !allowed.has(flowId) ||
         counterpartId === null ||
         targetId === counterpartId ||
         !migrationIds.has(targetId) ||
@@ -2967,7 +3014,11 @@ function hasUnrelatedMigrationEndpoint(
     ),
   );
   for (const id of migrationIds) {
-    if (input.activeLeasedWorkTargetIds?.has(id) === true && !exactEndpointIds.has(id)) return true;
+    if (
+      (input.activeLeasedWorkTargetIds?.has(id) === true || pendingTargetIds?.has(id) === true) &&
+      !exactEndpointIds.has(id)
+    )
+      return true;
   }
   return false;
 }
@@ -3121,7 +3172,6 @@ function exactExtensionEnergy(extension: RoomSnapshot["ownedExtensions"][number]
 function terminalMigrationEvidence(input: {
   readonly allowance: number;
   readonly desiredTerminals: readonly LayoutPlacement[];
-  readonly requiredResourceType: string | null;
   readonly requiredStorageId: string | null;
   readonly room: RoomSnapshot;
   readonly target: StructureSnapshot;
@@ -3132,9 +3182,9 @@ function terminalMigrationEvidence(input: {
   > | null;
   readonly storage: NonNullable<RoomSnapshot["ownedStorages"]>[number] | null;
   readonly storageFreeCapacity: number;
-  readonly storageResourceAmount: number;
+  readonly storageResources: readonly (readonly [resourceType: string, amount: number])[];
   readonly targetAmount: number;
-  readonly targetResourceType: string | null;
+  readonly targetResources: readonly (readonly [resourceType: string, amount: number])[];
 } {
   const failure = (
     reason: "replacement-pending" | "site-conflict" | "target-stocked" | "target-unavailable",
@@ -3142,9 +3192,9 @@ function terminalMigrationEvidence(input: {
     reason,
     storage: null,
     storageFreeCapacity: 0,
-    storageResourceAmount: 0,
+    storageResources: [],
     targetAmount: 0,
-    targetResourceType: null,
+    targetResources: [],
   });
   const controllerLevel = input.room.controller?.level;
   if (
@@ -3175,14 +3225,13 @@ function terminalMigrationEvidence(input: {
   const targetStore = exactInventoryStore(observedTarget, MAX_LAYOUT_TERMINAL_CAPACITY);
   if (targetStore === null || observedTarget.cooldown !== 0) return failure("target-unavailable");
   if (
-    targetStore.resources.size > 1 ||
+    targetStore.resources.size > MAX_LAYOUT_TERMINAL_EVACUATION_RESOURCES ||
     observedTarget.store.usedCapacity > MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT
   )
     return failure("target-stocked");
-  const targetEntry = [...targetStore.resources][0] ?? null;
-  const targetResourceType = targetEntry?.[0] ?? null;
-  const targetAmount = targetEntry?.[1] ?? 0;
-  const effectiveResourceType = input.requiredResourceType ?? targetResourceType;
+  const targetResources = [...targetStore.resources].sort(([left], [right]) =>
+    compareText(left, right),
+  );
   const storages = input.room.ownedStorages ?? [];
   if (storages.length !== 1) return failure("replacement-pending");
   const storage = storages[0];
@@ -3199,10 +3248,11 @@ function terminalMigrationEvidence(input: {
     reason: null,
     storage,
     storageFreeCapacity: storageStore.freeCapacity,
-    storageResourceAmount:
-      effectiveResourceType === null ? 0 : (storageStore.resources.get(effectiveResourceType) ?? 0),
-    targetAmount,
-    targetResourceType,
+    storageResources: [...storageStore.resources].sort(([left], [right]) =>
+      compareText(left, right),
+    ),
+    targetAmount: observedTarget.store.usedCapacity,
+    targetResources,
   };
 }
 

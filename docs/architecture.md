@@ -170,7 +170,13 @@ V18 handoff to that storage. The sole funded V3 Logistics path moves the stock, 
 suppresses internal sends and competing terminal stock work, and removal waits for fresh exact
 delivery plus complete work retirement and unchanged quiescence/safety evidence. Expiry releases
 ordinary terminal service but preserves removal-blocking failure evidence.
-[ADR 0069](adr/0069-single-resource-stocked-terminal-evacuation.md) records this bound.
+[ADR 0069](adr/0069-single-resource-stocked-terminal-evacuation.md) records this bound. Issue
+[#363](https://github.com/ralphschuler/screeps-myrmex/issues/363) advances layouts V19 with one
+binary-ordered two-to-eight-resource manifest totaling at most 3,000 units. Each current row
+receives a distinct funded V3 flow into the same aggregate storage-capacity reservation; runtime
+admits every currently projected row atomically. Removal waits for every exact destination gain and
+complete manifest work retirement.
+[ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records this composition.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, terminal, tower, link, and lab result reuses
 the same fixed receipt.
@@ -1533,7 +1539,7 @@ closed. Canonical policy, colony, placement, structure, coordinate, and stable-I
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
 per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
 
-Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V18
+Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V19
 `layouts` owner. V3 adds the optional source-migration identity, V4 adds one optional source-service
 issuance coordinate, and V5 adds one generic bounded removal receipt. Site `OK` waits for observed
 world change; full and unexpected faults back off; RCL, target, and ownership failures wait for the
@@ -1546,17 +1552,18 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V18 layouts owner; V8 adds
+commitments and bounded receipts stage through the owner-local schema V19 layouts owner; V8 adds
 `link` to the existing removal-receipt discriminator, V9 adds one optional fixed-shape reserve-link
 evacuation, V10 adds `lab` to the fixed receipt discriminator, V11 adds one optional fixed-shape
 lab-energy evacuation, V12 adds its single-kind mineral/storage variant, V13 adds the paired
 energy/mineral variant, V14 adds one terminal destination discriminator to either mineral-bearing
 form, V15 adds `spawn` to the fixed removal-receipt discriminator, V16 adds one optional fixed-shape
-spawn evacuation, V17 adds `terminal` to the fixed removal-receipt discriminator, and V18 adds one
-optional fixed-shape single-resource terminal evacuation. Degraded, unknown, lost, stale, denied, or
-CPU-skipped work preserves prior commitments and authorizes no command. Every observed owned layout
-site enters the existing funded survival-growth build flow, while controller risk, recovery,
-maintenance, and protected reserves retain precedence.
+spawn evacuation, V17 adds `terminal` to the fixed removal-receipt discriminator, V18 adds one
+optional fixed-shape single-resource terminal evacuation, and V19 adds its bounded two-to-eight-row
+manifest alternative. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior
+commitments and authorizes no command. Every observed owned layout site enters the existing funded
+survival-growth build flow, while controller risk, recovery, maintenance, and protected reserves
+retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -1875,6 +1882,14 @@ geometry/safety term. Expiry restores ordinary terminal work but keeps the faile
 removal-blocking evidence. Layouts V18 adds one optional fixed-shape terminal evacuation; V17
 migrates without invented terms and old code preserves future bytes.
 [ADR 0069](adr/0069-single-resource-stocked-terminal-evacuation.md) records the bounded handoff.
+
+Issue #363 composes two through eight exact positive resource rows totaling at most 3,000 units in
+one canonical V19 manifest. Each row receives a distinct budget and flow while every sink shares the
+storage's aggregate-capacity key. Projection and post-budget authorization admit every currently
+active row or none; completed rows leave the atomic group so asymmetric delivery can continue.
+Removal requires every baseline-plus-amount gain and retirement of every manifest flow/endpoint. V18
+migrates without inventing terms; V18 code preserves future V19 bytes and disables layout work.
+[ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records the composition.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2481,12 +2496,13 @@ Required architecture assertions include:
 - obsolete-terminal removal requires RCL6-RCL8 full allowance, one active exact empty zero-cooldown
   external terminal, one exact active same-room storage, a current quiescent Industry terminal-work
   view, no terminal-bound unrelated Logistics work, current colony/site safety, and the same global
-  one-command/reset-safe receipt ceilings; one positive single-resource target of at most 3,000
-  units first uses one 150-tick funded V3 evacuation into that storage, suppresses internal sends
-  and competing terminal stock work while unexpired, and requires fresh target-empty, exact
-  baseline-plus-amount storage gain, and retired exact flow/endpoints; expiry restores ordinary
-  terminal service but remains removal-blocking; the narrow `terminal → storage` continuity form
-  cannot weaken same-type replacement checks for another structure kind;
+  one-command/reset-safe receipt ceilings; one positive single-resource target or canonical
+  two-to-eight-resource manifest of at most 3,000 aggregate units first uses one 150-tick funded V3
+  evacuation into that storage, suppresses internal sends and competing terminal stock work while
+  unexpired, atomically admits every currently active manifest row, and requires fresh target-empty,
+  every exact baseline-plus-amount storage gain, and retired exact flows/endpoints; expiry restores
+  ordinary terminal service but remains removal-blocking; the narrow `terminal → storage` continuity
+  form cannot weaken same-type replacement checks for another structure kind;
 - obsolete-tower removal requires full allowance of at least two, allowance-minus-one active
   committed towers, an active empty unshared target, an exact active committed replacement with at
   least 10 energy, current safety, and the same global one-command ceiling; stocked targets first

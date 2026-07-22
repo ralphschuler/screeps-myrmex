@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 18 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 19 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -24,6 +24,8 @@ export const MAX_LAYOUT_LAB_EVACUATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_STORAGE_CAPACITY = 1_000_000 as const;
 export const MAX_LAYOUT_TERMINAL_CAPACITY = 300_000 as const;
 export const MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT = 3_000 as const;
+export const MAX_LAYOUT_TERMINAL_EVACUATION_RESOURCES = 8 as const;
+export const MAX_LAYOUT_TERMINAL_EVACUATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_STORAGE_RESOURCES = 64 as const;
 export const MAX_LAYOUT_LINK_ENERGY = 800 as const;
 export const MAX_LAYOUT_TOWER_ENERGY = 1_000 as const;
@@ -113,15 +115,32 @@ export interface LayoutTowerEvacuation {
   readonly sourceId: string;
   readonly startedAt: number;
 }
-export interface LayoutTerminalEvacuation {
-  readonly amount: number;
+export type LayoutTerminalEvacuationResource = readonly [
+  resourceType: string,
+  amount: number,
+  replacementInitialAmount: number,
+];
+interface LayoutTerminalEvacuationCommon {
   readonly expiresAt: number;
   readonly replacementId: string;
-  readonly replacementInitialAmount: number;
-  readonly resourceType: string;
   readonly sourceId: string;
   readonly startedAt: number;
 }
+export interface LayoutTerminalSingleResourceEvacuation extends LayoutTerminalEvacuationCommon {
+  readonly amount: number;
+  readonly replacementInitialAmount: number;
+  readonly resourceManifest?: never;
+  readonly resourceType: string;
+}
+export interface LayoutTerminalResourceManifestEvacuation extends LayoutTerminalEvacuationCommon {
+  readonly amount?: never;
+  readonly replacementInitialAmount?: never;
+  /** Canonical binary-ordered tuples for two through eight resource kinds. */
+  readonly resourceManifest: readonly LayoutTerminalEvacuationResource[];
+  readonly resourceType?: never;
+}
+export type LayoutTerminalEvacuation =
+  LayoutTerminalSingleResourceEvacuation | LayoutTerminalResourceManifestEvacuation;
 export interface LayoutSpawnEvacuation {
   readonly amount: number;
   readonly expiresAt: number;
@@ -401,16 +420,18 @@ interface LayoutTerminalEvacuationIdentity {
 
 export function layoutTerminalEvacuationFlowId(
   roomName: string,
-  evacuation: LayoutTerminalEvacuationIdentity,
+  evacuation: LayoutTerminalEvacuationIdentity | LayoutTerminalEvacuation,
 ): string | null {
+  if (typeof evacuation.resourceType !== "string") return null;
   const flowId = `layout-terminal-evacuation:${roomName}:${evacuation.sourceId}:${evacuation.replacementId}:${String(evacuation.resourceType.length)}:${evacuation.resourceType}`;
   return flowId.length <= 128 ? flowId : null;
 }
 
 export function layoutTerminalEvacuationBudgetIssuer(
   roomName: string,
-  evacuation: LayoutTerminalEvacuationIdentity,
+  evacuation: LayoutTerminalEvacuationIdentity | LayoutTerminalEvacuation,
 ): string | null {
+  if (typeof evacuation.resourceType !== "string") return null;
   const issuer = [
     "layout-migration",
     `${String(roomName.length)}:${roomName}`,
@@ -419,6 +440,34 @@ export function layoutTerminalEvacuationBudgetIssuer(
     `${String(evacuation.resourceType.length)}:${evacuation.resourceType}`,
   ].join("/");
   return issuer.length <= 128 ? issuer : null;
+}
+
+export function layoutTerminalEvacuationResources(
+  evacuation: LayoutTerminalEvacuation,
+): readonly LayoutTerminalEvacuationResource[] {
+  return "resourceManifest" in evacuation
+    ? evacuation.resourceManifest
+    : [[evacuation.resourceType, evacuation.amount, evacuation.replacementInitialAmount]];
+}
+
+export function layoutTerminalEvacuationFlowIds(
+  roomName: string,
+  evacuation: LayoutTerminalEvacuation,
+): readonly string[] | null {
+  const ids = layoutTerminalEvacuationResources(evacuation).map(([resourceType]) =>
+    layoutTerminalEvacuationFlowId(roomName, { ...evacuation, resourceType }),
+  );
+  return ids.some((id) => id === null) ? null : (ids as readonly string[]);
+}
+
+export function layoutTerminalEvacuationBudgetIssuers(
+  roomName: string,
+  evacuation: LayoutTerminalEvacuation,
+): readonly string[] | null {
+  const issuers = layoutTerminalEvacuationResources(evacuation).map(([resourceType]) =>
+    layoutTerminalEvacuationBudgetIssuer(roomName, { ...evacuation, resourceType }),
+  );
+  return issuers.some((issuer) => issuer === null) ? null : (issuers as readonly string[]);
 }
 
 export function layoutTowerEvacuationFlowId(
@@ -864,7 +913,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV18 {
+export interface LayoutsOwnerV19 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

@@ -136,7 +136,7 @@ import {
   layoutLabEvacuationFlowIds,
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationFlowId,
-  layoutTerminalEvacuationFlowId,
+  layoutTerminalEvacuationFlowIds,
   parseLayoutsOwner,
   persistLayoutCommitment,
   persistLayoutContainerMigration,
@@ -164,7 +164,7 @@ import {
   type LayoutRecord,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV18,
+  type LayoutsOwnerV19,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -200,7 +200,10 @@ import {
   authorizedLayoutSpawnEvacuationBudgets,
   projectLayoutSpawnEvacuations,
 } from "../logistics/spawn-evacuation";
-import { projectLayoutTerminalEvacuations } from "../logistics/terminal-evacuation";
+import {
+  completeExecutableLayoutTerminalEvacuationFlowIds,
+  projectLayoutTerminalEvacuations,
+} from "../logistics/terminal-evacuation";
 import { projectLayoutTowerEvacuations } from "../logistics/tower-evacuation";
 import type { LogisticsResourceDemandProjection } from "../logistics/resource-demands";
 import {
@@ -477,7 +480,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV18 | null;
+  owner: LayoutsOwnerV19 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -1016,6 +1019,12 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
             request !== null &&
             (request.execution?.version !== 3 ||
               !isLayoutSpawnEvacuationFlowId(request.execution.flowId)) &&
+            (request.execution?.version !== 3 ||
+              isAuthorizedLayoutTerminalEvacuationFlowId(
+                request.execution.flowId,
+                activeTerminalEvacuationFlowIds,
+                authorizedTerminalEvacuationFlowIds,
+              )) &&
             funded.has(
               `${request.owner.id}\u0000${request.budgetBinding.category}\u0000${request.budgetBinding.issuer}`,
             )
@@ -1042,6 +1051,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           if (
             contract.execution.version === 3 &&
             contract.issuer.startsWith("logistics/") &&
+            isAuthorizedLayoutTerminalEvacuationFlowId(
+              contract.execution.flowId,
+              activeTerminalEvacuationFlowIds,
+              authorizedTerminalEvacuationFlowIds,
+            ) &&
             (contract.state === "proposed" || contract.state === "suspended") &&
             funded.has(
               `${contract.owner.id}\u0000${contract.budgetBinding.category}\u0000${contract.budgetBinding.issuer}`,
@@ -1963,11 +1977,19 @@ function layoutPlanningSystem(
             : [],
       );
       const activeLogisticsTargetIds = new Set(activeLeasedWorkTargetIds);
+      const activeTerminalLogisticsTargetIds = new Set(activeLeasedWorkTargetIds);
+      for (const contract of context.contractPlanning.contracts) {
+        if (contract.execution.version !== 3) continue;
+        activeTerminalLogisticsTargetIds.add(contract.targetId);
+        activeTerminalLogisticsTargetIds.add(contract.execution.counterpartId);
+      }
       for (const commitment of currentLogistics().contracts.commitments) {
         const request = commitment.request;
         if (request?.execution?.version !== 3 || request.targetId === null) continue;
         activeLogisticsTargetIds.add(request.targetId);
         activeLogisticsTargetIds.add(request.execution.counterpartId);
+        activeTerminalLogisticsTargetIds.add(request.targetId);
+        activeTerminalLogisticsTargetIds.add(request.execution.counterpartId);
       }
       let owner = initialOwner;
       let changed = false;
@@ -2152,6 +2174,7 @@ function layoutPlanningSystem(
           activeLogisticsEndpoints,
           activeLogisticsFlowIds,
           activeLogisticsTargetIds,
+          activeTerminalLogisticsTargetIds,
           ...(activeSpawnClaimIds === null ? {} : { activeSpawnClaimIds }),
           colony,
           commitment,
@@ -2566,7 +2589,7 @@ function mergeLeaseAgentPlans(left: LeaseAgentPlan, right: LeaseAgentPlan): Leas
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV18 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV19 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2579,14 +2602,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV18 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV19 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV18["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV19["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -3038,10 +3061,20 @@ function colonyDirectorSystem(
         new Set(layoutSpawnEvacuations.demands.edges.map(({ id }) => id)),
         logistics,
       );
-      const logisticsExecutableTerminalEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
-        new Set(layoutTerminalEvacuations.demands.edges.map(({ id }) => id)),
-        logistics,
+      const projectedTerminalEvacuationFlowIds = new Set(
+        layoutTerminalEvacuations.demands.edges.map(({ id }) => id),
       );
+      const logisticsExecutableTerminalEvacuationFlowIds =
+        projectedTerminalEvacuationFlowIds.size === 0
+          ? new Set<string>()
+          : completeExecutableLayoutTerminalEvacuationFlowIds({
+              executableFlowIds: currentlyExecutableLogisticsFlowIds(
+                projectedTerminalEvacuationFlowIds,
+                logistics,
+              ),
+              projectedFlowIds: projectedTerminalEvacuationFlowIds,
+              records: layoutRecords,
+            });
       const enabledHealthDomains = new Set(
         [
           ["layout", "phase2.layout"],
@@ -3114,7 +3147,13 @@ function colonyDirectorSystem(
           layoutSpawnEvacuations,
           executableSpawnEvacuationFlowIds,
         ),
-        ...layoutTerminalEvacuations.budgets,
+        ...layoutTerminalEvacuations.budgets.filter(({ issuer }) =>
+          layoutTerminalEvacuations.demands.edges.some(
+            ({ budgetBinding, id }) =>
+              logisticsExecutableTerminalEvacuationFlowIds.has(id) &&
+              budgetBinding?.issuer === issuer,
+          ),
+        ),
         ...layoutTowerEvacuations.budgets,
         ...provisionalMaintenance.budgets,
         ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
@@ -3249,7 +3288,7 @@ function colonyDirectorSystem(
           category === "optional-growth" && status === "active" ? [issuer] : [],
         ),
       );
-      const executableTerminalEvacuationFlowIds = new Set(
+      const budgetExecutableTerminalEvacuationFlowIds = new Set(
         layoutTerminalEvacuations.demands.edges.flatMap(({ budgetBinding, id }) =>
           logisticsExecutableTerminalEvacuationFlowIds.has(id) &&
           budgetBinding !== undefined &&
@@ -3257,6 +3296,13 @@ function colonyDirectorSystem(
             ? [id]
             : [],
         ),
+      );
+      const executableTerminalEvacuationFlowIds = completeExecutableLayoutTerminalEvacuationFlowIds(
+        {
+          executableFlowIds: budgetExecutableTerminalEvacuationFlowIds,
+          projectedFlowIds: projectedTerminalEvacuationFlowIds,
+          records: layoutRecords,
+        },
       );
       let executableLabEvacuationFlowIds: ReadonlySet<string> =
         logisticsExecutableLabEvacuationFlowIds;
@@ -3358,10 +3404,17 @@ function persistedLayoutTerminalEvacuationFlowIds(
   return new Set(
     owner.records.flatMap(({ roomName, terminalEvacuation }) => {
       if (terminalEvacuation === undefined) return [];
-      const id = layoutTerminalEvacuationFlowId(roomName, terminalEvacuation);
-      return id === null ? [] : [id];
+      return layoutTerminalEvacuationFlowIds(roomName, terminalEvacuation) ?? [];
     }),
   );
+}
+
+export function isAuthorizedLayoutTerminalEvacuationFlowId(
+  flowId: string,
+  persistedFlowIds: ReadonlySet<string>,
+  authorizedFlowIds: ReadonlySet<string>,
+): boolean {
+  return !persistedFlowIds.has(flowId) || authorizedFlowIds.has(flowId);
 }
 
 function persistedLayoutTerminalEvacuationTargetIds(
@@ -3436,7 +3489,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV18["records"][number] | undefined;
+  readonly record: LayoutsOwnerV19["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -3463,7 +3516,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV18 | null,
+  owner: LayoutsOwnerV19 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (

@@ -191,6 +191,15 @@ capacity loss, unrelated work, pressure, or uncertainty preserves the terminal a
 work. Timeout restores ordinary terminal service but remains removal-blocking evidence.
 [ADR 0069](adr/0069-single-resource-stocked-terminal-evacuation.md) records this bound.
 
+A terminal holding two through eight resource kinds may use the same path only when the canonical
+manifest totals at most 3,000 units. Each row binds its exact amount and storage baseline, receives
+a distinct funded V3 flow, and shares one aggregate storage-capacity reservation. Every currently
+active row admits atomically; completed rows leave the group so asymmetric delivery remains
+resumable. Removal requires every exact destination gain plus complete manifest flow/endpoint
+retirement. Refill, consumption, overgain, malformed/reordered terms, bounded overflow, or partial
+authorization keeps removal closed.
+[ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records this composition.
+
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;
