@@ -525,27 +525,23 @@ function mergeDemandGraph(
       return [];
     }),
   );
-  const edges = [
-    ...observed.edges.filter(
+  const retainedObserved = freeze({
+    edges: observed.edges.filter(
       ({ sinkNodeId, sourceNodeId }) =>
         !suppressedNodeIds.has(sinkNodeId) && !suppressedNodeIds.has(sourceNodeId),
     ),
-    ...demands.edges,
-  ];
-  const endpoints = [
-    ...observed.endpoints.filter(({ nodeId }) => !suppressedNodeIds.has(nodeId)),
-    ...demands.endpoints,
-  ];
-  const nodes = [
-    ...observed.nodes.filter(({ id }) => !suppressedNodeIds.has(id)),
-    ...demands.nodes,
-  ];
+    endpoints: observed.endpoints.filter(({ nodeId }) => !suppressedNodeIds.has(nodeId)),
+    nodes: observed.nodes.filter(({ id }) => !suppressedNodeIds.has(id)),
+  });
+  const edges = [...retainedObserved.edges, ...demands.edges];
+  const endpoints = [...retainedObserved.endpoints, ...demands.endpoints];
+  const nodes = [...retainedObserved.nodes, ...demands.nodes];
   if (
     edges.length > MAX_LOGISTICS_EDGES ||
     endpoints.length > MAX_LOGISTICS_NODES ||
     nodes.length > MAX_LOGISTICS_NODES
   )
-    return observed;
+    return retainedObserved;
   return freeze({ edges, endpoints, nodes });
 }
 

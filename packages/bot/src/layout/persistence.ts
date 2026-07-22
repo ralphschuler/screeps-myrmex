@@ -6,6 +6,7 @@ import {
   LAYOUT_LINK_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_OWNER_SCHEMA_VERSION,
   LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS,
+  LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_BLOCKERS,
   MAX_LAYOUT_CONTAINER_ENERGY,
@@ -17,6 +18,7 @@ import {
   MAX_LAYOUT_SPAWN_ENERGY,
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_TERMINAL_CAPACITY,
+  MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT,
   MAX_LAYOUT_RECORDS,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
@@ -30,15 +32,16 @@ import {
   type LayoutPlacement,
   type LayoutSpawnEvacuation,
   type LayoutStructureRemovalReceipt,
+  type LayoutTerminalEvacuation,
   type LayoutTowerEvacuation,
-  type LayoutsOwnerV17,
+  type LayoutsOwnerV18,
 } from "./contracts";
 import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
 
-export function emptyLayoutsOwner(): LayoutsOwnerV17 {
+export function emptyLayoutsOwner(): LayoutsOwnerV18 {
   return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
 }
-export function parseLayoutsOwner(value: unknown): LayoutsOwnerV17 | null {
+export function parseLayoutsOwner(value: unknown): LayoutsOwnerV18 | null {
   if (
     !record(value) ||
     (value.schemaVersion !== 1 &&
@@ -57,6 +60,7 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV17 | null {
       value.schemaVersion !== 14 &&
       value.schemaVersion !== 15 &&
       value.schemaVersion !== 16 &&
+      value.schemaVersion !== 17 &&
       value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION) ||
     !integer(value.revision) ||
     !Array.isArray(value.records) ||
@@ -80,7 +84,8 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV17 | null {
   const migratingBeforeV14 = value.schemaVersion < 14;
   const migratingBeforeV15 = value.schemaVersion < 15;
   const migratingBeforeV16 = value.schemaVersion < 16;
-  const migratingBeforeV17 = value.schemaVersion < LAYOUT_OWNER_SCHEMA_VERSION;
+  const migratingBeforeV17 = value.schemaVersion < 17;
+  const migratingBeforeV18 = value.schemaVersion < LAYOUT_OWNER_SCHEMA_VERSION;
   for (const rawItem of value.records) {
     if (record(rawItem) && record(rawItem.containerMigration)) {
       if (migratingV1 && rawItem.containerMigration.resourceManifest !== undefined) return null;
@@ -122,6 +127,8 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV17 | null {
     )
       return null;
     if (migratingBeforeV16 && record(rawItem) && rawItem.spawnEvacuation !== undefined) return null;
+    if (migratingBeforeV18 && record(rawItem) && rawItem.terminalEvacuation !== undefined)
+      return null;
     if (
       migratingBeforeV17 &&
       record(rawItem) &&
@@ -182,7 +189,7 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV17 | null {
   if (new Set(records.map((r) => r.roomName)).size !== records.length) return null;
   return freeze({
     schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
-    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingBeforeV17 ? 1 : 0),
+    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingBeforeV18 ? 1 : 0),
     records,
   });
 }
@@ -207,11 +214,11 @@ function migrateRemovalReceipt(value: unknown, migrating: boolean): unknown {
   };
 }
 export function persistLayoutCommitment(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   commitment: LayoutCommitment,
   placements: readonly LayoutPlacement[] = [],
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   const records = owner.records.filter((r) => r.roomName !== roomName);
   const sourceServices = placements.filter(
@@ -236,6 +243,9 @@ export function persistLayoutCommitment(
     ...(sameCommitment && prior.spawnEvacuation !== undefined
       ? { spawnEvacuation: prior.spawnEvacuation }
       : {}),
+    ...(sameCommitment && prior.terminalEvacuation !== undefined
+      ? { terminalEvacuation: prior.terminalEvacuation }
+      : {}),
     ...(sameCommitment && prior.towerEvacuation !== undefined
       ? { towerEvacuation: prior.towerEvacuation }
       : {}),
@@ -259,10 +269,10 @@ export function persistLayoutCommitment(
   });
 }
 export function persistLayoutContainerMigration(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   migration: LayoutContainerMigration | null,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -282,10 +292,10 @@ export function persistLayoutContainerMigration(
 }
 
 export function persistLayoutExtensionEvacuation(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   evacuation: LayoutExtensionEvacuation | null,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -306,10 +316,10 @@ export function persistLayoutExtensionEvacuation(
 }
 
 export function persistLayoutLabEvacuation(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   evacuation: LayoutLabEvacuation | null,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -329,10 +339,10 @@ export function persistLayoutLabEvacuation(
 }
 
 export function persistLayoutLinkEvacuation(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   evacuation: LayoutLinkEvacuation | null,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -352,10 +362,10 @@ export function persistLayoutLinkEvacuation(
 }
 
 export function persistLayoutSpawnEvacuation(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   evacuation: LayoutSpawnEvacuation | null,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -374,11 +384,34 @@ export function persistLayoutSpawnEvacuation(
   return freeze({ ...owner, records, revision: owner.revision + 1 });
 }
 
+export function persistLayoutTerminalEvacuation(
+  owner: LayoutsOwnerV18,
+  roomName: string,
+  evacuation: LayoutTerminalEvacuation | null,
+): LayoutsOwnerV18 {
+  const prior = owner.records.find((record) => record.roomName === roomName);
+  if (prior === undefined) return owner;
+  if (
+    (evacuation === null && prior.terminalEvacuation === undefined) ||
+    (evacuation !== null && JSON.stringify(evacuation) === JSON.stringify(prior.terminalEvacuation))
+  )
+    return owner;
+  const records = owner.records.map((record) => {
+    if (record.roomName !== roomName) return record;
+    if (evacuation === null) {
+      const { terminalEvacuation, ...retained } = record;
+      return terminalEvacuation === undefined ? record : retained;
+    }
+    return { ...record, terminalEvacuation: evacuation };
+  });
+  return freeze({ ...owner, records, revision: owner.revision + 1 });
+}
+
 export function persistLayoutTowerEvacuation(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   evacuation: LayoutTowerEvacuation | null,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -398,10 +431,10 @@ export function persistLayoutTowerEvacuation(
 }
 
 export function persistLayoutRemovalReceipt(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   receipt: LayoutStructureRemovalReceipt | null,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -421,7 +454,7 @@ export function persistLayoutRemovalReceipt(
 }
 
 export function freshSourceServicePlacements(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
 ): readonly LayoutPlacement[] {
   const record = owner.records.find((item) => item.roomName === roomName);
@@ -438,9 +471,9 @@ export function freshSourceServicePlacements(
   );
 }
 export function reconcileOwnedLayouts(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   ownedRoomNames: readonly string[],
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const owned = new Set(ownedRoomNames);
   const records = owner.records.filter((r) => owned.has(r.roomName));
   return records.length === owner.records.length
@@ -448,10 +481,10 @@ export function reconcileOwnedLayouts(
     : freeze({ ...owner, revision: owner.revision + 1, records });
 }
 export function persistConstructionSiteReceipt(
-  owner: LayoutsOwnerV17,
+  owner: LayoutsOwnerV18,
   roomName: string,
   receipt: ConstructionSiteAttemptReceipt,
-): LayoutsOwnerV17 {
+): LayoutsOwnerV18 {
   const records = owner.records.map((item) =>
     item.roomName === roomName
       ? {
@@ -488,6 +521,7 @@ function validRecord(v: unknown): v is LayoutRecord {
     (v.labEvacuation === undefined || validLabEvacuation(v.labEvacuation)) &&
     (v.linkEvacuation === undefined || validLinkEvacuation(v.linkEvacuation)) &&
     (v.spawnEvacuation === undefined || validSpawnEvacuation(v.spawnEvacuation)) &&
+    (v.terminalEvacuation === undefined || validTerminalEvacuation(v.terminalEvacuation)) &&
     (v.towerEvacuation === undefined || validTowerEvacuation(v.towerEvacuation)) &&
     (v.removalReceipt === undefined || validRemovalReceipt(v.removalReceipt)) &&
     (v.serviceBlockers === undefined || validServiceBlockers(v.serviceBlockers, v.roomName)) &&
@@ -680,6 +714,23 @@ function validSpawnEvacuation(value: unknown): value is LayoutSpawnEvacuation {
     value.expiresAt - value.startedAt === LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS &&
     integer(value.replacementInitialEnergy) &&
     value.replacementInitialEnergy + value.amount <= MAX_LAYOUT_SPAWN_ENERGY &&
+    identity(value.sourceId, 128) &&
+    identity(value.replacementId, 128) &&
+    value.sourceId !== value.replacementId
+  );
+}
+function validTerminalEvacuation(value: unknown): value is LayoutTerminalEvacuation {
+  return (
+    record(value) &&
+    positiveInteger(value.amount) &&
+    value.amount <= MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT &&
+    integer(value.startedAt) &&
+    integer(value.expiresAt) &&
+    value.expiresAt - value.startedAt === LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS &&
+    integer(value.replacementInitialAmount) &&
+    value.replacementInitialAmount + value.amount <= MAX_LAYOUT_STORAGE_CAPACITY &&
+    identity(value.resourceType, 64) &&
+    value.resourceType === value.resourceType.trim() &&
     identity(value.sourceId, 128) &&
     identity(value.replacementId, 128) &&
     value.sourceId !== value.replacementId

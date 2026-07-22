@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 17 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 18 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -23,6 +23,7 @@ export const MAX_LAYOUT_LAB_MINERAL = 3_000 as const;
 export const MAX_LAYOUT_LAB_EVACUATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_STORAGE_CAPACITY = 1_000_000 as const;
 export const MAX_LAYOUT_TERMINAL_CAPACITY = 300_000 as const;
+export const MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT = 3_000 as const;
 export const MAX_LAYOUT_STORAGE_RESOURCES = 64 as const;
 export const MAX_LAYOUT_LINK_ENERGY = 800 as const;
 export const MAX_LAYOUT_TOWER_ENERGY = 1_000 as const;
@@ -37,6 +38,7 @@ export const LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_LINK_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS = 150 as const;
+export const LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS = 150 as const;
 export const CONSTRUCTION_SITE_LIMITS = Object.freeze({
@@ -108,6 +110,15 @@ export interface LayoutTowerEvacuation {
   readonly expiresAt: number;
   readonly replacementId: string;
   readonly replacementInitialEnergy: number;
+  readonly sourceId: string;
+  readonly startedAt: number;
+}
+export interface LayoutTerminalEvacuation {
+  readonly amount: number;
+  readonly expiresAt: number;
+  readonly replacementId: string;
+  readonly replacementInitialAmount: number;
+  readonly resourceType: string;
   readonly sourceId: string;
   readonly startedAt: number;
 }
@@ -200,6 +211,7 @@ export interface LayoutRecord extends LayoutCommitment {
   readonly labEvacuation?: LayoutLabEvacuation;
   readonly linkEvacuation?: LayoutLinkEvacuation;
   readonly spawnEvacuation?: LayoutSpawnEvacuation;
+  readonly terminalEvacuation?: LayoutTerminalEvacuation;
   readonly towerEvacuation?: LayoutTowerEvacuation;
   /** One exact bounded receipt for the latest irreversible removal attempt in this room. */
   readonly removalReceipt?: LayoutStructureRemovalReceipt;
@@ -377,6 +389,34 @@ export function layoutSpawnEvacuationBudgetIssuer(
     `${String(roomName.length)}:${roomName}`,
     `${String(evacuation.sourceId.length)}:${evacuation.sourceId}`,
     `${String(evacuation.replacementId.length)}:${evacuation.replacementId}`,
+  ].join("/");
+  return issuer.length <= 128 ? issuer : null;
+}
+
+interface LayoutTerminalEvacuationIdentity {
+  readonly replacementId: string;
+  readonly resourceType: string;
+  readonly sourceId: string;
+}
+
+export function layoutTerminalEvacuationFlowId(
+  roomName: string,
+  evacuation: LayoutTerminalEvacuationIdentity,
+): string | null {
+  const flowId = `layout-terminal-evacuation:${roomName}:${evacuation.sourceId}:${evacuation.replacementId}:${String(evacuation.resourceType.length)}:${evacuation.resourceType}`;
+  return flowId.length <= 128 ? flowId : null;
+}
+
+export function layoutTerminalEvacuationBudgetIssuer(
+  roomName: string,
+  evacuation: LayoutTerminalEvacuationIdentity,
+): string | null {
+  const issuer = [
+    "layout-migration",
+    `${String(roomName.length)}:${roomName}`,
+    `${String(evacuation.sourceId.length)}:${evacuation.sourceId}`,
+    `${String(evacuation.replacementId.length)}:${evacuation.replacementId}`,
+    `${String(evacuation.resourceType.length)}:${evacuation.resourceType}`,
   ].join("/");
   return issuer.length <= 128 ? issuer : null;
 }
@@ -684,6 +724,7 @@ export interface LayoutMigrationPlanningResult {
   readonly labEvacuation: LayoutLabEvacuation | null;
   readonly linkEvacuation: LayoutLinkEvacuation | null;
   readonly spawnEvacuation: LayoutSpawnEvacuation | null;
+  readonly terminalEvacuation: LayoutTerminalEvacuation | null;
   readonly towerEvacuation: LayoutTowerEvacuation | null;
   readonly proposals: readonly LayoutMigrationProposal[];
   readonly removalReceipt: LayoutStructureRemovalReceipt | null;
@@ -823,7 +864,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV17 {
+export interface LayoutsOwnerV18 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];
