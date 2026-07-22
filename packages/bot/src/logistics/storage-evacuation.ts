@@ -11,6 +11,7 @@ import {
   MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT,
   MAX_LAYOUT_TERMINAL_CAPACITY,
   layoutStorageEvacuationBudgetIssuers,
+  layoutStorageEvacuationCurrentBatchResources,
   layoutStorageEvacuationFlowIds,
   type LayoutRecord,
   type LayoutStorageEvacuation,
@@ -112,6 +113,8 @@ export function projectLayoutStorageEvacuations(input: {
         workRemaining: sourceAmount > 0 || remaining > 0,
       };
     });
+    // Endpoint shortfall may be resource currently carried by the one Logistics contract. Exact
+    // endpoint conservation is required before cursor advancement or removal; overage is always drift.
     if (
       current.some(
         ({ delivered, observedSourceAmount, sourceAmount, term, totalDelivered }) =>
@@ -133,19 +136,20 @@ export function projectLayoutStorageEvacuations(input: {
 
     const flowIds = layoutStorageEvacuationFlowIds(room.name, evacuation);
     const issuers = layoutStorageEvacuationBudgetIssuers(room.name, evacuation);
+    const currentBatch = current.filter(({ term }) => term.amount > 0);
     if (
       flowIds === null ||
       issuers === null ||
-      flowIds.length !== terms.length ||
-      issuers.length !== terms.length ||
+      flowIds.length !== currentBatch.length ||
+      issuers.length !== currentBatch.length ||
       new Set(flowIds).size !== flowIds.length ||
       new Set(issuers).size !== issuers.length
     )
       continue;
     const manifest = "resourceManifest" in evacuation;
 
-    for (let index = 0; index < current.length; index += 1) {
-      const item = current[index];
+    for (let index = 0; index < currentBatch.length; index += 1) {
+      const item = currentBatch[index];
       const flowId = flowIds[index];
       const issuer = issuers[index];
       if (
@@ -303,6 +307,11 @@ function storageEvacuationTerms(
   evacuation: LayoutStorageEvacuation,
 ): readonly ResourceTerm[] | null {
   const raw = evacuation as unknown as Record<string, unknown>;
+  const originals: {
+    readonly amount: number;
+    readonly resourceType: string;
+    readonly terminalInitialAmount: number;
+  }[] = [];
   const manifest = raw.resourceManifest;
   if (manifest !== undefined) {
     if (
@@ -315,9 +324,6 @@ function storageEvacuationTerms(
     )
       return null;
     let prior = "";
-    let amountTotal = 0;
-    let terminalTotal = 0;
-    const terms: ResourceTerm[] = [];
     for (const row of manifest) {
       if (!Array.isArray(row) || row.length !== 3) return null;
       const resourceType: unknown = row[0];
@@ -332,61 +338,80 @@ function storageEvacuationTerms(
       )
         return null;
       prior = resourceType;
-      amountTotal += amount;
-      terminalTotal += terminalInitialAmount;
-      terms.push({
-        amount,
-        deferredAmount: 0,
-        resourceType,
-        terminalInitialAmount,
-        totalAmount: amount,
-        totalTerminalInitialAmount: terminalInitialAmount,
-      });
+      originals.push({ amount, resourceType, terminalInitialAmount });
     }
-    return amountTotal <= MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
-      terminalTotal + amountTotal <= MAX_LAYOUT_TERMINAL_CAPACITY
-      ? terms
-      : null;
-  }
-  if (
-    !positiveInteger(raw.amount) ||
-    !identity(raw.resourceType, 64) ||
-    raw.resourceType !== raw.resourceType.trim() ||
-    !nonnegativeInteger(raw.terminalInitialAmount) ||
-    raw.terminalInitialAmount + raw.amount > MAX_LAYOUT_TERMINAL_CAPACITY
-  )
-    return null;
-  if (raw.settledAmount === undefined) {
-    if (raw.amount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT) return null;
-    return [
-      {
-        amount: raw.amount,
-        deferredAmount: 0,
-        resourceType: raw.resourceType,
-        terminalInitialAmount: raw.terminalInitialAmount,
-        totalAmount: raw.amount,
-        totalTerminalInitialAmount: raw.terminalInitialAmount,
-      },
-    ];
-  }
-  if (
-    raw.amount <= MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT ||
-    raw.amount > MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT ||
-    (raw.settledAmount !== 0 && raw.settledAmount !== MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT) ||
-    raw.settledAmount >= raw.amount
-  )
-    return null;
-  const amount = Math.min(MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT, raw.amount - raw.settledAmount);
-  return [
-    {
-      amount,
-      deferredAmount: raw.amount - raw.settledAmount - amount,
+  } else {
+    if (
+      !positiveInteger(raw.amount) ||
+      !identity(raw.resourceType, 64) ||
+      raw.resourceType !== raw.resourceType.trim() ||
+      !nonnegativeInteger(raw.terminalInitialAmount)
+    )
+      return null;
+    originals.push({
+      amount: raw.amount,
       resourceType: raw.resourceType,
-      terminalInitialAmount: raw.terminalInitialAmount + raw.settledAmount,
-      totalAmount: raw.amount,
-      totalTerminalInitialAmount: raw.terminalInitialAmount,
-    },
-  ];
+      terminalInitialAmount: raw.terminalInitialAmount,
+    });
+  }
+
+  const totalAmount = originals.reduce((total, term) => total + term.amount, 0);
+  const terminalTotal = originals.reduce((total, term) => total + term.terminalInitialAmount, 0);
+  const settledAmount = raw.settledAmount;
+  if (settledAmount === undefined) {
+    if (totalAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT) return null;
+  } else if (
+    (settledAmount !== 0 && settledAmount !== MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT) ||
+    totalAmount <= MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT ||
+    totalAmount > MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT ||
+    settledAmount >= totalAmount
+  )
+    return null;
+  if (terminalTotal + totalAmount > MAX_LAYOUT_TERMINAL_CAPACITY) return null;
+
+  const currentResources = layoutStorageEvacuationCurrentBatchResources(evacuation);
+  const currentByResource = new Map(
+    currentResources.map(([resourceType, amount, terminalInitialAmount]) => [
+      resourceType,
+      { amount, terminalInitialAmount },
+    ]),
+  );
+  if (
+    currentByResource.size !== currentResources.length ||
+    currentResources.length === 0 ||
+    [...currentByResource.keys()].some(
+      (resourceType) => !originals.some((term) => term.resourceType === resourceType),
+    )
+  )
+    return null;
+
+  const terms: ResourceTerm[] = [];
+  let resourceStart = 0;
+  for (const original of originals) {
+    const priorAmount =
+      settledAmount === undefined
+        ? 0
+        : Math.max(0, Math.min(original.amount, settledAmount - resourceStart));
+    const current = currentByResource.get(original.resourceType);
+    const amount = current?.amount ?? 0;
+    if (
+      amount < 0 ||
+      priorAmount + amount > original.amount ||
+      (current !== undefined &&
+        current.terminalInitialAmount !== original.terminalInitialAmount + priorAmount)
+    )
+      return null;
+    terms.push({
+      amount,
+      deferredAmount: original.amount - priorAmount - amount,
+      resourceType: original.resourceType,
+      terminalInitialAmount: original.terminalInitialAmount + priorAmount,
+      totalAmount: original.amount,
+      totalTerminalInitialAmount: original.terminalInitialAmount,
+    });
+    resourceStart += original.amount;
+  }
+  return terms;
 }
 
 function exactInventoryStore(

@@ -25,6 +25,7 @@ import { projectLayoutLinkEvacuations } from "../src/logistics/link-evacuation";
 import {
   currentlyExecutableLogisticsFlowIds,
   executableLogisticsView,
+  logisticsAcquireAdmissionLimits,
   observeLogisticsGraph,
   planLogisticsRuntime,
 } from "../src/logistics/runtime";
@@ -90,6 +91,63 @@ describe("logistics runtime adapter", () => {
         ({ contractId }) => contractId,
       ),
     ).toEqual(["retained"]);
+  });
+
+  it("caps an acquire lease to fresh admitted stock without changing delivery", () => {
+    const execution = {
+      leases: [
+        {
+          contractId: "acquire",
+          execution: { flowId: "flow", reservedAmount: 1_000, stage: "acquire", version: 3 },
+          quantity: 1_000,
+        },
+        {
+          contractId: "deliver",
+          execution: { flowId: "flow", reservedAmount: 1_000, stage: "deliver", version: 3 },
+          quantity: 1_000,
+        },
+      ],
+      status: "ready",
+    } as unknown as ContractExecutionView;
+
+    expect(executableLogisticsView(execution, new Set(), new Map([["flow", 500]]))).toMatchObject({
+      leases: [
+        {
+          contractId: "acquire",
+          execution: { reservedAmount: 500, stage: "acquire" },
+          quantity: 500,
+        },
+        {
+          contractId: "deliver",
+          execution: { reservedAmount: 1_000, stage: "deliver" },
+          quantity: 1_000,
+        },
+      ],
+    });
+    expect(executableLogisticsView(execution, new Set(), new Map([["flow", 0]]))).toMatchObject({
+      leases: [expect.objectContaining({ contractId: "deliver" })],
+    });
+  });
+
+  it("defaults every current acquire lease to zero before overlaying fresh admission", () => {
+    const execution = {
+      leases: [
+        { execution: { flowId: "acquire-flow", stage: "acquire", version: 3 } },
+        { execution: { flowId: "deliver-only", stage: "deliver", version: 3 } },
+      ],
+      status: "ready",
+    } as unknown as ContractExecutionView;
+
+    for (const projections of [[], [{ admittedAmount: 0, id: "acquire-flow" }]]) {
+      expect(logisticsAcquireAdmissionLimits(execution, { plan: { projections } })).toEqual(
+        new Map([["acquire-flow", 0]]),
+      );
+    }
+    expect(
+      logisticsAcquireAdmissionLimits(execution, {
+        plan: { projections: [{ admittedAmount: 500, id: "acquire-flow" }] },
+      }),
+    ).toEqual(new Map([["acquire-flow", 500]]));
   });
 
   it("normalizes dropped, tombstone, ruin, and stored sources for one runtime graph", () => {

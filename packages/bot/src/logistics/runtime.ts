@@ -354,16 +354,57 @@ function blockerColonies(
   ];
 }
 
-/** Renews terminal logistics authority without making the planner own ledger revisions. */
+/** Defaults every current acquire lease closed, then overlays its fresh planner admission. */
+export function logisticsAcquireAdmissionLimits(
+  execution: ContractExecutionView,
+  projection: {
+    readonly plan: {
+      readonly projections: readonly { readonly admittedAmount: number; readonly id: string }[];
+    };
+  },
+): ReadonlyMap<string, number> {
+  const limits = new Map<string, number>();
+  if (execution.status !== "ready") return limits;
+  for (const { execution: terms } of execution.leases) {
+    if (terms.version === 3 && terms.stage === "acquire") limits.set(terms.flowId, 0);
+  }
+  for (const { admittedAmount, id } of projection.plan.projections) {
+    if (!limits.has(id)) continue;
+    limits.set(id, Number.isSafeInteger(admittedAmount) && admittedAmount > 0 ? admittedAmount : 0);
+  }
+  return limits;
+}
+
+/** Applies current Logistics admission without mutating the persistent contract or lease. */
 export function executableLogisticsView(
   execution: ContractExecutionView,
   blockedFlowIds: ReadonlySet<string>,
+  maximumAcquireAmounts: ReadonlyMap<string, number> = new Map(),
 ): ContractExecutionView {
-  if (execution.status !== "ready" || blockedFlowIds.size === 0) return execution;
+  if (
+    execution.status !== "ready" ||
+    (blockedFlowIds.size === 0 && maximumAcquireAmounts.size === 0)
+  )
+    return execution;
   return freeze({
-    leases: execution.leases.filter(
-      ({ execution: terms }) => terms.version !== 3 || !blockedFlowIds.has(terms.flowId),
-    ),
+    leases: execution.leases.flatMap((lease) => {
+      const terms = lease.execution;
+      if (terms.version !== 3) return [lease];
+      if (blockedFlowIds.has(terms.flowId)) return [];
+      if (terms.stage !== "acquire") return [lease];
+      const maximum = maximumAcquireAmounts.get(terms.flowId);
+      if (maximum === undefined) return [lease];
+      if (!Number.isSafeInteger(maximum) || maximum <= 0) return [];
+      const amount = Math.min(lease.quantity, terms.reservedAmount, maximum);
+      if (amount <= 0) return [];
+      return [
+        {
+          ...lease,
+          execution: { ...terms, reservedAmount: amount },
+          quantity: amount,
+        },
+      ];
+    }),
     status: execution.status,
   });
 }

@@ -203,9 +203,15 @@ single resource totaling 3,001–6,000 units. Exactly two batch-qualified flows 
 300-tick deadline; cursor advancement requires fresh first-batch delivery and complete prior-work
 retirement. Suppression remains continuous, and complete original delivery plus final retirement
 precedes removal. [ADR 0074](adr/0074-two-batch-single-resource-stocked-storage-evacuation.md)
-records the extension. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, spawn,
-storage, terminal, tower, link, and lab result reuses the same fixed receipt.
+records the extension. Issue [#381](https://github.com/ralphschuler/screeps-myrmex/issues/381)
+advances layouts V24 by applying that same cursor to a canonical two-to-eight-resource manifest.
+Binary manifest order partitions exactly 3,000 units into batch one and the remainder into batch
+two; a crossing row receives distinct batch-qualified identities while complete per-resource
+conservation remains mandatory.
+[ADR 0075](adr/0075-two-batch-mixed-resource-stocked-storage-evacuation.md) records the composition.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
+result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1583,7 +1589,7 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V23 layouts owner; V8 adds
+commitments and bounded receipts stage through the owner-local schema V24 layouts owner; V8 adds
 `link` to the existing removal-receipt discriminator, V9 adds one optional fixed-shape reserve-link
 evacuation, V10 adds `lab` to the fixed receipt discriminator, V11 adds one optional fixed-shape
 lab-energy evacuation, V12 adds its single-kind mineral/storage variant, V13 adds the paired
@@ -1593,8 +1599,9 @@ spawn evacuation, V17 adds `terminal` to the fixed removal-receipt discriminator
 optional fixed-shape single-resource terminal evacuation, V19 adds its bounded two-to-eight-row
 manifest alternative, V20 adds `storage` to the fixed removal-receipt discriminator, V21 adds one
 optional fixed-shape single-resource storage evacuation, V22 adds its bounded two-to-eight-row
-manifest alternative, and V23 adds the exact settled-batch cursor for one 3,001–6,000-unit
-single-resource continuation. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves
+manifest alternative, V23 adds the exact settled-batch cursor for one 3,001–6,000-unit
+single-resource continuation, and V24 permits that cursor on a canonical two-to-eight-resource
+manifest under the same total. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves
 prior commitments and authorizes no command. Every observed owned layout site enters the existing
 funded survival-growth build flow, while controller risk, recovery, maintenance, and protected
 reserves retain precedence.
@@ -1973,6 +1980,17 @@ continuous, and removal requires the advanced cursor, complete original terminal
 and final work retirement. V22 migrates without inventing a cursor; V22 rollback preserves V23 bytes
 and authorizes no layout work.
 [ADR 0074](adr/0074-two-batch-single-resource-stocked-storage-evacuation.md) records the extension.
+
+Issue #381 composes that cursor with the V22 manifest. Canonical resource order partitions the
+original 3,001–6,000 units into a first exact 3,000-unit interval and one exact remainder. A
+resource crossing the boundary receives distinct batch-qualified flow and budget identities; rows
+outside the current interval publish no work. Runtime caps every acquire lease tick-locally by its
+fresh Logistics admission; absent or zero admission suppresses acquire execution while delivery
+remains available. A stale contract therefore cannot withdraw deferred stock after actor loss or
+partial withdrawal. Cursor advancement requires fresh exact per-resource conservation and complete
+prior-work retirement. V23 migrates without inventing a manifest cursor, while V23 rollback
+preserves V24 bytes and authorizes no layout work.
+[ADR 0075](adr/0075-two-batch-mixed-resource-stocked-storage-evacuation.md) records the composition.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2616,12 +2634,13 @@ Required architecture assertions include:
   evacuation into that terminal, suppresses internal sends and competing work at both endpoints,
   atomically admits every currently active manifest row, and requires fresh target-empty, every
   exact baseline-plus-amount terminal gain, and retired exact flows/endpoints; one single-resource
-  target of 3,001–6,000 units instead uses exactly two batch-qualified flows under one nonrenewing
-  300-tick deadline, with fresh first-batch delivery and complete prior-work retirement required
-  before cursor advancement and second-batch publication; expiry restores ordinary storage/terminal
-  service but remains removal-blocking; fresh execution rechecks both Stores, V22 rollback preserves
-  V23 bytes, and target disappearance exposes the committed storage site; the narrow
-  `storage → terminal` continuity form cannot weaken any same-type or inverse check;
+  target or canonical two-to-eight-resource manifest totaling 3,001–6,000 units instead uses exactly
+  two aggregate batch-qualified projections under one nonrenewing 300-tick deadline, with fresh
+  per-resource first-batch delivery and complete prior-work retirement required before cursor
+  advancement and second-batch publication; expiry restores ordinary storage/terminal service but
+  remains removal-blocking; fresh execution rechecks both Stores, V23 rollback preserves V24 bytes,
+  and target disappearance exposes the committed storage site; the narrow `storage → terminal`
+  continuity form cannot weaken any same-type or inverse check;
 - obsolete-tower removal requires full allowance of at least two, allowance-minus-one active
   committed towers, an active empty unshared target, an exact active committed replacement with at
   least 10 energy, current safety, and the same global one-command ceiling; stocked targets first

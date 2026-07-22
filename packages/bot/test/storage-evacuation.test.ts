@@ -21,7 +21,11 @@ import {
   type LayoutStorageEvacuationResource,
 } from "../src/layout";
 import { aggregateStoreCapacityReservationKey } from "../src/logistics/planner";
-import { planLogisticsRuntime } from "../src/logistics/runtime";
+import {
+  executableLogisticsView,
+  logisticsAcquireAdmissionLimits,
+  planLogisticsRuntime,
+} from "../src/logistics/runtime";
 import {
   authorizeLayoutStorageEvacuationFlowIds,
   completeExecutableLayoutStorageEvacuationFlowIds,
@@ -65,6 +69,18 @@ const sequentialTerms = {
   startedAt: 10,
   terminalId,
   terminalInitialAmount: 25_000,
+} as const satisfies LayoutStorageEvacuation;
+const sequentialMixedResources = [
+  ["H", 2_000, 500],
+  ["energy", 4_000, 25_000],
+] as const satisfies readonly LayoutStorageEvacuationResource[];
+const sequentialMixedTerms = {
+  expiresAt: 310,
+  resourceManifest: sequentialMixedResources,
+  settledAmount: 0,
+  sourceId,
+  startedAt: 10,
+  terminalId,
 } as const satisfies LayoutStorageEvacuation;
 const mixedResources = [
   ["H", 1_000, 500],
@@ -179,7 +195,7 @@ function project(
 }
 
 describe("bounded stocked-storage evacuation", () => {
-  it("persists V23 terms while migration invents no sequential cursor and rejects spoofed terms", () => {
+  it("persists V24 terms while migration invents no sequential cursor and rejects spoofed terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     const v20 = { ...owner, schemaVersion: 20 } as const;
     expect(parseLayoutsOwner(v20)).toEqual({ ...owner, revision: owner.revision + 1 });
@@ -206,9 +222,19 @@ describe("bounded stocked-storage evacuation", () => {
         records: [{ ...v22.records[0], storageEvacuation: sequentialTerms }],
       }),
     ).toBeNull();
+    const v23Manifest = {
+      ...owner,
+      records: [{ ...owner.records[0], storageEvacuation: mixedTerms }],
+      schemaVersion: 23,
+    } as const;
+    expect(parseLayoutsOwner(v23Manifest)).toEqual({
+      ...owner,
+      records: v23Manifest.records,
+      revision: owner.revision + 1,
+    });
 
     owner = persistLayoutStorageEvacuation(owner, roomName, mixedTerms);
-    expect(owner.schemaVersion).toBe(23);
+    expect(owner.schemaVersion).toBe(24);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(layoutStorageEvacuationFlowIds(roomName, mixedTerms)).toHaveLength(2);
     expect(layoutStorageEvacuationBudgetIssuers(roomName, mixedTerms)).toHaveLength(2);
@@ -254,6 +280,16 @@ describe("bounded stocked-storage evacuation", () => {
       { ...sequentialTerms, expiresAt: 309 },
       { ...sequentialTerms, settledAmount: 1 },
       { ...sequentialTerms, settledAmount: 6_000 },
+      { ...sequentialMixedTerms, expiresAt: 309 },
+      { ...sequentialMixedTerms, settledAmount: 1 },
+      { ...sequentialMixedTerms, resourceManifest: [["energy", 6_000, 25_000]] },
+      {
+        ...sequentialMixedTerms,
+        resourceManifest: [
+          ["H", 3_000, 500],
+          ["energy", 3_001, 25_000],
+        ],
+      },
     ])
       expect(
         parseLayoutsOwner({
@@ -266,7 +302,7 @@ describe("bounded stocked-storage evacuation", () => {
   it("persists and projects two identity-distinct sequential batches", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = persistLayoutStorageEvacuation(owner, roomName, sequentialTerms);
-    expect(owner.schemaVersion).toBe(23);
+    expect(owner.schemaVersion).toBe(24);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const firstFlowId = layoutStorageEvacuationFlowId(roomName, sequentialTerms);
@@ -343,6 +379,246 @@ describe("bounded stocked-storage evacuation", () => {
     ).toEqual([]);
   });
 
+  it("persists and projects two deterministic mixed-resource batches", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    const v23 = { ...owner, schemaVersion: 23 } as const;
+    expect(
+      parseLayoutsOwner({
+        ...v23,
+        records: [{ ...v23.records[0], storageEvacuation: sequentialMixedTerms }],
+      }),
+    ).toBeNull();
+
+    owner = persistLayoutStorageEvacuation(owner, roomName, sequentialMixedTerms);
+    expect(owner.schemaVersion).toBe(24);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    const minimumTerms = {
+      ...sequentialMixedTerms,
+      resourceManifest: [
+        ["H", 1_500, 500],
+        ["energy", 1_501, 25_000],
+      ],
+    } as const satisfies LayoutStorageEvacuation;
+    const minimumOwner = persistLayoutStorageEvacuation(owner, roomName, minimumTerms);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(minimumOwner)))).toEqual(minimumOwner);
+    expect(
+      project(
+        world(
+          [
+            ["H", 1_500],
+            ["energy", 1_501],
+          ],
+          [
+            ["H", 500],
+            ["energy", 25_000],
+          ],
+          11,
+        ),
+        11,
+        [record(minimumTerms)],
+      ).demands.edges.map(({ maximumAmount }) => maximumAmount),
+    ).toEqual([1_500, 1_500]);
+    expect(layoutStorageEvacuationCurrentBatchResources(minimumTerms)).toEqual([
+      ["H", 1_500, 500],
+      ["energy", 1_500, 25_000],
+    ]);
+    expect(
+      layoutStorageEvacuationCurrentBatchResources({
+        ...minimumTerms,
+        settledAmount: 3_000,
+      }),
+    ).toEqual([["energy", 1, 26_500]]);
+    expect(layoutStorageEvacuationCurrentBatchResources(sequentialMixedTerms)).toEqual([
+      ["H", 2_000, 500],
+      ["energy", 1_000, 25_000],
+    ]);
+
+    const secondTerms = {
+      ...sequentialMixedTerms,
+      settledAmount: 3_000,
+    } as const satisfies LayoutStorageEvacuation;
+    expect(layoutStorageEvacuationCurrentBatchResources(secondTerms)).toEqual([
+      ["energy", 3_000, 26_000],
+    ]);
+    const firstFlowIds = layoutStorageEvacuationFlowIds(roomName, sequentialMixedTerms);
+    const secondFlowIds = layoutStorageEvacuationFlowIds(roomName, secondTerms);
+    expect(firstFlowIds).toHaveLength(2);
+    expect(secondFlowIds).toHaveLength(1);
+    expect(secondFlowIds?.[0]).not.toBe(firstFlowIds?.[1]);
+
+    const first = project(
+      world(
+        [
+          ["energy", 4_000],
+          ["H", 2_000],
+        ],
+        [
+          ["energy", 25_000],
+          ["H", 500],
+        ],
+        11,
+      ),
+      11,
+      JSON.parse(JSON.stringify([record(sequentialMixedTerms)])) as LayoutRecord[],
+    );
+    expect(first.demands.edges.map(({ maximumAmount }) => maximumAmount)).toEqual([2_000, 1_000]);
+    expect(
+      first.demands.endpoints.filter(({ acquireAction }) => acquireAction === "withdraw"),
+    ).toEqual([
+      expect.objectContaining({ observedAmount: 2_000, resourceType: "H" }),
+      expect.objectContaining({ observedAmount: 1_000, resourceType: "energy" }),
+    ]);
+
+    const second = project(
+      world(
+        [["energy", 3_000]],
+        [
+          ["H", 2_500],
+          ["energy", 26_000],
+        ],
+        151,
+      ),
+      151,
+      [record(secondTerms)],
+    );
+    expect(second.demands.edges).toEqual([
+      expect.objectContaining({ id: secondFlowIds?.[0], maximumAmount: 3_000 }),
+    ]);
+    expect(
+      project(
+        world(
+          [["energy", 3_000]],
+          [
+            ["H", 2_500],
+            ["energy", 25_999],
+          ],
+          151,
+        ),
+        151,
+        [record(secondTerms)],
+      ).demands.edges,
+    ).toEqual([]);
+    expect(second.demands.endpoints[0]).toMatchObject({
+      observedAmount: 3_000,
+      resourceType: "energy",
+      targetId: sourceId,
+    });
+    expect(
+      project(
+        world(
+          [["energy", 1_500]],
+          [
+            ["H", 2_500],
+            ["energy", 27_500],
+          ],
+          152,
+        ),
+        152,
+        [record(secondTerms)],
+      ).demands.endpoints[0],
+    ).toMatchObject({ observedAmount: 1_500, resourceType: "energy" });
+
+    const staleFirstBatchLease = {
+      leases: [
+        {
+          actorId: "stale-first-mixed-batch-hauler",
+          execution: { counterpartId: terminalId, flowId: firstFlowIds?.[1], version: 3 },
+          targetId: sourceId,
+        },
+      ],
+      status: "ready",
+    } as unknown as ContractExecutionView;
+    expect(
+      withoutSuppressedLeaseTargets(
+        staleFirstBatchLease,
+        new Set([sourceId, terminalId]),
+        new Set(secondFlowIds ?? []),
+      ).leases,
+    ).toEqual([]);
+  });
+
+  it("caps a stale mixed acquire at fresh virtual stock and never exposes deferred stock", () => {
+    const flowIds = layoutStorageEvacuationFlowIds(roomName, sequentialMixedTerms);
+    const issuers = layoutStorageEvacuationBudgetIssuers(roomName, sequentialMixedTerms);
+    const energyFlowId = flowIds?.[1];
+    const energyIssuer = issuers?.[1];
+    if (energyFlowId === undefined || energyIssuer === undefined)
+      throw new Error("expected mixed energy flow identity");
+    const planning = {
+      contracts: [
+        {
+          budgetBinding: { category: "optional-growth", issuer: energyIssuer },
+          contractId: "stale-mixed-acquire",
+          execution: {
+            action: "withdraw",
+            completion: "target-depleted",
+            counterpartId: terminalId,
+            flowId: energyFlowId,
+            recommendedCarry: 1,
+            recommendedMove: 1,
+            reservedAmount: 1_000,
+            resourceType: "energy" as ResourceConstant,
+            stage: "acquire",
+            version: 3,
+          },
+          issuer: `logistics/${energyFlowId}`,
+          issuerSequence: 0,
+          owner: { id: roomName, kind: "colony" },
+          state: "funded",
+          targetId: sourceId,
+        },
+      ],
+      status: "ready",
+    } as const satisfies ContractPlanningView;
+    const staleExecution = {
+      leases: [
+        {
+          contractId: "stale-mixed-acquire",
+          execution: planning.contracts[0].execution,
+          quantity: 1_000,
+        },
+      ],
+      status: "ready",
+    } as unknown as ContractExecutionView;
+    const runtimeFor = (sourceEnergy: number) => {
+      const snapshot = world(
+        [
+          ["H", 2_000],
+          ["energy", sourceEnergy],
+        ],
+        [
+          ["H", 500],
+          ["energy", 25_000],
+        ],
+        12,
+      );
+      return planLogisticsRuntime({
+        execution: emptyContractExecutionView("ready"),
+        includeOptional: true,
+        planning,
+        resourceDemands: project(snapshot, 12, [record(sequentialMixedTerms)]).demands,
+        snapshot,
+        tick: 12,
+      });
+    };
+
+    const partial = runtimeFor(3_500);
+    const partialLimits = logisticsAcquireAdmissionLimits(staleExecution, partial);
+    expect(partialLimits.get(energyFlowId)).toBe(500);
+    expect(
+      executableLogisticsView(staleExecution, new Set(), partialLimits).leases[0],
+    ).toMatchObject({
+      contractId: "stale-mixed-acquire",
+      execution: { reservedAmount: 500, stage: "acquire" },
+      quantity: 500,
+    });
+
+    const deferredOnly = runtimeFor(3_000);
+    const deferredLimits = logisticsAcquireAdmissionLimits(staleExecution, deferredOnly);
+    expect(deferredLimits.get(energyFlowId)).toBe(0);
+    expect(executableLogisticsView(staleExecution, new Set(), deferredLimits).leases).toEqual([]);
+  });
+
   it("keeps every nonterminal V3 batch contract removal-blocking until retirement", () => {
     const states = ["proposed", "funded", "assigned", "active", "suspended"] as const;
     const contracts = states.map((state) => ({
@@ -366,7 +642,7 @@ describe("bounded stocked-storage evacuation", () => {
   it("preserves a future owner byte-for-byte and authorizes no layout work", () => {
     const futureOwner = {
       ...persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
-      schemaVersion: 24,
+      schemaVersion: 25,
     };
     const before = JSON.stringify(futureOwner);
     const parsed = parseLayoutsOwner(futureOwner);
