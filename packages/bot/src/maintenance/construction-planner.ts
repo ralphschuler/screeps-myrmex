@@ -16,6 +16,7 @@ import {
   LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_LINK_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS,
+  LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_CONTAINER_ENERGY,
   MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
@@ -28,6 +29,7 @@ import {
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_RESOURCES,
   MAX_LAYOUT_TERMINAL_CAPACITY,
+  MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   STRUCTURE_REMOVAL_LIMITS,
@@ -42,6 +44,8 @@ import {
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationBudgetIssuer,
   layoutSpawnEvacuationFlowId,
+  layoutTerminalEvacuationBudgetIssuer,
+  layoutTerminalEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
   layoutTowerEvacuationFlowId,
   type LayoutCommitment,
@@ -57,6 +61,7 @@ import {
   type LayoutPlacement,
   type LayoutSpawnEvacuation,
   type LayoutStructureRemovalReceipt,
+  type LayoutTerminalEvacuation,
   type LayoutTowerEvacuation,
 } from "../layout";
 import type {
@@ -268,6 +273,7 @@ export class ConstructionPlanner {
     readonly removalReceipt?: LayoutStructureRemovalReceipt | null;
     readonly room: RoomSnapshot;
     readonly spawnEvacuation?: LayoutSpawnEvacuation | null;
+    readonly terminalEvacuation?: LayoutTerminalEvacuation | null;
   }): LayoutMigrationPlanningResult {
     const blockers: LayoutMigrationBlockerRecord[] = [];
     const proposals: LayoutMigrationProposal[] = [];
@@ -390,12 +396,14 @@ export class ConstructionPlanner {
         (left.kind === "lab" && left.target.id === input.labEvacuation?.sourceId) ||
         (left.kind === "link" && left.target.id === input.linkEvacuation?.sourceId) ||
         (left.kind === "spawn" && left.target.id === input.spawnEvacuation?.sourceId) ||
+        (left.kind === "terminal" && left.target.id === input.terminalEvacuation?.sourceId) ||
         (left.kind === "tower" && left.target.id === input.towerEvacuation?.sourceId) ||
         (left.kind === "extension" && left.target.id === input.extensionEvacuation?.sourceId);
       const rightActive =
         (right.kind === "lab" && right.target.id === input.labEvacuation?.sourceId) ||
         (right.kind === "link" && right.target.id === input.linkEvacuation?.sourceId) ||
         (right.kind === "spawn" && right.target.id === input.spawnEvacuation?.sourceId) ||
+        (right.kind === "terminal" && right.target.id === input.terminalEvacuation?.sourceId) ||
         (right.kind === "tower" && right.target.id === input.towerEvacuation?.sourceId) ||
         (right.kind === "extension" && right.target.id === input.extensionEvacuation?.sourceId);
       return Number(rightActive) - Number(leftActive) || compareMigrationCandidate(left, right);
@@ -441,6 +449,7 @@ export class ConstructionPlanner {
         labEvacuation: input.labEvacuation ?? null,
         linkEvacuation: input.linkEvacuation ?? null,
         spawnEvacuation: input.spawnEvacuation ?? null,
+        terminalEvacuation: input.terminalEvacuation ?? null,
         towerEvacuation: input.towerEvacuation ?? null,
         proposals,
         removalReceipt,
@@ -457,6 +466,7 @@ export class ConstructionPlanner {
         labEvacuation: null,
         linkEvacuation: null,
         spawnEvacuation: null,
+        terminalEvacuation: null,
         towerEvacuation: null,
         proposals,
         removalReceipt,
@@ -479,6 +489,7 @@ export class ConstructionPlanner {
         labEvacuation: input.labEvacuation ?? null,
         linkEvacuation: input.linkEvacuation ?? null,
         spawnEvacuation: input.spawnEvacuation ?? null,
+        terminalEvacuation: input.terminalEvacuation ?? null,
         towerEvacuation: input.towerEvacuation ?? null,
         proposals,
         removalReceipt,
@@ -497,6 +508,7 @@ export class ConstructionPlanner {
     let labEvacuation = input.labEvacuation ?? null;
     let linkEvacuation = input.linkEvacuation ?? null;
     let spawnEvacuation = input.spawnEvacuation ?? null;
+    let terminalEvacuation = input.terminalEvacuation ?? null;
     let towerEvacuation = input.towerEvacuation ?? null;
     const admitRemoval = (proposal: LayoutMigrationProposal): boolean => {
       const assessment = assessRemovalReceipt(removalReceipt, proposal, input.room.observedAt);
@@ -578,7 +590,7 @@ export class ConstructionPlanner {
             });
             break;
           }
-          if (hasUnrelatedSpawnEndpoint(input, identity, null)) {
+          if (hasUnrelatedMigrationEndpoint(input, identity, null)) {
             pushMigrationBlocker(blockers, {
               reason: "logistics-active",
               roomName: input.room.name,
@@ -619,11 +631,12 @@ export class ConstructionPlanner {
                 spawnEvacuation.replacementInitialEnergy + spawnEvacuation.amount)
           )
             reason = "evacuation-incomplete";
-          else if (hasUnrelatedSpawnEndpoint(input, identity, activeFlowId))
+          else if (hasUnrelatedMigrationEndpoint(input, identity, activeFlowId))
             reason = "logistics-active";
           else if (spawn.targetEnergy > 0) reason = "target-stocked";
           else if (flowActive) reason = "evacuation-pending";
-          else if (hasUnrelatedSpawnEndpoint(input, identity, null)) reason = "evacuation-pending";
+          else if (hasUnrelatedMigrationEndpoint(input, identity, null))
+            reason = "evacuation-pending";
           else if (
             spawn.replacementEnergy <
             spawnEvacuation.replacementInitialEnergy + spawnEvacuation.amount
@@ -637,7 +650,7 @@ export class ConstructionPlanner {
             });
             break;
           }
-        } else if (hasUnrelatedSpawnEndpoint(input, identity, null)) {
+        } else if (hasUnrelatedMigrationEndpoint(input, identity, null)) {
           pushMigrationBlocker(blockers, {
             reason: "logistics-active",
             roomName: input.room.name,
@@ -1386,6 +1399,8 @@ export class ConstructionPlanner {
       }
 
       if (candidate.kind === "terminal") {
+        if (terminalEvacuation !== null && terminalEvacuation.sourceId !== candidate.target.id)
+          continue;
         if (input.industryTerminalWork === undefined || input.industryTerminalWork === null) {
           pushMigrationBlocker(blockers, {
             reason: "industry-unavailable",
@@ -1408,6 +1423,7 @@ export class ConstructionPlanner {
         if (
           input.logisticsEvidenceReady !== true ||
           input.activeLogisticsEndpoints === undefined ||
+          input.activeLogisticsFlowIds === undefined ||
           input.activeLogisticsTargetIds === undefined
         ) {
           pushMigrationBlocker(blockers, {
@@ -1422,14 +1438,7 @@ export class ConstructionPlanner {
           input.labEvacuation !== undefined &&
           "destinationStructureType" in input.labEvacuation &&
           input.labEvacuation.destinationId === candidate.target.id;
-        if (
-          terminalBoundLabEvacuation ||
-          input.activeLogisticsTargetIds.has(candidate.target.id) ||
-          input.activeLogisticsEndpoints.some(
-            ({ counterpartId, targetId }) =>
-              targetId === candidate.target.id || counterpartId === candidate.target.id,
-          )
-        ) {
+        if (terminalBoundLabEvacuation) {
           pushMigrationBlocker(blockers, {
             reason: "logistics-active",
             roomName: input.room.name,
@@ -1440,17 +1449,130 @@ export class ConstructionPlanner {
         const terminal = terminalMigrationEvidence({
           allowance: input.colony.rclPolicy.unlocks?.terminal ?? 0,
           desiredTerminals,
+          requiredResourceType: terminalEvacuation?.resourceType ?? null,
           requiredStorageId:
-            removalReceipt?.targetId === candidate.target.id &&
+            terminalEvacuation?.replacementId ??
+            (removalReceipt?.targetId === candidate.target.id &&
             removalReceipt.targetStructureType === "terminal"
               ? removalReceipt.replacementId
-              : null,
+              : null),
           room: input.room,
           target: candidate.target,
         });
         if (terminal.storage === null) {
           pushMigrationBlocker(blockers, {
             reason: terminal.reason ?? "replacement-pending",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        const resourceType = terminalEvacuation?.resourceType ?? terminal.targetResourceType;
+        const identity =
+          resourceType === null
+            ? null
+            : {
+                replacementId: terminal.storage.id,
+                resourceType,
+                sourceId: candidate.target.id,
+              };
+        if (terminalEvacuation === null && terminal.targetAmount > 0) {
+          const flowId =
+            identity === null ? null : layoutTerminalEvacuationFlowId(input.room.name, identity);
+          const issuer =
+            identity === null
+              ? null
+              : layoutTerminalEvacuationBudgetIssuer(input.room.name, identity);
+          if (identity === null || flowId === null || issuer === null) {
+            pushMigrationBlocker(blockers, {
+              reason: "logistics-unavailable",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          if (
+            terminal.targetAmount > MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT ||
+            terminal.storageFreeCapacity < terminal.targetAmount
+          ) {
+            pushMigrationBlocker(blockers, {
+              reason: "evacuation-capacity",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          if (hasUnrelatedMigrationEndpoint(input, identity, null)) {
+            pushMigrationBlocker(blockers, {
+              reason: "logistics-active",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          terminalEvacuation = {
+            amount: terminal.targetAmount,
+            expiresAt: input.room.observedAt + LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS,
+            replacementId: terminal.storage.id,
+            replacementInitialAmount: terminal.storageResourceAmount,
+            resourceType: identity.resourceType,
+            sourceId: candidate.target.id,
+            startedAt: input.room.observedAt,
+          };
+          pushMigrationBlocker(blockers, {
+            reason: "target-stocked",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (terminalEvacuation !== null) {
+          const flowId = layoutTerminalEvacuationFlowId(input.room.name, terminalEvacuation);
+          const flowActive = flowId !== null && input.activeLogisticsFlowIds.has(flowId);
+          let reason: LayoutMigrationBlocker | null = null;
+          if (flowId === null) reason = "logistics-unavailable";
+          else if (input.room.observedAt <= terminalEvacuation.startedAt)
+            reason = "migration-pending";
+          else if (input.room.observedAt >= terminalEvacuation.expiresAt)
+            reason = "evacuation-expired";
+          else if (
+            terminal.targetResourceType !==
+              (terminal.targetAmount === 0 ? null : terminalEvacuation.resourceType) ||
+            terminal.storageResourceAmount < terminalEvacuation.replacementInitialAmount ||
+            terminal.storageResourceAmount >
+              terminalEvacuation.replacementInitialAmount + terminalEvacuation.amount ||
+            terminal.targetAmount +
+              terminal.storageResourceAmount -
+              terminalEvacuation.replacementInitialAmount >
+              terminalEvacuation.amount
+          )
+            reason = "evacuation-incomplete";
+          else if (hasUnrelatedMigrationEndpoint(input, terminalEvacuation, flowId))
+            reason = "logistics-active";
+          else if (terminal.targetAmount > 0) reason = "target-stocked";
+          else if (flowActive) reason = "evacuation-pending";
+          else if (
+            terminal.storageResourceAmount !==
+            terminalEvacuation.replacementInitialAmount + terminalEvacuation.amount
+          )
+            reason = "evacuation-incomplete";
+          if (reason !== null) {
+            pushMigrationBlocker(blockers, {
+              reason,
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+        } else if (
+          input.activeLogisticsTargetIds.has(candidate.target.id) ||
+          input.activeLogisticsEndpoints.some(
+            ({ counterpartId, targetId }) =>
+              targetId === candidate.target.id || counterpartId === candidate.target.id,
+          )
+        ) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-active",
             roomName: input.room.name,
             targetId: candidate.target.id,
           });
@@ -1466,7 +1588,7 @@ export class ConstructionPlanner {
           replacementId: terminal.storage.id,
           replacementStructureType: "storage",
           stableId: [
-            "remove-terminal-v1",
+            terminalEvacuation === null ? "remove-terminal-v1" : "remove-terminal-v2",
             input.colony.id,
             input.commitment.fingerprint,
             candidate.target.id,
@@ -1738,6 +1860,7 @@ export class ConstructionPlanner {
       labEvacuation,
       linkEvacuation,
       spawnEvacuation,
+      terminalEvacuation,
       towerEvacuation,
       proposals: proposals.sort((a, b) => a.stableId.localeCompare(b.stableId)),
       removalReceipt,
@@ -2806,7 +2929,7 @@ function spawnMigrationEvidence(
     : { reason: null, replacement, replacementEnergy, targetEnergy };
 }
 
-function hasUnrelatedSpawnEndpoint(
+function hasUnrelatedMigrationEndpoint(
   input: {
     readonly activeLeasedWorkTargetIds?: ReadonlySet<string>;
     readonly activeLogisticsEndpoints?: readonly {
@@ -2998,6 +3121,7 @@ function exactExtensionEnergy(extension: RoomSnapshot["ownedExtensions"][number]
 function terminalMigrationEvidence(input: {
   readonly allowance: number;
   readonly desiredTerminals: readonly LayoutPlacement[];
+  readonly requiredResourceType: string | null;
   readonly requiredStorageId: string | null;
   readonly room: RoomSnapshot;
   readonly target: StructureSnapshot;
@@ -3007,7 +3131,21 @@ function terminalMigrationEvidence(input: {
     "replacement-pending" | "site-conflict" | "target-stocked" | "target-unavailable"
   > | null;
   readonly storage: NonNullable<RoomSnapshot["ownedStorages"]>[number] | null;
+  readonly storageFreeCapacity: number;
+  readonly storageResourceAmount: number;
+  readonly targetAmount: number;
+  readonly targetResourceType: string | null;
 } {
+  const failure = (
+    reason: "replacement-pending" | "site-conflict" | "target-stocked" | "target-unavailable",
+  ) => ({
+    reason,
+    storage: null,
+    storageFreeCapacity: 0,
+    storageResourceAmount: 0,
+    targetAmount: 0,
+    targetResourceType: null,
+  });
   const controllerLevel = input.room.controller?.level;
   if (
     input.allowance !== 1 ||
@@ -3016,7 +3154,7 @@ function terminalMigrationEvidence(input: {
     controllerLevel < 6 ||
     controllerLevel > 8
   )
-    return { reason: "replacement-pending", storage: null };
+    return failure("replacement-pending");
   const desiredTerminal = input.desiredTerminals[0];
   if (
     desiredTerminal === undefined ||
@@ -3029,27 +3167,43 @@ function terminalMigrationEvidence(input: {
         structureType !== "rampart",
     )
   )
-    return { reason: "site-conflict", storage: null };
+    return failure("site-conflict");
   const terminals = input.room.ownedTerminals ?? [];
   const observedTarget = terminals.find(({ id }) => id === input.target.id);
   if (terminals.length !== 1 || observedTarget === undefined || !observedTarget.active)
-    return { reason: "target-unavailable", storage: null };
+    return failure("target-unavailable");
   const targetStore = exactInventoryStore(observedTarget, MAX_LAYOUT_TERMINAL_CAPACITY);
-  if (targetStore === null || observedTarget.cooldown !== 0)
-    return { reason: "target-unavailable", storage: null };
-  if (targetStore.resources.size > 0 || observedTarget.store.usedCapacity !== 0)
-    return { reason: "target-stocked", storage: null };
+  if (targetStore === null || observedTarget.cooldown !== 0) return failure("target-unavailable");
+  if (
+    targetStore.resources.size > 1 ||
+    observedTarget.store.usedCapacity > MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT
+  )
+    return failure("target-stocked");
+  const targetEntry = [...targetStore.resources][0] ?? null;
+  const targetResourceType = targetEntry?.[0] ?? null;
+  const targetAmount = targetEntry?.[1] ?? 0;
+  const effectiveResourceType = input.requiredResourceType ?? targetResourceType;
   const storages = input.room.ownedStorages ?? [];
-  if (storages.length !== 1) return { reason: "replacement-pending", storage: null };
+  if (storages.length !== 1) return failure("replacement-pending");
   const storage = storages[0];
+  const storageStore =
+    storage === undefined ? null : exactInventoryStore(storage, MAX_LAYOUT_STORAGE_CAPACITY);
   if (
     storage === undefined ||
     !storage.active ||
     (input.requiredStorageId !== null && storage.id !== input.requiredStorageId) ||
-    exactInventoryStore(storage, MAX_LAYOUT_STORAGE_CAPACITY) === null
+    storageStore === null
   )
-    return { reason: "replacement-pending", storage: null };
-  return { reason: null, storage };
+    return failure("replacement-pending");
+  return {
+    reason: null,
+    storage,
+    storageFreeCapacity: storageStore.freeCapacity,
+    storageResourceAmount:
+      effectiveResourceType === null ? 0 : (storageStore.resources.get(effectiveResourceType) ?? 0),
+    targetAmount,
+    targetResourceType,
+  };
 }
 
 function compareMigrationCandidate(a: MigrationCandidate, b: MigrationCandidate): number {

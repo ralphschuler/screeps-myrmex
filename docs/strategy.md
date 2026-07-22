@@ -181,6 +181,16 @@ remain. Observed disappearance exposes the committed terminal through the ordina
 site/funding/build chain. [ADR 0068](adr/0068-empty-obsolete-terminal-relocation.md) records this
 intentional outage.
 
+One otherwise eligible terminal holding exactly one resource kind and at most 3,000 units may first
+persist one 150-tick evacuation into that same exact active storage. The sole funded V3 Logistics
+path moves the stock while internal sends from or to the room and competing terminal source/refill
+work remain suppressed during the unexpired attempt. Fresh target emptiness, storage exactly at
+baseline plus amount, retired flow/endpoints, zero cooldown, unchanged quiescence, and every
+existing safety term are mandatory before removal. Mixed/larger stock, destination consumption or
+capacity loss, unrelated work, pressure, or uncertainty preserves the terminal and suppresses active
+work. Timeout restores ordinary terminal service but remains removal-blocking evidence.
+[ADR 0069](adr/0069-single-resource-stocked-terminal-evacuation.md) records this bound.
+
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;

@@ -189,9 +189,14 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   active empty zero-cooldown external terminal to use exact active storage as local inventory
   continuity only while Industry publishes current terminal quiescence and no terminal-bound layout
   or Logistics work exists. V17 adds the terminal receipt discriminator; fresh execution rechecks
-  both exact general-purpose Stores before the same one-command authority acts. Stocked-terminal
-  evacuation, storage relocation, uninterrupted terminal service, broad access proof, autonomous
-  boost manifest production, defensive migration, and creep dismantling remain issue #99.
+  both exact general-purpose Stores before the same one-command authority acts. Issue #361 advances
+  layouts V18 with one 150-tick single-resource stocked-terminal evacuation: at most 3,000 units
+  move through the sole funded V3 Logistics path into exact active storage, internal sends and
+  competing terminal stock work remain suppressed while the attempt is active, and removal waits for
+  fresh exact empty/gain/retirement plus unchanged quiescence and safety evidence. Expiry releases
+  service work but remains removal-blocking failure evidence. Mixed or larger terminal stock,
+  storage relocation, uninterrupted terminal service, broad access proof, autonomous boost manifest
+  production, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

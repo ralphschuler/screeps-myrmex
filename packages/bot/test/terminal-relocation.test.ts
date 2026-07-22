@@ -8,6 +8,7 @@ import {
   arbitrateStructureRemovals,
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
+  layoutTerminalEvacuationFlowId,
   parseLayoutsOwner,
   persistLayoutCommitment,
   reconcileStructureDestroyExecution,
@@ -162,18 +163,23 @@ function plan(
       readonly targetId: string;
       readonly version: number;
     }[];
+    readonly activeFlowIds?: ReadonlySet<string>;
+    readonly activeLeasedTargetIds?: ReadonlySet<string>;
     readonly activeTargetIds?: ReadonlySet<string>;
     readonly industry?: IndustryTerminalWorkRoomView | null;
     readonly logisticsEvidenceReady?: boolean;
     readonly labEvacuation?: Parameters<ConstructionPlanner["planMigration"]>[0]["labEvacuation"];
     readonly removalReceipt?: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"];
     readonly room?: RoomSnapshot;
+    readonly terminalEvacuation?: Parameters<
+      ConstructionPlanner["planMigration"]
+    >[0]["terminalEvacuation"];
   } = {},
 ) {
   return new ConstructionPlanner().planMigration({
-    activeLeasedWorkTargetIds: new Set(),
+    activeLeasedWorkTargetIds: input.activeLeasedTargetIds ?? new Set(),
     activeLogisticsEndpoints: input.activeEndpoints ?? [],
-    activeLogisticsFlowIds: new Set(),
+    activeLogisticsFlowIds: input.activeFlowIds ?? new Set(),
     activeLogisticsTargetIds:
       input.activeTargetIds ??
       new Set(
@@ -192,6 +198,7 @@ function plan(
     policyFingerprint: "policy-terminal",
     removalReceipt: input.removalReceipt ?? null,
     room: input.room ?? room(),
+    terminalEvacuation: input.terminalEvacuation ?? null,
   });
 }
 
@@ -280,7 +287,7 @@ describe("empty obsolete-terminal relocation", () => {
 
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = reconcileStructureDestroyExecution(owner, execution, 100).owner;
-    expect(owner.schemaVersion).toBe(17);
+    expect(owner.schemaVersion).toBe(18);
     owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
     const receipt = owner.records[0]?.removalReceipt ?? null;
     expect(receipt).toMatchObject({ replacementId: storageId, targetStructureType: "terminal" });
@@ -399,6 +406,109 @@ describe("empty obsolete-terminal relocation", () => {
       called: false,
       fault: "replacement-absent",
     });
+  });
+
+  it("stages and resumes one bounded single-resource evacuation before removal", () => {
+    const staged = plan({ room: room({ target: terminal({ store: store(300_000, 1_000) }) }) });
+    expect(staged.proposals).toEqual([]);
+    expect(staged.terminalEvacuation).toEqual({
+      amount: 1_000,
+      expiresAt: 250,
+      replacementId: storageId,
+      replacementInitialAmount: 25_000,
+      resourceType: "energy",
+      sourceId: targetId,
+      startedAt: 100,
+    });
+    expect(staged.blockers).toContainEqual({
+      reason: "target-stocked",
+      roomName,
+      targetId,
+    });
+    const terms = JSON.parse(JSON.stringify(staged.terminalEvacuation)) as NonNullable<
+      typeof staged.terminalEvacuation
+    >;
+    const flowId = layoutTerminalEvacuationFlowId(roomName, terms);
+    if (flowId === null) throw new Error("expected bounded terminal flow identity");
+    const endpoints = [
+      {
+        counterpartId: storageId,
+        flowId,
+        targetId,
+        version: 3,
+      },
+    ];
+    const partial = plan({
+      activeEndpoints: endpoints,
+      activeFlowIds: new Set([flowId]),
+      activeLeasedTargetIds: new Set([targetId, storageId]),
+      room: room({
+        observedAt: 101,
+        storage: storage({ store: store(1_000_000, 25_500) }),
+        target: terminal({ store: store(300_000, 500) }),
+      }),
+      terminalEvacuation: terms,
+    });
+    expect(partial.proposals).toEqual([]);
+    expect(partial.terminalEvacuation).toEqual(terms);
+    expect(partial.blockers).toContainEqual(expect.objectContaining({ reason: "target-stocked" }));
+
+    const ready = plan({
+      room: room({
+        observedAt: 102,
+        storage: storage({ store: store(1_000_000, 26_000) }),
+        target: terminal(),
+      }),
+      terminalEvacuation: terms,
+    });
+    expect(ready.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: storageId,
+        targetId,
+      }),
+    ]);
+    expect(ready.proposals[0]?.stableId).toContain("remove-terminal-v2");
+    expect(ready.terminalEvacuation).toEqual(terms);
+
+    const destinationConsumed = plan({
+      room: room({
+        observedAt: 102,
+        storage: storage({ store: store(1_000_000, 24_000) }),
+        target: terminal(),
+      }),
+      terminalEvacuation: terms,
+    });
+    expect(destinationConsumed.proposals).toEqual([]);
+    expect(destinationConsumed.blockers).toContainEqual(
+      expect.objectContaining({ reason: "evacuation-incomplete" }),
+    );
+
+    const destinationOvergain = plan({
+      room: room({
+        observedAt: 102,
+        storage: storage({ store: store(1_000_000, 26_001) }),
+        target: terminal(),
+      }),
+      terminalEvacuation: terms,
+    });
+    expect(destinationOvergain.proposals).toEqual([]);
+    expect(destinationOvergain.blockers).toContainEqual(
+      expect.objectContaining({ reason: "evacuation-incomplete" }),
+    );
+
+    const expired = plan({
+      room: room({
+        observedAt: terms.expiresAt,
+        storage: storage({ store: store(1_000_000, 25_500) }),
+        target: terminal(),
+      }),
+      terminalEvacuation: terms,
+    });
+    expect(expired.proposals).toEqual([]);
+    expect(expired.terminalEvacuation).toEqual(terms);
+    expect(expired.blockers).toContainEqual(
+      expect.objectContaining({ reason: "evacuation-expired" }),
+    );
   });
 
   it("fails closed for terminal work, endpoint contention, stock, cooldown, or storage drift", () => {
