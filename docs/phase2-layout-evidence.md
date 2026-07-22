@@ -83,8 +83,11 @@ stock evacuation into that storage before the same removal path. Issue
 mixed-resource manifest over that same path. Issue
 [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365) adds checked 70-tick replay
 evidence exercising production layout/site/removal authorities around scenario-modeled construction
-progress. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
-other structure migration and dismantling.
+progress. Issue [#367](https://github.com/ralphschuler/screeps-myrmex/issues/367) adds production
+layout-admission proof that every observed owned source retains one distinct semantic service on a
+legal spawn-reachable adjacent work tile. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -107,39 +110,48 @@ other structure migration and dismantling.
    leave-one-lab-out assignment uniquely reproduces its fingerprint and roles. While any state
    exists, `layout.plan` pins that exact durable source fingerprint and suppresses unrelated site
    proposals; an unavailable/mismatched record degrades instead of replanning. It otherwise plans at
-   most two visible owned rooms and persists only complete commitments. A pure projection restores
-   committed geometry for compatible external extensions, towers, links, and labs, allowing the
-   ordinary diff/site chain to spend spare controller allowance without changing current world
-   usability. RCL7/RCL8 spawn convergence similarly restores committed primary geometry while
-   current external spawns remain usable. The sole RCL6+ terminal position is also restored; removal
-   remains separate and requires one active empty zero-cooldown external target, exact active
-   storage, current terminal quiescence, and no unrelated terminal-bound layout or Logistics work.
-   One single-resource target or canonical two-to-eight-resource manifest of at most 3,000 total
-   units may instead persist a 150-tick exact terminal-to-storage handoff before that empty-target
-   gate. Tower removal remains separate and requires full allowance of at least two, exactly
-   allowance minus one active committed towers, one active empty unshared obsolete target, and an
-   exact active committed replacement holding at least 10 energy. A stocked target may first persist
-   one exact 150-tick energy evacuation only when that replacement can hold the full amount. The
-   diff also follows current engine co-location: planned primary geometry may retain existing
-   roads/ramparts, and planned road/rampart layers may share another buildable structure; current
-   sites and incompatible primary occupancy still block. `ConstructionPlanner` may then project one
-   active empty external extension after exact current replacement evidence, one compact
-   stocked-extension evacuation commitment, one unselected source container with a different exact
-   selected service for the same source, or one compact general-container handoff after exact
-   committed replacement capacity exists. Before that migration policy, source-service selection
-   gives one valid persisted position continuity precedence over newly observed exact containers and
-   sites; current offload quality may degrade without moving static-mining terms. If the selected
-   container is absent, one different exact legal/reachable replacement may advance its issuance
-   coordinate only under fresh no-threat, no-controller-risk, legal-workforce, and restored-reserve
-   evidence. Under the same safety evidence, a current exact selected container may advance only to
-   a different exact candidate that strictly precedes it under the existing canonical ordering;
-   worse/equal candidates cannot oscillate the selection, and every persisted position remains
-   reserved to its own source across overlapping candidate sets. An empty redundant source target
-   remains directly removable; a stocked one persists the same bounded handoff plus its source
-   identity. An energy-only target persists its exact amount and the replacement's current energy. A
-   target with one non-energy kind or two to eight kinds persists binary-ordered compact
-   resource/amount/replacement-baseline tuples; energy as the only manifest row, malformed stock, or
-   insufficient aggregate capacity fails closed.
+   most two visible owned rooms and persists only complete commitments. Before candidate search,
+   each observed source must have one of its eight legal adjacent terrain/current-occupancy tiles.
+   Private foreign ramparts and future nonwalkable sites are blocked; owned or public ramparts
+   remain walkable, and no planned layer may overlap an observed Source. The existing candidate
+   flood must then reach at least one such tile from the planned spawn while Source objects, planned
+   primaries, current structures, and current sites are blocked. The existing source selector must
+   return one distinct service per source and zero blockers, and every selected tile must belong to
+   that flood. If compatible adoption relocates the spawn, one conditional second bounded flood
+   validates the committed origin before commitment; incomplete assignment continues bounded
+   candidate search. Failure preserves an eligible prior commitment and emits no placement output. A
+   pure projection restores committed geometry for compatible external extensions, towers, links,
+   and labs, allowing the ordinary diff/site chain to spend spare controller allowance without
+   changing current world usability. RCL7/RCL8 spawn convergence similarly restores committed
+   primary geometry while current external spawns remain usable. The sole RCL6+ terminal position is
+   also restored; removal remains separate and requires one active empty zero-cooldown external
+   target, exact active storage, current terminal quiescence, and no unrelated terminal-bound layout
+   or Logistics work. One single-resource target or canonical two-to-eight-resource manifest of at
+   most 3,000 total units may instead persist a 150-tick exact terminal-to-storage handoff before
+   that empty-target gate. Tower removal remains separate and requires full allowance of at least
+   two, exactly allowance minus one active committed towers, one active empty unshared obsolete
+   target, and an exact active committed replacement holding at least 10 energy. A stocked target
+   may first persist one exact 150-tick energy evacuation only when that replacement can hold the
+   full amount. The diff also follows current engine co-location: planned primary geometry may
+   retain existing roads/ramparts, and planned road/rampart layers may share another buildable
+   structure; current sites and incompatible primary occupancy still block. `ConstructionPlanner`
+   may then project one active empty external extension after exact current replacement evidence,
+   one compact stocked-extension evacuation commitment, one unselected source container with a
+   different exact selected service for the same source, or one compact general-container handoff
+   after exact committed replacement capacity exists. Before that migration policy, source-service
+   selection gives one valid persisted position continuity precedence over newly observed exact
+   containers and sites; current offload quality may degrade without moving static-mining terms. If
+   the selected container is absent, one different exact legal/reachable replacement may advance its
+   issuance coordinate only under fresh no-threat, no-controller-risk, legal-workforce, and
+   restored-reserve evidence. Under the same safety evidence, a current exact selected container may
+   advance only to a different exact candidate that strictly precedes it under the existing
+   canonical ordering; worse/equal candidates cannot oscillate the selection, and every persisted
+   position remains reserved to its own source across overlapping candidate sets. An empty redundant
+   source target remains directly removable; a stocked one persists the same bounded handoff plus
+   its source identity. An energy-only target persists its exact amount and the replacement's
+   current energy. A target with one non-energy kind or two to eight kinds persists binary-ordered
+   compact resource/amount/replacement-baseline tuples; energy as the only manifest row, malformed
+   stock, or insufficient aggregate capacity fails closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -303,7 +315,9 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 ## Fixed bounds
 
 - two planned rooms per tick;
-- 256 anchors, eight transforms, and 2,500 flood cells per candidate;
+- eight constant-time legal-work-position checks per observed source before candidate search;
+- 256 anchors, eight transforms, and 2,500 flood cells per canonical candidate geometry; compatible
+  external spawn relocation permits at most one second 2,500-cell flood over adopted geometry;
 - official site cap 100 with five reserved slots;
 - two accepted globally and one per room per tick;
 - 64 inspected proposals and ten active sites per room;
@@ -362,11 +376,19 @@ energy, retain at most one active site and at least nine active extensions, and 
 exact RCL3 extensions with no remaining proposal. Warm, one-reset-during-first-build, and
 reversed-observation-without-reset outcomes are byte-identical.
 
-The access result is deliberately scenario-level, not production pathfinding. Every tick, a
-deterministic flood fill on the scenario's open interior room grid checks reachability from the one
-owned spawn to a legal adjacent controller tile and at least one legal adjacent work tile for each
-of two sources while treating current extensions and construction sites as blockers. It does not
-invoke or certify production terrain/pathfinding, broad creep access, or layout-wide reachability.
+The #365 access result is deliberately scenario-level. Every tick, a deterministic flood fill on the
+scenario's open interior room grid checks reachability from the one owned spawn to a legal adjacent
+controller tile and at least one legal adjacent work tile for each of two sources while treating
+current extensions and construction sites as blockers. Issue #367 separately proves the production
+`LayoutPlanner` rejects a source with no legal adjacent tile before candidate search, rejects every
+planned layer overlapping a Source, rejects private foreign rampart and future nonwalkable-site
+access, skips planned geometry whose bounded spawn flood cannot reach a source, rejects an
+incomplete distinct source-service assignment, and rejects a compatible external spawn whose adopted
+origin is isolated from otherwise valid services. An eligible prior commitment is preserved with no
+placements; source/fact reorder and JSON reconstruction are byte-equivalent; owned/public rampart
+controls and a legal two-source room still commit both semantic services. Neither outcome invokes
+the movement path service or certifies dynamic creep/traffic access or broad layout-wide
+reachability.
 
 Focused tests cover one-call execution, next-tick duplicate suppression, every documented return
 code, adapter isolation, stale/ownership/loss guards, cap pressure, complete/degraded commitments,
@@ -562,8 +584,13 @@ lint, type, test, documentation, bundle, and package evidence.
   defines same-room scheduled transfer and current failure codes.
 - Official [`Structure.isActive`](https://docs.screeps.com/api/#Structure.isActive) defines the
   current controller-level activation check used at observation and immediately before removal.
-- Official [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest) requires source adjacency
-  and drops harvest when no carry capacity is available.
+- Official [`Source`](https://docs.screeps.com/api/#Source),
+  [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest), and
+  [`Room.Terrain`](https://docs.screeps.com/api/#Room.Terrain) constrain the nonwalkable source
+  identity, adjacent harvest range, and static wall evidence used by production source-access
+  admission. Official
+  [`StructureRampart.isPublic`](https://docs.screeps.com/api/#StructureRampart.isPublic) defines
+  private, owned, and public traversal.
 - Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one
   RCL4+ owned general-purpose store and its 1,000,000-unit capacity.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one

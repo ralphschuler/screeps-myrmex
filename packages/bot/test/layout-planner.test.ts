@@ -20,10 +20,16 @@ describe("owned-room-layout-v1", () => {
     });
     expect(first.status).toBe("complete");
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(first));
-    if (first.status === "complete")
+    if (first.status === "complete") {
       expect(
         first.placements.some((p) => p.adoption === "exact" && p.structureType === "spawn"),
       ).toBe(true);
+      expect(
+        first.placements
+          .filter(({ service }) => service?.kind === "source-container")
+          .map(({ service }) => service?.sourceId),
+      ).toEqual(["source-a", "source-b"]);
+    }
   });
 
   it.each(COLONY_RCL_POLICY_TABLE)("does not exceed ColonyView RCL $level allowances", (row) => {
@@ -48,6 +54,269 @@ describe("owned-room-layout-v1", () => {
     });
     expect(result).toMatchObject({ status: "degraded", commitment: prior, placements: [] });
     expect(JSON.stringify(result)).not.toMatch(/createConstructionSite|dismantle|remove/u);
+  });
+
+  it("never commits planned geometry on an observed source tile", () => {
+    const input = fixture(4);
+    const sources = [
+      { roomName: input.roomName, sourceId: "source-a", x: 25, y: 25 },
+      { roomName: input.roomName, sourceId: "source-b", x: 40, y: 8 },
+    ];
+    const result = planOwnedRoomLayout({ ...input, sources, structures: [] });
+
+    expect(result.status).toBe("complete");
+    if (result.status !== "complete") return;
+    expect(result.candidatesInspected).toBeGreaterThan(1);
+    expect(
+      result.placements.some(({ pos: placement }) =>
+        sources.some((source) => source.x === placement.x && source.y === placement.y),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects candidate geometry that strands an owned source", () => {
+    const prior = completeCommitment();
+    const input = fixture(4);
+    const cells = input.terrain.cells.split("");
+    for (let y = 9; y <= 11; y += 1)
+      for (let x = 9; x <= 11; x += 1)
+        if ((x !== 10 || y !== 10) && (x !== 11 || y !== 11)) cells[y * 50 + x] = "1";
+    const trapped = {
+      ...input,
+      priorCommitment: prior,
+      sources: [
+        { roomName: input.roomName, sourceId: "source-a", x: 10, y: 10 },
+        { roomName: input.roomName, sourceId: "source-b", x: 40, y: 8 },
+      ],
+      structures: [...input.structures, structure("tower", 11, 11, "owned")],
+      terrain: { cells: cells.join(""), revision: "source-access-blocked" },
+    };
+
+    const result = planOwnedRoomLayout(trapped);
+    expect(result).toMatchObject({
+      blocker: "access-blocked",
+      commitment: prior,
+      placements: [],
+      status: "degraded",
+    });
+    expect(result.floodCellsInspected).toBeLessThanOrEqual(result.candidatesInspected * 8 * 2_500);
+
+    const reconstructed = JSON.parse(JSON.stringify(trapped)) as LayoutPlanningInput;
+    const reordered = {
+      ...reconstructed,
+      exits: [...reconstructed.exits].reverse(),
+      sources: [...reconstructed.sources].reverse(),
+      structures: [...reconstructed.structures].reverse(),
+    };
+    expect(JSON.stringify(planOwnedRoomLayout(reordered))).toBe(JSON.stringify(result));
+  });
+
+  it("does not treat a private foreign rampart as executable source access", () => {
+    const prior = completeCommitment();
+    const input = fixture(4);
+    const cells = input.terrain.cells.split("");
+    for (let y = 9; y <= 11; y += 1)
+      for (let x = 9; x <= 11; x += 1)
+        if ((x !== 10 || y !== 10) && (x !== 11 || y !== 11)) cells[y * 50 + x] = "1";
+    const privateRampart = {
+      ...structure("rampart", 11, 11, "foreign"),
+      isPublic: false,
+    };
+    const blocked = {
+      ...input,
+      priorCommitment: prior,
+      sources: [
+        { roomName: input.roomName, sourceId: "source-a", x: 10, y: 10 },
+        { roomName: input.roomName, sourceId: "source-b", x: 40, y: 8 },
+      ],
+      structures: [...input.structures, privateRampart],
+      terrain: { cells: cells.join(""), revision: "private-rampart-source-access" },
+    };
+
+    expect(planOwnedRoomLayout(blocked)).toMatchObject({
+      blocker: "access-blocked",
+      commitment: prior,
+      placements: [],
+      status: "degraded",
+    });
+    expect(
+      planOwnedRoomLayout({
+        ...blocked,
+        structures: [
+          ...input.structures,
+          { ...privateRampart, ownerUsername: "Myrmex", ownership: "owned" as const },
+        ],
+      }).status,
+    ).toBe("complete");
+    expect(
+      planOwnedRoomLayout({
+        ...blocked,
+        structures: [...input.structures, { ...privateRampart, isPublic: true }],
+      }).status,
+    ).toBe("complete");
+  });
+
+  it("treats a future nonwalkable construction site as blocked source access", () => {
+    const prior = completeCommitment();
+    const input = fixture(4);
+    const cells = input.terrain.cells.split("");
+    for (let y = 9; y <= 11; y += 1)
+      for (let x = 9; x <= 11; x += 1)
+        if ((x !== 10 || y !== 10) && (x !== 11 || y !== 11)) cells[y * 50 + x] = "1";
+    const result = planOwnedRoomLayout({
+      ...input,
+      constructionSites: [
+        {
+          id: "blocking-extension-site",
+          ownerUsername: "Myrmex",
+          ownership: "owned",
+          pos: { roomName: input.roomName, x: 11, y: 11 },
+          progress: 0,
+          progressTotal: 3_000,
+          structureType: "extension",
+        },
+      ],
+      priorCommitment: prior,
+      sources: [
+        { roomName: input.roomName, sourceId: "source-a", x: 10, y: 10 },
+        { roomName: input.roomName, sourceId: "source-b", x: 40, y: 8 },
+      ],
+      terrain: { cells: cells.join(""), revision: "construction-site-source-access" },
+    });
+
+    expect(result).toMatchObject({
+      blocker: "access-blocked",
+      commitment: prior,
+      placements: [],
+      status: "degraded",
+    });
+  });
+
+  it("rejects a source chamber disconnected from otherwise accessible colony geometry", () => {
+    const prior = completeCommitment();
+    const input = fixture(4);
+    const cells = "1".repeat(2_500).split("");
+    for (let y = 0; y <= 17; y += 1) for (let x = 1; x <= 17; x += 1) cells[y * 50 + x] = "0";
+    for (let y = 39; y <= 41; y += 1) for (let x = 39; x <= 41; x += 1) cells[y * 50 + x] = "0";
+    const disconnected = {
+      ...input,
+      controller: { roomName: input.roomName, x: 15, y: 15 },
+      exits: Array.from({ length: 17 }, (_, offset) => ({
+        roomName: input.roomName,
+        x: offset + 1,
+        y: 0,
+      })),
+      mineral: null,
+      priorCommitment: prior,
+      sources: [
+        { roomName: input.roomName, sourceId: "source-a", x: 40, y: 40 },
+        { roomName: input.roomName, sourceId: "source-b", x: 3, y: 3 },
+      ],
+      structures: [structure("spawn", 9, 9, "owned")],
+      terrain: { cells: cells.join(""), revision: "source-chamber-disconnected" },
+    };
+
+    const result = planOwnedRoomLayout(disconnected);
+    expect(result).toMatchObject({ commitment: prior, placements: [], status: "degraded" });
+    expect(result.floodCellsInspected).toBeGreaterThan(0);
+    expect(result.floodCellsInspected).toBeLessThanOrEqual(result.candidatesInspected * 8 * 2_500);
+  });
+
+  it("skips planned geometry that disconnects a source and commits a reachable transform", () => {
+    const input = fixture(4);
+    const cells = input.terrain.cells.split("");
+    for (let coordinate = 16; coordinate <= 22; coordinate += 1) {
+      cells[16 * 50 + coordinate] = "1";
+      cells[22 * 50 + coordinate] = "1";
+      cells[coordinate * 50 + 16] = "1";
+      cells[coordinate * 50 + 22] = "1";
+    }
+    cells[22 * 50 + 22] = "0";
+    const result = planOwnedRoomLayout({
+      ...input,
+      sources: [
+        { roomName: input.roomName, sourceId: "source-a", x: 19, y: 19 },
+        { roomName: input.roomName, sourceId: "source-b", x: 40, y: 8 },
+      ],
+      terrain: { cells: cells.join(""), revision: "planned-source-gate" },
+    });
+
+    expect(result.status).toBe("complete");
+    if (result.status !== "complete") return;
+    expect(result.transformsInspected).toBeGreaterThan(1);
+    expect(
+      result.placements
+        .filter(({ service }) => service?.kind === "source-container")
+        .map(({ service }) => service?.sourceId),
+    ).toEqual(["source-a", "source-b"]);
+  });
+
+  it("does not publish a complete commitment when source-service assignment is incomplete", () => {
+    const prior = completeCommitment();
+    const input = fixture(4);
+    const cells = "1".repeat(2_500).split("");
+    for (let y = 0; y <= 17; y += 1) for (let x = 1; x <= 17; x += 1) cells[y * 50 + x] = "0";
+    const sourceA = { roomName: input.roomName, sourceId: "source-a", x: 14, y: 14 };
+    const sourceB = { roomName: input.roomName, sourceId: "source-b", x: 16, y: 14 };
+    for (const source of [sourceA, sourceB])
+      for (let y = source.y - 1; y <= source.y + 1; y += 1)
+        for (let x = source.x - 1; x <= source.x + 1; x += 1)
+          if (
+            (x !== sourceA.x || y !== sourceA.y) &&
+            (x !== sourceB.x || y !== sourceB.y) &&
+            (x !== 15 || y !== 14) &&
+            (x !== 14 || y !== 15)
+          )
+            cells[y * 50 + x] = "1";
+    const competing = {
+      ...input,
+      controller: { roomName: input.roomName, x: 3, y: 3 },
+      exits: Array.from({ length: 17 }, (_, offset) => ({
+        roomName: input.roomName,
+        x: offset + 1,
+        y: 0,
+      })),
+      mineral: null,
+      priorCommitment: prior,
+      sources: [sourceA, sourceB],
+      structures: [structure("spawn", 9, 9, "owned"), structure("container", 15, 14, "unowned")],
+      terrain: { cells: cells.join(""), revision: "source-service-assignment-conflict" },
+    };
+
+    const result = planOwnedRoomLayout(competing);
+    expect(result).toMatchObject({ commitment: prior, placements: [], status: "degraded" });
+    expect(result.floodCellsInspected).toBeGreaterThan(0);
+  });
+
+  it("rejects a commitment whose adopted spawn cannot reach its source services", () => {
+    const prior = completeCommitment();
+    const input = fixture(4);
+    const cells = "1".repeat(2_500).split("");
+    cells[8 * 50 + 8] = "0";
+    for (let y = 32; y <= 49; y += 1) for (let x = 32; x <= 48; x += 1) cells[y * 50 + x] = "0";
+    const result = planOwnedRoomLayout({
+      ...input,
+      controller: { roomName: input.roomName, x: 45, y: 45 },
+      exits: Array.from({ length: 17 }, (_, offset) => ({
+        roomName: input.roomName,
+        x: offset + 32,
+        y: 49,
+      })),
+      mineral: null,
+      priorCommitment: prior,
+      sources: [
+        { roomName: input.roomName, sourceId: "source-a", x: 34, y: 45 },
+        { roomName: input.roomName, sourceId: "source-b", x: 45, y: 34 },
+      ],
+      structures: [structure("spawn", 8, 8, "owned")],
+      terrain: { cells: cells.join(""), revision: "adopted-spawn-trapped" },
+    });
+
+    expect(result).toMatchObject({ commitment: prior, placements: [], status: "degraded" });
+    expect(result.floodCellsInspected).toBeGreaterThan(0);
+    expect(result.floodCellsInspected).toBeLessThanOrEqual(
+      result.candidatesInspected * 8 * 2 * 2_500,
+    );
   });
 
   it("bounds edge-spawn/conflict search and room scheduling", () => {
@@ -408,14 +677,14 @@ function structure(
   structureType: string,
   x: number,
   y: number,
-  ownership: "owned" | "foreign",
+  ownership: "owned" | "foreign" | "unowned",
   roomName = "W1N1",
 ) {
   return {
     hits: 5000,
     hitsMax: 5000,
     id: `${structureType}-${String(x)}-${String(y)}`,
-    ownerUsername: ownership === "owned" ? "Myrmex" : "Enemy",
+    ownerUsername: ownership === "owned" ? "Myrmex" : ownership === "foreign" ? "Enemy" : null,
     ownership,
     pos: { roomName, x, y },
     structureType,

@@ -1,5 +1,11 @@
 import type { ColonyRclUnlockAllowances } from "../colony";
 import type { PositionSnapshot, StructureSnapshot } from "../world/snapshot";
+import {
+  isFutureLayoutAccessWalkable,
+  isLayoutAccessWalkableType,
+  isLegalSourceWorkCoordinate,
+  isObservedLayoutAccessWalkable,
+} from "./access";
 import { compileOwnedRoomLayoutV1 } from "./layout-v1";
 import { selectSourceServices } from "./source-services";
 import {
@@ -29,6 +35,7 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
       0,
       0,
     );
+  if (!hasLegalSourceWorkTile(input)) return degraded(input, "access-blocked", 0, 0, 0);
   const cells = compileOwnedRoomLayoutV1(input.policy.unlocks, input.sources.length);
   const anchors = candidateAnchors(input);
   let transforms = 0;
@@ -56,6 +63,21 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
         continue;
       }
       const adopted = adopt(placements, input.structures, sourceContainerIds(input));
+      let committedAccess = access;
+      const plannedSpawn = placements.find(({ structureType }) => structureType === "spawn")?.pos;
+      const adoptedSpawn = adopted.find(({ structureType }) => structureType === "spawn")?.pos;
+      if (plannedSpawn === undefined || adoptedSpawn === undefined) {
+        blocker = "access-blocked";
+        continue;
+      }
+      if (key(plannedSpawn) !== key(adoptedSpawn)) {
+        committedAccess = validateAccess(input, adopted);
+        flood += committedAccess.inspected;
+        if (!committedAccess.valid) {
+          blocker = "access-blocked";
+          continue;
+        }
+      }
       const services = selectSourceServices({
         constructionSites: input.constructionSites,
         placements: adopted,
@@ -68,6 +90,13 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
         structures: input.structures,
         terrain: input.terrain,
       });
+      if (
+        services.blockers.length > 0 ||
+        services.placements.some(({ pos }) => !committedAccess.reachable.has(key(pos)))
+      ) {
+        blocker = "access-blocked";
+        continue;
+      }
       const committedPlacements = mergeSourceServices(adopted, services.placements);
       const fingerprint = hash(
         JSON.stringify({ placements: committedPlacements, blockers: services.blockers }),
@@ -257,7 +286,9 @@ function validatePlacements(
 ): { valid: true } | { valid: false; blocker: LayoutBlocker } {
   const occupied = new Map(input.structures.map((s) => [key(s.pos), s]));
   const sites = new Map(input.constructionSites.map((s) => [key(s.pos), s]));
+  const sourcePositions = new Set(input.sources.map(key));
   for (const p of placements) {
+    if (sourcePositions.has(key(p.pos))) return { valid: false, blocker: "occupancy-conflict" };
     if (
       p.pos.x < 1 ||
       p.pos.x > 48 ||
@@ -280,21 +311,37 @@ function validatePlacements(
   }
   return { valid: true };
 }
+function hasLegalSourceWorkTile(input: LayoutPlanningInput): boolean {
+  const blocked = new Set<string>();
+  for (const structure of input.structures)
+    if (!isObservedLayoutAccessWalkable(structure)) blocked.add(key(structure.pos));
+  for (const site of input.constructionSites)
+    if (!isFutureLayoutAccessWalkable(site)) blocked.add(key(site.pos));
+  return input.sources.every((source) =>
+    neighbors(source).some(
+      (candidate) =>
+        isLegalSourceWorkCoordinate(candidate) &&
+        input.terrain.cells[candidate.y * 50 + candidate.x] !== "1" &&
+        !blocked.has(key(candidate)),
+    ),
+  );
+}
 function validateAccess(
   input: LayoutPlanningInput,
   placements: readonly LayoutPlacement[],
-): { valid: boolean; inspected: number } {
+): { valid: boolean; inspected: number; reachable: ReadonlySet<string> } {
   const blocked = new Set(
     placements
-      .filter(
-        (p) => p.layer === "primary" && !["container", "road", "rampart"].includes(p.structureType),
-      )
+      .filter((p) => p.layer === "primary" && !isLayoutAccessWalkableType(p.structureType))
       .map((p) => key(p.pos)),
   );
-  for (const s of input.structures)
-    if (!["container", "road", "rampart"].includes(s.structureType)) blocked.add(key(s.pos));
+  for (const structure of input.structures)
+    if (!isObservedLayoutAccessWalkable(structure)) blocked.add(key(structure.pos));
+  for (const site of input.constructionSites)
+    if (!isFutureLayoutAccessWalkable(site)) blocked.add(key(site.pos));
+  for (const source of input.sources) blocked.add(key(source));
   const start = placements.find((p) => p.structureType === "spawn")?.pos;
-  if (!start) return { valid: false, inspected: 0 };
+  if (!start) return { valid: false, inspected: 0, reachable: new Set() };
   const queue = neighbors(start).filter((p) => walkable(input, p, blocked));
   const seen = new Set(queue.map(key));
   let inspected = 0;
@@ -310,13 +357,20 @@ function validateAccess(
   }
   const services = [input.controller, ...(input.mineral ? [input.mineral.pos] : [])];
   const serviceOk = services.every((p) => neighbors(p).some((n) => seen.has(key(n))));
+  const sourceAccessOk = input.sources.every((source) =>
+    neighbors(source).some(
+      (candidate) => isLegalSourceWorkCoordinate(candidate) && seen.has(key(candidate)),
+    ),
+  );
   const exitOk = input.exits.some((p) => neighbors(p).some((n) => seen.has(key(n))));
   const logisticsOk = placements
     .filter((p) => p.structureType === "storage" || p.structureType === "container")
     .every((p) => neighbors(p.pos).some((n) => seen.has(key(n))));
   return {
-    valid: inspected <= MAX_LAYOUT_FLOOD_CELLS && serviceOk && exitOk && logisticsOk,
+    valid:
+      inspected <= MAX_LAYOUT_FLOOD_CELLS && serviceOk && sourceAccessOk && exitOk && logisticsOk,
     inspected,
+    reachable: seen,
   };
 }
 function adopt(

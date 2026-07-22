@@ -1522,7 +1522,8 @@ PR A of issue #45 activates `LayoutPlanner` as a pure authority behind `phase2.l
 cells, exits, mineral, every visible structure (including walls and ramparts), owned/foreign sites,
 and the shard-global owned-site count. The planner consumes the exact `ColonyView.rclPolicy`
 projection, evaluates at most two rooms per tick, 256 anchors, eight transforms, and 2,500 flood
-cells per candidate, and publishes only complete `owned-room-layout-v1` plans.
+cells per candidate geometry. A compatible external spawn relocation permits one second 2,500-cell
+flood over committed geometry; the planner publishes only complete `owned-room-layout-v1` plans.
 
 The distinct `layouts` persistent owner stores only algorithm revision, anchor/transform,
 fingerprint, bounded blocker/commitment metadata, at most one compact extension, spawn, tower,
@@ -1903,6 +1904,19 @@ cache identity. A source without a legal reachable work tile produces a bounded 
 blocker without invalidating safe assignments for other sources. Old algorithm commitments are
 discarded as stale rebuild work rather than corrupting the `layouts` owner, and placements remain
 heap-only.
+
+Issue #367 makes source access a production layout-admission invariant. A constant eight-position
+preflight rejects any observed source with no legal adjacent terrain/current-occupancy tile; private
+foreign ramparts and future nonwalkable sites are blocked, while owned or public ramparts remain
+walkable. No planned layer may overlap an observed Source tile. The existing candidate flood must
+then reach at least one legal adjacent work coordinate for every source while treating Source
+objects, planned primaries, current structures, and current sites as obstacles.
+`selectSourceServices` must return one distinct service per source and zero blockers before the
+candidate may become a complete commitment; each selected position must belong to that same flood.
+When compatible adoption relocates the committed spawn, one conditional second flood proves the
+adopted origin can reach the selected services. An incomplete result continues the bounded candidate
+search. Failure preserves an eligible prior commitment and publishes no placements; it adds no path
+authority, cache, persistent field, or dynamic traffic claim.
 
 Issue #46 PR C composes those source-service commitments with `StaticMiningPlanner`, the existing
 budget/contract/workforce/spawn chain, and observer-only mining telemetry. One stable extraction
@@ -2480,6 +2494,11 @@ Required architecture assertions include:
 - direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
 - engine-compatible road/rampart layering uses the ordinary construction-site chain, while current
   sites and incompatible primary occupants block and no road-removal intent exists;
+- a complete production layout requires one distinct semantic service on a legal
+  spawn-flood-reachable adjacent work coordinate for every observed owned source; Source objects,
+  private foreign ramparts, planned primaries, and future nonwalkable sites cannot prove access;
+  impossible static access preserves the prior commitment and publishes no placements, while
+  source/fact reorder and heap reconstruction remain byte-equivalent;
 - obsolete-extension removal requires current full allowance, allowance-minus-one active committed
   extensions, an exact owned replacement, an empty unshared target, and the same global one-command
   ceiling;

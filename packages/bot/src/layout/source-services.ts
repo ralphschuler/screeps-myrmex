@@ -1,4 +1,9 @@
 import type { PositionSnapshot } from "../world/snapshot";
+import {
+  isFutureLayoutAccessWalkable,
+  isLayoutAccessWalkableType,
+  isObservedLayoutAccessWalkable,
+} from "./access";
 import type {
   LayoutAdoption,
   LayoutPlacement,
@@ -161,14 +166,15 @@ function adjacent(source: PositionSnapshot): PositionSnapshot[] {
 function legalCandidate(input: SourceServicePlanningInput, pos: PositionSnapshot): boolean {
   if (pos.x <= 0 || pos.x >= 49 || pos.y <= 0 || pos.y >= 49) return false;
   if (input.terrain.cells[pos.y * 50 + pos.x] === "1") return false;
+  if (input.sources.some((source) => key(source) === key(pos))) return false;
   const primary = input.placements.find(
     (placement) => placement.layer === "primary" && key(placement.pos) === key(pos),
   );
   if (primary !== undefined && primary.structureType !== "container") return false;
   const structures = input.structures.filter((structure) => key(structure.pos) === key(pos));
-  if (structures.some((structure) => !walkableType(structure.structureType))) return false;
+  if (structures.some((structure) => !isObservedLayoutAccessWalkable(structure))) return false;
   const sites = input.constructionSites.filter((site) => key(site.pos) === key(pos));
-  return sites.every((site) => walkableType(site.structureType));
+  return sites.every(isFutureLayoutAccessWalkable);
 }
 function rankCandidate(
   input: SourceServicePlanningInput,
@@ -203,12 +209,13 @@ function staticRouteDistance(
       if (x === 0 || x === 49 || y === 0 || y === 49 || input.terrain.cells[y * 50 + x] === "1")
         blocked.add(`${String(x)},${String(y)}`);
   for (const placement of input.placements)
-    if (placement.layer === "primary" && !walkableType(placement.structureType))
+    if (placement.layer === "primary" && !isLayoutAccessWalkableType(placement.structureType))
       blocked.add(key(placement.pos));
   for (const structure of input.structures)
-    if (!walkableType(structure.structureType)) blocked.add(key(structure.pos));
+    if (!isObservedLayoutAccessWalkable(structure)) blocked.add(key(structure.pos));
   for (const site of input.constructionSites)
-    if (!walkableType(site.structureType)) blocked.add(key(site.pos));
+    if (!isFutureLayoutAccessWalkable(site)) blocked.add(key(site.pos));
+  for (const source of input.sources) blocked.add(key(source));
   blocked.delete(key(goal));
 
   const queue = adjacent(origin)
@@ -230,9 +237,6 @@ function staticRouteDistance(
     }
   }
   return null;
-}
-function walkableType(structureType: string): boolean {
-  return structureType === "container" || structureType === "road" || structureType === "rampart";
 }
 function blocker(
   sourceId: string,
