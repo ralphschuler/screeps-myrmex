@@ -27,6 +27,7 @@ import {
   type ReplayScenario,
   type ScenarioRunResult,
 } from "../../src";
+import { collectPhase2ProductionLayoutBuildEvidence } from "./phase2-production-layout-build";
 
 const ROOM = "W1N1";
 const FIRST_TICK = 50_000;
@@ -181,7 +182,7 @@ const COMMITMENT: LayoutCommitment = Object.freeze({
   transform: 0,
 });
 
-export function collectPhase2LayoutMigrationEvidence() {
+export async function collectPhase2LayoutMigrationEvidence() {
   const warm = runScenario(layoutMigrationScenario("warm"));
   const reset = runScenario(layoutMigrationScenario("reset"));
   const reordered = runScenario(layoutMigrationScenario("reordered"));
@@ -193,9 +194,11 @@ export function collectPhase2LayoutMigrationEvidence() {
   const semanticBytes = Object.values(summaries).map((value) => canonicalSerialize(value));
   const final = reset.finalWorld;
   const milestones = requiredMilestones(final.milestones);
+  const productionBuild = await collectPhase2ProductionLayoutBuildEvidence();
 
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
+    evidenceIssues: Object.freeze([365, 377]),
     issue: 365,
     status: "complete",
     scenario: {
@@ -243,6 +246,7 @@ export function collectPhase2LayoutMigrationEvidence() {
       accessWitnessScope: "scenario-level",
       duplicateDestroyCommands: duplicateDestroyCommands(final.commands),
     },
+    productionBuild,
     equivalence: {
       semanticBytesIdentical: new Set(semanticBytes).size === 1,
       outcomeHashes: {

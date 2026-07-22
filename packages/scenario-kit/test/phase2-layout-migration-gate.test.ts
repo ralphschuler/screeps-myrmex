@@ -1,13 +1,40 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import checkedEvidence from "../../../docs/phase2-layout-migration-results.json";
 import { collectPhase2LayoutMigrationEvidence } from "./fixtures/phase2-layout-migration";
 
-describe("Phase 2 stable layout migration evidence (#365)", () => {
-  it("matches checked evidence and reaches stable committed extension geometry within bounds", () => {
-    const actual = collectPhase2LayoutMigrationEvidence();
+const FIND_CREEPS_VALUE = 101;
+const FIND_SOURCES_VALUE = 105;
+const FIND_DROPPED_RESOURCES_VALUE = 106;
+const FIND_STRUCTURES_VALUE = 107;
+const FIND_CONSTRUCTION_SITES_VALUE = 111;
+
+describe("Phase 2 stable layout migration evidence (#365/#377)", () => {
+  beforeAll(() => {
+    vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
+    vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
+    vi.stubGlobal("FIND_DROPPED_RESOURCES", FIND_DROPPED_RESOURCES_VALUE);
+    vi.stubGlobal("FIND_STRUCTURES", FIND_STRUCTURES_VALUE);
+    vi.stubGlobal("FIND_CONSTRUCTION_SITES", FIND_CONSTRUCTION_SITES_VALUE);
+  });
+
+  afterAll(() => vi.unstubAllGlobals());
+  it("matches checked evidence and reaches stable committed extension geometry within bounds", async () => {
+    const actual = await collectPhase2LayoutMigrationEvidence();
 
     expect(actual).toEqual(checkedEvidence);
-    expect(actual).toMatchObject({ schemaVersion: 1, issue: 365, status: "complete" });
+    expect(actual).toMatchObject({
+      evidenceIssues: [365, 377],
+      issue: 365,
+      productionBuild: {
+        buildEnergy: 100,
+        completedStructureType: "extension",
+        directProgressMutation: false,
+        semanticBytesIdentical: true,
+        siteObservedAbsentAfterCompletion: true,
+      },
+      schemaVersion: 2,
+      status: "complete",
+    });
     expect(actual.scenario).toMatchObject({
       id: "phase2-layout-extension-migration-v1",
       seed: "phase2-layout-extension-migration-seed-v1",
@@ -53,6 +80,43 @@ describe("Phase 2 stable layout migration evidence (#365)", () => {
     expect(actual.scenario.commands[1]?.tick).toBeGreaterThanOrEqual(
       actual.scenario.milestones.firstCompletedReplacementObservedAt,
     );
+    expect(actual.productionBuild.scenario.site).toMatchObject({
+      layoutFingerprint: "phase2-layout-extension-migration-layout-v1",
+      pos: {
+        roomName: "W1N1",
+        x: actual.scenario.commands[0]?.x,
+        y: actual.scenario.commands[0]?.y,
+      },
+    });
+    expect(Object.values(actual.productionBuild.authority).every(Boolean)).toBe(true);
+    expect(actual.productionBuild.authorityTrace).toMatchObject({
+      actionArbitratedAt: [60_002, 60_003, 60_004, 60_005],
+      budgetGrantedAt: [60_000, 60_001, 60_002, 60_003, 60_004, 60_005],
+      contractSubmittedAt: 60_000,
+      layoutCommitmentObservedAt: [60_002, 60_003, 60_004, 60_005],
+      leaseExecutedAt: [60_002, 60_003, 60_004, 60_005, 60_006],
+      liveBuildScheduledAt: [60_002, 60_003, 60_004, 60_005],
+    });
+    expect(actual.productionBuild.authorityTrace.contractId).toMatch(/^contract:/u);
+    expect(actual.productionBuild.buildCalls).toEqual(
+      [60_002, 60_003, 60_004, 60_005].map((tick, index) => ({
+        energy: 25,
+        progressAfter: 2_925 + index * 25,
+        progressBefore: 2_900 + index * 25,
+        targetId: "site-extension-18-20",
+        tick,
+      })),
+    );
+    expect(actual.productionBuild.completion).toEqual({
+      completedAt: 60_006,
+      finalProgress: 3_000,
+      firstBuildAt: 60_002,
+      siteCount: 0,
+    });
+    expect(actual.productionBuild.finalGameplayPersistentHash).toMatch(/^fnv1a64-utf16:/u);
+    expect(actual.productionBuild.maximumModeledCpuPerTick).toBeLessThanOrEqual(0.15);
+    expect(actual.productionBuild.maximumPersistentBytes).toBeLessThanOrEqual(15_000);
+    expect(new Set(Object.values(actual.productionBuild.semanticHashes))).toHaveLength(1);
     expect(actual.scenario.deferredEffects).toEqual({
       firstSiteObservedNextTick: true,
       firstReplacementObservedNextTick: true,

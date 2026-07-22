@@ -83,9 +83,12 @@ stock evacuation into that storage before the same removal path. Issue
 mixed-resource manifest over that same path. Issue
 [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365) adds checked 70-tick replay
 evidence exercising production layout/site/removal authorities around scenario-modeled construction
-progress. Issue [#367](https://github.com/ralphschuler/screeps-myrmex/issues/367) adds production
-layout-admission proof that every observed owned source retains one distinct semantic service on a
-legal spawn-reachable adjacent work tile. Issue
+progress. Issue [#377](https://github.com/ralphschuler/screeps-myrmex/issues/377) composes that
+result with a checked production-runtime row that completes the first committed-position extension
+site through growth funding, contracts, a lease, action arbitration, and `Creep.build`. Issue
+[#367](https://github.com/ralphschuler/screeps-myrmex/issues/367) adds production layout-admission
+proof that every observed owned source retains one distinct semantic service on a legal
+spawn-reachable adjacent work tile. Issue
 [#369](https://github.com/ralphschuler/screeps-myrmex/issues/369) applies the same private/owned/
 public rampart passability rule to the production local-path projection and lease-agent outcome.
 Issue [#371](https://github.com/ralphschuler/screeps-myrmex/issues/371) restores committed storage
@@ -393,13 +396,27 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 
 ## Outcome evidence
 
-Issue [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365) records the checked result
-in [`phase2-layout-migration-results.json`](phase2-layout-migration-results.json). The 70-tick
-replay uses `defineReplayScenario`/`runScenario` and exercises the production layout diff,
+Issues [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365) and
+[#377](https://github.com/ralphschuler/screeps-myrmex/issues/377) record the checked result in
+[`phase2-layout-migration-results.json`](phase2-layout-migration-results.json). The 70-tick replay
+uses `defineReplayScenario`/`runScenario` and exercises the production layout diff,
 construction-site arbitration/execution/reconciliation, `ConstructionPlanner` migration, and
-structure-removal arbitration/execution/reconciliation APIs. Site appearance, construction progress
-at up to 100 scenario energy per tick, and fixed 0.25 CPU accounting are deterministic scenario
-mechanics/models. The replay does not exercise the production growth, lease, or `Creep.build` chain.
+structure-removal arbitration/execution/reconciliation APIs. Site appearance, complete 6,000-energy
+construction progress at up to 100 scenario energy per tick, and fixed 0.25 CPU accounting remain
+deterministic scenario mechanics/models.
+
+The #377 production row seeds #365's exact layout fingerprint and first committed coordinate before
+any build action, then runs the production `runTick` graph. `SurvivalGrowthPlanner` publishes the
+candidate, the colony ledger grants its exact `optional-growth` issuer, `ContractLedger` admits and
+assigns one correlated contract ID, the start-of-tick execution view publishes that lease, and the
+same identity reaches action arbitration/execution and live `Creep.build`. Four exact calls consume
+the final 100 of 3,000 construction energy; the fixture has no progress setter, each observed
+progress delta equals its live call's energy, and only the following observation removes the site
+and exposes the extension. Warm, one JSON/global-module-heap reset during construction, and reversed
+live collections complete at the same tick with byte-identical authority traces, gameplay-owner
+hashes, calls, and outcomes. Modeled Screeps CPU accounting is at most 0.129 per tick and persistent
+Memory remains within 13,477 UTF-8 bytes. This closes the explicit production build-chain proof gap
+without claiming measured host CPU or that scenario-kit simulates all preceding 2,900 build energy.
 
 Recorded milestones distinguish the site command and next-tick site observation from the modeled
 3,000th build energy and next-tick completed-replacement observation. The destroy command may run on
@@ -614,7 +631,9 @@ lint, type, test, documentation, bundle, and package evidence.
   [`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite)
   documents return codes and the 100-site player cap.
 - Official [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite) defines the observed
-  object consumed by build work.
+  object consumed by build work; official [`Creep.build`](https://docs.screeps.com/api/#Creep.build)
+  defines the range-three scheduled command, per-`WORK` build power, energy consumption, and return
+  codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
