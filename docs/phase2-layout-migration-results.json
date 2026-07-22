@@ -113,7 +113,7 @@
     "maximumActiveSites": 1,
     "maximumCpuPerTick": 0.25,
     "maximumEnergyPerTick": 100,
-    "persistentSchemaVersion": 24
+    "persistentSchemaVersion": 25
   },
   "safety": {
     "minimumActiveExtensions": 9,
@@ -215,14 +215,14 @@
       "siteCount": 0
     },
     "directProgressMutation": false,
-    "finalGameplayPersistentHash": "fnv1a64-utf16:8215110c23b2ba57",
+    "finalGameplayPersistentHash": "fnv1a64-utf16:e5bb7a6328e23747",
     "maximumModeledCpuPerTick": 0.129,
-    "maximumPersistentBytes": 13477,
+    "maximumPersistentBytes": 13495,
     "semanticBytesIdentical": true,
     "semanticHashes": {
-      "reordered": "fnv1a64-utf16:2f0c454169415c6d",
-      "reset": "fnv1a64-utf16:2f0c454169415c6d",
-      "warm": "fnv1a64-utf16:2f0c454169415c6d"
+      "reordered": "fnv1a64-utf16:de8d75befdca010b",
+      "reset": "fnv1a64-utf16:de8d75befdca010b",
+      "warm": "fnv1a64-utf16:de8d75befdca010b"
     },
     "siteObservedAbsentAfterCompletion": true
   },
@@ -251,25 +251,25 @@
       "maximumActiveSites": 1,
       "maximumCpuPerTick": 0.1,
       "maximumEnergyPerTick": 100,
-      "maximumPersistentBytes": 645
+      "maximumPersistentBytes": 663
     },
     "continuity": {
       "duplicateDestroyCommands": 0,
+      "terminalAdmittedFlowTicks": 301,
       "terminalServiceTicks": 301,
-      "uninterruptedUntilStorageObserved": true,
-      "terminalAdmittedFlowTicks": 301
+      "uninterruptedUntilStorageObserved": true
     },
     "equivalence": {
       "semanticBytesIdentical": true,
       "outcomeHashes": {
-        "warm": "fnv1a64-utf16:3e8ede23a681aae8",
-        "reset": "fnv1a64-utf16:3e8ede23a681aae8",
-        "reordered": "fnv1a64-utf16:3e8ede23a681aae8"
+        "reordered": "fnv1a64-utf16:7e03cf5d4d030d64",
+        "reset": "fnv1a64-utf16:7e03cf5d4d030d64",
+        "warm": "fnv1a64-utf16:7e03cf5d4d030d64"
       },
       "semanticHashes": {
-        "warm": "fnv1a64-utf16:b4fd8dd0dea30f8d",
-        "reset": "fnv1a64-utf16:b4fd8dd0dea30f8d",
-        "reordered": "fnv1a64-utf16:b4fd8dd0dea30f8d"
+        "reordered": "fnv1a64-utf16:c0eac61e8a84adc5",
+        "reset": "fnv1a64-utf16:c0eac61e8a84adc5",
+        "warm": "fnv1a64-utf16:c0eac61e8a84adc5"
       }
     },
     "final": {
@@ -288,9 +288,9 @@
   "equivalence": {
     "semanticBytesIdentical": true,
     "outcomeHashes": {
-      "warm": "fnv1a64-utf16:a302e798bbc135d1",
-      "reset": "fnv1a64-utf16:a302e798bbc135d1",
-      "reordered": "fnv1a64-utf16:a302e798bbc135d1"
+      "warm": "fnv1a64-utf16:9b168981cd5f7a29",
+      "reset": "fnv1a64-utf16:9b168981cd5f7a29",
+      "reordered": "fnv1a64-utf16:9b168981cd5f7a29"
     },
     "semanticHashes": {
       "warm": "fnv1a64-utf16:5401faa924f0fd35",

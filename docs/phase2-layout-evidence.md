@@ -106,7 +106,9 @@ authorities. Issue [#381](https://github.com/ralphschuler/screeps-myrmex/issues/
 bounded cursor to a canonical two-to-eight-resource manifest, including a row split across the
 3,000-unit boundary. Issue [#383](https://github.com/ralphschuler/screeps-myrmex/issues/383)
 releases the retained terminal from local Logistics suppression on fresh exact storage disappearance
-and checks one complete committed storage reconstruction across warm/reset/reordered variants.
+and checks one complete committed storage reconstruction across warm/reset/reordered variants. Issue
+[#385](https://github.com/ralphschuler/screeps-myrmex/issues/385) isolates older-algorithm records
+and performs one safe quiescent command-free revision handoff before ordinary convergence resumes.
 Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
 structure migration and dismantling.
 
@@ -386,7 +388,7 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - one accepted removal globally per tick;
 - terminal-work publication accepts at most 64 owned rooms, 64 current sends, and 128 persisted send
   states; over-cap or unattributable active/backoff evidence makes the complete view unavailable;
-- layouts owner-local schema V24 migrates V1-V23 records, preserves V3's optional bounded source
+- layouts owner-local schema V25 migrates V1-V24 records, preserves V3's optional bounded source
   identity and V4's optional source-service issuance coordinate, moves a valid legacy nested receipt
   to the generic field, preserves V6 tower receipts, V7 tower evacuations, V8 link receipts, V9
   reserve-link evacuations, V10 lab receipts, V11 energy evacuations, V12 mineral evacuations, V13
@@ -396,8 +398,9 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
   permits only that bounded cursor on a canonical 3,001–6,000-unit manifest, rejects spoofed pre-V15
   spawn receipts, pre-V16 spawn evacuations, pre-V17 terminal receipts, pre-V18 terminal
   evacuations, V18 terminal manifests, pre-V20 storage receipts, pre-V21 storage evacuations, V21
-  storage manifests, pre-V23 scalar cursors, or pre-V24 manifest cursors, and makes rollback fail
-  closed;
+  storage manifests, pre-V23 scalar cursors, or pre-V24 manifest cursors; V25 moves a fully
+  validated older-algorithm record to an inert collection, caps current plus stale records at 64,
+  rejects duplicate/misplaced/over-cap evidence, and makes V24 rollback fail closed;
 - reserve-link role proof stays within the existing 16-link classification cap and persists no role
   map, transfer receipt, or migration queue;
 - at most one compact extension, spawn, storage, terminal, tower, reserve-link, and lab stock
@@ -447,7 +450,7 @@ terminal source/sink nodes plus one admitted 50-energy local Logistics budget/co
 available for all 301 reconstruction observations. One site consumes exactly the official 30,000
 modeled build energy at at most 100 per tick; fresh observation at tick 70,301 exposes active
 committed storage. Warm, one-reset, and reversed-order variants have identical semantic/outcome
-hashes, no destroy command, 0.1 modeled CPU per tick, a 645-byte maximum layouts owner, and one-site
+hashes, no destroy command, 0.1 modeled CPU per tick, a 663-byte maximum layouts owner, and one-site
 bounds. The existing #377 row separately retains exact production funding, ContractLedger, lease,
 action-arbitration, and live `Creep.build` proof for the generic owned-site execution path;
 scenario-kit does not claim to emulate that runtime command chain.
@@ -462,8 +465,20 @@ progress delta equals its live call's energy, and only the following observation
 and exposes the extension. Warm, one JSON/global-module-heap reset during construction, and reversed
 live collections complete at the same tick with byte-identical authority traces, gameplay-owner
 hashes, calls, and outcomes. Modeled Screeps CPU accounting is at most 0.129 per tick and persistent
-Memory remains within 13,477 UTF-8 bytes. This closes the explicit production build-chain proof gap
+Memory remains within 13,495 UTF-8 bytes. This closes the explicit production build-chain proof gap
 without claiming measured host CPU or that scenario-kit simulates all preceding 2,900 build energy.
+
+The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
+collection, then replaces it only after the current room passes colony, policy, source-service, and
+access checks. The handoff tick records zero construction-site calls and `handoff` status; the next
+tick admits exactly one ordinary site command. Warm, JSON/global-heap reset, and reversed-collection
+variants have byte-identical owner and planning outcomes. Active evacuation, source-service
+issuance, threat, controller risk, policy-excluded RCL, and blocked terrain variants retain exactly
+one stale record, no current record, degraded status, and zero site commands; unknown vision emits
+no planning row, persists the V25 isolation, and preserves the same evidence. A two-room result
+admits only the canonical stale room and suppresses every other room's site/removal output for that
+handoff tick; ordinary convergence resumes next tick. Persistence tests additionally reject
+duplicate rooms, current-algorithm records in the stale collection, and a 65-record aggregate.
 
 Recorded milestones distinguish the site command and next-tick site observation from the modeled
 3,000th build energy and next-tick completed-replacement observation. The destroy command may run on

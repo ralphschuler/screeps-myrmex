@@ -233,9 +233,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   composes fresh storage disappearance with immediate release of the retained terminal from local
   Logistics suppression, one admitted local flow, one committed replacement site, the existing
   generic production build proof, and a checked 30,000-energy reconstruction model across
-  warm/reset/reordered variants. Uninterrupted same-structure storage/terminal service, broad
-  dynamic movement/pathfinding proof, autonomous boost manifest production, defensive migration,
-  arbitrary revision replacement, and creep dismantling remain issue #99.
+  warm/reset/reordered variants. Issue #385 advances layouts V25 with one command-free handoff from
+  a fully validated quiescent stale algorithm record to one current complete source/access-safe
+  commitment; older active evidence remains isolated and fail-closed. Uninterrupted same-structure
+  storage/terminal service, broad dynamic movement/pathfinding proof, autonomous boost manifest
+  production, defensive or active revision migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

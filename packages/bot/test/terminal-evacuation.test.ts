@@ -151,7 +151,7 @@ describe("stocked obsolete-terminal evacuation", () => {
     ).toBeNull();
 
     owner = persistLayoutTerminalEvacuation(owner, roomName, terms);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     const migratedV18 = parseLayoutsOwner({ ...owner, schemaVersion: 18 });
     expect(migratedV18).toEqual({ ...owner, revision: owner.revision + 1 });
@@ -201,7 +201,7 @@ describe("stocked obsolete-terminal evacuation", () => {
     } as const;
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = persistLayoutTerminalEvacuation(owner, roomName, mixedTerms);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const snapshot = world();

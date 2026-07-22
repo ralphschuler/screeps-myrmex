@@ -14,7 +14,7 @@ import {
   reconcileConstructionSiteExecution,
   type LayoutCommitment,
   type LayoutPlacement,
-  type LayoutsOwnerV24,
+  type LayoutsOwnerV25,
 } from "../../../bot/src/layout";
 import { observeLogisticsGraph, planLogisticsRuntime } from "../../../bot/src/logistics/runtime";
 import { projectLayoutStorageEvacuations } from "../../../bot/src/logistics/storage-evacuation";
@@ -122,7 +122,7 @@ interface StorageWorld {
     readonly siteCommandAt: number | null;
     readonly siteObservedAt: number | null;
   };
-  readonly owner: LayoutsOwnerV24;
+  readonly owner: LayoutsOwnerV25;
   readonly siteProgress: number | null;
   readonly storageActive: boolean;
   readonly terminalAdmittedFlowTicks: number;

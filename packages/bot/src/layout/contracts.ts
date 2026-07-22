@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 24 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 25 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -78,7 +78,8 @@ export type LayoutBlocker =
   | "terrain-conflict"
   | "occupancy-conflict"
   | "access-blocked"
-  | "policy-unavailable";
+  | "policy-unavailable"
+  | "revision-handoff-active";
 
 export interface LayoutPlacement {
   readonly adoption: LayoutAdoption;
@@ -293,6 +294,9 @@ export interface LayoutRecord extends LayoutCommitment {
   readonly sourceServices?: readonly LayoutPlacement[];
   readonly siteReceipts?: readonly ConstructionSiteAttemptReceipt[];
 }
+
+/** A fully validated older-algorithm record isolated from every gameplay projection. */
+export type StaleLayoutRecord = LayoutRecord;
 
 export function layoutContainerMigrationFlowId(
   roomName: string,
@@ -819,7 +823,7 @@ export interface LayoutRuntimePlanRecord {
   readonly blocker: LayoutBlocker | null;
   readonly fingerprint: string | null;
   readonly roomName: string;
-  readonly status: "complete" | "degraded";
+  readonly status: "complete" | "degraded" | "handoff";
 }
 
 export type LayoutMigrationBlocker =
@@ -1091,10 +1095,13 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV24 {
+export interface LayoutsOwnerV25 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
+  /** Current-algorithm records consumed by runtime gameplay projections. */
   readonly records: readonly LayoutRecord[];
+  /** Older-algorithm records retained only until a safe command-free handoff. */
+  readonly staleRecords: readonly StaleLayoutRecord[];
 }
 
 export interface LayoutPlanningInput {

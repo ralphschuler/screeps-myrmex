@@ -1,4 +1,4 @@
-import type { ColonyRclUnlockAllowances } from "../colony";
+import type { ColonyRclUnlockAllowances, ColonyView } from "../colony";
 import type { PositionSnapshot, StructureSnapshot } from "../world/snapshot";
 import {
   isFutureLayoutAccessWalkable,
@@ -20,7 +20,43 @@ import {
   type LayoutPlanningInput,
   type LayoutPlanningResult,
   type LayoutTransform,
+  type StaleLayoutRecord,
 } from "./contracts";
+
+export function staleLayoutRevisionHandoffBlocker(input: {
+  readonly colony: ColonyView;
+  readonly record: StaleLayoutRecord;
+}): LayoutBlocker | null {
+  const { colony, record } = input;
+  if (
+    record.algorithmRevision === LAYOUT_ALGORITHM_REVISION ||
+    record.containerMigration !== undefined ||
+    record.extensionEvacuation !== undefined ||
+    record.labEvacuation !== undefined ||
+    record.linkEvacuation !== undefined ||
+    record.spawnEvacuation !== undefined ||
+    record.storageEvacuation !== undefined ||
+    record.terminalEvacuation !== undefined ||
+    record.towerEvacuation !== undefined ||
+    record.removalReceipt !== undefined ||
+    (record.siteReceipts?.length ?? 0) > 0 ||
+    record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true
+  )
+    return "revision-handoff-active";
+  if (
+    colony.visibility !== "visible" ||
+    (colony.state !== "developing" && colony.state !== "mature") ||
+    colony.activeThreat !== false ||
+    colony.controllerRisk !== false ||
+    colony.legalWorkforce !== true ||
+    colony.rclPolicy.level === null ||
+    colony.rclPolicy.unlocks === null ||
+    !colony.rclPolicy.progression.authorized ||
+    colony.rclPolicy.protectedSpawnReserve.state !== "restored"
+  )
+    return "policy-unavailable";
+  return null;
+}
 
 export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningResult {
   if (

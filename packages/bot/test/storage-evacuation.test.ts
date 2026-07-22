@@ -424,7 +424,7 @@ describe("bounded stocked-storage evacuation", () => {
     });
 
     owner = persistLayoutStorageEvacuation(owner, roomName, mixedTerms);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(layoutStorageEvacuationFlowIds(roomName, mixedTerms)).toHaveLength(2);
     expect(layoutStorageEvacuationBudgetIssuers(roomName, mixedTerms)).toHaveLength(2);
@@ -492,7 +492,7 @@ describe("bounded stocked-storage evacuation", () => {
   it("persists and projects two identity-distinct sequential batches", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = persistLayoutStorageEvacuation(owner, roomName, sequentialTerms);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const firstFlowId = layoutStorageEvacuationFlowId(roomName, sequentialTerms);
@@ -580,7 +580,7 @@ describe("bounded stocked-storage evacuation", () => {
     ).toBeNull();
 
     owner = persistLayoutStorageEvacuation(owner, roomName, sequentialMixedTerms);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     const minimumTerms = {
       ...sequentialMixedTerms,
@@ -832,7 +832,7 @@ describe("bounded stocked-storage evacuation", () => {
   it("preserves a future owner byte-for-byte and authorizes no layout work", () => {
     const futureOwner = {
       ...persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
-      schemaVersion: 25,
+      schemaVersion: 26,
     };
     const before = JSON.stringify(futureOwner);
     const parsed = parseLayoutsOwner(futureOwner);

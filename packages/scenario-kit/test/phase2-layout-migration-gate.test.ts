@@ -123,7 +123,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383)", () => {
         maximumActiveSites: 1,
         maximumCpuPerTick: 0.1,
         maximumEnergyPerTick: 100,
-        maximumPersistentBytes: 645,
+        maximumPersistentBytes: 663,
       },
       continuity: {
         duplicateDestroyCommands: 0,
@@ -160,7 +160,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383)", () => {
       maximumActiveSites: 1,
       maximumCpuPerTick: 0.25,
       maximumEnergyPerTick: 100,
-      persistentSchemaVersion: 24,
+      persistentSchemaVersion: 25,
     });
     expect(actual.safety.minimumActiveExtensions).toBeGreaterThanOrEqual(9);
     expect(actual.safety).toMatchObject({
