@@ -8,16 +8,23 @@ import {
   LAYOUT_ALGORITHM_REVISION,
   emptyLayoutsOwner,
   layoutStorageEvacuationBudgetIssuer,
+  layoutStorageEvacuationBudgetIssuers,
   layoutStorageEvacuationFlowId,
+  layoutStorageEvacuationFlowIds,
   parseLayoutsOwner,
   persistLayoutCommitment,
   persistLayoutStorageEvacuation,
   type LayoutRecord,
   type LayoutStorageEvacuation,
+  type LayoutStorageEvacuationResource,
 } from "../src/layout";
 import { aggregateStoreCapacityReservationKey } from "../src/logistics/planner";
 import { planLogisticsRuntime } from "../src/logistics/runtime";
-import { projectLayoutStorageEvacuations } from "../src/logistics/storage-evacuation";
+import {
+  authorizeLayoutStorageEvacuationFlowIds,
+  completeExecutableLayoutStorageEvacuationFlowIds,
+  projectLayoutStorageEvacuations,
+} from "../src/logistics/storage-evacuation";
 import {
   isAuthorizedLayoutStorageEvacuationFlowId,
   projectLayoutTerminalSendBlockedRoomNames,
@@ -45,6 +52,17 @@ const terms = {
   startedAt: 10,
   terminalId,
   terminalInitialAmount: 25_000,
+} as const satisfies LayoutStorageEvacuation;
+const mixedResources = [
+  ["H", 1_000, 500],
+  ["energy", 2_000, 25_000],
+] as const satisfies readonly LayoutStorageEvacuationResource[];
+const mixedTerms = {
+  expiresAt: 160,
+  resourceManifest: mixedResources,
+  sourceId,
+  startedAt: 10,
+  terminalId,
 } as const satisfies LayoutStorageEvacuation;
 
 function inventory(capacity: number, resources: readonly (readonly [string, number])[]) {
@@ -147,8 +165,8 @@ function project(
   });
 }
 
-describe("single-resource stocked-storage evacuation", () => {
-  it("persists V21 terms while V20 migration invents none and rejects spoofed terms", () => {
+describe("bounded stocked-storage evacuation", () => {
+  it("persists V22 scalar or manifest terms while migration invents none and rejects spoofed terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     const v20 = { ...owner, schemaVersion: 20 } as const;
     expect(parseLayoutsOwner(v20)).toEqual({ ...owner, revision: owner.revision + 1 });
@@ -158,13 +176,23 @@ describe("single-resource stocked-storage evacuation", () => {
         records: [{ ...v20.records[0], storageEvacuation: terms }],
       }),
     ).toBeNull();
+    const v21 = { ...owner, schemaVersion: 21 } as const;
+    expect(parseLayoutsOwner(v21)).toEqual({ ...owner, revision: owner.revision + 1 });
+    expect(
+      parseLayoutsOwner({
+        ...v21,
+        records: [{ ...v21.records[0], storageEvacuation: mixedTerms }],
+      }),
+    ).toBeNull();
 
-    owner = persistLayoutStorageEvacuation(owner, roomName, terms);
-    expect(owner.schemaVersion).toBe(21);
+    owner = persistLayoutStorageEvacuation(owner, roomName, mixedTerms);
+    expect(owner.schemaVersion).toBe(22);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    expect(layoutStorageEvacuationFlowIds(roomName, mixedTerms)).toHaveLength(2);
+    expect(layoutStorageEvacuationBudgetIssuers(roomName, mixedTerms)).toHaveLength(2);
     expect(
       persistLayoutCommitment(owner, roomName, commitment).records[0]?.storageEvacuation,
-    ).toEqual(terms);
+    ).toEqual(mixedTerms);
     expect(
       persistLayoutCommitment(owner, roomName, { ...commitment, fingerprint: "layout-storage-b" })
         .records[0]?.storageEvacuation,
@@ -181,6 +209,24 @@ describe("single-resource stocked-storage evacuation", () => {
       { ...terms, sourceId: terminalId },
       { ...terms, terminalInitialAmount: 297_001 },
       { ...terms, terminalInitialAmount: -1 },
+      { ...mixedTerms, resourceManifest: [["energy", 2_000, 25_000]] },
+      { ...mixedTerms, resourceManifest: [...mixedResources].reverse() },
+      {
+        ...mixedTerms,
+        resourceManifest: [
+          ["H", 1_000, 500],
+          ["H", 2_000, 500],
+        ],
+      },
+      {
+        ...mixedTerms,
+        resourceManifest: [
+          ["H", 1_001, 500],
+          ["energy", 2_000, 25_000],
+        ],
+      },
+      { ...mixedTerms, amount: 3_000 },
+      { ...terms, resourceManifest: undefined },
     ])
       expect(
         parseLayoutsOwner({
@@ -193,7 +239,7 @@ describe("single-resource stocked-storage evacuation", () => {
   it("preserves a future owner byte-for-byte and authorizes no layout work", () => {
     const futureOwner = {
       ...persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
-      schemaVersion: 22,
+      schemaVersion: 23,
     };
     const before = JSON.stringify(futureOwner);
     const parsed = parseLayoutsOwner(futureOwner);
@@ -262,6 +308,123 @@ describe("single-resource stocked-storage evacuation", () => {
       quantity: terms.amount,
       targetId: sourceId,
     });
+  });
+
+  it("projects a mixed manifest atomically with one shared terminal-capacity reservation", () => {
+    const snapshot = world(
+      mixedResources.map(([resourceType, amount]) => [resourceType, amount]),
+      mixedResources.map(([resourceType, , baseline]) => [resourceType, baseline]),
+    );
+    const projection = project(snapshot, 11, [record(mixedTerms)]);
+    const flowIds = layoutStorageEvacuationFlowIds(roomName, mixedTerms);
+    const issuers = layoutStorageEvacuationBudgetIssuers(roomName, mixedTerms);
+    if (flowIds === null || issuers === null) throw new Error("expected bounded mixed identities");
+
+    expect(projection.demands.edges.map(({ id }) => id)).toEqual(flowIds);
+    expect(projection.budgets.map(({ issuer }) => issuer)).toEqual(issuers);
+    expect(
+      projection.demands.nodes
+        .filter(({ kind }) => kind === "sink")
+        .map(({ capacityReservationKey }) => capacityReservationKey),
+    ).toEqual([
+      aggregateStoreCapacityReservationKey(roomName, terminalId),
+      aggregateStoreCapacityReservationKey(roomName, terminalId),
+    ]);
+    expect(projection.demands.suppressedSinkTargetIds).toEqual([sourceId, terminalId]);
+    expect(projection.demands.suppressedSourceTargetIds).toEqual([sourceId, terminalId]);
+
+    const partial = new Set([flowIds[0] as string]);
+    expect(
+      completeExecutableLayoutStorageEvacuationFlowIds({
+        executableFlowIds: partial,
+        projectedFlowIds: new Set(flowIds),
+        records: [record(mixedTerms)],
+      }),
+    ).toEqual(new Set());
+    const logisticsComplete = completeExecutableLayoutStorageEvacuationFlowIds({
+      executableFlowIds: new Set(flowIds),
+      projectedFlowIds: new Set(flowIds),
+      records: [record(mixedTerms)],
+    });
+    expect(logisticsComplete).toEqual(new Set(flowIds));
+    expect(
+      authorizeLayoutStorageEvacuationFlowIds({
+        fundedFlowIds: partial,
+        logisticsExecutableFlowIds: logisticsComplete,
+        projectedFlowIds: new Set(flowIds),
+        records: [record(mixedTerms)],
+      }),
+    ).toEqual(new Set());
+    expect(
+      authorizeLayoutStorageEvacuationFlowIds({
+        fundedFlowIds: new Set(flowIds),
+        logisticsExecutableFlowIds: logisticsComplete,
+        projectedFlowIds: new Set(flowIds),
+        records: [record(mixedTerms)],
+      }),
+    ).toEqual(new Set(flowIds));
+  });
+
+  it("resumes only incomplete mixed rows after asymmetric delivery and reordered JSON reconstruction", () => {
+    const flowIds = layoutStorageEvacuationFlowIds(roomName, mixedTerms);
+    if (flowIds === null) throw new Error("expected bounded mixed identities");
+    const snapshot = world(
+      [["energy", 2_000]],
+      [
+        ["energy", 25_000],
+        ["H", 1_500],
+      ],
+      12,
+    );
+    const observedRoom = snapshot.rooms[0];
+    if (observedRoom === undefined) throw new Error("expected mixed storage room");
+    const reordered = {
+      ...snapshot,
+      rooms: [
+        {
+          ...observedRoom,
+          ownedStorages: (observedRoom.ownedStorages ?? []).map((storage) => ({
+            ...storage,
+            store: { ...storage.store, resources: [...storage.store.resources].reverse() },
+          })),
+          ownedTerminals: (observedRoom.ownedTerminals ?? []).map((terminal) => ({
+            ...terminal,
+            store: { ...terminal.store, resources: [...terminal.store.resources].reverse() },
+          })),
+        },
+      ],
+    } as WorldSnapshot;
+    const resumed = project(
+      reordered,
+      12,
+      JSON.parse(JSON.stringify([record(mixedTerms)])) as LayoutRecord[],
+    );
+
+    expect(resumed.demands.edges.map(({ id }) => id)).toEqual([flowIds[1]]);
+    expect(resumed.demands.endpoints[0]).toMatchObject({
+      observedAmount: 2_000,
+      resourceType: "energy",
+      targetId: sourceId,
+    });
+    expect(resumed.demands.suppressedSinkTargetIds).toEqual([sourceId, terminalId]);
+
+    const completedRowLease = {
+      leases: [
+        {
+          actorId: "completed-row-hauler",
+          execution: { counterpartId: terminalId, flowId: flowIds[0], version: 3 },
+          targetId: sourceId,
+        },
+      ],
+      status: "ready",
+    } as unknown as ContractExecutionView;
+    expect(
+      withoutSuppressedLeaseTargets(
+        completedRowLease,
+        new Set([sourceId, terminalId]),
+        new Set([flowIds[1] as string]),
+      ).leases,
+    ).toEqual([]);
   });
 
   it("rejects orphan-prefixed flows and removes competing custom demands at both endpoints", () => {
@@ -627,6 +790,42 @@ describe("single-resource stocked-storage evacuation", () => {
     });
     expect(overflow.demands.edges).toEqual([]);
 
+    const mixedRecords = records.slice(0, 33).map((layoutRecord) => ({
+      ...layoutRecord,
+      storageEvacuation: {
+        ...mixedTerms,
+        sourceId: layoutRecord.storageEvacuation?.sourceId ?? sourceId,
+        terminalId: layoutRecord.storageEvacuation?.terminalId ?? terminalId,
+      },
+    }));
+    const mixedRooms = rooms.slice(0, 33).map((mixedRoom) => ({
+      ...mixedRoom,
+      ownedStorages: (mixedRoom.ownedStorages ?? []).map((storage) => ({
+        ...storage,
+        store: inventory(1_000_000, [
+          ["H", 1_000],
+          ["energy", 2_000],
+        ]),
+      })),
+      ownedTerminals: (mixedRoom.ownedTerminals ?? []).map((terminal) => ({
+        ...terminal,
+        store: inventory(300_000, [
+          ["H", 500],
+          ["energy", 25_000],
+        ]),
+      })),
+    }));
+    const mixedOverflow = projectLayoutStorageEvacuations({
+      existingBudgets: [],
+      quiescentTerminalRoomNames: new Set(mixedRooms.map(({ name }) => name)),
+      records: mixedRecords,
+      snapshot: { ...world(), rooms: mixedRooms },
+      tick: 11,
+    });
+    expect(mixedOverflow.budgets).toEqual([]);
+    expect(mixedOverflow.demands.edges).toEqual([]);
+    expect(mixedOverflow.demands.suppressedSourceTargetIds).toHaveLength(66);
+
     expect(
       project(
         world([[terms.resourceType, terms.amount]], undefined, terms.expiresAt),
@@ -709,14 +908,21 @@ describe("single-resource stocked-storage evacuation", () => {
       } as WorldSnapshot,
     ])
       expect(project(snapshot).demands.edges).toEqual([]);
-    expect(
-      projectLayoutStorageEvacuations({
-        existingBudgets: [],
-        quiescentTerminalRoomNames: new Set([roomName]),
-        records: [record({ ...terms, amount: 0 })],
-        snapshot: world(),
-        tick: 11,
-      }),
-    ).toEqual(empty);
+    for (const malformed of [
+      { ...terms, amount: 0 },
+      { ...terms, expiresAt: 149, startedAt: -1 },
+      { ...terms, expiresAt: 160.5, startedAt: 10.5 },
+      { ...terms, terminalId: sourceId },
+      { ...terms, sourceId: "x".repeat(129) },
+    ])
+      expect(
+        projectLayoutStorageEvacuations({
+          existingBudgets: [],
+          quiescentTerminalRoomNames: new Set([roomName]),
+          records: [record(malformed as LayoutStorageEvacuation)],
+          snapshot: world(),
+          tick: 11,
+        }),
+      ).toEqual(empty);
   });
 });

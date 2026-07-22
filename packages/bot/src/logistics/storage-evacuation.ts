@@ -5,10 +5,11 @@ import {
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT,
   MAX_LAYOUT_STORAGE_EVACUATION_FLOWS,
+  MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES,
   MAX_LAYOUT_STORAGE_RESOURCES,
   MAX_LAYOUT_TERMINAL_CAPACITY,
-  layoutStorageEvacuationBudgetIssuer,
-  layoutStorageEvacuationFlowId,
+  layoutStorageEvacuationBudgetIssuers,
+  layoutStorageEvacuationFlowIds,
   type LayoutRecord,
   type LayoutStorageEvacuation,
 } from "../layout";
@@ -19,6 +20,12 @@ import type { LogisticsResourceDemandProjection } from "./resource-demands";
 export interface LayoutStorageEvacuationProjection {
   readonly budgets: readonly BudgetRequest[];
   readonly demands: LogisticsResourceDemandProjection;
+}
+
+interface ResourceTerm {
+  readonly amount: number;
+  readonly resourceType: string;
+  readonly terminalInitialAmount: number;
 }
 
 /** Projects one layout-owned bounded storage handoff into the sole logistics graph. */
@@ -47,11 +54,15 @@ export function projectLayoutStorageEvacuations(input: {
     const evacuation = record.storageEvacuation;
     if (
       evacuation === undefined ||
-      !validEvacuation(evacuation) ||
+      !validEvacuationCommon(evacuation) ||
       input.tick <= evacuation.startedAt ||
       input.tick >= evacuation.expiresAt
     )
       continue;
+    const terms = storageEvacuationTerms(evacuation);
+    if (terms === null) continue;
+    // Both physical Stores remain durably suppressed even when current drift, CPU admission, or a
+    // bounded overflow prevents optional evacuation work from entering the logistics graph.
     suppressedTargetIds.push(evacuation.sourceId, evacuation.terminalId);
     if (input.includeWork === false || !input.quiescentTerminalRoomNames.has(record.roomName))
       continue;
@@ -75,97 +86,142 @@ export function projectLayoutStorageEvacuations(input: {
     const sourceStore = exactInventoryStore(source, MAX_LAYOUT_STORAGE_CAPACITY);
     const terminalStore = exactInventoryStore(terminal, MAX_LAYOUT_TERMINAL_CAPACITY);
     if (sourceStore === null || terminalStore === null) continue;
+    const termResources = new Set(terms.map(({ resourceType }) => resourceType));
+    if ([...sourceStore.resources].some(([resourceType]) => !termResources.has(resourceType)))
+      continue;
+
+    const current = terms.map((term) => {
+      const sourceAmount = sourceStore.resources.get(term.resourceType) ?? 0;
+      const terminalAmount = terminalStore.resources.get(term.resourceType) ?? 0;
+      const delivered = terminalAmount - term.terminalInitialAmount;
+      const remaining = term.amount - delivered;
+      return {
+        delivered,
+        remaining,
+        sourceAmount,
+        term,
+        workRemaining: sourceAmount > 0 || remaining > 0,
+      };
+    });
     if (
-      [...sourceStore.resources].some(([resourceType]) => resourceType !== evacuation.resourceType)
+      current.some(
+        ({ delivered, sourceAmount, term }) =>
+          delivered < 0 ||
+          delivered > term.amount ||
+          sourceAmount > term.amount - delivered ||
+          sourceAmount + delivered > term.amount,
+      ) ||
+      terminalStore.freeCapacity <
+        current.reduce(
+          (total, { remaining, sourceAmount }) => total + Math.max(sourceAmount, remaining),
+          0,
+        )
     )
       continue;
-    const sourceAmount = sourceStore.resources.get(evacuation.resourceType) ?? 0;
-    const terminalAmount = terminalStore.resources.get(evacuation.resourceType) ?? 0;
-    const delivered = terminalAmount - evacuation.terminalInitialAmount;
-    const remaining = evacuation.amount - delivered;
+
+    const flowIds = layoutStorageEvacuationFlowIds(room.name, evacuation);
+    const issuers = layoutStorageEvacuationBudgetIssuers(room.name, evacuation);
     if (
-      delivered < 0 ||
-      delivered > evacuation.amount ||
-      sourceAmount > remaining ||
-      sourceAmount + delivered > evacuation.amount ||
-      terminalStore.freeCapacity < remaining
+      flowIds === null ||
+      issuers === null ||
+      flowIds.length !== terms.length ||
+      issuers.length !== terms.length ||
+      new Set(flowIds).size !== flowIds.length ||
+      new Set(issuers).size !== issuers.length
     )
       continue;
-    const flowId = layoutStorageEvacuationFlowId(room.name, evacuation);
-    const issuer = layoutStorageEvacuationBudgetIssuer(room.name, evacuation);
-    // Keep exact completed endpoints projected for one reconciliation tick so the sole Logistics
-    // contract owner can retire the acquire/deliver contract before layout removal proceeds.
-    if (flowId === null || issuer === null) continue;
-    const sourceNodeId = `${flowId}:source:${evacuation.resourceType}`;
-    const sinkNodeId = `${flowId}:sink:${evacuation.resourceType}`;
-    nodes.push(
-      {
+    const manifest = "resourceManifest" in evacuation;
+
+    for (let index = 0; index < current.length; index += 1) {
+      const item = current[index];
+      const flowId = flowIds[index];
+      const issuer = issuers[index];
+      if (
+        item === undefined ||
+        flowId === undefined ||
+        issuer === undefined ||
+        (!item.workRemaining && manifest)
+      )
+        continue;
+      const { sourceAmount, term } = item;
+      const sourceNodeId = `${flowId}:source:${term.resourceType}`;
+      const sinkNodeId = `${flowId}:sink:${term.resourceType}`;
+      nodes.push(
+        {
+          colonyId: room.name,
+          freeCapacity: 0,
+          id: sourceNodeId,
+          kind: "source",
+          observedAmount: sourceAmount,
+          observedAt: input.tick,
+          position: source.pos,
+          priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
+          resourceType: term.resourceType,
+        },
+        {
+          capacityReservationKey: aggregateStoreCapacityReservationKey(room.name, terminal.id),
+          colonyId: room.name,
+          freeCapacity: terminalStore.freeCapacity,
+          id: sinkNodeId,
+          kind: "sink",
+          observedAmount: 0,
+          observedAt: input.tick,
+          position: terminal.pos,
+          priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
+          resourceType: term.resourceType,
+        },
+      );
+      endpoints.push(
+        {
+          acquireAction: "withdraw",
+          freeCapacity: 0,
+          nodeId: sourceNodeId,
+          observedAmount: sourceAmount,
+          observedAt: input.tick,
+          position: source.pos,
+          resourceType: term.resourceType,
+          targetId: source.id,
+        },
+        {
+          freeCapacity: terminalStore.freeCapacity,
+          nodeId: sinkNodeId,
+          observedAmount: 0,
+          observedAt: input.tick,
+          position: terminal.pos,
+          resourceType: term.resourceType,
+          targetId: terminal.id,
+        },
+      );
+      edges.push({
+        budgetBinding: { category: "optional-growth", issuer },
+        id: flowId,
+        maximumAmount: term.amount,
+        roundTripTicks: Math.max(
+          1,
+          Math.max(
+            Math.abs(source.pos.x - terminal.pos.x),
+            Math.abs(source.pos.y - terminal.pos.y),
+          ) * 2,
+        ),
+        sinkNodeId,
+        sourceNodeId,
+      });
+      budgets.push({
         colonyId: room.name,
-        freeCapacity: 0,
-        id: sourceNodeId,
-        kind: "source",
-        observedAmount: sourceAmount,
-        observedAt: input.tick,
-        position: source.pos,
-        priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
-        resourceType: evacuation.resourceType,
-      },
-      {
-        capacityReservationKey: aggregateStoreCapacityReservationKey(room.name, terminal.id),
-        colonyId: room.name,
-        freeCapacity: terminalStore.freeCapacity,
-        id: sinkNodeId,
-        kind: "sink",
-        observedAmount: 0,
-        observedAt: input.tick,
-        position: terminal.pos,
-        priority: { class: "normal", deadline: evacuation.expiresAt - 1 },
-        resourceType: evacuation.resourceType,
-      },
-    );
-    endpoints.push(
-      {
-        acquireAction: "withdraw",
-        freeCapacity: 0,
-        nodeId: sourceNodeId,
-        observedAmount: sourceAmount,
-        observedAt: input.tick,
-        position: source.pos,
-        resourceType: evacuation.resourceType,
-        targetId: source.id,
-      },
-      {
-        freeCapacity: terminalStore.freeCapacity,
-        nodeId: sinkNodeId,
-        observedAmount: 0,
-        observedAt: input.tick,
-        position: terminal.pos,
-        resourceType: evacuation.resourceType,
-        targetId: terminal.id,
-      },
-    );
-    edges.push({
-      budgetBinding: { category: "optional-growth", issuer },
-      id: flowId,
-      maximumAmount: evacuation.amount,
-      roundTripTicks: Math.max(
-        1,
-        Math.max(Math.abs(source.pos.x - terminal.pos.x), Math.abs(source.pos.y - terminal.pos.y)) *
-          2,
-      ),
-      sinkNodeId,
-      sourceNodeId,
-    });
-    budgets.push({
-      colonyId: room.name,
-      category: "optional-growth",
-      cpu: { desired: 100, minimum: 0 },
-      energy: null,
-      expiresAt: evacuation.expiresAt,
-      issuer,
-      revision: renewedRevision(input.existingBudgets, room.name, issuer, evacuation.startedAt + 1),
-      spawn: null,
-    });
+        category: "optional-growth",
+        cpu: { desired: 100, minimum: 0 },
+        energy: null,
+        expiresAt: evacuation.expiresAt,
+        issuer,
+        revision: renewedRevision(
+          input.existingBudgets,
+          room.name,
+          issuer,
+          evacuation.startedAt + 1,
+        ),
+        spawn: null,
+      });
+    }
   }
 
   const ids = [...new Set(suppressedTargetIds)].sort(compare);
@@ -180,21 +236,111 @@ export function projectLayoutStorageEvacuations(input: {
   return freeze({ budgets, demands: { edges, endpoints, nodes, ...suppression } });
 }
 
-function validEvacuation(evacuation: LayoutStorageEvacuation): boolean {
+/** Keeps every currently projected row of one storage manifest atomic. */
+export function completeExecutableLayoutStorageEvacuationFlowIds(input: {
+  readonly executableFlowIds: ReadonlySet<string>;
+  readonly projectedFlowIds: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+}): ReadonlySet<string> {
+  const complete = new Set<string>();
+  for (const record of input.records) {
+    if (record.storageEvacuation === undefined) continue;
+    const flowIds = layoutStorageEvacuationFlowIds(record.roomName, record.storageEvacuation);
+    if (flowIds === null) continue;
+    const projected = flowIds.filter((flowId) => input.projectedFlowIds.has(flowId));
+    if (projected.length > 0 && projected.every((flowId) => input.executableFlowIds.has(flowId))) {
+      for (const flowId of projected) complete.add(flowId);
+    }
+  }
+  return complete;
+}
+
+/** Requires the complete current storage-manifest subset to pass both Logistics and colony funding. */
+export function authorizeLayoutStorageEvacuationFlowIds(input: {
+  readonly fundedFlowIds: ReadonlySet<string>;
+  readonly logisticsExecutableFlowIds: ReadonlySet<string>;
+  readonly projectedFlowIds: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+}): ReadonlySet<string> {
+  const executable = new Set(
+    [...input.logisticsExecutableFlowIds].filter((flowId) => input.fundedFlowIds.has(flowId)),
+  );
+  return completeExecutableLayoutStorageEvacuationFlowIds({
+    executableFlowIds: executable,
+    projectedFlowIds: input.projectedFlowIds,
+    records: input.records,
+  });
+}
+
+function validEvacuationCommon(evacuation: LayoutStorageEvacuation): boolean {
   return (
-    positiveInteger(evacuation.amount) &&
-    evacuation.amount <= MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
     nonnegativeInteger(evacuation.startedAt) &&
     nonnegativeInteger(evacuation.expiresAt) &&
     evacuation.expiresAt - evacuation.startedAt === LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS &&
-    identity(evacuation.resourceType, 64) &&
-    evacuation.resourceType === evacuation.resourceType.trim() &&
     identity(evacuation.sourceId, 128) &&
     identity(evacuation.terminalId, 128) &&
-    evacuation.sourceId !== evacuation.terminalId &&
-    nonnegativeInteger(evacuation.terminalInitialAmount) &&
-    evacuation.terminalInitialAmount + evacuation.amount <= MAX_LAYOUT_TERMINAL_CAPACITY
+    evacuation.sourceId !== evacuation.terminalId
   );
+}
+
+function storageEvacuationTerms(
+  evacuation: LayoutStorageEvacuation,
+): readonly ResourceTerm[] | null {
+  const raw = evacuation as unknown as Record<string, unknown>;
+  const manifest = raw.resourceManifest;
+  if (manifest !== undefined) {
+    if (
+      raw.amount !== undefined ||
+      raw.resourceType !== undefined ||
+      raw.terminalInitialAmount !== undefined ||
+      !Array.isArray(manifest) ||
+      manifest.length < 2 ||
+      manifest.length > MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES
+    )
+      return null;
+    let prior = "";
+    let amountTotal = 0;
+    let terminalTotal = 0;
+    const terms: ResourceTerm[] = [];
+    for (const row of manifest) {
+      if (!Array.isArray(row) || row.length !== 3) return null;
+      const resourceType: unknown = row[0];
+      const amount: unknown = row[1];
+      const terminalInitialAmount: unknown = row[2];
+      if (
+        !identity(resourceType, 64) ||
+        resourceType !== resourceType.trim() ||
+        (prior !== "" && compare(prior, resourceType) >= 0) ||
+        !positiveInteger(amount) ||
+        !nonnegativeInteger(terminalInitialAmount)
+      )
+        return null;
+      prior = resourceType;
+      amountTotal += amount;
+      terminalTotal += terminalInitialAmount;
+      terms.push({ amount, resourceType, terminalInitialAmount });
+    }
+    return amountTotal <= MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
+      terminalTotal + amountTotal <= MAX_LAYOUT_TERMINAL_CAPACITY
+      ? terms
+      : null;
+  }
+  if (
+    !positiveInteger(raw.amount) ||
+    raw.amount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT ||
+    !identity(raw.resourceType, 64) ||
+    raw.resourceType !== raw.resourceType.trim() ||
+    !nonnegativeInteger(raw.terminalInitialAmount) ||
+    raw.terminalInitialAmount + raw.amount > MAX_LAYOUT_TERMINAL_CAPACITY
+  )
+    return null;
+  return [
+    {
+      amount: raw.amount,
+      resourceType: raw.resourceType,
+      terminalInitialAmount: raw.terminalInitialAmount,
+    },
+  ];
 }
 
 function exactInventoryStore(

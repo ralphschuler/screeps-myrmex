@@ -29,6 +29,7 @@ import {
   MAX_LAYOUT_SPAWN_ENERGY,
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT,
+  MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES,
   MAX_LAYOUT_STORAGE_RESOURCES,
   MAX_LAYOUT_TERMINAL_CAPACITY,
   MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT,
@@ -47,8 +48,9 @@ import {
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationBudgetIssuer,
   layoutSpawnEvacuationFlowId,
-  layoutStorageEvacuationBudgetIssuer,
-  layoutStorageEvacuationFlowId,
+  layoutStorageEvacuationBudgetIssuers,
+  layoutStorageEvacuationFlowIds,
+  layoutStorageEvacuationResources,
   layoutTerminalEvacuationBudgetIssuers,
   layoutTerminalEvacuationFlowIds,
   layoutTerminalEvacuationResources,
@@ -67,6 +69,7 @@ import {
   type LayoutPlacement,
   type LayoutSpawnEvacuation,
   type LayoutStorageEvacuation,
+  type LayoutStorageEvacuationResource,
   type LayoutStructureRemovalReceipt,
   type LayoutTerminalEvacuation,
   type LayoutTerminalEvacuationResource,
@@ -1526,10 +1529,8 @@ export class ConstructionPlanner {
             });
             break;
           }
-          const resource = storage.targetResources[0];
           if (
-            storage.targetResources.length !== 1 ||
-            resource === undefined ||
+            storage.targetResources.length > MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES ||
             storage.targetAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT
           ) {
             pushMigrationBlocker(blockers, {
@@ -1550,23 +1551,50 @@ export class ConstructionPlanner {
             });
             break;
           }
-          const terminalInitialAmount =
-            storage.terminalResources.find(([resourceType]) => resourceType === resource[0])?.[1] ??
-            0;
-          const nextEvacuation: LayoutStorageEvacuation = {
-            amount: resource[1],
-            expiresAt: input.room.observedAt + LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS,
-            resourceType: resource[0],
-            sourceId: candidate.target.id,
-            startedAt: input.room.observedAt,
-            terminalId: storage.terminal.id,
-            terminalInitialAmount,
-          };
+          const terminalByResource = new Map(storage.terminalResources);
+          const resourceManifest = storage.targetResources.map(
+            ([resourceType, amount]): LayoutStorageEvacuationResource => [
+              resourceType,
+              amount,
+              terminalByResource.get(resourceType) ?? 0,
+            ],
+          );
+          const nextEvacuation: LayoutStorageEvacuation =
+            resourceManifest.length === 1
+              ? {
+                  amount: resourceManifest[0]?.[1] ?? 0,
+                  expiresAt: input.room.observedAt + LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS,
+                  resourceType: resourceManifest[0]?.[0] ?? "",
+                  sourceId: candidate.target.id,
+                  startedAt: input.room.observedAt,
+                  terminalId: storage.terminal.id,
+                  terminalInitialAmount: resourceManifest[0]?.[2] ?? 0,
+                }
+              : {
+                  expiresAt: input.room.observedAt + LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS,
+                  resourceManifest,
+                  sourceId: candidate.target.id,
+                  startedAt: input.room.observedAt,
+                  terminalId: storage.terminal.id,
+                };
+          const flowIds = layoutStorageEvacuationFlowIds(input.room.name, nextEvacuation);
+          const issuers = layoutStorageEvacuationBudgetIssuers(input.room.name, nextEvacuation);
           if (
-            storage.terminalFreeCapacity < nextEvacuation.amount ||
-            layoutStorageEvacuationFlowId(input.room.name, nextEvacuation) === null ||
-            layoutStorageEvacuationBudgetIssuer(input.room.name, nextEvacuation) === null
+            flowIds === null ||
+            issuers === null ||
+            flowIds.length !== resourceManifest.length ||
+            issuers.length !== resourceManifest.length ||
+            new Set(flowIds).size !== flowIds.length ||
+            new Set(issuers).size !== issuers.length
           ) {
+            pushMigrationBlocker(blockers, {
+              reason: "logistics-unavailable",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          }
+          if (storage.terminalFreeCapacity < storage.targetAmount) {
             pushMigrationBlocker(blockers, {
               reason: "evacuation-capacity",
               roomName: input.room.name,
@@ -1628,28 +1656,40 @@ export class ConstructionPlanner {
             });
             break;
           }
-          const flowId = layoutStorageEvacuationFlowId(input.room.name, storageEvacuation);
+          const terms = layoutStorageEvacuationResources(storageEvacuation);
+          const flowIds = layoutStorageEvacuationFlowIds(input.room.name, storageEvacuation);
           const sourceByResource = new Map(storage.targetResources);
           const terminalByResource = new Map(storage.terminalResources);
-          const sourceAmount = sourceByResource.get(storageEvacuation.resourceType) ?? 0;
-          const terminalAmount = terminalByResource.get(storageEvacuation.resourceType) ?? 0;
-          const delivered = terminalAmount - storageEvacuation.terminalInitialAmount;
-          const remaining = storageEvacuation.amount - delivered;
-          const flowActive = flowId !== null && input.activeLogisticsFlowIds.has(flowId);
+          const termResourceTypes = new Set(terms.map(([resourceType]) => resourceType));
+          const flowActive =
+            flowIds !== null &&
+            flowIds.some((flowId) => input.activeLogisticsFlowIds?.has(flowId) === true);
+          const remainingCapacity = terms.reduce((total, [resourceType, amount, initialAmount]) => {
+            const sourceAmount = sourceByResource.get(resourceType) ?? 0;
+            const delivered = (terminalByResource.get(resourceType) ?? 0) - initialAmount;
+            return total + Math.max(sourceAmount, amount - delivered);
+          }, 0);
           const conservationInvalid =
             storageEvacuation.sourceId !== candidate.target.id ||
             storageEvacuation.terminalId !== storage.terminal.id ||
             storage.targetResources.some(
-              ([resourceType]) => resourceType !== storageEvacuation?.resourceType,
+              ([resourceType]) => !termResourceTypes.has(resourceType),
             ) ||
-            delivered < 0 ||
-            delivered > storageEvacuation.amount ||
-            sourceAmount > remaining ||
-            sourceAmount + delivered > storageEvacuation.amount ||
-            storage.terminalFreeCapacity < remaining;
-          const deliveredExactly =
-            sourceAmount === 0 &&
-            terminalAmount === storageEvacuation.terminalInitialAmount + storageEvacuation.amount;
+            terms.some(([resourceType, amount, initialAmount]) => {
+              const sourceAmount = sourceByResource.get(resourceType) ?? 0;
+              const delivered = (terminalByResource.get(resourceType) ?? 0) - initialAmount;
+              return (
+                delivered < 0 ||
+                delivered > amount ||
+                sourceAmount > amount - delivered ||
+                sourceAmount + delivered > amount
+              );
+            }) ||
+            storage.terminalFreeCapacity < remainingCapacity;
+          const deliveredExactly = terms.every(
+            ([resourceType, amount, initialAmount]) =>
+              (terminalByResource.get(resourceType) ?? 0) === initialAmount + amount,
+          );
           const endpointsRetired =
             !input.activeLeasedWorkTargetIds.has(storageEvacuation.sourceId) &&
             !input.activeLeasedWorkTargetIds.has(storageEvacuation.terminalId) &&
@@ -1663,7 +1703,7 @@ export class ConstructionPlanner {
                 counterpartId === storageEvacuation?.terminalId,
             );
           let reason: LayoutMigrationBlocker | null = null;
-          if (flowId === null) reason = "logistics-unavailable";
+          if (flowIds === null || flowIds.length !== terms.length) reason = "logistics-unavailable";
           else if (input.room.observedAt <= storageEvacuation.startedAt)
             reason = "migration-pending";
           else if (input.room.observedAt >= storageEvacuation.expiresAt)
@@ -1673,11 +1713,11 @@ export class ConstructionPlanner {
             hasUnrelatedMigrationEndpoint(
               input,
               { replacementId: storageEvacuation.terminalId, sourceId: storageEvacuation.sourceId },
-              flowId,
+              new Set(flowIds),
             )
           )
             reason = "logistics-active";
-          else if (sourceAmount > 0) reason = "target-stocked";
+          else if (storage.targetAmount > 0) reason = "target-stocked";
           else if (flowActive) reason = "evacuation-pending";
           else if (!deliveredExactly) reason = "evacuation-incomplete";
           else if (!endpointsRetired) reason = "logistics-active";
