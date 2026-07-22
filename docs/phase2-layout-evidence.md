@@ -104,8 +104,11 @@ mixed-resource manifest over that same path. Issue
 continuation for 3,001–6,000 units of a single resource under the same Logistics and removal
 authorities. Issue [#381](https://github.com/ralphschuler/screeps-myrmex/issues/381) applies that
 bounded cursor to a canonical two-to-eight-resource manifest, including a row split across the
-3,000-unit boundary. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99)
-still owns other structure migration and dismantling.
+3,000-unit boundary. Issue [#383](https://github.com/ralphschuler/screeps-myrmex/issues/383)
+releases the retained terminal from local Logistics suppression on fresh exact storage disappearance
+and checks one complete committed storage reconstruction across warm/reset/reordered variants.
+Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
+structure migration and dismantling.
 
 ## Runtime order
 
@@ -155,34 +158,39 @@ still owns other structure migration and dismantling.
    free of unrelated work. One single resource or canonical two-to-eight-resource manifest totaling
    3,001–6,000 units instead persists a settled-batch cursor and one fixed 300-tick deadline. Binary
    resource order defines an exact first 3,000-unit batch and remainder; batch two waits for fresh
-   per-resource first-batch delivery and complete prior-work retirement. Tower removal remains
-   separate and requires full allowance of at least two, exactly allowance minus one active
-   committed towers, one active empty unshared obsolete target, and an exact active committed
-   replacement holding at least 10 energy. A stocked target may first persist one exact 150-tick
-   energy evacuation only when that replacement can hold the full amount. The observed movement
-   projection reuses the same static passability helper as this layout witness: private foreign
-   ramparts are blocked while owned/public ramparts are walkable. Changed effective passability
-   alters the traversal revision, and a private-only local corridor suspends its lease with no
-   movement intent. The diff also follows current engine co-location: planned primary geometry may
-   retain existing roads/ramparts, and planned road/rampart layers may share another buildable
-   structure; current sites and incompatible primary occupancy still block. `ConstructionPlanner`
-   may then project one active empty external extension after exact current replacement evidence,
-   one compact stocked-extension evacuation commitment, one unselected source container with a
-   different exact selected service for the same source, or one compact general-container handoff
-   after exact committed replacement capacity exists. Before that migration policy, source-service
-   selection gives one valid persisted position continuity precedence over newly observed exact
-   containers and sites; current offload quality may degrade without moving static-mining terms. If
-   the selected container is absent, one different exact legal/reachable replacement may advance its
-   issuance coordinate only under fresh no-threat, no-controller-risk, legal-workforce, and
-   restored-reserve evidence. Under the same safety evidence, a current exact selected container may
-   advance only to a different exact candidate that strictly precedes it under the existing
-   canonical ordering; worse/equal candidates cannot oscillate the selection, and every persisted
-   position remains reserved to its own source across overlapping candidate sets. An empty redundant
-   source target remains directly removable; a stocked one persists the same bounded handoff plus
-   its source identity. An energy-only target persists its exact amount and the replacement's
-   current energy. A target with one non-energy kind or two to eight kinds persists binary-ordered
-   compact resource/amount/replacement-baseline tuples; energy as the only manifest row, malformed
-   stock, or insufficient aggregate capacity fails closed.
+   per-resource first-batch delivery and complete prior-work retirement. A matching successful
+   receipt plus fresh exact source absence, active/quiescent terminal identity, complete structure
+   views, and every conserved gain ends local suppression immediately. Runtime passes the same
+   strict result into `ConstructionPlanner`; plain ID absence cannot clear the durable receipt or
+   evacuation. The retained terminal resumes ordinary Logistics while the layouts transaction clears
+   the fulfilled handoff and exposes the committed replacement site. Tower removal remains separate
+   and requires full allowance of at least two, exactly allowance minus one active committed towers,
+   one active empty unshared obsolete target, and an exact active committed replacement holding at
+   least 10 energy. A stocked target may first persist one exact 150-tick energy evacuation only
+   when that replacement can hold the full amount. The observed movement projection reuses the same
+   static passability helper as this layout witness: private foreign ramparts are blocked while
+   owned/public ramparts are walkable. Changed effective passability alters the traversal revision,
+   and a private-only local corridor suspends its lease with no movement intent. The diff also
+   follows current engine co-location: planned primary geometry may retain existing roads/ramparts,
+   and planned road/rampart layers may share another buildable structure; current sites and
+   incompatible primary occupancy still block. `ConstructionPlanner` may then project one active
+   empty external extension after exact current replacement evidence, one compact stocked-extension
+   evacuation commitment, one unselected source container with a different exact selected service
+   for the same source, or one compact general-container handoff after exact committed replacement
+   capacity exists. Before that migration policy, source-service selection gives one valid persisted
+   position continuity precedence over newly observed exact containers and sites; current offload
+   quality may degrade without moving static-mining terms. If the selected container is absent, one
+   different exact legal/reachable replacement may advance its issuance coordinate only under fresh
+   no-threat, no-controller-risk, legal-workforce, and restored-reserve evidence. Under the same
+   safety evidence, a current exact selected container may advance only to a different exact
+   candidate that strictly precedes it under the existing canonical ordering; worse/equal candidates
+   cannot oscillate the selection, and every persisted position remains reserved to its own source
+   across overlapping candidate sets. An empty redundant source target remains directly removable; a
+   stocked one persists the same bounded handoff plus its source identity. An energy-only target
+   persists its exact amount and the replacement's current energy. A target with one non-energy kind
+   or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline
+   tuples; energy as the only manifest row, malformed stock, or insufficient aggregate capacity
+   fails closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -240,14 +248,17 @@ still owns other structure migration and dismantling.
    replacement sinks share one aggregate-capacity key, and ordinary refill sinks cannot compete. A
    sequential storage record exposes only its current at-most-3,000-unit aggregate virtual sources
    while validating per-resource conservation and terminal capacity against the complete original
-   manifest. Rows outside the current binary-ordered interval publish no work. Resource- and
-   batch-qualified flow and budget identities prevent retired or stale first-batch work from
-   crossing the cursor. Every acquire lease is capped tick-locally by fresh Logistics admission, so
-   actor loss or partial withdrawal cannot let a stale contract consume the physical Store's
-   deferred stock. Absent or zero admission suppresses acquire execution without suppressing
-   delivery. Tower, reserve-link, and spawn evacuations contribute one energy flow and reserve the
-   exact replacement's physical capacity once. A terminal evacuation contributes one
-   resource-specific flow per currently active manifest row into the exact storage
+   manifest. Matching successful-receipt, fresh exact source-absence, active/quiescent terminal,
+   complete-view, and conserved-stock evidence emits neither evacuation work nor endpoint
+   suppression. Stale, unknown, threatened, present, unreceipted, malformed, incomplete, or drifted
+   evidence preserves fail-closed suppression and persisted terms. Rows outside the current
+   binary-ordered interval publish no work. Resource- and batch-qualified flow and budget identities
+   prevent retired or stale first-batch work from crossing the cursor. Every acquire lease is capped
+   tick-locally by fresh Logistics admission, so actor loss or partial withdrawal cannot let a stale
+   contract consume the physical Store's deferred stock. Absent or zero admission suppresses acquire
+   execution without suppressing delivery. Tower, reserve-link, and spawn evacuations contribute one
+   energy flow and reserve the exact replacement's physical capacity once. A terminal evacuation
+   contributes one resource-specific flow per currently active manifest row into the exact storage
    aggregate-capacity key. A storage evacuation contributes one resource-specific flow per currently
    active row into the exact terminal aggregate-capacity key, suppresses observed and custom
    source/sink work at both structures, and blocks every internal send from or to the room while
@@ -415,8 +426,9 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 
 ## Outcome evidence
 
-Issues [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365) and
-[#377](https://github.com/ralphschuler/screeps-myrmex/issues/377) record the checked result in
+Issues [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365),
+[#377](https://github.com/ralphschuler/screeps-myrmex/issues/377), and
+[#383](https://github.com/ralphschuler/screeps-myrmex/issues/383) record checked schema-3 results in
 [`phase2-layout-migration-results.json`](phase2-layout-migration-results.json). The 70-tick replay
 uses `defineReplayScenario`/`runScenario` and exercises the production layout diff,
 construction-site arbitration/execution/reconciliation, `ConstructionPlanner` migration, and
@@ -427,7 +439,18 @@ V24 and the exact production bundle receipt; focused storage tests prove 3,001/6
 admission, 6,001/malformed rejection, deterministic boundary splitting, distinct per-resource batch
 identities, current-batch projection, partial delivery, stale-acquire tick-local capping,
 first-batch retirement/cursor advancement, stale-lease exclusion, reset/reorder reconstruction,
-fixed expiry, final removal, receipt, disappearance, and committed-site eligibility.
+fixed expiry, final removal, receipt, disappearance, and committed-site eligibility. The #383
+304-tick complement starts from a freshly absent obsolete storage with one acknowledged removal
+receipt, exact completed evacuation, and one active terminal holding the conserved stock. Its first
+observation clears both durable records, publishes one committed storage site, and keeps ordinary
+terminal source/sink nodes plus one admitted 50-energy local Logistics budget/contract projection
+available for all 301 reconstruction observations. One site consumes exactly the official 30,000
+modeled build energy at at most 100 per tick; fresh observation at tick 70,301 exposes active
+committed storage. Warm, one-reset, and reversed-order variants have identical semantic/outcome
+hashes, no destroy command, 0.1 modeled CPU per tick, a 645-byte maximum layouts owner, and one-site
+bounds. The existing #377 row separately retains exact production funding, ContractLedger, lease,
+action-arbitration, and live `Creep.build` proof for the generic owned-site execution path;
+scenario-kit does not claim to emulate that runtime command chain.
 
 The #377 production row seeds #365's exact layout fingerprint and first committed coordinate before
 any build action, then runs the production `runTick` graph. `SurvivalGrowthPlanner` publishes the
@@ -697,7 +720,7 @@ lint, type, test, documentation, bundle, and package evidence.
   prove that a non-public rampart owned by another user blocks movement while owned/public ramparts
   remain walkable.
 - Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one
-  RCL4+ owned general-purpose store and its 1,000,000-unit capacity.
+  RCL4+ owned general-purpose store, its 1,000,000-unit capacity, and its 30,000 build cost.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
   RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary.
 - Official [`Store`](https://docs.screeps.com/api/#Store) defines resource-specific stock and shared
@@ -733,7 +756,9 @@ lint, type, test, documentation, bundle, and package evidence.
   present; MYRMEX still requires terminal emptiness because ruin stock is not a current logistics
   source.
 - Screeps Wiki [`StructureStorage`](https://wiki.screepspl.us/StructureStorage/) supplies primary
-  local-inventory and RCL4 terminology only.
+  local-inventory, one-per-room, and RCL4 terminology only; Wiki
+  [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/) supplies autonomous
+  reconstruction and terminal/storage hub terminology only.
 - Screeps Wiki [Structure](https://wiki.screepspl.us/Structure/) confirms the community model that
   structures originate as construction sites and complete through creep build work.
 - Screeps Wiki [Energy](https://wiki.screepspl.us/Energy/) supplies hauling and extension-filling

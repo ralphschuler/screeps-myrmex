@@ -247,7 +247,15 @@ remainder. Every current row has a distinct resource- and batch-qualified funded
 identity under one nonrenewing 300-tick deadline; a boundary-crossing row cannot reuse retired work.
 The second batch cannot publish until fresh per-resource first-batch delivery and complete
 prior-work retirement advance the durable cursor. Suppression remains continuous, and removal still
-requires every complete original terminal gain plus final work retirement.
+requires every complete original terminal gain plus final work retirement. Once a matching
+successful receipt plus fresh owned-room evidence proves the exact storage absent, the exact active
+terminal quiescent, and every original gain conserved, that fulfilled handoff stops suppressing the
+terminal in the same planning tick. Stale, unknown, present, threatened, unreceipted, malformed, or
+drifted evidence remains fail-closed and cannot clear the durable receipt or evacuation on the next
+tick. The terminal therefore remains ordinary local inventory service while one committed storage
+site is eligible for the existing growth-contract/build path. Storage-specific evidence models the
+complete build cost, while the generic production row separately proves that execution authority;
+fresh observation restores the active storage.
 [ADR 0072](adr/0072-single-resource-stocked-storage-evacuation.md) records the scalar bound;
 [ADR 0073](adr/0073-mixed-resource-stocked-storage-evacuation.md) records the manifest composition;
 [ADR 0074](adr/0074-two-batch-single-resource-stocked-storage-evacuation.md) records the scalar

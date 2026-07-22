@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 2,
-  "evidenceIssues": [365, 377],
+  "schemaVersion": 3,
+  "evidenceIssues": [365, 377, 383],
   "issue": 365,
   "status": "complete",
   "scenario": {
@@ -225,6 +225,65 @@
       "warm": "fnv1a64-utf16:2f0c454169415c6d"
     },
     "siteObservedAbsentAfterCompletion": true
+  },
+  "storageRebuildContinuity": {
+    "scenario": {
+      "id": "phase2-storage-rebuild-continuity-v1",
+      "seed": "phase2-storage-rebuild-continuity-seed-v1",
+      "ticks": 304,
+      "variants": {
+        "warm": {
+          "resetTicks": [],
+          "reverseObservation": false
+        },
+        "reset": {
+          "resetTicks": [70150],
+          "reverseObservation": false
+        },
+        "reordered": {
+          "resetTicks": [],
+          "reverseObservation": true
+        }
+      }
+    },
+    "budgets": {
+      "constructionEnergy": 30000,
+      "maximumActiveSites": 1,
+      "maximumCpuPerTick": 0.1,
+      "maximumEnergyPerTick": 100,
+      "maximumPersistentBytes": 645
+    },
+    "continuity": {
+      "duplicateDestroyCommands": 0,
+      "terminalServiceTicks": 301,
+      "uninterruptedUntilStorageObserved": true,
+      "terminalAdmittedFlowTicks": 301
+    },
+    "equivalence": {
+      "semanticBytesIdentical": true,
+      "outcomeHashes": {
+        "warm": "fnv1a64-utf16:3e8ede23a681aae8",
+        "reset": "fnv1a64-utf16:3e8ede23a681aae8",
+        "reordered": "fnv1a64-utf16:3e8ede23a681aae8"
+      },
+      "semanticHashes": {
+        "warm": "fnv1a64-utf16:b4fd8dd0dea30f8d",
+        "reset": "fnv1a64-utf16:b4fd8dd0dea30f8d",
+        "reordered": "fnv1a64-utf16:b4fd8dd0dea30f8d"
+      }
+    },
+    "final": {
+      "activeSites": 0,
+      "activeStorage": true,
+      "removalReceipt": null,
+      "storageEvacuation": null
+    },
+    "milestones": {
+      "activeStorageObservedAt": 70301,
+      "receiptClearedAt": 70000,
+      "siteCommandAt": 70000,
+      "siteObservedAt": 70001
+    }
   },
   "equivalence": {
     "semanticBytesIdentical": true,

@@ -207,6 +207,7 @@ import {
 import {
   authorizeLayoutStorageEvacuationFlowIds,
   completeExecutableLayoutStorageEvacuationFlowIds,
+  isCompletedLayoutStorageRemovalObserved,
   projectLayoutStorageEvacuations,
 } from "../logistics/storage-evacuation";
 import {
@@ -2459,9 +2460,25 @@ function layoutMigrationPlanningSystem(
         const linkRuntime =
           currentLinks().rooms.find(({ roomName }) => roomName === migrationInput.room.name) ??
           null;
+        const currentRecord = owner.records.find(
+          ({ roomName }) => roomName === migrationInput.room.name,
+        );
+        const storageRemovalCompleted =
+          currentRecord !== undefined &&
+          isCompletedLayoutStorageRemovalObserved({
+            quiescentTerminalRoomNames: new Set(
+              migrationInput.industryTerminalWork?.status === "quiescent"
+                ? [migrationInput.room.name]
+                : [],
+            ),
+            record: currentRecord,
+            snapshot: context.snapshot,
+            tick: context.tick,
+          });
         const migration = constructionPlanner.planMigration({
           ...migrationInput,
           linkRuntime,
+          storageRemovalCompleted,
         });
         if (migration.authorization !== null) {
           authorizations.push(migration.authorization);
@@ -3553,7 +3570,7 @@ function colonyDirectorSystem(
         suppressedSpawnEvacuationTargets,
         persistedLayoutStorageEvacuationFlowIds(input.manager),
         executableStorageEvacuationFlowIds,
-        persistedLayoutStorageEvacuationTargetIds(input.manager, context.tick),
+        suppressedStorageEvacuationTargets,
         persistedLayoutTerminalEvacuationFlowIds(input.manager),
         executableTerminalEvacuationFlowIds,
         persistedLayoutTerminalEvacuationTargetIds(input.manager, context.tick),

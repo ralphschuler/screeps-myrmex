@@ -67,13 +67,25 @@ export function projectLayoutStorageEvacuations(input: {
       continue;
     const terms = storageEvacuationTerms(evacuation);
     if (terms === null) continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (
+      isCompletedLayoutStorageRemovalObserved({
+        quiescentTerminalRoomNames: input.quiescentTerminalRoomNames,
+        record,
+        snapshot: input.snapshot,
+        tick: input.tick,
+      })
+    ) {
+      // The layouts owner clears its durable terms during reconciliation; exact fresh completion
+      // lets ordinary local terminal logistics resume without losing that planning tick.
+      continue;
+    }
     // Both physical Stores remain durably suppressed even when current drift, CPU admission, or a
     // bounded overflow prevents optional evacuation work from entering the logistics graph.
     suppressedTargetIds.push(evacuation.sourceId, evacuation.terminalId);
-    if (input.includeWork === false || !input.quiescentTerminalRoomNames.has(record.roomName))
-      continue;
-    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
     if (
+      input.includeWork === false ||
+      !input.quiescentTerminalRoomNames.has(record.roomName) ||
       room?.controller?.ownership !== "owned" ||
       room.observedAt !== input.tick ||
       room.hostileCreeps.length > 0
@@ -250,6 +262,74 @@ export function projectLayoutStorageEvacuations(input: {
   )
     return suppressionOnlyProjection(suppression);
   return freeze({ budgets, demands: { edges, endpoints, nodes, ...suppression } });
+}
+
+export function isCompletedLayoutStorageRemovalObserved(input: {
+  readonly quiescentTerminalRoomNames: ReadonlySet<string>;
+  readonly record: LayoutRecord;
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): boolean {
+  const { record } = input;
+  const receipt = record.removalReceipt;
+  if (
+    receipt === undefined ||
+    receipt.targetStructureType !== "storage" ||
+    (receipt.code !== "OK" && receipt.code !== "TARGET_ABSENT") ||
+    receipt.observedAt >= input.tick ||
+    !input.quiescentTerminalRoomNames.has(record.roomName)
+  )
+    return false;
+  const evacuation = record.storageEvacuation;
+  const terms = evacuation === undefined ? [] : storageEvacuationTerms(evacuation);
+  if (
+    terms === null ||
+    (evacuation !== undefined &&
+      (!validEvacuationCommon(evacuation) ||
+        input.tick <= evacuation.startedAt ||
+        input.tick >= evacuation.expiresAt)) ||
+    (evacuation !== undefined &&
+      (evacuation.sourceId !== receipt.targetId || evacuation.terminalId !== receipt.replacementId))
+  )
+    return false;
+  const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+  if (
+    room?.controller?.ownership !== "owned" ||
+    room.observedAt !== input.tick ||
+    room.hostileCreeps.length > 0
+  )
+    return false;
+  const sourceStillObserved = [
+    ...(room.ownedStorages ?? []),
+    ...room.storedStructures,
+    ...(room.structures ?? []),
+  ].some(({ id }) => id === receipt.targetId);
+  if (sourceStillObserved) return false;
+  const terminals = room.ownedTerminals ?? [];
+  const terminal = terminals.length === 1 ? terminals[0] : undefined;
+  if (terminal?.id !== receipt.replacementId || !terminal.active) return false;
+  const genericTerminal = (room.structures ?? []).filter(({ id }) => id === receipt.replacementId);
+  const storedTerminal = room.storedStructures.filter(({ id }) => id === receipt.replacementId);
+  const genericTerminalFact = genericTerminal.length === 1 ? genericTerminal[0] : undefined;
+  const storedTerminalFact = storedTerminal.length === 1 ? storedTerminal[0] : undefined;
+  if (
+    genericTerminalFact === undefined ||
+    genericTerminalFact.structureType !== "terminal" ||
+    genericTerminalFact.ownership !== "owned" ||
+    storedTerminalFact === undefined ||
+    storedTerminalFact.structureType !== "terminal" ||
+    storedTerminalFact.ownership !== "owned"
+  )
+    return false;
+  const terminalStore = exactInventoryStore(terminal, MAX_LAYOUT_TERMINAL_CAPACITY);
+  return (
+    terminalStore !== null &&
+    terms.every(
+      ({ resourceType, totalAmount, totalTerminalInitialAmount }) =>
+        (terminalStore.resources.get(resourceType) ?? 0) ===
+        totalTerminalInitialAmount + totalAmount,
+    )
+  );
 }
 
 /** Keeps every currently projected row of one storage manifest atomic. */
