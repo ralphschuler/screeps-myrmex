@@ -194,9 +194,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   move through the sole funded V3 Logistics path into exact active storage, internal sends and
   competing terminal stock work remain suppressed while the attempt is active, and removal waits for
   fresh exact empty/gain/retirement plus unchanged quiescence and safety evidence. Expiry releases
-  service work but remains removal-blocking failure evidence. Mixed or larger terminal stock,
-  storage relocation, uninterrupted terminal service, broad access proof, autonomous boost manifest
-  production, defensive migration, and creep dismantling remain issue #99.
+  service work but remains removal-blocking failure evidence. Issue #363 advances layouts V19 with
+  one canonical two-to-eight-resource manifest totaling at most 3,000 units. Distinct funded flows
+  share aggregate storage capacity, admit atomically, and require every exact gain plus complete
+  work retirement before removal. Larger terminal stock, storage relocation, uninterrupted terminal
+  service, broad access proof, autonomous boost manifest production, defensive migration, and creep
+  dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

@@ -9,6 +9,7 @@ import {
   emptyLayoutsOwner,
   layoutTerminalEvacuationBudgetIssuer,
   layoutTerminalEvacuationFlowId,
+  layoutTerminalEvacuationFlowIds,
   parseLayoutsOwner,
   persistLayoutCommitment,
   persistLayoutTerminalEvacuation,
@@ -16,8 +17,12 @@ import {
 } from "../src/layout";
 import { aggregateStoreCapacityReservationKey } from "../src/logistics/planner";
 import { planLogisticsRuntime } from "../src/logistics/runtime";
-import { projectLayoutTerminalEvacuations } from "../src/logistics/terminal-evacuation";
 import {
+  completeExecutableLayoutTerminalEvacuationFlowIds,
+  projectLayoutTerminalEvacuations,
+} from "../src/logistics/terminal-evacuation";
+import {
+  isAuthorizedLayoutTerminalEvacuationFlowId,
   projectLayoutTerminalSendBlockedRoomNames,
   withoutSuppressedLeaseTargets,
 } from "../src/runtime/tick";
@@ -133,8 +138,8 @@ function record(): LayoutRecord {
   return { ...commitment, roomName, terminalEvacuation: terms };
 }
 
-describe("single-resource stocked obsolete-terminal evacuation", () => {
-  it("persists one exact V18 record and migrates V17 without inventing terms", () => {
+describe("stocked obsolete-terminal evacuation", () => {
+  it("persists one exact scalar record and migrates V17/V18 without inventing terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     const v17 = { ...owner, schemaVersion: 17 };
     expect(parseLayoutsOwner(v17)).toEqual({ ...owner, revision: owner.revision + 1 });
@@ -146,8 +151,19 @@ describe("single-resource stocked obsolete-terminal evacuation", () => {
     ).toBeNull();
 
     owner = persistLayoutTerminalEvacuation(owner, roomName, terms);
-    expect(owner.schemaVersion).toBe(18);
+    expect(owner.schemaVersion).toBe(19);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+    const migratedV18 = parseLayoutsOwner({ ...owner, schemaVersion: 18 });
+    expect(migratedV18).toEqual({ ...owner, revision: owner.revision + 1 });
+    const migratedTerms = migratedV18?.records[0]?.terminalEvacuation;
+    if (migratedTerms === undefined) throw new Error("expected migrated scalar terms");
+    expect([
+      layoutTerminalEvacuationFlowId(roomName, migratedTerms),
+      layoutTerminalEvacuationBudgetIssuer(roomName, migratedTerms),
+    ]).toEqual([
+      layoutTerminalEvacuationFlowId(roomName, terms),
+      layoutTerminalEvacuationBudgetIssuer(roomName, terms),
+    ]);
     expect(
       persistLayoutCommitment(owner, roomName, commitment).records[0]?.terminalEvacuation,
     ).toEqual(terms);
@@ -170,6 +186,255 @@ describe("single-resource stocked obsolete-terminal evacuation", () => {
           records: [{ ...owner.records[0], terminalEvacuation: malformed }],
         }),
       ).toBeNull();
+  });
+
+  it("persists and atomically projects a canonical mixed-resource manifest", () => {
+    const mixedTerms = {
+      expiresAt: 160,
+      replacementId,
+      resourceManifest: [
+        ["XGH2O", 1_500, 12_000],
+        ["energy", 1_000, 25_000],
+      ],
+      sourceId,
+      startedAt: 10,
+    } as const;
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    owner = persistLayoutTerminalEvacuation(owner, roomName, mixedTerms);
+    expect(owner.schemaVersion).toBe(19);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+
+    const snapshot = world();
+    const observedRoom = snapshot.rooms[0];
+    const observedTerminal = observedRoom?.ownedTerminals?.[0];
+    const observedStorage = observedRoom?.ownedStorages?.[0];
+    if (
+      observedRoom === undefined ||
+      observedTerminal === undefined ||
+      observedStorage === undefined
+    )
+      throw new Error("expected mixed terminal fixture");
+    const mixedSnapshot = {
+      ...snapshot,
+      rooms: [
+        {
+          ...observedRoom,
+          ownedStorages: [
+            {
+              ...observedStorage,
+              store: inventory(1_000_000, [
+                ["energy", 25_000],
+                ["XGH2O", 12_000],
+              ]),
+            },
+          ],
+          ownedTerminals: [
+            {
+              ...observedTerminal,
+              store: inventory(300_000, [
+                ["energy", 1_000],
+                ["XGH2O", 1_500],
+              ]),
+            },
+          ],
+        },
+      ],
+    };
+    const projection = projectLayoutTerminalEvacuations({
+      existingBudgets: [],
+      records: [{ ...commitment, roomName, terminalEvacuation: mixedTerms }],
+      snapshot: mixedSnapshot,
+      tick: 11,
+    });
+    expect(projection.budgets).toHaveLength(2);
+    expect(projection.demands.edges.map(({ id }) => id)).toEqual([
+      layoutTerminalEvacuationFlowId(roomName, {
+        replacementId,
+        resourceType: "XGH2O",
+        sourceId,
+      }),
+      layoutTerminalEvacuationFlowId(roomName, {
+        replacementId,
+        resourceType: "energy",
+        sourceId,
+      }),
+    ]);
+    expect(
+      new Set(
+        projection.demands.nodes.flatMap(({ capacityReservationKey }) =>
+          capacityReservationKey === undefined ? [] : [capacityReservationKey],
+        ),
+      ),
+    ).toEqual(new Set([aggregateStoreCapacityReservationKey(roomName, replacementId)]));
+  });
+
+  it("rejects malformed manifests and preserves V18 scalar-only semantics", () => {
+    const owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    const manifest = {
+      expiresAt: 160,
+      replacementId,
+      resourceManifest: [
+        ["XGH2O", 1_500, 12_000],
+        ["energy", 1_000, 25_000],
+      ],
+      sourceId,
+      startedAt: 10,
+    } as const;
+    const withManifest = { ...owner.records[0], terminalEvacuation: manifest };
+    expect(parseLayoutsOwner({ ...owner, records: [withManifest] })).not.toBeNull();
+    expect(parseLayoutsOwner({ ...owner, schemaVersion: 18, records: [withManifest] })).toBeNull();
+    for (const resourceManifest of [
+      [["XGH2O", 1_500, 12_000]],
+      [
+        ["energy", 1_000, 25_000],
+        ["XGH2O", 1_500, 12_000],
+      ],
+      [
+        ["XGH2O", 1_500, 12_000],
+        ["XGH2O", 1_000, 25_000],
+      ],
+      [
+        ["XGH2O", 2_001, 12_000],
+        ["energy", 1_000, 25_000],
+      ],
+      [
+        ["XGH2O", 1_500, 998_000],
+        ["energy", 1_000, 1_000],
+      ],
+    ])
+      expect(
+        parseLayoutsOwner({
+          ...owner,
+          records: [{ ...owner.records[0], terminalEvacuation: { ...manifest, resourceManifest } }],
+        }),
+      ).toBeNull();
+    expect(
+      parseLayoutsOwner({
+        ...owner,
+        records: [
+          {
+            ...owner.records[0],
+            terminalEvacuation: { ...manifest, amount: 2_500, resourceType: "energy" },
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps each currently projected manifest subset atomic", () => {
+    const manifest = {
+      expiresAt: 160,
+      replacementId,
+      resourceManifest: [
+        ["XGH2O", 1_500, 12_000],
+        ["energy", 1_000, 25_000],
+      ],
+      sourceId,
+      startedAt: 10,
+    } as const;
+    const manifestRecord = {
+      ...commitment,
+      roomName,
+      terminalEvacuation: manifest,
+    } as LayoutRecord;
+    const evacuation = manifestRecord.terminalEvacuation;
+    if (evacuation === undefined) throw new Error("expected manifest terms");
+    const flowIds = layoutTerminalEvacuationFlowIds(roomName, evacuation);
+    const firstFlowId = flowIds?.[0];
+    const secondFlowId = flowIds?.[1];
+    if (flowIds === null || firstFlowId === undefined || secondFlowId === undefined)
+      throw new Error("expected manifest identities");
+    const partiallyFunded = completeExecutableLayoutTerminalEvacuationFlowIds({
+      executableFlowIds: new Set([firstFlowId]),
+      projectedFlowIds: new Set(flowIds),
+      records: [manifestRecord],
+    });
+    expect(partiallyFunded).toEqual(new Set());
+    expect(
+      flowIds.map((flowId) =>
+        isAuthorizedLayoutTerminalEvacuationFlowId(flowId, new Set(flowIds), partiallyFunded),
+      ),
+    ).toEqual([false, false]);
+    expect(
+      completeExecutableLayoutTerminalEvacuationFlowIds({
+        executableFlowIds: new Set(flowIds),
+        projectedFlowIds: new Set(flowIds),
+        records: [manifestRecord],
+      }),
+    ).toEqual(new Set(flowIds));
+    expect(
+      completeExecutableLayoutTerminalEvacuationFlowIds({
+        executableFlowIds: new Set([secondFlowId]),
+        projectedFlowIds: new Set([secondFlowId]),
+        records: [manifestRecord],
+      }),
+    ).toEqual(new Set([secondFlowId]));
+  });
+
+  it("drops an over-64-flow manifest batch atomically while retaining suppression", () => {
+    const baseRoom = world().rooms[0];
+    const baseTerminal = baseRoom?.ownedTerminals?.[0];
+    const baseStorage = baseRoom?.ownedStorages?.[0];
+    if (baseRoom === undefined || baseTerminal === undefined || baseStorage === undefined)
+      throw new Error("expected overflow fixtures");
+    const records: LayoutRecord[] = [];
+    const rooms: WorldSnapshot["rooms"][number][] = [];
+    for (let index = 0; index < 33; index += 1) {
+      const currentRoomName = `W${String(index)}N1`;
+      const currentSourceId = `${sourceId}-${String(index)}`;
+      const currentReplacementId = `${replacementId}-${String(index)}`;
+      records.push({
+        ...commitment,
+        anchor: { ...commitment.anchor, roomName: currentRoomName },
+        roomName: currentRoomName,
+        terminalEvacuation: {
+          expiresAt: 160,
+          replacementId: currentReplacementId,
+          resourceManifest: [
+            ["XGH2O", 1_500, 12_000],
+            ["energy", 1_000, 25_000],
+          ],
+          sourceId: currentSourceId,
+          startedAt: 10,
+        },
+      });
+      rooms.push({
+        ...baseRoom,
+        name: currentRoomName,
+        ownedStorages: [
+          {
+            ...baseStorage,
+            id: currentReplacementId,
+            pos: { ...baseStorage.pos, roomName: currentRoomName },
+            store: inventory(1_000_000, [
+              ["energy", 25_000],
+              ["XGH2O", 12_000],
+            ]),
+          },
+        ],
+        ownedTerminals: [
+          {
+            ...baseTerminal,
+            id: currentSourceId,
+            pos: { ...baseTerminal.pos, roomName: currentRoomName },
+            store: inventory(300_000, [
+              ["energy", 1_000],
+              ["XGH2O", 1_500],
+            ]),
+          },
+        ],
+      });
+    }
+    const projection = projectLayoutTerminalEvacuations({
+      existingBudgets: [],
+      records,
+      snapshot: { ...world(), rooms },
+      tick: 11,
+    });
+    expect(projection.budgets).toEqual([]);
+    expect(projection.demands.edges).toEqual([]);
+    expect(projection.demands.nodes).toEqual([]);
+    expect(projection.demands.suppressedSourceTargetIds).toHaveLength(33);
   });
 
   it("keeps the persisted room unavailable to every internal terminal send", () => {
