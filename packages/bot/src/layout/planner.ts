@@ -143,6 +143,7 @@ export function projectLayoutConvergencePlacements(input: {
     );
   const labConvergenceSafe = input.unlocks.labs === 10;
   const spawnConvergenceSafe = input.unlocks.spawns >= 2;
+  const terminalConvergenceSafe = input.unlocks.terminal === 1;
   return freeze(
     [
       ...input.current.filter(
@@ -151,6 +152,7 @@ export function projectLayoutConvergencePlacements(input: {
           (structureType !== "lab" || !labConvergenceSafe) &&
           structureType !== "link" &&
           (structureType !== "spawn" || !spawnConvergenceSafe) &&
+          (structureType !== "terminal" || !terminalConvergenceSafe) &&
           structureType !== "tower" &&
           (structureType !== "container" ||
             service?.kind === "source-container" ||
@@ -163,6 +165,7 @@ export function projectLayoutConvergencePlacements(input: {
             (structureType === "lab" && labConvergenceSafe) ||
             structureType === "link" ||
             (structureType === "spawn" && spawnConvergenceSafe) ||
+            (structureType === "terminal" && terminalConvergenceSafe) ||
             structureType === "tower" ||
             (structureType === "container" && containerConvergenceSafe)),
       ),

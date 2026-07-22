@@ -9,6 +9,7 @@ import {
   projectIndustryBudgets,
   projectIndustryLabBudgets,
   projectIndustryTelemetry,
+  projectIndustryTerminalWork,
   projectTerminalSendIntents,
   reconcileIndustryCommands,
   type IndustryPlan,
@@ -146,6 +147,54 @@ describe("industry runtime authority chain", () => {
       extractionProposals: 1,
       sendProposals: 1,
     });
+  });
+
+  it("publishes deterministic fail-closed terminal work for layout consumers", () => {
+    const plan = industryPlan();
+    const projected = projectIndustryTerminalWork({
+      plan,
+      previous: [],
+      roomNames: ["W3N3", "W2N2", "W1N1"],
+    });
+    expect(projected).toEqual({
+      rooms: [
+        { roomName: "W1N1", status: "active" },
+        { roomName: "W2N2", status: "active" },
+        { roomName: "W3N3", status: "quiescent" },
+      ],
+      status: "available",
+    });
+    expect(
+      projectIndustryTerminalWork({
+        plan: { ...plan, sends: [] },
+        previous: [
+          {
+            attempt: 1,
+            identity: plan.sends[0]?.identity ?? "missing",
+            lastCode: "ERR_TIRED",
+            nextEligibleTick: 105,
+            status: "backoff",
+          },
+        ],
+        roomNames: ["W2N2", "W1N1"],
+      }),
+    ).toEqual({ rooms: [], status: "unavailable" });
+    expect(
+      JSON.stringify(
+        projectIndustryTerminalWork({
+          plan,
+          previous: [],
+          roomNames: ["W3N3", "W1N1", "W2N2"],
+        }),
+      ),
+    ).toBe(JSON.stringify(projected));
+    expect(
+      projectIndustryTerminalWork({
+        plan,
+        previous: [],
+        roomNames: Array.from({ length: 65 }, (_, index) => `W${String(index)}N1`),
+      }),
+    ).toEqual({ rooms: [], status: "unavailable" });
   });
 
   it("funds every lab staging demand independently without authorizing work", () => {

@@ -82,6 +82,38 @@ describe("owned-room-layout-v1", () => {
       );
   });
 
+  it("restores committed terminal geometry for one bounded service outage", () => {
+    const input = fixture(6);
+    const external = structure("terminal", 35, 35, "owned");
+    const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
+    if (planned.status !== "complete") throw new Error("expected complete layout");
+    const unlocks = input.policy.unlocks;
+    if (unlocks === null) throw new Error("expected RCL unlocks");
+    const convergent = projectLayoutConvergencePlacements({
+      commitment: planned.commitment,
+      current: planned.placements,
+      roomName: input.roomName,
+      sourceCount: input.sources.length,
+      sources: input.sources,
+      unlocks,
+    });
+
+    expect(planned.placements).toContainEqual(
+      expect.objectContaining({
+        adoption: "compatible-external",
+        pos: external.pos,
+        structureType: "terminal",
+      }),
+    );
+    expect(convergent.filter(({ structureType }) => structureType === "terminal")).toHaveLength(1);
+    expect(
+      convergent.some(
+        ({ pos, structureType }) =>
+          structureType === "terminal" && pos.x === external.pos.x && pos.y === external.pos.y,
+      ),
+    ).toBe(false);
+  });
+
   it("restores committed spawn geometry only when redundant spawn service is available", () => {
     const input = fixture(8);
     const external = structure("spawn", 35, 35, "owned");

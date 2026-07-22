@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 16 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 17 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -177,7 +177,8 @@ export interface LayoutStructureRemovalReceipt {
   readonly observedAt: number;
   readonly replacementId: string;
   readonly targetId: string;
-  readonly targetStructureType: "container" | "extension" | "lab" | "link" | "spawn" | "tower";
+  readonly targetStructureType:
+    "container" | "extension" | "lab" | "link" | "spawn" | "terminal" | "tower";
 }
 export interface LayoutContainerMigration {
   /** Legacy paired fields remain valid for one exact energy transfer. */
@@ -640,6 +641,14 @@ export type LayoutMigrationProposal =
       readonly targetStructureType: "tower";
     })
   | (LayoutMigrationProposalBase & {
+      readonly replacementExpectedStoreCapacity: typeof MAX_LAYOUT_STORAGE_CAPACITY;
+      readonly replacementId: string;
+      readonly replacementStructureType: "storage";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetRequiresZeroCooldown: true;
+      readonly targetStructureType: "terminal";
+    })
+  | (LayoutMigrationProposalBase & {
       readonly replacementId: string;
       readonly replacementStructureType: "lab";
       readonly targetRequiresEmptyStore: true;
@@ -737,6 +746,14 @@ export type DestroyOwnedStructureIntent =
       readonly targetStructureType: "tower";
     })
   | (DestroyOwnedStructureIntentBase & {
+      readonly replacementExpectedStoreCapacity: typeof MAX_LAYOUT_STORAGE_CAPACITY;
+      readonly replacementId: string;
+      readonly replacementStructureType: "storage";
+      readonly targetRequiresEmptyStore: true;
+      readonly targetRequiresZeroCooldown: true;
+      readonly targetStructureType: "terminal";
+    })
+  | (DestroyOwnedStructureIntentBase & {
       readonly replacementId: string;
       readonly replacementStructureType: "lab";
       readonly targetRequiresEmptyStore: true;
@@ -806,7 +823,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV16 {
+export interface LayoutsOwnerV17 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];

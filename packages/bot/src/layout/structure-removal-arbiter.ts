@@ -1,11 +1,12 @@
-import type {
-  DestroyOwnedStructureIntent,
-  LayoutMigrationAuthorization,
-  LayoutMigrationProposal,
-  StructureRemovalArbitrationInput,
-  StructureRemovalArbitrationReason,
-  StructureRemovalArbitrationRecord,
-  StructureRemovalArbitrationResult,
+import {
+  MAX_LAYOUT_STORAGE_CAPACITY,
+  type DestroyOwnedStructureIntent,
+  type LayoutMigrationAuthorization,
+  type LayoutMigrationProposal,
+  type StructureRemovalArbitrationInput,
+  type StructureRemovalArbitrationReason,
+  type StructureRemovalArbitrationRecord,
+  type StructureRemovalArbitrationResult,
 } from "./contracts";
 
 /** Sole final authority for irreversible owned-structure removal intents. */
@@ -75,6 +76,7 @@ export function arbitrateStructureRemovals(
 function validProposal(proposal: LayoutMigrationProposal): boolean {
   const terms: {
     readonly replacementExpectedEnergy?: number;
+    readonly replacementExpectedStoreCapacity?: number;
     readonly replacementId: string | null;
     readonly replacementMinimumEnergy?: number;
     readonly replacementRequiresIdle?: boolean;
@@ -85,11 +87,16 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
     readonly targetRequiresZeroCooldown?: boolean;
     readonly targetStructureType: string;
   } = proposal;
-  const validMigrationTerms =
-    ["container", "extension", "lab", "link", "spawn", "tower"].includes(
+  const validReplacementPair =
+    (["container", "extension", "lab", "link", "spawn", "tower"].includes(
       terms.targetStructureType,
     ) &&
-    terms.replacementStructureType === terms.targetStructureType &&
+      terms.replacementStructureType === terms.targetStructureType) ||
+    (terms.targetStructureType === "terminal" &&
+      terms.replacementStructureType === "storage" &&
+      terms.replacementExpectedStoreCapacity === MAX_LAYOUT_STORAGE_CAPACITY);
+  const validMigrationTerms =
+    validReplacementPair &&
     typeof terms.replacementId === "string" &&
     terms.replacementId.length > 0 &&
     terms.targetRequiresEmptyStore &&
@@ -101,6 +108,7 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
             terms.replacementMinimumEnergy > 0 &&
             terms.replacementMinimumEnergy <= 300)))) &&
     (terms.targetStructureType !== "lab" || terms.targetRequiresZeroCooldown === true) &&
+    (terms.targetStructureType !== "terminal" || terms.targetRequiresZeroCooldown === true) &&
     (terms.targetStructureType !== "link" ||
       (Number.isSafeInteger(terms.replacementExpectedEnergy) &&
         (terms.replacementExpectedEnergy ?? -1) >= 0 &&
@@ -177,6 +185,16 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
       targetRequiresEmptyStore: true,
       targetRequiresZeroCooldown: true,
       targetStructureType: "lab",
+    };
+  if (proposal.targetStructureType === "terminal")
+    return {
+      ...envelope,
+      replacementExpectedStoreCapacity: MAX_LAYOUT_STORAGE_CAPACITY,
+      replacementId: proposal.replacementId,
+      replacementStructureType: "storage",
+      targetRequiresEmptyStore: true,
+      targetRequiresZeroCooldown: true,
+      targetStructureType: "terminal",
     };
   return {
     ...envelope,

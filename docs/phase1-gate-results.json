@@ -238,8 +238,8 @@
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 1348720,
+    "bytes": 1357947,
     "inputCount": 147,
-    "sha256": "sha256:ec4bac851a08ac04986dcaf8f43a9fe7078ef3a10a2ad30d086894ab9d477df8"
+    "sha256": "sha256:a33131ce6ec526c0f36c0f6ca3a619062a55cf1b52d44092337d07c4a5b10fe6"
   }
 }

@@ -129,7 +129,7 @@ describe("stocked obsolete-spawn evacuation", () => {
     ).toBeNull();
 
     owner = persistLayoutSpawnEvacuation(owner, "W1N1", terms);
-    expect(owner.schemaVersion).toBe(16);
+    expect(owner.schemaVersion).toBe(17);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.spawnEvacuation).toEqual(
       terms,

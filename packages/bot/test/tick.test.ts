@@ -199,7 +199,7 @@ describe("tick lifecycle", () => {
     expect(projectActiveSpawnClaimIds(null)).toBeNull();
   });
 
-  it("publishes spawn selections, layout, and links before the layout-migration continuation", () => {
+  it("publishes industry terminal work, spawn selections, layout, and links before migration", () => {
     const outcome = runTick({
       game: {
         cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
@@ -216,6 +216,7 @@ describe("tick lifecycle", () => {
         [
           "agents.plan",
           "colony.director",
+          "industry.publish",
           "layout.plan",
           "links.plan",
           "migration.layout",
@@ -225,6 +226,7 @@ describe("tick lifecycle", () => {
     expect(planOrder).toEqual([
       "colony.director",
       "agents.plan",
+      "industry.publish",
       "layout.plan",
       "links.plan",
       "migration.layout",

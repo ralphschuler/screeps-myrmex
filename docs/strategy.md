@@ -169,6 +169,18 @@ site. A busy, selected, sole/replacementless, endpoint-bound, expired, unsafe, c
 drifted spawn remains. [ADR 0067](adr/0067-stocked-obsolete-spawn-evacuation.md) records the stocked
 handoff.
 
+Terminal convergence accepts a bounded inter-room-service outage only to restore the sole committed
+RCL6+ terminal. One active empty zero-cooldown external terminal is eligible only while exact active
+storage preserves local inventory service, Industry's current terminal-work projection is quiescent,
+and no terminal-bound lab evacuation or Logistics endpoint remains. Current send proposals mark both
+source and destination rooms active; an unattributable active/backoff send receipt fails the
+complete view closed. The sole removal arbiter admits only the narrow `terminal → storage`
+continuity form, and fresh execution rechecks exact 300,000/1,000,000-unit general-purpose Stores
+before destruction. Stocked, cooling, active-work, storage-unavailable, unsafe, or drifted terminals
+remain. Observed disappearance exposes the committed terminal through the ordinary
+site/funding/build chain. [ADR 0068](adr/0068-empty-obsolete-terminal-relocation.md) records this
+intentional outage.
+
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;
