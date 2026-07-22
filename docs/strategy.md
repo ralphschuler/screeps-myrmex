@@ -55,8 +55,13 @@ nonwalkable structures that leave no legal tile fail before candidate search; no
 overlap a Source, and geometry that disconnects a source or incomplete service assignment rejects
 that candidate. If compatible adoption relocates the spawn, the committed origin must pass the same
 bounded reachability proof. Degraded planning preserves an eligible prior commitment and emits no
-placements, so migration cannot authorize sites or removal from stranded geometry. This is bounded
-static layout evidence, not dynamic movement or traffic proof.
+placements, so migration cannot authorize sites or removal from stranded geometry. Executable local
+movement uses the same current rampart passability rule: a private foreign rampart blocks the static
+path matrix, while an owned or public rampart remains walkable. A blocked lease suspends with no
+movement intent instead of repeatedly approaching an impassable tile. When changed public state
+changes effective tile passability, it receives a different reconstructible traversal revision. This
+still does not prove dynamic congestion, deadlock recovery, room routing, or broad layout-wide
+traffic access.
 
 Layout convergence is destructive only under explicit narrow authority. Current engine-compatible
 roads and ramparts use the ordinary construction-site chain: a planned primary structure can retain

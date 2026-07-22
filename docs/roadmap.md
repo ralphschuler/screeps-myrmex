@@ -207,9 +207,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   planner's bounded source-access invariant: every complete candidate has one distinct semantic
   service on a legal spawn-reachable adjacent work tile for every observed owned source, while an
   impossible or incomplete source assignment preserves the prior commitment and emits no placements.
-  Larger terminal stock, storage relocation, uninterrupted terminal service, broad
-  movement/pathfinding proof, autonomous boost manifest production, defensive migration, and creep
-  dismantling remain issue #99.
+  Issue #369 aligns executable local traversal with that invariant: private foreign ramparts are
+  static blockers, owned/public ramparts remain walkable, and changed effective passability
+  separates cached path evidence without persistent invalidation state. Larger terminal stock,
+  storage relocation, uninterrupted terminal service, broad dynamic movement/pathfinding proof,
+  autonomous boost manifest production, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

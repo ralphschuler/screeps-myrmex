@@ -3,17 +3,17 @@ import type {
   PositionSnapshot,
   StructureSnapshot,
 } from "../world/snapshot";
+import { isObservedStructureStaticallyWalkable } from "../world/traversal";
 
 export function isLayoutAccessWalkableType(structureType: string): boolean {
   return structureType === "container" || structureType === "road" || structureType === "rampart";
 }
 
 export function isObservedLayoutAccessWalkable(structure: StructureSnapshot): boolean {
-  return (
-    structure.structureType === "container" ||
-    structure.structureType === "road" ||
-    (structure.structureType === "rampart" &&
-      (structure.ownership === "owned" || structure.isPublic === true))
+  return isObservedStructureStaticallyWalkable(
+    structure.structureType,
+    structure.ownership,
+    structure.isPublic,
   );
 }
 
