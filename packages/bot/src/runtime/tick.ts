@@ -162,7 +162,7 @@ import {
   type LayoutRecord,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV16,
+  type LayoutsOwnerV17,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -230,6 +230,7 @@ import {
   persistIndustryOwner,
   projectIndustryBudgets,
   projectIndustryTelemetry,
+  projectIndustryTerminalWork,
   projectLabTelemetry,
   projectMatureCommandTelemetry,
   projectTerminalSendIntents,
@@ -240,6 +241,7 @@ import {
   type IndustryPlan,
   type IndustryRoomState,
   type IndustryTelemetry,
+  type IndustryTerminalWorkProjection,
   type LabCommand,
   type LabCompositionProjection,
   type CommittedLabLayout,
@@ -472,7 +474,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV16 | null;
+  owner: LayoutsOwnerV17 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -499,6 +501,7 @@ interface IndustryTickDraft {
   rooms: readonly IndustryRoomState[];
   states: readonly IndustryCommandState[];
   telemetry: IndustryTelemetry;
+  terminalWork: IndustryTerminalWorkProjection;
 }
 
 /** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
@@ -556,6 +559,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       results: [],
       states: industryOwner.commands,
     }),
+    terminalWork: Object.freeze({ rooms: Object.freeze([]), status: "unavailable" }),
   };
   let leaseAgentPlan: LeaseAgentPlan = Object.freeze({
     actions: Object.freeze([]),
@@ -792,6 +796,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       layoutDraft,
       () => logisticsRuntime,
       () => industryDraft.labs,
+      () => industryDraft.terminalWork,
     ),
     {
       descriptor: {
@@ -1892,6 +1897,7 @@ function layoutPlanningSystem(
   draft: LayoutTickDraft,
   currentLogistics: () => LogisticsRuntimeProjection,
   currentLabs: () => LabCompositionProjection,
+  currentTerminalWork: () => IndustryTerminalWorkProjection,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -2115,6 +2121,11 @@ function layoutPlanningSystem(
                 sources: room.sources.map(({ pos }) => pos),
                 unlocks: colony.rclPolicy.unlocks,
               });
+        const terminalWork = currentTerminalWork();
+        const industryTerminalWork =
+          terminalWork.status === "available"
+            ? (terminalWork.rooms.find(({ roomName }) => roomName === room.name) ?? null)
+            : null;
         migrationInputs.push({
           activeLeasedWorkTargetIds,
           activeLogisticsEndpoints,
@@ -2139,6 +2150,7 @@ function layoutPlanningSystem(
           towerEvacuation:
             owner.records.find(({ roomName }) => roomName === room.name)?.towerEvacuation ?? null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
+          industryTerminalWork,
           labMigration: labMigration ?? null,
           logisticsEvidenceReady:
             context.contractExecution.status === "ready" &&
@@ -2506,7 +2518,7 @@ function mergeLeaseAgentPlans(left: LeaseAgentPlan, right: LeaseAgentPlan): Leas
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV16 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV17 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2519,14 +2531,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV16 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV17 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV16["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV17["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -3314,7 +3326,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV16["records"][number] | undefined;
+  readonly record: LayoutsOwnerV17["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -3341,7 +3353,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV16 | null,
+  owner: LayoutsOwnerV17 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (
@@ -3469,6 +3481,11 @@ function industryPublicationSystem(
         terminalIds,
         tick: context.tick,
       });
+      const terminalWork = projectIndustryTerminalWork({
+        plan: draft.plan,
+        previous: draft.states,
+        roomNames: context.snapshot.ownedRooms.map(({ name }) => name),
+      });
       const contracts = input.contractChannel.openProducer("industry.contracts");
       for (const request of authorized.extractionContracts) contracts.producer.submit(request);
       const stagedContracts = contracts.stage();
@@ -3486,6 +3503,7 @@ function industryPublicationSystem(
         () => {
           stagedContracts.commit();
           stagedIntents.commit();
+          draft.terminalWork = terminalWork;
         },
         () => {
           stagedContracts.discard();

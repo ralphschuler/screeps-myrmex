@@ -8,6 +8,7 @@ import type {
   StockBand,
 } from "./stock-policy";
 import type { LabPolicyProjection } from "./lab-policy";
+import type { IndustryCommandState } from "./telemetry";
 
 export interface IndustryRoomPolicy {
   readonly bands: readonly StockBand[];
@@ -19,6 +20,57 @@ export interface IndustryRoomPolicy {
 export interface IndustryAuthorization {
   readonly budgets: readonly BudgetRequest[];
   readonly extractionContracts: readonly WorkContractRequest[];
+}
+
+export interface IndustryTerminalWorkRoomView {
+  readonly roomName: string;
+  readonly status: "active" | "quiescent";
+}
+
+export type IndustryTerminalWorkProjection =
+  | {
+      readonly rooms: readonly IndustryTerminalWorkRoomView[];
+      readonly status: "available";
+    }
+  | {
+      readonly rooms: readonly IndustryTerminalWorkRoomView[];
+      readonly status: "unavailable";
+    };
+
+const MAX_TERMINAL_WORK_ROOMS = 64;
+const MAX_TERMINAL_WORK_SENDS = 64;
+const MAX_TERMINAL_WORK_STATES = 128;
+
+/** Publishes only bounded terminal quiescence; Industry retains send ownership. */
+export function projectIndustryTerminalWork(input: {
+  readonly plan: IndustryPlan;
+  readonly previous: readonly IndustryCommandState[];
+  readonly roomNames: readonly string[];
+}): IndustryTerminalWorkProjection {
+  if (
+    input.roomNames.length > MAX_TERMINAL_WORK_ROOMS ||
+    input.plan.sends.length > MAX_TERMINAL_WORK_SENDS ||
+    input.previous.length > MAX_TERMINAL_WORK_STATES
+  )
+    return freeze({ rooms: [] as const, status: "unavailable" });
+  const sendsByIdentity = new Map(input.plan.sends.map((send) => [send.identity, send]));
+  if (
+    input.previous.some(
+      ({ identity, status }) =>
+        (status === "active" || status === "backoff") && !sendsByIdentity.has(identity),
+    )
+  )
+    return freeze({ rooms: [] as const, status: "unavailable" });
+  const activeRooms = new Set(
+    input.plan.sends.flatMap(({ destinationRoom, sourceRoom }) => [destinationRoom, sourceRoom]),
+  );
+  return freeze({
+    rooms: [...new Set(input.roomNames)].sort().map((roomName) => ({
+      roomName,
+      status: activeRooms.has(roomName) ? ("active" as const) : ("quiescent" as const),
+    })),
+    status: "available" as const,
+  });
 }
 
 /** Normalizes current detached observations without retaining live Game objects. */
