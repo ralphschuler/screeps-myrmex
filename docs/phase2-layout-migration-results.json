@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "evidenceIssues": [365, 377],
   "issue": 365,
   "status": "complete",
   "scenario": {
@@ -119,6 +120,111 @@
     "accessWitnessPreserved": true,
     "accessWitnessScope": "scenario-level",
     "duplicateDestroyCommands": 0
+  },
+  "productionBuild": {
+    "scenario": {
+      "id": "phase2-production-layout-build-v1",
+      "site": {
+        "id": "site-extension-18-20",
+        "initialProgress": 2900,
+        "pos": {
+          "roomName": "W1N1",
+          "x": 18,
+          "y": 20
+        },
+        "progressTotal": 3000,
+        "structureType": "extension",
+        "layoutFingerprint": "phase2-layout-extension-migration-layout-v1"
+      },
+      "variants": {
+        "warm": {
+          "resetDuringBuild": false,
+          "reverseObservation": false
+        },
+        "reset": {
+          "resetDuringBuild": true,
+          "reverseObservation": false
+        },
+        "reordered": {
+          "resetDuringBuild": false,
+          "reverseObservation": true
+        }
+      },
+      "worker": {
+        "body": ["work", "work", "work", "work", "work", "carry", "carry", "move"],
+        "id": "worker-a"
+      }
+    },
+    "authority": {
+      "actionArbitrated": true,
+      "budgetGranted": true,
+      "contractSubmitted": true,
+      "creepBuildScheduled": true,
+      "growthCandidateObserved": true,
+      "leaseAssigned": true,
+      "leaseExecuted": true,
+      "layoutCommitmentObserved": true
+    },
+    "authorityTrace": {
+      "actionArbitratedAt": [60002, 60003, 60004, 60005],
+      "budgetGrantedAt": [60000, 60001, 60002, 60003, 60004, 60005],
+      "contractId": "contract:38:growth/W1N1/build/site-extension-18-201:20:site-extension-18-20",
+      "contractSubmittedAt": 60000,
+      "growthCandidateAt": [60000, 60001, 60002, 60003, 60004, 60005, 60006],
+      "layoutCommitmentObservedAt": [60002, 60003, 60004, 60005],
+      "leaseAssignedAt": [60001, 60002, 60003, 60004, 60005],
+      "leaseExecutedAt": [60002, 60003, 60004, 60005, 60006],
+      "liveBuildScheduledAt": [60002, 60003, 60004, 60005]
+    },
+    "buildCalls": [
+      {
+        "energy": 25,
+        "progressAfter": 2925,
+        "progressBefore": 2900,
+        "targetId": "site-extension-18-20",
+        "tick": 60002
+      },
+      {
+        "energy": 25,
+        "progressAfter": 2950,
+        "progressBefore": 2925,
+        "targetId": "site-extension-18-20",
+        "tick": 60003
+      },
+      {
+        "energy": 25,
+        "progressAfter": 2975,
+        "progressBefore": 2950,
+        "targetId": "site-extension-18-20",
+        "tick": 60004
+      },
+      {
+        "energy": 25,
+        "progressAfter": 3000,
+        "progressBefore": 2975,
+        "targetId": "site-extension-18-20",
+        "tick": 60005
+      }
+    ],
+    "buildEnergy": 100,
+    "completedStructureType": "extension",
+    "completion": {
+      "completedAt": 60006,
+      "finalProgress": 3000,
+      "firstBuildAt": 60002,
+      "siteCount": 0
+    },
+    "directProgressMutation": false,
+    "finalGameplayPersistentHash": "fnv1a64-utf16:4f7d1f0c076e317d",
+    "maximumModeledCpuPerTick": 0.129,
+    "maximumPersistentBytes": 13477,
+    "semanticBytesIdentical": true,
+    "semanticHashes": {
+      "reordered": "fnv1a64-utf16:d761a70b02b615e0",
+      "reset": "fnv1a64-utf16:d761a70b02b615e0",
+      "warm": "fnv1a64-utf16:d761a70b02b615e0"
+    },
+    "siteObservedAbsentAfterCompletion": true
   },
   "equivalence": {
     "semanticBytesIdentical": true,

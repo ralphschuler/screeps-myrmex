@@ -7,7 +7,20 @@ const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 const START_TICK = 100;
 
+export interface EstablishedConstructionSiteProfile {
+  readonly controllerLevel: 2 | 3;
+  readonly id: string;
+  readonly initialProgress: number;
+  readonly pos: { readonly x: number; readonly y: number };
+  readonly progressTotal: number;
+  readonly structureType: "extension" | "road";
+  readonly workerBody: readonly BodyPartConstant[];
+  readonly workerEnergy: number;
+  readonly workerPos: { readonly x: number; readonly y: number };
+}
+
 export interface EstablishedRcl2WorldOptions {
+  readonly constructionSite?: EstablishedConstructionSiteProfile;
   readonly reverseCollections?: boolean;
 }
 
@@ -18,15 +31,41 @@ export interface EstablishedRcl2SpawnCall {
   readonly tick: number;
 }
 
+export interface EstablishedBuildCall {
+  readonly energy: number;
+  readonly progressAfter: number;
+  readonly progressBefore: number;
+  readonly targetId: string;
+  readonly tick: number;
+}
+
+const DEFAULT_CONSTRUCTION_SITE = Object.freeze({
+  controllerLevel: 2,
+  id: "road-site",
+  initialProgress: 5,
+  pos: Object.freeze({ x: 10, y: 11 }),
+  progressTotal: 100,
+  structureType: "road",
+  workerBody: Object.freeze(["work", "carry", "carry", "move"] as BodyPartConstant[]),
+  workerEnergy: 50,
+  workerPos: Object.freeze({ x: 11, y: 10 }),
+}) satisfies EstablishedConstructionSiteProfile;
+
 export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) {
+  const construction = options.constructionSite ?? DEFAULT_CONSTRUCTION_SITE;
   let tick = START_TICK - 1;
   let spawnEnergy = 300;
+  const initialExtensionEnergy = options.constructionSite === undefined ? 0 : 50;
   const extensionEnergy = new Map([
-    ["extension-a", 0],
-    ["extension-b", 0],
+    ["extension-a", initialExtensionEnergy],
+    ["extension-b", initialExtensionEnergy],
   ]);
-  let siteProgress = 5;
-  const constructionSiteCalls = 0;
+  let siteProgress = construction.initialProgress;
+  let siteCompleted = false;
+  let siteCompletionPendingAt: number | null = null;
+  let siteCompletedAt: number | null = null;
+  let constructionSiteCalls = 0;
+  const buildCalls: EstablishedBuildCall[] = [];
   const sourceEnergy = { value: 3_000 };
   let droppedEnergy = 0;
   let droppedResourceId = "drop-source-a-0";
@@ -45,27 +84,29 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
   } | null = null;
   const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
   const site = {
-    id: "road-site",
+    id: construction.id,
     my: true,
     owner: { username: "Myrmex" },
-    pos: position(10, 11),
-    progressTotal: 100,
+    pos: position(construction.pos.x, construction.pos.y),
+    progressTotal: construction.progressTotal,
     get progress() {
       return siteProgress;
     },
-    structureType: "road",
+    structureType: construction.structureType,
   } as unknown as ConstructionSite;
-  const extensions = [...extensionEnergy].map(([id, energy]) => ({
-    hits: 1_000,
-    hitsMax: 1_000,
-    id,
-    isActive: () => true,
-    my: true,
-    pos: position(id === "extension-a" ? 11 : 12, 10),
-    room: { name: "W1N1" },
-    store: storeFor(() => extensionEnergy.get(id) ?? energy, 50),
-    structureType: "extension",
-  })) as unknown as StructureExtension[];
+  const extension = (id: string, x: number, y: number): StructureExtension =>
+    ({
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      isActive: () => true,
+      my: true,
+      pos: position(x, y),
+      room: { name: "W1N1" },
+      store: storeFor(() => extensionEnergy.get(id) ?? 0, 50),
+      structureType: "extension",
+    }) as unknown as StructureExtension;
+  const extensions = [extension("extension-a", 11, 10), extension("extension-b", 12, 10)];
   const spawn = {
     hits: 5_000,
     hitsMax: 5_000,
@@ -162,15 +203,29 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
       my: true,
       name,
       owner: { username: "Myrmex" },
-      pos: position(11, 10),
+      pos: position(construction.workerPos.x, construction.workerPos.y),
       spawning: false,
       store: storeFor(() => workerEnergy, capacity),
       ticksToLive: 1_000,
       build: (target: ConstructionSite) => {
-        if (target.id !== site.id) return -7;
-        if (workerEnergy < 5) return -6;
-        workerEnergy -= 5;
-        siteProgress += 5;
+        if (target.id !== site.id || siteCompleted || siteCompletionPendingAt !== null) return -7;
+        const progressBefore = siteProgress;
+        const energy = Math.min(
+          body.filter((part) => part === "work").length * 5,
+          workerEnergy,
+          construction.progressTotal - siteProgress,
+        );
+        if (energy <= 0) return -6;
+        workerEnergy -= energy;
+        siteProgress += energy;
+        buildCalls.push({
+          energy,
+          progressAfter: siteProgress,
+          progressBefore,
+          targetId: target.id,
+          tick,
+        });
+        if (siteProgress === construction.progressTotal) siteCompletionPendingAt = tick;
         return markReplacementWork(0);
       },
       repair: () => -7,
@@ -213,7 +268,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
       move: () => -7,
     } as unknown as Creep;
   };
-  worker = createWorker("worker-a", "worker-a", ["work", "carry", "carry", "move"], 50);
+  worker = createWorker("worker-a", "worker-a", construction.workerBody, construction.workerEnergy);
 
   const staticMinerPosition = { x: 10, y: 9 };
   const staticMiner = {
@@ -263,7 +318,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
 
   const controller = {
     id: "controller-a",
-    level: 2,
+    level: construction.controllerLevel,
     my: true,
     owner: { username: "Myrmex" },
     pos: position(8, 10),
@@ -276,10 +331,16 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
   } as unknown as StructureController;
   const room = {
     controller,
+    createConstructionSite: () => {
+      constructionSiteCalls += 1;
+      return -8;
+    },
     get energyAvailable() {
       return spawnEnergy + [...extensionEnergy.values()].reduce((sum, value) => sum + value, 0);
     },
-    energyCapacityAvailable: 400,
+    get energyCapacityAvailable() {
+      return 300 + extensionEnergy.size * 50;
+    },
     find: (findType: number): unknown[] =>
       findType === FIND_CREEPS_VALUE
         ? options.reverseCollections
@@ -294,7 +355,9 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
               ? [spawn, ...extensions].reverse()
               : [spawn, ...extensions]
             : findType === FIND_CONSTRUCTION_SITES_VALUE
-              ? [site]
+              ? siteCompleted
+                ? []
+                : [site]
               : findType === FIND_SOURCES_VALUE
                 ? [source]
                 : [],
@@ -303,12 +366,26 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
   } as unknown as Room;
 
   return {
+    buildCalls: () => [...buildCalls],
     constructionSiteCalls: () => constructionSiteCalls,
     controllerTicksToDowngrade: () => controller.ticksToDowngrade,
     extensionEnergy: () => [...extensionEnergy.values()].reduce((sum, value) => sum + value, 0),
     game: (nextTick: number): RuntimeGame => {
       if (nextTick <= tick) throw new Error("ticks must advance monotonically");
       tick = nextTick;
+      if (
+        !siteCompleted &&
+        siteCompletionPendingAt !== null &&
+        nextTick > siteCompletionPendingAt
+      ) {
+        siteCompleted = true;
+        siteCompletedAt = nextTick;
+        if (construction.structureType === "extension") {
+          const id = `built-${construction.id}`;
+          extensionEnergy.set(id, 0);
+          extensions.push(extension(id, construction.pos.x, construction.pos.y));
+        }
+      }
       produceStaticDrop();
       if (pendingSpawn !== null && nextTick >= pendingSpawn.completeAt) {
         replacementWorkerId = `replacement-${pendingSpawn.name}`;
@@ -320,8 +397,19 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
         ...(worker === null ? {} : { [worker.name]: worker }),
         [staticMiner.name]: staticMiner,
       };
+      let cpuUsed = 0;
       return {
-        cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+        cpu: {
+          bucket: 10_000,
+          limit: 20,
+          tickLimit: 500,
+          getUsed: () => {
+            if (options.constructionSite === undefined) return 0;
+            const sample = cpuUsed;
+            cpuUsed += 0.001;
+            return sample;
+          },
+        },
         creeps,
         getObjectById: (id: string) =>
           id === worker?.id
@@ -332,7 +420,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
                 ? droppedResource
                 : id === "spawn-a"
                   ? spawn
-                  : id === "road-site"
+                  : id === construction.id && !siteCompleted
                     ? site
                     : id === source.id
                       ? source
@@ -350,7 +438,8 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     replacementVisibleAt: () => replacementVisibleAt,
     replacementWorkerId: () => replacementWorkerId,
     roomEnergy: () => room.energyAvailable,
-    siteCount: () => 1,
+    siteCompletedAt: () => siteCompletedAt,
+    siteCount: () => (siteCompleted ? 0 : 1),
     siteProgress: () => siteProgress,
     spawnCalls: () => [...spawnCalls],
     spawnEnergy: () => spawnEnergy,

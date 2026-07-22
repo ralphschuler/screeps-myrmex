@@ -200,30 +200,32 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   work retirement before removal. Issue #365 adds checked 70-tick replay evidence exercising the
   production layout diff plus site/removal arbitration, execution, and reconciliation while one
   empty obsolete extension is removed and ten exact RCL3 extensions are observed. Construction
-  progress, the 6,000-energy and 100-energy/tick bounds, and 0.25-CPU/tick accounting are
-  deterministic scenario models, not evidence for the production growth/lease/`Creep.build` chain.
-  Warm, one-reset-during-first-build, and reversed-observation-without-reset outcomes are
-  equivalent. Its room-grid access witness is scenario-level only. Issue #367 adds the production
-  planner's bounded source-access invariant: every complete candidate has one distinct semantic
-  service on a legal spawn-reachable adjacent work tile for every observed owned source, while an
-  impossible or incomplete source assignment preserves the prior commitment and emits no placements.
-  Issue #369 aligns executable local traversal with that invariant: private foreign ramparts are
-  static blockers, owned/public ramparts remain walkable, and changed effective passability
-  separates cached path evidence without persistent invalidation state. Issue #371 advances layouts
-  V20 with one empty obsolete-storage relocation at RCL6-RCL8: an exact active terminal provides
-  bounded local inventory continuity, an effective gate plus one exact current healthy Logistics row
-  is mandatory, work and persisted destinations fail closed, and the same bounded receipt/executor
-  path exposes the committed storage site after fresh disappearance. Issue #373 advances layouts V21
-  with one 150-tick evacuation for exactly one storage resource kind totaling at most 3,000 units:
-  the sole funded V3 Logistics path moves it to the exact terminal, suppresses both endpoints and
-  internal sends, and requires exact delivery plus work retirement before the unchanged removal
-  path. Issue #375 advances layouts V22 with a canonical two-to-eight-resource alternative under the
-  same 3,000-unit and 150-tick limits: each current row receives a distinct funded V3 flow, every
-  terminal sink shares one aggregate-capacity reservation, current rows admit atomically through
-  Logistics and colony funding, and removal waits for every exact gain plus complete work
-  retirement. Larger storage stock, uninterrupted storage/terminal service, broad dynamic
-  movement/pathfinding proof, autonomous boost manifest production, defensive migration, and creep
-  dismantling remain issue #99.
+  progress, the 6,000-energy and 100-energy/tick bounds, and 0.25-CPU/tick accounting remain
+  deterministic scenario models. Issue #377 adds the production-runtime complement: the first
+  committed-position extension site's final 100 energy executes through growth funding,
+  ContractLedger assignment, one lease, action arbitration/execution, and live `Creep.build`; fresh
+  observation proves completion. Both rows are reset/reorder equivalent under checked modeled-CPU
+  and persistent-Memory bounds. The room-grid access witness remains scenario-level only. Issue #367
+  adds the production planner's bounded source-access invariant: every complete candidate has one
+  distinct semantic service on a legal spawn-reachable adjacent work tile for every observed owned
+  source, while an impossible or incomplete source assignment preserves the prior commitment and
+  emits no placements. Issue #369 aligns executable local traversal with that invariant: private
+  foreign ramparts are static blockers, owned/public ramparts remain walkable, and changed effective
+  passability separates cached path evidence without persistent invalidation state. Issue #371
+  advances layouts V20 with one empty obsolete-storage relocation at RCL6-RCL8: an exact active
+  terminal provides bounded local inventory continuity, an effective gate plus one exact current
+  healthy Logistics row is mandatory, work and persisted destinations fail closed, and the same
+  bounded receipt/executor path exposes the committed storage site after fresh disappearance. Issue
+  #373 advances layouts V21 with one 150-tick evacuation for exactly one storage resource kind
+  totaling at most 3,000 units: the sole funded V3 Logistics path moves it to the exact terminal,
+  suppresses both endpoints and internal sends, and requires exact delivery plus work retirement
+  before the unchanged removal path. Issue #375 advances layouts V22 with a canonical
+  two-to-eight-resource alternative under the same 3,000-unit and 150-tick limits: each current row
+  receives a distinct funded V3 flow, every terminal sink shares one aggregate-capacity reservation,
+  current rows admit atomically through Logistics and colony funding, and removal waits for every
+  exact gain plus complete work retirement. Larger storage stock, uninterrupted storage/terminal
+  service, broad dynamic movement/pathfinding proof, autonomous boost manifest production, defensive
+  migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
