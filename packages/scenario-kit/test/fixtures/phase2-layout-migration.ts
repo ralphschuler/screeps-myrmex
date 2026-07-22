@@ -16,7 +16,7 @@ import {
   reconcileStructureDestroyExecution,
   type LayoutCommitment,
   type LayoutPlacement,
-  type LayoutsOwnerV20,
+  type LayoutsOwnerV21,
 } from "../../../bot/src/layout";
 import { ConstructionPlanner } from "../../../bot/src/maintenance";
 import {
@@ -105,7 +105,7 @@ interface LayoutWorld {
   readonly maximumEnergyPerTick: number;
   readonly milestones: Milestones;
   readonly minimumActiveExtensions: number;
-  readonly owner: LayoutsOwnerV20;
+  readonly owner: LayoutsOwnerV21;
   readonly sites: readonly SiteState[];
   readonly totalBuildEnergy: number;
 }

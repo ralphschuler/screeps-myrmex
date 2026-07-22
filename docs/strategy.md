@@ -227,6 +227,18 @@ while accepting a temporary capacity contraction until the existing 30,000-energ
 restores storage. Stocked, pre-RCL6, work-bound, unsafe, or uncertain storage remains.
 [ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records this boundary.
 
+One otherwise eligible storage containing exactly one resource kind and at most 3,000 units may
+first persist one exclusive 150-tick evacuation into that terminal. Current terminal work must be
+quiescent and aggregate terminal capacity must hold the complete amount. On following ticks, one
+funded `optional-growth` V3 Logistics flow replaces ordinary publication at both endpoints while
+internal sends involving the room are suppressed. Partial delivery is resumable; removal requires
+fresh storage emptiness, terminal stock exactly at baseline plus amount, retired exact flow and both
+endpoints, and every unchanged geometry, Logistics, colony, and terminal-safety term. Refill,
+consumption, contention, drift, pressure, or uncertainty preserves the storage. Timeout restores
+ordinary storage/terminal Logistics and send service but remains removal-blocking. Mixed or larger
+stock is not admitted. [ADR 0072](adr/0072-single-resource-stocked-storage-evacuation.md) records
+this bound.
+
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;

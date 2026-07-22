@@ -297,7 +297,7 @@ describe("empty obsolete-terminal relocation", () => {
 
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = reconcileStructureDestroyExecution(owner, execution, 100).owner;
-    expect(owner.schemaVersion).toBe(20);
+    expect(owner.schemaVersion).toBe(21);
     owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
     const receipt = owner.records[0]?.removalReceipt ?? null;
     expect(receipt).toMatchObject({ replacementId: storageId, targetStructureType: "terminal" });

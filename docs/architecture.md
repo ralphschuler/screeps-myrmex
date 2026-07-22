@@ -183,9 +183,18 @@ terminal as bounded local inventory continuity. The effective Logistics gate, ex
 room projection, current/projected work, and persisted layout evacuations fail closed. Layouts V20
 adds only the storage receipt discriminator; the executor rechecks exact 1,000,000/300,000-unit
 Stores before destruction. [ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records the
-temporary capacity contraction. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, spawn,
-storage, terminal, tower, link, and lab result reuses the same fixed receipt.
+temporary capacity contraction. Issue
+[#373](https://github.com/ralphschuler/screeps-myrmex/issues/373) advances layouts V21 with one
+fixed 150-tick storage evacuation for exactly one resource kind totaling at most 3,000 units. The
+sole funded V3 Logistics path moves that stock to the exact terminal, suppresses observed and custom
+work at both endpoints plus internal sends involving the room, and retains exact completion evidence
+until the contract retires. Owner loss and future-owner fallback reject every prefixed orphan flow.
+Exact terminal gain plus complete flow/endpoint retirement precede the unchanged storage-removal
+authority. Expiry restores ordinary service but remains removal-blocking evidence.
+[ADR 0072](adr/0072-single-resource-stocked-storage-evacuation.md) records the handoff.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
+result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1563,7 +1572,7 @@ Optional `migration.layout` follows public `links.plan` evidence before Execute;
 ID orders it after both `layout.plan` and `links.plan`. A skipped link planner authorizes no
 reserve-link removal, and a skipped migration planner authorizes no removal. Only
 `ConstructionSiteExecutor` receives a live room and calls `Room.createConstructionSite`. Complete
-commitments and bounded receipts stage through the owner-local schema V20 layouts owner; V8 adds
+commitments and bounded receipts stage through the owner-local schema V21 layouts owner; V8 adds
 `link` to the existing removal-receipt discriminator, V9 adds one optional fixed-shape reserve-link
 evacuation, V10 adds `lab` to the fixed receipt discriminator, V11 adds one optional fixed-shape
 lab-energy evacuation, V12 adds its single-kind mineral/storage variant, V13 adds the paired
@@ -1571,10 +1580,11 @@ energy/mineral variant, V14 adds one terminal destination discriminator to eithe
 form, V15 adds `spawn` to the fixed removal-receipt discriminator, V16 adds one optional fixed-shape
 spawn evacuation, V17 adds `terminal` to the fixed removal-receipt discriminator, V18 adds one
 optional fixed-shape single-resource terminal evacuation, V19 adds its bounded two-to-eight-row
-manifest alternative, and V20 adds `storage` to the fixed removal-receipt discriminator. Degraded,
-unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no
-command. Every observed owned layout site enters the existing funded survival-growth build flow,
-while controller risk, recovery, maintenance, and protected reserves retain precedence.
+manifest alternative, V20 adds `storage` to the fixed removal-receipt discriminator, and V21 adds
+one optional fixed-shape storage evacuation. Degraded, unknown, lost, stale, denied, or CPU-skipped
+work preserves prior commitments and authorizes no command. Every observed owned layout site enters
+the existing funded survival-growth build flow, while controller risk, recovery, maintenance, and
+protected reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -1916,6 +1926,22 @@ V1-V19 migrate without invented evidence, rollback preserves future bytes, and o
 disappearance exposes the ordinary committed storage site.
 [ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records the bounded service and capacity
 reduction.
+
+Issue #373 permits that exact path to stage one sole external storage containing one positive
+resource kind totaling at most 3,000 units. Current Industry terminal-work evidence must be
+quiescent, and the exact active 300,000-unit terminal must have complete aggregate free capacity.
+Layouts V21 persists source/terminal IDs, resource, amount, terminal baseline, start, and exclusive
+150-tick expiry. Following ticks inject one externally funded `optional-growth` V3 flow through the
+sole LogisticsPlanner, reserve terminal aggregate capacity once, suppress observed/custom
+source/sink work at both endpoints, and block internal sends involving the room. Partial delivery
+survives reset and fact reordering; exact completion remains projected until its prior contract
+retires. Owner loss or future-owner fallback rejects every prefixed orphan contract and lease.
+Removal requires fresh source emptiness, terminal baseline plus exact amount, exact flow retirement,
+no assigned/active primary or counterpart naming either endpoint, current terminal quiescence, and
+every unchanged #371 safety term. Drift or missing funding suppresses executable work; expiry
+restores ordinary endpoint/send service but remains removal-blocking. V20 migration invents no
+record, while V20 rollback treats V21 as future and preserves it byte-for-byte with no layout
+authorization. [ADR 0072](adr/0072-single-resource-stocked-storage-evacuation.md) records the bound.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,

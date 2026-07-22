@@ -213,9 +213,13 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   V20 with one empty obsolete-storage relocation at RCL6-RCL8: an exact active terminal provides
   bounded local inventory continuity, an effective gate plus one exact current healthy Logistics row
   is mandatory, work and persisted destinations fail closed, and the same bounded receipt/executor
-  path exposes the committed storage site after fresh disappearance. Stocked storage, larger
-  terminal stock, uninterrupted storage/terminal service, broad dynamic movement/pathfinding proof,
-  autonomous boost manifest production, defensive migration, and creep dismantling remain issue #99.
+  path exposes the committed storage site after fresh disappearance. Issue #373 advances layouts V21
+  with one 150-tick evacuation for exactly one storage resource kind totaling at most 3,000 units:
+  the sole funded V3 Logistics path moves it to the exact terminal, suppresses both endpoints and
+  internal sends, and requires exact delivery plus work retirement before the unchanged removal
+  path. Mixed/larger storage stock, uninterrupted storage/terminal service, broad dynamic
+  movement/pathfinding proof, autonomous boost manifest production, defensive migration, and creep
+  dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
