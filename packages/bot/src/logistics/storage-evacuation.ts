@@ -1,12 +1,14 @@
 import type { BudgetRequest } from "../colony";
 import {
   LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS,
+  LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_RECORDS,
   MAX_LAYOUT_STORAGE_CAPACITY,
   MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT,
   MAX_LAYOUT_STORAGE_EVACUATION_FLOWS,
   MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES,
   MAX_LAYOUT_STORAGE_RESOURCES,
+  MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT,
   MAX_LAYOUT_TERMINAL_CAPACITY,
   layoutStorageEvacuationBudgetIssuers,
   layoutStorageEvacuationFlowIds,
@@ -24,8 +26,11 @@ export interface LayoutStorageEvacuationProjection {
 
 interface ResourceTerm {
   readonly amount: number;
+  readonly deferredAmount: number;
   readonly resourceType: string;
   readonly terminalInitialAmount: number;
+  readonly totalAmount: number;
+  readonly totalTerminalInitialAmount: number;
 }
 
 /** Projects one layout-owned bounded storage handoff into the sole logistics graph. */
@@ -91,29 +96,36 @@ export function projectLayoutStorageEvacuations(input: {
       continue;
 
     const current = terms.map((term) => {
-      const sourceAmount = sourceStore.resources.get(term.resourceType) ?? 0;
+      const observedSourceAmount = sourceStore.resources.get(term.resourceType) ?? 0;
       const terminalAmount = terminalStore.resources.get(term.resourceType) ?? 0;
       const delivered = terminalAmount - term.terminalInitialAmount;
+      const totalDelivered = terminalAmount - term.totalTerminalInitialAmount;
       const remaining = term.amount - delivered;
+      const sourceAmount = observedSourceAmount - term.deferredAmount;
       return {
         delivered,
+        observedSourceAmount,
         remaining,
         sourceAmount,
         term,
+        totalDelivered,
         workRemaining: sourceAmount > 0 || remaining > 0,
       };
     });
     if (
       current.some(
-        ({ delivered, sourceAmount, term }) =>
+        ({ delivered, observedSourceAmount, sourceAmount, term, totalDelivered }) =>
           delivered < 0 ||
           delivered > term.amount ||
+          totalDelivered < 0 ||
+          totalDelivered > term.totalAmount ||
+          sourceAmount < 0 ||
           sourceAmount > term.amount - delivered ||
-          sourceAmount + delivered > term.amount,
+          observedSourceAmount + totalDelivered > term.totalAmount,
       ) ||
       terminalStore.freeCapacity <
         current.reduce(
-          (total, { remaining, sourceAmount }) => total + Math.max(sourceAmount, remaining),
+          (total, { term, totalDelivered }) => total + term.totalAmount - totalDelivered,
           0,
         )
     )
@@ -273,10 +285,14 @@ export function authorizeLayoutStorageEvacuationFlowIds(input: {
 }
 
 function validEvacuationCommon(evacuation: LayoutStorageEvacuation): boolean {
+  const sequential = "settledAmount" in evacuation;
   return (
     nonnegativeInteger(evacuation.startedAt) &&
     nonnegativeInteger(evacuation.expiresAt) &&
-    evacuation.expiresAt - evacuation.startedAt === LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS &&
+    evacuation.expiresAt - evacuation.startedAt ===
+      (sequential
+        ? LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_TIMEOUT_TICKS
+        : LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS) &&
     identity(evacuation.sourceId, 128) &&
     identity(evacuation.terminalId, 128) &&
     evacuation.sourceId !== evacuation.terminalId
@@ -318,7 +334,14 @@ function storageEvacuationTerms(
       prior = resourceType;
       amountTotal += amount;
       terminalTotal += terminalInitialAmount;
-      terms.push({ amount, resourceType, terminalInitialAmount });
+      terms.push({
+        amount,
+        deferredAmount: 0,
+        resourceType,
+        terminalInitialAmount,
+        totalAmount: amount,
+        totalTerminalInitialAmount: terminalInitialAmount,
+      });
     }
     return amountTotal <= MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
       terminalTotal + amountTotal <= MAX_LAYOUT_TERMINAL_CAPACITY
@@ -327,18 +350,41 @@ function storageEvacuationTerms(
   }
   if (
     !positiveInteger(raw.amount) ||
-    raw.amount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT ||
     !identity(raw.resourceType, 64) ||
     raw.resourceType !== raw.resourceType.trim() ||
     !nonnegativeInteger(raw.terminalInitialAmount) ||
     raw.terminalInitialAmount + raw.amount > MAX_LAYOUT_TERMINAL_CAPACITY
   )
     return null;
+  if (raw.settledAmount === undefined) {
+    if (raw.amount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT) return null;
+    return [
+      {
+        amount: raw.amount,
+        deferredAmount: 0,
+        resourceType: raw.resourceType,
+        terminalInitialAmount: raw.terminalInitialAmount,
+        totalAmount: raw.amount,
+        totalTerminalInitialAmount: raw.terminalInitialAmount,
+      },
+    ];
+  }
+  if (
+    raw.amount <= MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT ||
+    raw.amount > MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT ||
+    (raw.settledAmount !== 0 && raw.settledAmount !== MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT) ||
+    raw.settledAmount >= raw.amount
+  )
+    return null;
+  const amount = Math.min(MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT, raw.amount - raw.settledAmount);
   return [
     {
-      amount: raw.amount,
+      amount,
+      deferredAmount: raw.amount - raw.settledAmount - amount,
       resourceType: raw.resourceType,
-      terminalInitialAmount: raw.terminalInitialAmount,
+      terminalInitialAmount: raw.terminalInitialAmount + raw.settledAmount,
+      totalAmount: raw.amount,
+      totalTerminalInitialAmount: raw.terminalInitialAmount,
     },
   ];
 }

@@ -167,7 +167,7 @@ import {
   type LayoutRecord,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV22,
+  type LayoutsOwnerV23,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -488,7 +488,7 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV22 | null;
+  owner: LayoutsOwnerV23 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
@@ -2053,13 +2053,10 @@ function layoutPlanningSystem(
       if (input.manager === null) return staged(() => undefined);
       const initialOwner = resolveLayoutsOwner(input.manager.ownerView("layouts"));
       const logistics = currentLogistics();
-      const activeLogisticsFlowIds = new Set(
-        context.contractPlanning.contracts.flatMap(({ execution, state }) =>
-          execution.version === 3 && (state === "assigned" || state === "active")
-            ? [execution.flowId]
-            : [],
-        ),
+      const currentV3LogisticsActivity = projectCurrentV3LogisticsActivity(
+        context.contractPlanning.contracts,
       );
+      const activeLogisticsFlowIds = new Set(currentV3LogisticsActivity.flowIds);
       const activeLeasedWorkTargetIds = projectActiveLeaseTargetIds(
         context.contractPlanning.contracts,
       );
@@ -2076,13 +2073,11 @@ function layoutPlanningSystem(
               ]
             : [],
       );
-      const activeLogisticsTargetIds = new Set(activeLeasedWorkTargetIds);
-      const activeTerminalLogisticsTargetIds = new Set(activeLeasedWorkTargetIds);
-      for (const contract of context.contractPlanning.contracts) {
-        if (contract.execution.version !== 3) continue;
-        activeTerminalLogisticsTargetIds.add(contract.targetId);
-        activeTerminalLogisticsTargetIds.add(contract.execution.counterpartId);
-      }
+      const activeLogisticsTargetIds = new Set([
+        ...activeLeasedWorkTargetIds,
+        ...currentV3LogisticsActivity.targetIds,
+      ]);
+      const activeTerminalLogisticsTargetIds = new Set(activeLogisticsTargetIds);
       for (const commitment of logistics.contracts.commitments) {
         const request = commitment.request;
         if (request?.execution?.version !== 3 || request.targetId === null) continue;
@@ -2414,6 +2409,21 @@ export function projectActiveLeaseTargetIds(
   return targetIds;
 }
 
+export function projectCurrentV3LogisticsActivity(contracts: ContractPlanningView["contracts"]): {
+  readonly flowIds: ReadonlySet<string>;
+  readonly targetIds: ReadonlySet<string>;
+} {
+  const flowIds = new Set<string>();
+  const targetIds = new Set<string>();
+  for (const { execution, targetId } of contracts) {
+    if (execution.version !== 3) continue;
+    flowIds.add(execution.flowId);
+    targetIds.add(targetId);
+    targetIds.add(execution.counterpartId);
+  }
+  return { flowIds, targetIds };
+}
+
 function layoutMigrationPlanningSystem(
   input: CompositionInput,
   draft: LayoutTickDraft,
@@ -2706,7 +2716,7 @@ function mergeLeaseAgentPlans(left: LeaseAgentPlan, right: LeaseAgentPlan): Leas
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV22 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV23 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2719,14 +2729,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV22 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV23 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV22["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV23["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -3731,7 +3741,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV22["records"][number] | undefined;
+  readonly record: LayoutsOwnerV23["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -3758,7 +3768,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV22 | null,
+  owner: LayoutsOwnerV23 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (

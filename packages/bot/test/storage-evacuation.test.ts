@@ -3,12 +3,14 @@ import {
   emptyContractExecutionView,
   emptyContractPlanningView,
   type ContractExecutionView,
+  type ContractPlanningView,
 } from "../src/contracts";
 import {
   LAYOUT_ALGORITHM_REVISION,
   emptyLayoutsOwner,
   layoutStorageEvacuationBudgetIssuer,
   layoutStorageEvacuationBudgetIssuers,
+  layoutStorageEvacuationCurrentBatchResources,
   layoutStorageEvacuationFlowId,
   layoutStorageEvacuationFlowIds,
   parseLayoutsOwner,
@@ -27,6 +29,7 @@ import {
 } from "../src/logistics/storage-evacuation";
 import {
   isAuthorizedLayoutStorageEvacuationFlowId,
+  projectCurrentV3LogisticsActivity,
   projectLayoutTerminalSendBlockedRoomNames,
   withoutSuppressedLeaseTargets,
   withoutSuppressedResourceDemandTargets,
@@ -48,6 +51,16 @@ const terms = {
   amount: 3_000,
   expiresAt: 160,
   resourceType: "energy",
+  sourceId,
+  startedAt: 10,
+  terminalId,
+  terminalInitialAmount: 25_000,
+} as const satisfies LayoutStorageEvacuation;
+const sequentialTerms = {
+  amount: 6_000,
+  expiresAt: 310,
+  resourceType: "energy",
+  settledAmount: 0,
   sourceId,
   startedAt: 10,
   terminalId,
@@ -166,7 +179,7 @@ function project(
 }
 
 describe("bounded stocked-storage evacuation", () => {
-  it("persists V22 scalar or manifest terms while migration invents none and rejects spoofed terms", () => {
+  it("persists V23 terms while migration invents no sequential cursor and rejects spoofed terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     const v20 = { ...owner, schemaVersion: 20 } as const;
     expect(parseLayoutsOwner(v20)).toEqual({ ...owner, revision: owner.revision + 1 });
@@ -185,8 +198,17 @@ describe("bounded stocked-storage evacuation", () => {
       }),
     ).toBeNull();
 
+    const v22 = { ...owner, schemaVersion: 22 } as const;
+    expect(parseLayoutsOwner(v22)).toEqual({ ...owner, revision: owner.revision + 1 });
+    expect(
+      parseLayoutsOwner({
+        ...v22,
+        records: [{ ...v22.records[0], storageEvacuation: sequentialTerms }],
+      }),
+    ).toBeNull();
+
     owner = persistLayoutStorageEvacuation(owner, roomName, mixedTerms);
-    expect(owner.schemaVersion).toBe(22);
+    expect(owner.schemaVersion).toBe(23);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(layoutStorageEvacuationFlowIds(roomName, mixedTerms)).toHaveLength(2);
     expect(layoutStorageEvacuationBudgetIssuers(roomName, mixedTerms)).toHaveLength(2);
@@ -227,6 +249,11 @@ describe("bounded stocked-storage evacuation", () => {
       },
       { ...mixedTerms, amount: 3_000 },
       { ...terms, resourceManifest: undefined },
+      { ...sequentialTerms, amount: 3_000 },
+      { ...sequentialTerms, amount: 6_001 },
+      { ...sequentialTerms, expiresAt: 309 },
+      { ...sequentialTerms, settledAmount: 1 },
+      { ...sequentialTerms, settledAmount: 6_000 },
     ])
       expect(
         parseLayoutsOwner({
@@ -236,10 +263,110 @@ describe("bounded stocked-storage evacuation", () => {
       ).toBeNull();
   });
 
+  it("persists and projects two identity-distinct sequential batches", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    owner = persistLayoutStorageEvacuation(owner, roomName, sequentialTerms);
+    expect(owner.schemaVersion).toBe(23);
+    expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
+
+    const firstFlowId = layoutStorageEvacuationFlowId(roomName, sequentialTerms);
+    const firstIssuer = layoutStorageEvacuationBudgetIssuer(roomName, sequentialTerms);
+    const secondTerms = { ...sequentialTerms, settledAmount: 3_000 } as const;
+    const secondFlowId = layoutStorageEvacuationFlowId(roomName, secondTerms);
+    const secondIssuer = layoutStorageEvacuationBudgetIssuer(roomName, secondTerms);
+    expect(firstFlowId).not.toBeNull();
+    expect(firstIssuer).not.toBeNull();
+    expect(secondFlowId).not.toBe(firstFlowId);
+    expect(secondIssuer).not.toBe(firstIssuer);
+    expect(layoutStorageEvacuationCurrentBatchResources(sequentialTerms)).toEqual([
+      ["energy", 3_000, 25_000],
+    ]);
+    expect(layoutStorageEvacuationCurrentBatchResources(secondTerms)).toEqual([
+      ["energy", 3_000, 28_000],
+    ]);
+
+    const first = project(world([["energy", 6_000]], [["energy", 25_000]], 11), 11, [
+      record(sequentialTerms),
+    ]);
+    expect(first.demands.edges).toEqual([
+      expect.objectContaining({ id: firstFlowId, maximumAmount: 3_000 }),
+    ]);
+    expect(first.demands.endpoints[0]).toMatchObject({ observedAmount: 3_000, targetId: sourceId });
+    expect(
+      project(world([["energy", 4_500]], [["energy", 26_500]], 12), 12, [record(sequentialTerms)])
+        .demands.endpoints[0],
+    ).toMatchObject({ observedAmount: 1_500, targetId: sourceId });
+
+    const second = project(world([["energy", 3_000]], [["energy", 28_000]], 151), 151, [
+      record(secondTerms),
+    ]);
+    expect(second.demands.edges).toEqual([
+      expect.objectContaining({ id: secondFlowId, maximumAmount: 3_000 }),
+    ]);
+    expect(second.demands.endpoints[0]).toMatchObject({
+      observedAmount: 3_000,
+      targetId: sourceId,
+    });
+    expect(
+      project(world([["energy", 1_500]], [["energy", 29_500]], 152), 152, [record(secondTerms)])
+        .demands.endpoints[0],
+    ).toMatchObject({ observedAmount: 1_500, targetId: sourceId });
+    expect(
+      project(world([], [["energy", 31_000]], 153), 153, [record(secondTerms)]).demands.edges,
+    ).toEqual([expect.objectContaining({ id: secondFlowId })]);
+    for (const drifted of [
+      world([["energy", 6_001]], [["energy", 25_000]], 11),
+      world([["energy", 3_000]], [["energy", 28_001]], 151),
+    ])
+      expect(
+        project(drifted, drifted.observedAt, [
+          record(drifted.observedAt === 151 ? secondTerms : sequentialTerms),
+        ]).demands.edges,
+      ).toEqual([]);
+
+    const staleFirstBatchLease = {
+      leases: [
+        {
+          actorId: "stale-first-batch-hauler",
+          execution: { counterpartId: terminalId, flowId: firstFlowId, version: 3 },
+          targetId: sourceId,
+        },
+      ],
+      status: "ready",
+    } as unknown as ContractExecutionView;
+    expect(
+      withoutSuppressedLeaseTargets(
+        staleFirstBatchLease,
+        new Set([sourceId, terminalId]),
+        new Set([secondFlowId as string]),
+      ).leases,
+    ).toEqual([]);
+  });
+
+  it("keeps every nonterminal V3 batch contract removal-blocking until retirement", () => {
+    const states = ["proposed", "funded", "assigned", "active", "suspended"] as const;
+    const contracts = states.map((state) => ({
+      execution: {
+        action: "withdraw",
+        counterpartId: `${terminalId}-${state}`,
+        flowId: `batch-flow-${state}`,
+        version: 3,
+      },
+      state,
+      targetId: `${sourceId}-${state}`,
+    })) as unknown as ContractPlanningView["contracts"];
+
+    const activity = projectCurrentV3LogisticsActivity(contracts);
+    expect(activity.flowIds).toEqual(new Set(states.map((state) => `batch-flow-${state}`)));
+    expect(activity.targetIds).toEqual(
+      new Set(states.flatMap((state) => [`${sourceId}-${state}`, `${terminalId}-${state}`])),
+    );
+  });
+
   it("preserves a future owner byte-for-byte and authorizes no layout work", () => {
     const futureOwner = {
       ...persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
-      schemaVersion: 23,
+      schemaVersion: 24,
     };
     const before = JSON.stringify(futureOwner);
     const parsed = parseLayoutsOwner(futureOwner);

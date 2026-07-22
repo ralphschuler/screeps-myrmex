@@ -99,9 +99,11 @@ room row, retired current/projected work, and no durable layout destination. Iss
 exactly one resource kind totaling at most 3,000 units, using the same exact terminal, sole funded
 V3 Logistics path, removal authority, executor, and receipt. Issue
 [#375](https://github.com/ralphschuler/screeps-myrmex/issues/375) composes a canonical bounded
-mixed-resource manifest over that same path. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+mixed-resource manifest over that same path. Issue
+[#379](https://github.com/ralphschuler/screeps-myrmex/issues/379) adds one exact two-batch
+continuation for 3,001–6,000 units of a single resource under the same Logistics and removal
+authorities. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration and dismantling.
 
 ## Runtime order
 
@@ -148,21 +150,23 @@ and dismantling.
    empty-target gate. The inverse storage path may similarly persist one 150-tick handoff for one
    positive resource row or a canonical two-to-eight-row manifest totaling at most 3,000 units, but
    only with current terminal quiescence, complete aggregate terminal capacity, and both endpoints
-   free of unrelated work. Tower removal remains separate and requires full allowance of at least
-   two, exactly allowance minus one active committed towers, one active empty unshared obsolete
-   target, and an exact active committed replacement holding at least 10 energy. A stocked target
-   may first persist one exact 150-tick energy evacuation only when that replacement can hold the
-   full amount. The observed movement projection reuses the same static passability helper as this
-   layout witness: private foreign ramparts are blocked while owned/public ramparts are walkable.
-   Changed effective passability alters the traversal revision, and a private-only local corridor
-   suspends its lease with no movement intent. The diff also follows current engine co-location:
-   planned primary geometry may retain existing roads/ramparts, and planned road/rampart layers may
-   share another buildable structure; current sites and incompatible primary occupancy still block.
-   `ConstructionPlanner` may then project one active empty external extension after exact current
-   replacement evidence, one compact stocked-extension evacuation commitment, one unselected source
-   container with a different exact selected service for the same source, or one compact
-   general-container handoff after exact committed replacement capacity exists. Before that
-   migration policy, source-service selection gives one valid persisted position continuity
+   free of unrelated work. One single resource totaling 3,001–6,000 units instead persists a V23
+   settled-batch cursor and one fixed 300-tick deadline. Batch two waits for fresh first-batch
+   delivery and complete prior-work retirement. Tower removal remains separate and requires full
+   allowance of at least two, exactly allowance minus one active committed towers, one active empty
+   unshared obsolete target, and an exact active committed replacement holding at least 10 energy. A
+   stocked target may first persist one exact 150-tick energy evacuation only when that replacement
+   can hold the full amount. The observed movement projection reuses the same static passability
+   helper as this layout witness: private foreign ramparts are blocked while owned/public ramparts
+   are walkable. Changed effective passability alters the traversal revision, and a private-only
+   local corridor suspends its lease with no movement intent. The diff also follows current engine
+   co-location: planned primary geometry may retain existing roads/ramparts, and planned
+   road/rampart layers may share another buildable structure; current sites and incompatible primary
+   occupancy still block. `ConstructionPlanner` may then project one active empty external extension
+   after exact current replacement evidence, one compact stocked-extension evacuation commitment,
+   one unselected source container with a different exact selected service for the same source, or
+   one compact general-container handoff after exact committed replacement capacity exists. Before
+   that migration policy, source-service selection gives one valid persisted position continuity
    precedence over newly observed exact containers and sites; current offload quality may degrade
    without moving static-mining terms. If the selected container is absent, one different exact
    legal/reachable replacement may advance its issuance coordinate only under fresh no-threat,
@@ -230,24 +234,27 @@ and dismantling.
    before same-tick agent planning. Authorized work requests one distinct `optional-growth`
    reservation per resource kind and injects exact source/replacement projections into
    `LogisticsPlanner`. Specialized sources replace the target's ordinary source nodes, all
-   replacement sinks share one aggregate-capacity key, and ordinary refill sinks cannot compete.
-   Tower, reserve-link, and spawn evacuations contribute one energy flow and reserve the exact
-   replacement's physical capacity once. A terminal evacuation contributes one resource-specific
-   flow per currently active manifest row into the exact storage aggregate-capacity key. A storage
-   evacuation contributes one resource-specific flow per currently active row into the exact
-   terminal aggregate-capacity key, suppresses observed and custom source/sink work at both
-   structures, and blocks every internal send from or to the room while unexpired. Only its exact
-   current flows are exempt; owner loss or a future owner rejects every prefixed orphan
-   contract/lease. Every terminal or storage manifest row admits atomically before and after colony
-   funding; completed rows leave the current group so asymmetric delivery resumes. The projection
-   replaces ordinary terminal stock publication, suppresses terminal source/refill competition, and
-   blocks every internal send involving the room while the attempt is unexpired. Expiry blocks stale
-   evacuation leases and removal but restores ordinary terminal service. Spawn work begins only
-   after its staging tick, suppresses obsolete-spawn refill throughout, and suppresses replacement
-   refill while source energy remains. The general operational agent pass excludes every
-   spawn-evacuation flow plus every V1/V2/V3 lease whose primary/counterpart names a currently
-   suppressed migration spawn. After current revalidation, `migration.layout` re-admits, submits,
-   funds, and plans only the exact authorized flow. Current SpawnBroker selection or failed
+   replacement sinks share one aggregate-capacity key, and ordinary refill sinks cannot compete. A
+   sequential storage record exposes only its current at-most-3,000-unit virtual source while
+   validating conservation and terminal capacity against the complete original total.
+   Batch-qualified flow and budget identities prevent retired or stale first-batch work from
+   crossing the cursor. Tower, reserve-link, and spawn evacuations contribute one energy flow and
+   reserve the exact replacement's physical capacity once. A terminal evacuation contributes one
+   resource-specific flow per currently active manifest row into the exact storage
+   aggregate-capacity key. A storage evacuation contributes one resource-specific flow per currently
+   active row into the exact terminal aggregate-capacity key, suppresses observed and custom
+   source/sink work at both structures, and blocks every internal send from or to the room while
+   unexpired. Only its exact current flows are exempt; owner loss or a future owner rejects every
+   prefixed orphan contract/lease. Every terminal or storage manifest row admits atomically before
+   and after colony funding; completed rows leave the current group so asymmetric delivery resumes.
+   The projection replaces ordinary terminal stock publication, suppresses terminal source/refill
+   competition, and blocks every internal send involving the room while the attempt is unexpired.
+   Expiry blocks stale evacuation leases and removal but restores ordinary terminal service. Spawn
+   work begins only after its staging tick, suppresses obsolete-spawn refill throughout, and
+   suppresses replacement refill while source energy remains. The general operational agent pass
+   excludes every spawn-evacuation flow plus every V1/V2/V3 lease whose primary/counterpart names a
+   currently suppressed migration spawn. After current revalidation, `migration.layout` re-admits,
+   submits, funds, and plans only the exact authorized flow. Current SpawnBroker selection or failed
    revalidation therefore excludes stale work from same-tick agent execution; owner-term loss
    cancels, suspends, or fails the orphaned contract through legal ContractLedger transitions. A
    quiescent lab contributes one energy flow to its replacement lab, one mineral flow to the
@@ -361,16 +368,17 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - one accepted removal globally per tick;
 - terminal-work publication accepts at most 64 owned rooms, 64 current sends, and 128 persisted send
   states; over-cap or unattributable active/backoff evidence makes the complete view unavailable;
-- layouts owner-local schema V22 migrates V1-V21 records, preserves V3's optional bounded source
+- layouts owner-local schema V23 migrates V1-V22 records, preserves V3's optional bounded source
   identity and V4's optional source-service issuance coordinate, moves a valid legacy nested receipt
   to the generic field, preserves V6 tower receipts, V7 tower evacuations, V8 link receipts, V9
   reserve-link evacuations, V10 lab receipts, V11 energy evacuations, V12 mineral evacuations, V13
   mixed terms, V14 terminal destinations, V15 spawn receipts, V16 spawn evacuations, V17 terminal
   receipts, V18 single-resource terminal evacuations, V19 terminal manifests, V20 storage receipts,
-  and V21 single-resource storage evacuations; it adds the bounded storage-manifest alternative,
-  rejects spoofed pre-V15 spawn receipts, pre-V16 spawn evacuations, pre-V17 terminal receipts,
-  pre-V18 terminal evacuations, V18 terminal manifests, pre-V20 storage receipts, pre-V21 storage
-  evacuations, or V21 storage manifests, and makes rollback fail closed;
+  V21 single-resource storage evacuations, and V22 storage manifests; it adds only the bounded
+  settled-batch cursor, rejects spoofed pre-V15 spawn receipts, pre-V16 spawn evacuations, pre-V17
+  terminal receipts, pre-V18 terminal evacuations, V18 terminal manifests, pre-V20 storage receipts,
+  pre-V21 storage evacuations, V21 storage manifests, or pre-V23 batch cursors, and makes rollback
+  fail closed;
 - reserve-link role proof stays within the existing 16-link classification cap and persists no role
   map, transfer receipt, or migration queue;
 - at most one compact extension, spawn, storage, terminal, tower, reserve-link, and lab stock
@@ -389,8 +397,10 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - empty general-container handoffs add only bounded sink-suppression IDs;
 - 150-tick exclusive evacuation and general-container handoff timeouts; storage and terminal
   evacuation each accept one resource kind or two through eight canonical kinds and at most 3,000
-  total units; lab energy is capped at the official 2,000 capacity, lab mineral at 3,000, storage at
-  1,000,000, terminal at 300,000, and exact general-purpose Store observations at 64 resource rows;
+  total units; one storage-only single-resource alternative accepts 3,001–6,000 units as exactly two
+  sequential at-most-3,000-unit batches under one nonrenewing 300-tick timeout; lab energy is capped
+  at the official 2,000 capacity, lab mineral at 3,000, storage at 1,000,000, terminal at 300,000,
+  and exact general-purpose Store observations at 64 resource rows;
 - current global and room site headroom required before removal;
 - `OK` expectation retry capped at 32 ticks, `ERR_FULL` at 100, and unexpected faults at 64.
 
@@ -403,7 +413,11 @@ uses `defineReplayScenario`/`runScenario` and exercises the production layout di
 construction-site arbitration/execution/reconciliation, `ConstructionPlanner` migration, and
 structure-removal arbitration/execution/reconciliation APIs. Site appearance, complete 6,000-energy
 construction progress at up to 100 scenario energy per tick, and fixed 0.25 CPU accounting remain
-deterministic scenario mechanics/models.
+deterministic scenario mechanics/models. Issue #379 updates that checked artifact for layouts schema
+V23 and the exact production bundle receipt; focused storage tests prove 3,001/6,000 admission,
+6,001/mixed rejection, distinct batch identities, current-batch projection, partial delivery,
+first-batch retirement/cursor advancement, stale-lease exclusion, reset/reorder reconstruction,
+expiry, final removal, receipt, disappearance, and committed-site eligibility.
 
 The #377 production row seeds #365's exact layout fingerprint and first committed coordinate before
 any build action, then runs the production `runTick` graph. `SurvivalGrowthPlanner` publishes the
