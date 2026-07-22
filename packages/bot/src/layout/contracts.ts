@@ -8,7 +8,7 @@ import type {
 } from "../world/snapshot";
 
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
-export const LAYOUT_OWNER_SCHEMA_VERSION = 20 as const;
+export const LAYOUT_OWNER_SCHEMA_VERSION = 21 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
 export const MAX_LAYOUT_CANDIDATES = 256 as const;
 export const MAX_LAYOUT_TRANSFORMS = 8 as const;
@@ -23,6 +23,8 @@ export const MAX_LAYOUT_LAB_MINERAL = 3_000 as const;
 export const MAX_LAYOUT_LAB_EVACUATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_STORAGE_CAPACITY = 1_000_000 as const;
 export const MAX_LAYOUT_TERMINAL_CAPACITY = 300_000 as const;
+export const MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT = 3_000 as const;
+export const MAX_LAYOUT_STORAGE_EVACUATION_FLOWS = 64 as const;
 export const MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT = 3_000 as const;
 export const MAX_LAYOUT_TERMINAL_EVACUATION_RESOURCES = 8 as const;
 export const MAX_LAYOUT_TERMINAL_EVACUATION_FLOWS = 64 as const;
@@ -40,6 +42,7 @@ export const LAYOUT_EXTENSION_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_LAB_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_LINK_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS = 150 as const;
+export const LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS = 150 as const;
 export const LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS = 150 as const;
@@ -114,6 +117,15 @@ export interface LayoutTowerEvacuation {
   readonly replacementInitialEnergy: number;
   readonly sourceId: string;
   readonly startedAt: number;
+}
+export interface LayoutStorageEvacuation {
+  readonly amount: number;
+  readonly expiresAt: number;
+  readonly resourceType: string;
+  readonly sourceId: string;
+  readonly startedAt: number;
+  readonly terminalId: string;
+  readonly terminalInitialAmount: number;
 }
 export type LayoutTerminalEvacuationResource = readonly [
   resourceType: string,
@@ -230,6 +242,7 @@ export interface LayoutRecord extends LayoutCommitment {
   readonly labEvacuation?: LayoutLabEvacuation;
   readonly linkEvacuation?: LayoutLinkEvacuation;
   readonly spawnEvacuation?: LayoutSpawnEvacuation;
+  readonly storageEvacuation?: LayoutStorageEvacuation;
   readonly terminalEvacuation?: LayoutTerminalEvacuation;
   readonly towerEvacuation?: LayoutTowerEvacuation;
   /** One exact bounded receipt for the latest irreversible removal attempt in this room. */
@@ -408,6 +421,34 @@ export function layoutSpawnEvacuationBudgetIssuer(
     `${String(roomName.length)}:${roomName}`,
     `${String(evacuation.sourceId.length)}:${evacuation.sourceId}`,
     `${String(evacuation.replacementId.length)}:${evacuation.replacementId}`,
+  ].join("/");
+  return issuer.length <= 128 ? issuer : null;
+}
+
+const LAYOUT_STORAGE_EVACUATION_FLOW_PREFIX = "layout-storage-evacuation:" as const;
+
+export function layoutStorageEvacuationFlowId(
+  roomName: string,
+  evacuation: Pick<LayoutStorageEvacuation, "resourceType" | "sourceId" | "terminalId">,
+): string | null {
+  const flowId = `${LAYOUT_STORAGE_EVACUATION_FLOW_PREFIX}${roomName}:${evacuation.sourceId}:${evacuation.terminalId}:${String(evacuation.resourceType.length)}:${evacuation.resourceType}`;
+  return flowId.length <= 128 ? flowId : null;
+}
+
+export function isLayoutStorageEvacuationFlowId(flowId: string): boolean {
+  return flowId.startsWith(LAYOUT_STORAGE_EVACUATION_FLOW_PREFIX) && flowId.length <= 128;
+}
+
+export function layoutStorageEvacuationBudgetIssuer(
+  roomName: string,
+  evacuation: Pick<LayoutStorageEvacuation, "resourceType" | "sourceId" | "terminalId">,
+): string | null {
+  const issuer = [
+    "layout-migration",
+    `${String(roomName.length)}:${roomName}`,
+    `${String(evacuation.sourceId.length)}:${evacuation.sourceId}`,
+    `${String(evacuation.terminalId.length)}:${evacuation.terminalId}`,
+    `${String(evacuation.resourceType.length)}:${evacuation.resourceType}`,
   ].join("/");
   return issuer.length <= 128 ? issuer : null;
 }
@@ -780,6 +821,7 @@ export interface LayoutMigrationPlanningResult {
   readonly labEvacuation: LayoutLabEvacuation | null;
   readonly linkEvacuation: LayoutLinkEvacuation | null;
   readonly spawnEvacuation: LayoutSpawnEvacuation | null;
+  readonly storageEvacuation: LayoutStorageEvacuation | null;
   readonly terminalEvacuation: LayoutTerminalEvacuation | null;
   readonly towerEvacuation: LayoutTowerEvacuation | null;
   readonly proposals: readonly LayoutMigrationProposal[];
@@ -927,7 +969,7 @@ export interface LayoutRuntimeResult {
   readonly receiptsWritten: number;
   readonly status: "disabled" | "not-run" | "planned";
 }
-export interface LayoutsOwnerV20 {
+export interface LayoutsOwnerV21 {
   readonly schemaVersion: typeof LAYOUT_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly LayoutRecord[];
