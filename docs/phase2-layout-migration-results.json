@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "issue": 365,
+  "status": "complete",
+  "scenario": {
+    "id": "phase2-layout-extension-migration-v1",
+    "seed": "phase2-layout-extension-migration-seed-v1",
+    "ticks": 70,
+    "variants": {
+      "warm": {
+        "resetTicks": [],
+        "reverseObservation": false
+      },
+      "reset": {
+        "resetTicks": [50015],
+        "reverseObservation": false
+      },
+      "reordered": {
+        "resetTicks": [],
+        "reverseObservation": true
+      }
+    },
+    "facts": {
+      "roomName": "W1N1",
+      "spawn": {
+        "id": "spawn-1",
+        "name": "Spawn1",
+        "pos": {
+          "roomName": "W1N1",
+          "x": 5,
+          "y": 25
+        }
+      },
+      "controller": {
+        "id": "controller-1",
+        "pos": {
+          "roomName": "W1N1",
+          "x": 25,
+          "y": 25
+        }
+      },
+      "sources": [
+        {
+          "id": "source-1",
+          "pos": {
+            "roomName": "W1N1",
+            "x": 8,
+            "y": 10
+          }
+        },
+        {
+          "id": "source-2",
+          "pos": {
+            "roomName": "W1N1",
+            "x": 30,
+            "y": 10
+          }
+        }
+      ]
+    },
+    "commands": [
+      {
+        "kind": "create-site",
+        "structureType": "extension",
+        "tick": 50000,
+        "x": 18,
+        "y": 20
+      },
+      {
+        "kind": "destroy-structure",
+        "structureType": "extension",
+        "tick": 50031,
+        "x": 30,
+        "y": 30
+      },
+      {
+        "kind": "create-site",
+        "structureType": "extension",
+        "tick": 50032,
+        "x": 19,
+        "y": 20
+      }
+    ],
+    "milestones": {
+      "destroyCommandAt": 50031,
+      "destroyDisappearanceObservedAt": 50032,
+      "firstBuildCompletedAt": 50030,
+      "firstCompletedReplacementObservedAt": 50031,
+      "firstSiteCommandAt": 50000,
+      "firstSiteObservedAt": 50001,
+      "secondBuildCompletedAt": 50062,
+      "secondCompletedReplacementObservedAt": 50063,
+      "secondSiteCommandAt": 50032,
+      "secondSiteObservedAt": 50033
+    },
+    "deferredEffects": {
+      "firstSiteObservedNextTick": true,
+      "firstReplacementObservedNextTick": true,
+      "destroyDisappearanceObservedNextTick": true,
+      "secondSiteObservedNextTick": true,
+      "secondReplacementObservedNextTick": true
+    },
+    "final": {
+      "activeSites": 0,
+      "exactExtensions": 10,
+      "removalProposals": 0,
+      "siteProposals": 0
+    }
+  },
+  "budgets": {
+    "constructionEnergy": 6000,
+    "maximumActiveSites": 1,
+    "maximumCpuPerTick": 0.25,
+    "maximumEnergyPerTick": 100,
+    "persistentSchemaVersion": 19
+  },
+  "safety": {
+    "minimumActiveExtensions": 9,
+    "accessWitnessPreserved": true,
+    "accessWitnessScope": "scenario-level",
+    "duplicateDestroyCommands": 0
+  },
+  "equivalence": {
+    "semanticBytesIdentical": true,
+    "outcomeHashes": {
+      "warm": "fnv1a64-utf16:503e9f97906084f9",
+      "reset": "fnv1a64-utf16:503e9f97906084f9",
+      "reordered": "fnv1a64-utf16:503e9f97906084f9"
+    },
+    "semanticHashes": {
+      "warm": "fnv1a64-utf16:5401faa924f0fd35",
+      "reset": "fnv1a64-utf16:5401faa924f0fd35",
+      "reordered": "fnv1a64-utf16:5401faa924f0fd35"
+    }
+  }
+}

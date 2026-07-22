@@ -197,9 +197,15 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   service work but remains removal-blocking failure evidence. Issue #363 advances layouts V19 with
   one canonical two-to-eight-resource manifest totaling at most 3,000 units. Distinct funded flows
   share aggregate storage capacity, admit atomically, and require every exact gain plus complete
-  work retirement before removal. Larger terminal stock, storage relocation, uninterrupted terminal
-  service, broad access proof, autonomous boost manifest production, defensive migration, and creep
-  dismantling remain issue #99.
+  work retirement before removal. Issue #365 adds checked 70-tick replay evidence exercising the
+  production layout diff plus site/removal arbitration, execution, and reconciliation while one
+  empty obsolete extension is removed and ten exact RCL3 extensions are observed. Construction
+  progress, the 6,000-energy and 100-energy/tick bounds, and 0.25-CPU/tick accounting are
+  deterministic scenario models, not evidence for the production growth/lease/`Creep.build` chain.
+  Warm, one-reset-during-first-build, and reversed-observation-without-reset outcomes are
+  equivalent. Its room-grid access witness is scenario-level only, not production pathfinding proof.
+  Larger terminal stock, storage relocation, uninterrupted terminal service, broad access proof,
+  autonomous boost manifest production, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

@@ -80,9 +80,11 @@ continuity, current Industry quiescence, and terminal-endpoint retirement. Issue
 [#361](https://github.com/ralphschuler/screeps-myrmex/issues/361) adds one bounded single-resource
 stock evacuation into that storage before the same removal path. Issue
 [#363](https://github.com/ralphschuler/screeps-myrmex/issues/363) composes a canonical bounded
-mixed-resource manifest over that same path. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+mixed-resource manifest over that same path. Issue
+[#365](https://github.com/ralphschuler/screeps-myrmex/issues/365) adds checked 70-tick replay
+evidence exercising production layout/site/removal authorities around scenario-modeled construction
+progress. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration and dismantling.
 
 ## Runtime order
 
@@ -342,6 +344,29 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - `OK` expectation retry capped at 32 ticks, `ERR_FULL` at 100, and unexpected faults at 64.
 
 ## Outcome evidence
+
+Issue [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365) records the checked result
+in [`phase2-layout-migration-results.json`](phase2-layout-migration-results.json). The 70-tick
+replay uses `defineReplayScenario`/`runScenario` and exercises the production layout diff,
+construction-site arbitration/execution/reconciliation, `ConstructionPlanner` migration, and
+structure-removal arbitration/execution/reconciliation APIs. Site appearance, construction progress
+at up to 100 scenario energy per tick, and fixed 0.25 CPU accounting are deterministic scenario
+mechanics/models. The replay does not exercise the production growth, lease, or `Creep.build` chain.
+
+Recorded milestones distinguish the site command and next-tick site observation from the modeled
+3,000th build energy and next-tick completed-replacement observation. The destroy command may run on
+that completed-replacement observation tick because the planner reads the beginning-of-tick
+observation; target disappearance is recorded on the following tick. These deferred effects produce
+exactly `create-site → destroy-structure → create-site`, spend exactly 6,000 modeled extension build
+energy, retain at most one active site and at least nine active extensions, and converge to ten
+exact RCL3 extensions with no remaining proposal. Warm, one-reset-during-first-build, and
+reversed-observation-without-reset outcomes are byte-identical.
+
+The access result is deliberately scenario-level, not production pathfinding. Every tick, a
+deterministic flood fill on the scenario's open interior room grid checks reachability from the one
+owned spawn to a legal adjacent controller tile and at least one legal adjacent work tile for each
+of two sources while treating current extensions and construction sites as blockers. It does not
+invoke or certify production terrain/pathfinding, broad creep access, or layout-wide reachability.
 
 Focused tests cover one-call execution, next-tick duplicate suppression, every documented return
 code, adapter isolation, stale/ownership/loss guards, cap pressure, complete/degraded commitments,
