@@ -203,9 +203,13 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   progress, the 6,000-energy and 100-energy/tick bounds, and 0.25-CPU/tick accounting are
   deterministic scenario models, not evidence for the production growth/lease/`Creep.build` chain.
   Warm, one-reset-during-first-build, and reversed-observation-without-reset outcomes are
-  equivalent. Its room-grid access witness is scenario-level only, not production pathfinding proof.
-  Larger terminal stock, storage relocation, uninterrupted terminal service, broad access proof,
-  autonomous boost manifest production, defensive migration, and creep dismantling remain issue #99.
+  equivalent. Its room-grid access witness is scenario-level only. Issue #367 adds the production
+  planner's bounded source-access invariant: every complete candidate has one distinct semantic
+  service on a legal spawn-reachable adjacent work tile for every observed owned source, while an
+  impossible or incomplete source assignment preserves the prior commitment and emits no placements.
+  Larger terminal stock, storage relocation, uninterrupted terminal service, broad
+  movement/pathfinding proof, autonomous boost manifest production, defensive migration, and creep
+  dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

@@ -48,6 +48,16 @@ to recovery while an incomplete room remains developing; telemetry never authori
 Recovery may rebuild committed owned sites through the existing layout, budget, contract, and
 executor chain, but it cannot reopen controller upgrading or unrelated optional growth.
 
+A complete production layout requires one distinct semantic service on a legal adjacent work tile
+for every observed owned source and proves that each tile is reachable from the planned
+spawn-connected flood. Static terrain, Source objects, private foreign ramparts, or current/future
+nonwalkable structures that leave no legal tile fail before candidate search; no planned layer may
+overlap a Source, and geometry that disconnects a source or incomplete service assignment rejects
+that candidate. If compatible adoption relocates the spawn, the committed origin must pass the same
+bounded reachability proof. Degraded planning preserves an eligible prior commitment and emits no
+placements, so migration cannot authorize sites or removal from stranded geometry. This is bounded
+static layout evidence, not dynamic movement or traffic proof.
+
 Layout convergence is destructive only under explicit narrow authority. Current engine-compatible
 roads and ramparts use the ordinary construction-site chain: a planned primary structure can retain
 a co-located road/rampart, and planned road/rampart layers can cover another buildable structure.

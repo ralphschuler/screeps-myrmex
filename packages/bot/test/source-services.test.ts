@@ -90,6 +90,31 @@ describe("source service selection", () => {
     });
   });
 
+  it("does not rank an exact container beneath a private foreign rampart as executable", () => {
+    const exact = structure("container", 11, 11, "exact-service");
+    const privateRampart = {
+      ...structure("rampart", 11, 11, "private-rampart"),
+      isPublic: false,
+      ownerUsername: "Enemy",
+      ownership: "foreign" as const,
+    };
+
+    expect(select({ structures: [exact, privateRampart] }).placements[0]).not.toMatchObject({
+      pos: pos(11, 11),
+    });
+    expect(
+      select({ structures: [exact, { ...privateRampart, isPublic: true }] }).placements[0],
+    ).toMatchObject({ adoption: "exact", pos: pos(11, 11) });
+    expect(
+      select({
+        structures: [
+          exact,
+          { ...privateRampart, ownerUsername: "me", ownership: "owned" as const },
+        ],
+      }).placements[0],
+    ).toMatchObject({ adoption: "exact", pos: pos(11, 11) });
+  });
+
   it("keeps a legal prior service when a better exact alternate appears or the old container vanishes", () => {
     const previous = select({ structures: [structure("container", 9, 9, "old-service")] });
     const input = {
@@ -344,6 +369,14 @@ describe("source service selection", () => {
   });
 
   it("does not collide overlapping candidate sets and isolates a source with no legal tile", () => {
+    const adjacentSources = [pos(10, 10, "source-a"), pos(11, 11, "source-b")];
+    const adjacent = select({ sources: adjacentSources });
+    expect(
+      adjacent.placements.every(({ pos: placement }) =>
+        adjacentSources.every((source) => source.x !== placement.x || source.y !== placement.y),
+      ),
+    ).toBe(true);
+
     const sources = [pos(10, 10, "source-a"), pos(10, 12, "source-b")];
     const collision = select({ sources });
     expect(collision.placements).toHaveLength(2);
