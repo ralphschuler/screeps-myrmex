@@ -1,7 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { planLeaseAgents } from "../src/agents";
+import { CacheManager } from "../src/cache";
+import { DEFAULT_SURVIVAL_POLICY } from "../src/config/defaults";
+import type { LeasedWorkExecution } from "../src/contracts";
+import { getMovementPathCache, SnapshotLocalPathPlanningService } from "../src/movement";
 import type { RuntimeGame } from "../src/runtime/context";
 import { observeWorld } from "../src/world/observe";
-import { emptyWorldSnapshot, freezeWorldSnapshot, utf8ByteLength } from "../src/world/snapshot";
+import {
+  emptyWorldSnapshot,
+  freezeWorldSnapshot,
+  utf8ByteLength,
+  type WorldSnapshot,
+} from "../src/world/snapshot";
 
 const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
@@ -221,6 +231,123 @@ describe("WorldSnapshot", () => {
     expect(changed.rooms[0]?.traversal?.walkability.charAt(0)).toBe(".");
   });
 
+  it("blocks private foreign ramparts while retaining owned and public traversal", () => {
+    const privateForward = observeWorld(
+      makeGameWithRooms({
+        W1N1: makeOwnedRoomWithTraversalRampart({ isPublic: false, owned: false, reversed: false }),
+      }),
+    );
+    const privateReversed = observeWorld(
+      makeGameWithRooms({
+        W1N1: makeOwnedRoomWithTraversalRampart({ isPublic: false, owned: false, reversed: true }),
+      }),
+    );
+    const publicRampart = observeWorld(
+      makeGameWithRooms({
+        W1N1: makeOwnedRoomWithTraversalRampart({ isPublic: true, owned: false, reversed: false }),
+      }),
+    );
+    const ownedRampart = observeWorld(
+      makeGameWithRooms({
+        W1N1: makeOwnedRoomWithTraversalRampart({ isPublic: false, owned: true, reversed: false }),
+      }),
+    );
+    const rampartIndex = 21 + 24 * 50;
+    const privateTraversal = privateForward.rooms[0]?.traversal;
+
+    expect(privateTraversal?.walkability.charAt(rampartIndex)).toBe("#");
+    expect(publicRampart.rooms[0]?.traversal?.walkability.charAt(rampartIndex)).toBe(".");
+    expect(ownedRampart.rooms[0]?.traversal?.walkability.charAt(rampartIndex)).toBe(".");
+    expect(publicRampart.rooms[0]?.traversal?.revision).not.toBe(privateTraversal?.revision);
+    expect(privateReversed.rooms[0]?.traversal).toEqual(privateTraversal);
+    expect(
+      observeWorld(
+        makeGameWithRooms({
+          W1N1: makeOwnedRoomWithTraversalRampart({
+            isPublic: false,
+            owned: false,
+            reversed: false,
+          }),
+        }),
+      ).rooms[0]?.traversal,
+    ).toEqual(privateTraversal);
+
+    const pathCache = getMovementPathCache(new CacheManager());
+    const pathService = new SnapshotLocalPathPlanningService(
+      pathCache,
+      {
+        search: ({ staticMatrix }) =>
+          staticMatrix.walkability.charAt(rampartIndex) === "#"
+            ? { cost: 0, directions: [], incomplete: true }
+            : { cost: 1, directions: [8], incomplete: false },
+      },
+      DEFAULT_SURVIVAL_POLICY.movement,
+    );
+    const lease: LeasedWorkExecution = {
+      actorId: "creep-b",
+      actorName: "worker-1",
+      contractId: "contract-rampart-traversal",
+      deadline: 600,
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      expiresAt: 601,
+      leaseExpiresAt: 601,
+      priority: { class: "survival", value: 10 },
+      quantity: 1,
+      range: 1,
+      revision: 1,
+      state: "assigned",
+      target: { roomName: "W1N1", x: 10, y: 11 },
+      targetId: "source-a",
+    };
+    const plan = (snapshot: WorldSnapshot) =>
+      planLeaseAgents({
+        availablePathCpu: 1,
+        execution: { leases: [lease], status: "ready" },
+        paths: pathService,
+        snapshot,
+        tick: 500,
+      });
+    const privatePlan = plan(privateForward);
+
+    expect(privatePlan).toMatchObject({
+      actions: [],
+      dispositions: [{ reason: "path-unavailable", to: "suspended" }],
+      movement: [],
+    });
+    for (const accessiblePlan of [plan(publicRampart), plan(ownedRampart)]) {
+      expect(accessiblePlan.dispositions).toEqual([]);
+      expect(accessiblePlan.movement).toEqual([
+        expect.objectContaining({
+          actorId: "creep-b",
+          contractId: "contract-rampart-traversal",
+          destination: { roomName: "W1N1", x: 21, y: 24 },
+        }),
+      ]);
+    }
+    const publicRevision = publicRampart.rooms[0]?.traversal?.revision;
+    if (privateTraversal === undefined || publicRevision === undefined) {
+      throw new Error("rampart traversal fixture is unavailable");
+    }
+    expect(
+      pathCache.staticMatrices.get(["W1N1", privateTraversal.revision], {
+        dependencies: { staticMatrixRevision: privateTraversal.revision },
+        tick: 500,
+      }),
+    ).toMatchObject({ hit: true });
+    expect(
+      pathCache.staticMatrices.get(["W1N1", publicRevision], {
+        dependencies: { staticMatrixRevision: publicRevision },
+        tick: 500,
+      }),
+    ).toMatchObject({ hit: true });
+  });
+
   it("reduces body data to a fixed-width, 50-part-bounded survival capability summary", () => {
     const room = makeOwnedRoom(false, 60).room;
     const snapshot = observeWorld(makeGameWithRooms({ W1N1: room }));
@@ -362,6 +489,34 @@ function makeGameWithRooms(rooms: Readonly<Record<string, Room>>): RuntimeGame {
     shard: { name: "shard3" },
     time: 500,
   };
+}
+
+function makeOwnedRoomWithTraversalRampart(input: {
+  readonly isPublic: boolean;
+  readonly owned: boolean;
+  readonly reversed: boolean;
+}): Room {
+  const fixture = makeOwnedRoom(false).room;
+  const structures = [
+    ...fixture.find(FIND_STRUCTURES_VALUE),
+    {
+      hits: 1_000,
+      hitsMax: 1_000_000,
+      id: "rampart-traversal",
+      isPublic: input.isPublic,
+      my: input.owned,
+      owner: { username: input.owned ? "Myrmex" : "Enemy" },
+      pos: new LivePosition(21, 24, "W1N1"),
+      structureType: "rampart",
+    } as unknown as AnyStructure,
+  ];
+  return {
+    ...(fixture as unknown as Record<string, unknown>),
+    find: (findType: number): unknown[] =>
+      findType === FIND_STRUCTURES_VALUE
+        ? maybeReverse(structures, input.reversed)
+        : fixture.find(findType as FindConstant),
+  } as unknown as Room;
 }
 
 function makeOwnedRoom(

@@ -85,9 +85,11 @@ mixed-resource manifest over that same path. Issue
 evidence exercising production layout/site/removal authorities around scenario-modeled construction
 progress. Issue [#367](https://github.com/ralphschuler/screeps-myrmex/issues/367) adds production
 layout-admission proof that every observed owned source retains one distinct semantic service on a
-legal spawn-reachable adjacent work tile. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+legal spawn-reachable adjacent work tile. Issue
+[#369](https://github.com/ralphschuler/screeps-myrmex/issues/369) applies the same private/owned/
+public rampart passability rule to the production local-path projection and lease-agent outcome.
+Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
+structure migration and dismantling.
 
 ## Runtime order
 
@@ -132,26 +134,30 @@ and dismantling.
    two, exactly allowance minus one active committed towers, one active empty unshared obsolete
    target, and an exact active committed replacement holding at least 10 energy. A stocked target
    may first persist one exact 150-tick energy evacuation only when that replacement can hold the
-   full amount. The diff also follows current engine co-location: planned primary geometry may
-   retain existing roads/ramparts, and planned road/rampart layers may share another buildable
-   structure; current sites and incompatible primary occupancy still block. `ConstructionPlanner`
-   may then project one active empty external extension after exact current replacement evidence,
-   one compact stocked-extension evacuation commitment, one unselected source container with a
-   different exact selected service for the same source, or one compact general-container handoff
-   after exact committed replacement capacity exists. Before that migration policy, source-service
-   selection gives one valid persisted position continuity precedence over newly observed exact
-   containers and sites; current offload quality may degrade without moving static-mining terms. If
-   the selected container is absent, one different exact legal/reachable replacement may advance its
-   issuance coordinate only under fresh no-threat, no-controller-risk, legal-workforce, and
-   restored-reserve evidence. Under the same safety evidence, a current exact selected container may
-   advance only to a different exact candidate that strictly precedes it under the existing
-   canonical ordering; worse/equal candidates cannot oscillate the selection, and every persisted
-   position remains reserved to its own source across overlapping candidate sets. An empty redundant
-   source target remains directly removable; a stocked one persists the same bounded handoff plus
-   its source identity. An energy-only target persists its exact amount and the replacement's
-   current energy. A target with one non-energy kind or two to eight kinds persists binary-ordered
-   compact resource/amount/replacement-baseline tuples; energy as the only manifest row, malformed
-   stock, or insufficient aggregate capacity fails closed.
+   full amount. The observed movement projection reuses the same static passability helper as this
+   layout witness: private foreign ramparts are blocked while owned/public ramparts are walkable.
+   Changed effective passability alters the traversal revision, and a private-only local corridor
+   suspends its lease with no movement intent. The diff also follows current engine co-location:
+   planned primary geometry may retain existing roads/ramparts, and planned road/rampart layers may
+   share another buildable structure; current sites and incompatible primary occupancy still block.
+   `ConstructionPlanner` may then project one active empty external extension after exact current
+   replacement evidence, one compact stocked-extension evacuation commitment, one unselected source
+   container with a different exact selected service for the same source, or one compact
+   general-container handoff after exact committed replacement capacity exists. Before that
+   migration policy, source-service selection gives one valid persisted position continuity
+   precedence over newly observed exact containers and sites; current offload quality may degrade
+   without moving static-mining terms. If the selected container is absent, one different exact
+   legal/reachable replacement may advance its issuance coordinate only under fresh no-threat,
+   no-controller-risk, legal-workforce, and restored-reserve evidence. Under the same safety
+   evidence, a current exact selected container may advance only to a different exact candidate that
+   strictly precedes it under the existing canonical ordering; worse/equal candidates cannot
+   oscillate the selection, and every persisted position remains reserved to its own source across
+   overlapping candidate sets. An empty redundant source target remains directly removable; a
+   stocked one persists the same bounded handoff plus its source identity. An energy-only target
+   persists its exact amount and the replacement's current energy. A target with one non-energy kind
+   or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline
+   tuples; energy as the only manifest row, malformed stock, or insufficient aggregate capacity
+   fails closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -386,9 +392,12 @@ access, skips planned geometry whose bounded spawn flood cannot reach a source, 
 incomplete distinct source-service assignment, and rejects a compatible external spawn whose adopted
 origin is isolated from otherwise valid services. An eligible prior commitment is preserved with no
 placements; source/fact reorder and JSON reconstruction are byte-equivalent; owned/public rampart
-controls and a legal two-source room still commit both semantic services. Neither outcome invokes
-the movement path service or certifies dynamic creep/traffic access or broad layout-wide
-reachability.
+controls and a legal two-source room still commit both semantic services. Issue #369 separately
+passes the observed private/public/owned variants through the production traversal and local-path
+contracts: private evidence yields typed `path-unavailable` suspension and no movement, public/
+owned evidence remains executable, changed passability receives a distinct cache revision, and
+reorder/heap reconstruction is equivalent. This still does not certify dynamic congestion, deadlock
+recovery, room routing, or broad layout-wide traffic access.
 
 Focused tests cover one-call execution, next-tick duplicate suppression, every documented return
 code, adapter isolation, stale/ownership/loss guards, cap pressure, complete/degraded commitments,
@@ -590,7 +599,12 @@ lint, type, test, documentation, bundle, and package evidence.
   identity, adjacent harvest range, and static wall evidence used by production source-access
   admission. Official
   [`StructureRampart.isPublic`](https://docs.screeps.com/api/#StructureRampart.isPublic) defines
-  private, owned, and public traversal.
+  current public/non-public state. Engine 4.3.2
+  [`movement.js`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/movement.js#L16-L29)
+  and
+  [`creeps/move.js`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/creeps/move.js#L34-L43)
+  prove that a non-public rampart owned by another user blocks movement while owned/public ramparts
+  remain walkable.
 - Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one
   RCL4+ owned general-purpose store and its 1,000,000-unit capacity.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
@@ -607,9 +621,10 @@ lint, type, test, documentation, bundle, and package evidence.
   and current common
   [`OBSTACLE_OBJECT_TYPES`](https://github.com/screeps/common/blob/2fb779b26eef9b4b0f412584f6bd47c897949766/lib/constants.js#L85)
   prove road/rampart co-location without a preceding destroy command.
-- Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/)
-  provides community extension/spawn-layout and access context only; MYRMEX remains clean-room and
-  source-defined.
+- Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/) and
+  [Pathfinding](https://wiki.screepspl.us/Pathfinding/) provide community layout/access and static-
+  matrix terminology only; official contracts and current engine source govern passability, and
+  MYRMEX remains clean-room and source-defined.
 - Screeps Wiki [`StructureSpawn`](https://wiki.screepspl.us/StructureSpawn/) and
   [`Intent`](https://wiki.screepspl.us/Intent/) supply spawn-slot and deferred-command terminology
   only.

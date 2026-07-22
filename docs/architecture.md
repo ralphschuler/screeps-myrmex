@@ -1465,7 +1465,11 @@ per-visible-room traversal projection; runtime's local path adapter is the only 
 `RoomPosition`, `PathFinder`, or `CostMatrix` engine objects. The adapter is local-room-only and
 returns only direction/cost/incomplete data. Agent planners get neither the adapter nor an observed
 room object. Issue [#115](https://github.com/ralphschuler/screeps-myrmex/issues/115) owns this
-runtime composition.
+runtime composition. Issue [#369](https://github.com/ralphschuler/screeps-myrmex/issues/369) aligns
+that executable projection with layout access: a private foreign rampart is a static blocker, while
+an owned or public rampart remains walkable. When changed public state changes effective tile
+passability, it changes the traversal revision, so cached matrices and paths cannot reuse prior
+evidence.
 
 The arbiter:
 
@@ -2492,6 +2496,9 @@ Required architecture assertions include:
 - direct or aliased `spawnCreep` calls occur only in `SpawnExecutor`;
 - direct or aliased `observeRoom` calls occur only in `ObserverExecutor`;
 - direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
+- the sole observed traversal projection and layout access share one rampart rule: private foreign
+  ramparts block production local paths, owned/public ramparts remain walkable, and an effective
+  passability change changes the cache revision without persistent invalidation state;
 - engine-compatible road/rampart layering uses the ordinary construction-site chain, while current
   sites and incompatible primary occupants block and no road-removal intent exists;
 - a complete production layout requires one distinct semantic service on a legal

@@ -38,6 +38,7 @@ import {
   type TombstoneSnapshot,
   type WorldSnapshot,
 } from "./snapshot";
+import { isObservedStructureStaticallyWalkable } from "./traversal";
 
 const MAX_CREEP_BODY_PARTS = 50;
 const MAX_STRUCTURE_EFFECTS = 16;
@@ -681,12 +682,18 @@ function snapshotStaticRoom(
   }
   const blocked = new Set<number>();
   for (const structure of structures) {
-    if (!isStaticallyWalkable(structure.structureType)) {
+    if (
+      !isObservedStructureStaticallyWalkable(
+        structure.structureType,
+        structureOwnership(structure),
+        structure.structureType === "rampart" ? structure.isPublic : null,
+      )
+    ) {
       blocked.add(positionIndex(structure.pos.x, structure.pos.y));
     }
   }
   for (const site of constructionSites) {
-    if (!isStaticallyWalkable(site.structureType)) {
+    if (!isStaticallyWalkableType(site.structureType)) {
       blocked.add(positionIndex(site.pos.x, site.pos.y));
     }
   }
@@ -713,7 +720,7 @@ function snapshotStaticRoom(
   };
 }
 
-function isStaticallyWalkable(structureType: string): boolean {
+function isStaticallyWalkableType(structureType: string): boolean {
   return structureType === "container" || structureType === "rampart" || structureType === "road";
 }
 
