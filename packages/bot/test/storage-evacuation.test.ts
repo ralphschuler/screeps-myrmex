@@ -24,6 +24,7 @@ import { aggregateStoreCapacityReservationKey } from "../src/logistics/planner";
 import {
   executableLogisticsView,
   logisticsAcquireAdmissionLimits,
+  observeLogisticsGraph,
   planLogisticsRuntime,
 } from "../src/logistics/runtime";
 import {
@@ -195,6 +196,195 @@ function project(
 }
 
 describe("bounded stocked-storage evacuation", () => {
+  it("restores ordinary terminal logistics on fresh authorized storage disappearance", () => {
+    const completedRecord = {
+      ...record(),
+      removalReceipt: {
+        attempt: 1,
+        code: "OK",
+        nextEligibleTick: Number.MAX_SAFE_INTEGER,
+        observedAt: 19,
+        replacementId: terminalId,
+        targetId: sourceId,
+        targetStructureType: "storage",
+      },
+    } as const satisfies LayoutRecord;
+    const observed = world([], [["energy", terms.terminalInitialAmount + terms.amount]], 20);
+    const visibleRoom = observed.rooms[0];
+    if (visibleRoom === undefined) throw new Error("expected visible owned room");
+    const terminal = visibleRoom.ownedTerminals?.[0];
+    if (terminal === undefined) throw new Error("expected active terminal");
+    const disappeared = {
+      ...observed,
+      rooms: [
+        {
+          ...visibleRoom,
+          ownedExtensions: [
+            {
+              active: true,
+              hits: 1_000,
+              hitsMax: 1_000,
+              id: "extension-refill",
+              pos: { roomName, x: 22, y: 20 },
+              store: inventory(50, []),
+            },
+          ],
+          ownedStorages: [],
+          storedStructures: [
+            {
+              hits: terminal.hits,
+              hitsMax: terminal.hitsMax,
+              id: terminal.id,
+              ownerUsername: "Myrmex",
+              ownership: "owned" as const,
+              pos: terminal.pos,
+              store: terminal.store,
+              structureType: "terminal" as const,
+            },
+          ],
+          structures: [
+            {
+              hits: terminal.hits,
+              hitsMax: terminal.hitsMax,
+              id: terminal.id,
+              ownerUsername: "Myrmex",
+              ownership: "owned" as const,
+              pos: terminal.pos,
+              structureType: "terminal" as const,
+            },
+            {
+              hits: 1_000,
+              hitsMax: 1_000,
+              id: "extension-refill",
+              ownerUsername: "Myrmex",
+              ownership: "owned" as const,
+              pos: { roomName, x: 22, y: 20 },
+              structureType: "extension" as const,
+            },
+          ],
+        },
+      ],
+    } as WorldSnapshot;
+
+    const migration = project(disappeared, 20, [completedRecord]).demands;
+    expect(migration).toMatchObject({
+      edges: [],
+      suppressedSinkTargetIds: [],
+      suppressedSourceTargetIds: [],
+    });
+    const disappearedRoom = disappeared.rooms[0];
+    if (disappearedRoom === undefined) throw new Error("expected disappeared storage room");
+    expect(
+      project(
+        {
+          ...disappeared,
+          rooms: [
+            {
+              ...disappearedRoom,
+              structures: [
+                ...(disappearedRoom.structures ?? []),
+                {
+                  hits: 10_000,
+                  hitsMax: 10_000,
+                  id: sourceId,
+                  ownerUsername: "Myrmex",
+                  ownership: "owned",
+                  pos: { roomName, x: 30, y: 30 },
+                  structureType: "storage",
+                },
+              ],
+            },
+          ],
+        },
+        20,
+        [completedRecord],
+      ).demands,
+    ).toMatchObject({
+      suppressedSinkTargetIds: [sourceId, terminalId],
+      suppressedSourceTargetIds: [sourceId, terminalId],
+    });
+    for (const blocked of [
+      disappeared,
+      {
+        ...disappeared,
+        rooms: [{ ...disappearedRoom, observedAt: 19 }],
+      },
+      {
+        ...disappeared,
+        rooms: [
+          {
+            ...disappearedRoom,
+            ownedTerminals: [],
+            storedStructures: [],
+            structures: (disappearedRoom.structures ?? []).filter(({ id }) => id !== terminalId),
+          },
+        ],
+      },
+      {
+        ...disappeared,
+        rooms: [
+          {
+            ...disappearedRoom,
+            ownedTerminals: [{ ...terminal, active: false }],
+          },
+        ],
+      },
+      {
+        ...disappeared,
+        rooms: [
+          {
+            ...disappearedRoom,
+            ownedTerminals: [{ ...terminal, store: inventory(299_999, [["energy", 28_000]]) }],
+          },
+        ],
+      },
+    ] as readonly WorldSnapshot[]) {
+      const records = blocked === disappeared ? [record()] : [completedRecord];
+      expect(project(blocked, 20, records).demands).toMatchObject({
+        suppressedSinkTargetIds: [sourceId, terminalId],
+        suppressedSourceTargetIds: [sourceId, terminalId],
+      });
+    }
+    const graph = observeLogisticsGraph(disappeared, true);
+    expect(
+      graph.endpoints.filter(({ targetId }) => targetId === terminalId).map(({ nodeId }) => nodeId),
+    ).toEqual([`store:${terminalId}:source:energy`, `store:${terminalId}:sink:energy`]);
+    expect(graph.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: `store:${terminalId}:source:energy` }),
+        expect.objectContaining({ id: `store:${terminalId}:sink:energy` }),
+      ]),
+    );
+    const runtime = planLogisticsRuntime({
+      execution: emptyContractExecutionView("ready"),
+      includeOptional: true,
+      planning: emptyContractPlanningView("ready"),
+      resourceDemands: migration,
+      snapshot: disappeared,
+      tick: 20,
+    });
+    expect(runtime.plan.projections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          admittedAmount: 50,
+          blocker: null,
+          sourceNodeId: `store:${terminalId}:source:energy`,
+        }),
+      ]),
+    );
+    expect(runtime.contracts.commitments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          flowId: `flow:store:${terminalId}:source:energy->store:extension-refill:sink:energy`,
+          reservedAmount: 50,
+        }),
+      ]),
+    );
+    expect(runtime.budgets).toEqual(
+      expect.arrayContaining([expect.objectContaining({ category: "harvesting-filling" })]),
+    );
+  });
+
   it("persists V24 terms while migration invents no sequential cursor and rejects spoofed terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     const v20 = { ...owner, schemaVersion: 20 } as const;

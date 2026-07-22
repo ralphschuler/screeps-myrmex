@@ -190,6 +190,7 @@ function plan(
     readonly storageEvacuation?: Parameters<
       ConstructionPlanner["planMigration"]
     >[0]["storageEvacuation"];
+    readonly storageRemovalCompleted?: boolean;
     readonly terminalEvacuation?: Parameters<
       ConstructionPlanner["planMigration"]
     >[0]["terminalEvacuation"];
@@ -224,6 +225,7 @@ function plan(
     removalReceipt: input.removalReceipt ?? null,
     room: visibleRoom,
     storageEvacuation: input.storageEvacuation ?? null,
+    storageRemovalCompleted: input.storageRemovalCompleted ?? false,
     terminalEvacuation: input.terminalEvacuation ?? null,
   });
 }
@@ -370,7 +372,34 @@ describe("empty obsolete-storage relocation", () => {
     expect(
       plan({
         removalReceipt: receipt,
+        room: room({
+          extraStructures: [
+            {
+              hits: 1,
+              hitsMax: 1,
+              id: targetId,
+              ownerUsername: "me",
+              ownership: "owned",
+              pos: pos(30, 30),
+              structureType: "road",
+            },
+          ],
+          observedAt: 101,
+          target: null,
+        }),
+      }),
+    ).toMatchObject({ removalReceipt: receipt });
+    expect(
+      plan({
+        removalReceipt: receipt,
         room: room({ observedAt: 101, target: null }),
+      }),
+    ).toMatchObject({ removalReceipt: receipt });
+    expect(
+      plan({
+        removalReceipt: receipt,
+        room: room({ observedAt: 101, target: null }),
+        storageRemovalCompleted: true,
       }),
     ).toMatchObject({ removalReceipt: null });
 
@@ -703,6 +732,7 @@ describe("empty obsolete-storage relocation", () => {
       removalReceipt: receipt,
       room: room({ observedAt: 201, target: null }),
       storageEvacuation: reconstructed,
+      storageRemovalCompleted: true,
     });
     expect(disappeared).toMatchObject({ removalReceipt: null, storageEvacuation: null });
     expect(
@@ -873,6 +903,7 @@ describe("empty obsolete-storage relocation", () => {
       removalReceipt: receipt,
       room: room({ observedAt: 103, target: null }),
       storageEvacuation: staged,
+      storageRemovalCompleted: true,
     });
     expect(disappeared).toMatchObject({ removalReceipt: null, storageEvacuation: null });
     const finalRoom = room({ observedAt: 103, target: null });
@@ -1056,6 +1087,7 @@ describe("empty obsolete-storage relocation", () => {
       removalReceipt: receipt,
       room: room({ observedAt: 201, target: null }),
       storageEvacuation: reconstructed,
+      storageRemovalCompleted: true,
     });
     expect(disappeared).toMatchObject({ removalReceipt: null, storageEvacuation: null });
     expect(
@@ -1183,10 +1215,18 @@ describe("empty obsolete-storage relocation", () => {
       }).proposals,
     ).toEqual([]);
 
+    expect(
+      plan({
+        removalReceipt: successReceipt,
+        room: room({ observedAt: 103, target: null }),
+        storageEvacuation: staged,
+      }),
+    ).toMatchObject({ removalReceipt: successReceipt, storageEvacuation: staged });
     const disappeared = plan({
       removalReceipt: successReceipt,
       room: room({ observedAt: 103, target: null }),
       storageEvacuation: staged,
+      storageRemovalCompleted: true,
     });
     expect(disappeared).toMatchObject({ removalReceipt: null, storageEvacuation: null });
 

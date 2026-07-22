@@ -209,9 +209,15 @@ Binary manifest order partitions exactly 3,000 units into batch one and the rema
 two; a crossing row receives distinct batch-qualified identities while complete per-resource
 conservation remains mandatory.
 [ADR 0075](adr/0075-two-batch-mixed-resource-stocked-storage-evacuation.md) records the composition.
-`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
-`Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
-result reuses the same fixed receipt.
+Issue [#383](https://github.com/ralphschuler/screeps-myrmex/issues/383) ends the fulfilled storage
+handoff's local Logistics suppression only when one matching successful receipt and fresh owned-room
+observation prove the exact source absent, the retained terminal active/quiescent, and every
+original gain conserved. The terminal remains an ordinary local source/sink while the existing
+site/growth-contract/build path reconstructs the committed 30,000-energy storage; stale, unknown,
+present, or drifted evidence preserves suppression. No owner field, schema, authority, or command
+path changes. `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor`
+alone calls `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link,
+and lab result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1992,6 +1998,19 @@ prior-work retirement. V23 migrates without inventing a manifest cursor, while V
 preserves V24 bytes and authorizes no layout work.
 [ADR 0075](adr/0075-two-batch-mixed-resource-stocked-storage-evacuation.md) records the composition.
 
+Issue #383 composes the post-removal continuation. `projectLayoutStorageEvacuations` keeps both
+physical Stores suppressed through optional-work skip, drift, threat, and graph pressure while the
+exact source remains present or current absence is unknown. One matching successful receipt plus
+fresh current owned-room absence, exact active/quiescent terminal identity, complete generic/store
+views, and every conserved destination gain ends that projection before the sole Logistics graph is
+merged. The terminal resumes ordinary source/sink service in the disappearance tick rather than
+waiting for the layouts transaction to commit. Runtime passes that same strict completion projection
+to `ConstructionPlanner`; it cannot clear the receipt or evacuation terms from ID absence alone.
+Ordinary site arbitration then exposes one committed storage site, and the existing growth contract,
+lease-agent, action arbiter, and `Creep.build` executor remain the only reconstruction path. Checked
+warm/reset/reordered evidence models the official 30,000 build energy at at most 100 energy per tick
+with one site and no repeated destroy command.
+
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
 and `LayoutPlanner` commits at most one semantic `source-container` placement per source. Sources
@@ -2639,7 +2658,10 @@ Required architecture assertions include:
   per-resource first-batch delivery and complete prior-work retirement required before cursor
   advancement and second-batch publication; expiry restores ordinary storage/terminal service but
   remains removal-blocking; fresh execution rechecks both Stores, V23 rollback preserves V24 bytes,
-  and target disappearance exposes the committed storage site; the narrow `storage → terminal`
+  and only the same strict completion projection may clear receipt/evacuation state, immediately
+  release local terminal Logistics, and expose one committed storage site; checked storage-specific
+  evidence models its official 30,000 build energy without a repeated destroy command while the
+  generic production row proves the existing build authority; the narrow `storage → terminal`
   continuity form cannot weaken any same-type or inverse check;
 - obsolete-tower removal requires full allowance of at least two, allowance-minus-one active
   committed towers, an active empty unshared target, an exact active committed replacement with at

@@ -28,6 +28,7 @@ import {
   type ScenarioRunResult,
 } from "../../src";
 import { collectPhase2ProductionLayoutBuildEvidence } from "./phase2-production-layout-build";
+import { collectPhase2StorageRebuildContinuityEvidence } from "./phase2-storage-rebuild-continuity";
 
 const ROOM = "W1N1";
 const FIRST_TICK = 50_000;
@@ -195,10 +196,11 @@ export async function collectPhase2LayoutMigrationEvidence() {
   const final = reset.finalWorld;
   const milestones = requiredMilestones(final.milestones);
   const productionBuild = await collectPhase2ProductionLayoutBuildEvidence();
+  const storageRebuildContinuity = collectPhase2StorageRebuildContinuityEvidence();
 
   return Object.freeze({
-    schemaVersion: 2,
-    evidenceIssues: Object.freeze([365, 377]),
+    schemaVersion: 3,
+    evidenceIssues: Object.freeze([365, 377, 383]),
     issue: 365,
     status: "complete",
     scenario: {
@@ -247,6 +249,7 @@ export async function collectPhase2LayoutMigrationEvidence() {
       duplicateDestroyCommands: duplicateDestroyCommands(final.commands),
     },
     productionBuild,
+    storageRebuildContinuity,
     equivalence: {
       semanticBytesIdentical: new Set(semanticBytes).size === 1,
       outcomeHashes: {

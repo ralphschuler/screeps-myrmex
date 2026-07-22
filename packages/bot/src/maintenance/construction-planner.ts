@@ -289,6 +289,7 @@ export class ConstructionPlanner {
     readonly room: RoomSnapshot;
     readonly spawnEvacuation?: LayoutSpawnEvacuation | null;
     readonly storageEvacuation?: LayoutStorageEvacuation | null;
+    readonly storageRemovalCompleted?: boolean;
     readonly terminalEvacuation?: LayoutTerminalEvacuation | null;
   }): LayoutMigrationPlanningResult {
     const blockers: LayoutMigrationBlockerRecord[] = [];
@@ -297,10 +298,9 @@ export class ConstructionPlanner {
     const removalDisappeared =
       removalReceipt !== null &&
       input.room.observedAt > removalReceipt.observedAt &&
-      !(input.room.structures ?? []).some(
-        ({ id, structureType }) =>
-          id === removalReceipt?.targetId && structureType === removalReceipt.targetStructureType,
-      );
+      input.room.structures !== undefined &&
+      !input.room.structures.some(({ id }) => id === removalReceipt?.targetId) &&
+      (removalReceipt.targetStructureType !== "storage" || input.storageRemovalCompleted === true);
     if (removalDisappeared) removalReceipt = null;
     const desiredExtensions = input.placements
       .filter(

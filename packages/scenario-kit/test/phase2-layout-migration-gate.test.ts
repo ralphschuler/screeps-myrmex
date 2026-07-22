@@ -8,7 +8,7 @@ const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 
-describe("Phase 2 stable layout migration evidence (#365/#377)", () => {
+describe("Phase 2 stable layout migration evidence (#365/#377/#383)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -23,7 +23,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377)", () => {
 
     expect(actual).toEqual(checkedEvidence);
     expect(actual).toMatchObject({
-      evidenceIssues: [365, 377],
+      evidenceIssues: [365, 377, 383],
       issue: 365,
       productionBuild: {
         buildEnergy: 100,
@@ -32,7 +32,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377)", () => {
         semanticBytesIdentical: true,
         siteObservedAbsentAfterCompletion: true,
       },
-      schemaVersion: 2,
+      schemaVersion: 3,
       status: "complete",
     });
     expect(actual.scenario).toMatchObject({
@@ -117,6 +117,37 @@ describe("Phase 2 stable layout migration evidence (#365/#377)", () => {
     expect(actual.productionBuild.maximumModeledCpuPerTick).toBeLessThanOrEqual(0.15);
     expect(actual.productionBuild.maximumPersistentBytes).toBeLessThanOrEqual(15_000);
     expect(new Set(Object.values(actual.productionBuild.semanticHashes))).toHaveLength(1);
+    expect(actual.storageRebuildContinuity).toMatchObject({
+      budgets: {
+        constructionEnergy: 30_000,
+        maximumActiveSites: 1,
+        maximumCpuPerTick: 0.1,
+        maximumEnergyPerTick: 100,
+        maximumPersistentBytes: 645,
+      },
+      continuity: {
+        duplicateDestroyCommands: 0,
+        terminalAdmittedFlowTicks: 301,
+        terminalServiceTicks: 301,
+        uninterruptedUntilStorageObserved: true,
+      },
+      final: {
+        activeSites: 0,
+        activeStorage: true,
+        removalReceipt: null,
+        storageEvacuation: null,
+      },
+      milestones: {
+        activeStorageObservedAt: 70_301,
+        receiptClearedAt: 70_000,
+        siteCommandAt: 70_000,
+        siteObservedAt: 70_001,
+      },
+    });
+    expect(actual.storageRebuildContinuity.equivalence.semanticBytesIdentical).toBe(true);
+    expect(
+      new Set(Object.values(actual.storageRebuildContinuity.equivalence.outcomeHashes)),
+    ).toHaveLength(1);
     expect(actual.scenario.deferredEffects).toEqual({
       firstSiteObservedNextTick: true,
       firstReplacementObservedNextTick: true,
@@ -139,5 +170,5 @@ describe("Phase 2 stable layout migration evidence (#365/#377)", () => {
     });
     expect(actual.equivalence.semanticBytesIdentical).toBe(true);
     expect(new Set(Object.values(actual.equivalence.outcomeHashes))).toHaveLength(1);
-  });
+  }, 15_000);
 });
