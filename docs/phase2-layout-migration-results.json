@@ -112,7 +112,7 @@
     "maximumActiveSites": 1,
     "maximumCpuPerTick": 0.25,
     "maximumEnergyPerTick": 100,
-    "persistentSchemaVersion": 19
+    "persistentSchemaVersion": 20
   },
   "safety": {
     "minimumActiveExtensions": 9,
@@ -123,9 +123,9 @@
   "equivalence": {
     "semanticBytesIdentical": true,
     "outcomeHashes": {
-      "warm": "fnv1a64-utf16:503e9f97906084f9",
-      "reset": "fnv1a64-utf16:503e9f97906084f9",
-      "reordered": "fnv1a64-utf16:503e9f97906084f9"
+      "warm": "fnv1a64-utf16:063ab95d203ec639",
+      "reset": "fnv1a64-utf16:063ab95d203ec639",
+      "reordered": "fnv1a64-utf16:063ab95d203ec639"
     },
     "semanticHashes": {
       "warm": "fnv1a64-utf16:5401faa924f0fd35",

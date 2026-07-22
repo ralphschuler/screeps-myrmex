@@ -209,8 +209,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   impossible or incomplete source assignment preserves the prior commitment and emits no placements.
   Issue #369 aligns executable local traversal with that invariant: private foreign ramparts are
   static blockers, owned/public ramparts remain walkable, and changed effective passability
-  separates cached path evidence without persistent invalidation state. Larger terminal stock,
-  storage relocation, uninterrupted terminal service, broad dynamic movement/pathfinding proof,
+  separates cached path evidence without persistent invalidation state. Issue #371 advances layouts
+  V20 with one empty obsolete-storage relocation at RCL6-RCL8: an exact active terminal provides
+  bounded local inventory continuity, an effective gate plus one exact current healthy Logistics row
+  is mandatory, work and persisted destinations fail closed, and the same bounded receipt/executor
+  path exposes the committed storage site after fresh disappearance. Stocked storage, larger
+  terminal stock, uninterrupted storage/terminal service, broad dynamic movement/pathfinding proof,
   autonomous boost manifest production, defensive migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).

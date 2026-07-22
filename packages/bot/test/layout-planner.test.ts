@@ -351,6 +351,56 @@ describe("owned-room-layout-v1", () => {
       );
   });
 
+  it("restores committed storage geometry only when terminal allowance is unlocked", () => {
+    const input = fixture(6);
+    const external = structure("storage", 35, 35, "owned");
+    const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
+    if (planned.status !== "complete") throw new Error("expected complete layout");
+    const unlocks = input.policy.unlocks;
+    if (unlocks === null) throw new Error("expected RCL unlocks");
+    const convergent = projectLayoutConvergencePlacements({
+      commitment: planned.commitment,
+      current: planned.placements,
+      roomName: input.roomName,
+      sourceCount: input.sources.length,
+      sources: input.sources,
+      unlocks,
+    });
+
+    expect(planned.placements).toContainEqual(
+      expect.objectContaining({
+        adoption: "compatible-external",
+        pos: external.pos,
+        structureType: "storage",
+      }),
+    );
+    expect(convergent.filter(({ structureType }) => structureType === "storage")).toHaveLength(1);
+    expect(
+      convergent.some(
+        ({ pos, structureType }) =>
+          structureType === "storage" && pos.x === external.pos.x && pos.y === external.pos.y,
+      ),
+    ).toBe(false);
+
+    const rcl4 = fixture(4);
+    const rcl4Planned = planOwnedRoomLayout({
+      ...rcl4,
+      structures: [...rcl4.structures, external],
+    });
+    if (rcl4Planned.status !== "complete") throw new Error("expected complete RCL4 layout");
+    if (rcl4.policy.unlocks === null) throw new Error("expected RCL4 unlocks");
+    expect(
+      projectLayoutConvergencePlacements({
+        commitment: rcl4Planned.commitment,
+        current: rcl4Planned.placements,
+        roomName: rcl4.roomName,
+        sourceCount: rcl4.sources.length,
+        sources: rcl4.sources,
+        unlocks: rcl4.policy.unlocks,
+      }),
+    ).toEqual(rcl4Planned.placements);
+  });
+
   it("restores committed terminal geometry for one bounded service outage", () => {
     const input = fixture(6);
     const external = structure("terminal", 35, 35, "owned");

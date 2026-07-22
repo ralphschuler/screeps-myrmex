@@ -35,14 +35,14 @@ import {
   type LayoutStructureRemovalReceipt,
   type LayoutTerminalEvacuation,
   type LayoutTowerEvacuation,
-  type LayoutsOwnerV19,
+  type LayoutsOwnerV20,
 } from "./contracts";
 import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
 
-export function emptyLayoutsOwner(): LayoutsOwnerV19 {
+export function emptyLayoutsOwner(): LayoutsOwnerV20 {
   return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
 }
-export function parseLayoutsOwner(value: unknown): LayoutsOwnerV19 | null {
+export function parseLayoutsOwner(value: unknown): LayoutsOwnerV20 | null {
   if (
     !record(value) ||
     (value.schemaVersion !== 1 &&
@@ -63,6 +63,7 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV19 | null {
       value.schemaVersion !== 16 &&
       value.schemaVersion !== 17 &&
       value.schemaVersion !== 18 &&
+      value.schemaVersion !== 19 &&
       value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION) ||
     !integer(value.revision) ||
     !Array.isArray(value.records) ||
@@ -88,7 +89,8 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV19 | null {
   const migratingBeforeV16 = value.schemaVersion < 16;
   const migratingBeforeV17 = value.schemaVersion < 17;
   const migratingBeforeV18 = value.schemaVersion < 18;
-  const migratingBeforeV19 = value.schemaVersion < LAYOUT_OWNER_SCHEMA_VERSION;
+  const migratingBeforeV19 = value.schemaVersion < 19;
+  const migratingBeforeV20 = value.schemaVersion < LAYOUT_OWNER_SCHEMA_VERSION;
   for (const rawItem of value.records) {
     if (record(rawItem) && record(rawItem.containerMigration)) {
       if (migratingV1 && rawItem.containerMigration.resourceManifest !== undefined) return null;
@@ -137,6 +139,13 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV19 | null {
       record(rawItem) &&
       record(rawItem.terminalEvacuation) &&
       rawItem.terminalEvacuation.resourceManifest !== undefined
+    )
+      return null;
+    if (
+      migratingBeforeV20 &&
+      record(rawItem) &&
+      record(rawItem.removalReceipt) &&
+      rawItem.removalReceipt.targetStructureType === "storage"
     )
       return null;
     if (
@@ -199,7 +208,7 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV19 | null {
   if (new Set(records.map((r) => r.roomName)).size !== records.length) return null;
   return freeze({
     schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
-    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingBeforeV19 ? 1 : 0),
+    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingBeforeV20 ? 1 : 0),
     records,
   });
 }
@@ -224,11 +233,11 @@ function migrateRemovalReceipt(value: unknown, migrating: boolean): unknown {
   };
 }
 export function persistLayoutCommitment(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   commitment: LayoutCommitment,
   placements: readonly LayoutPlacement[] = [],
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   const records = owner.records.filter((r) => r.roomName !== roomName);
   const sourceServices = placements.filter(
@@ -279,10 +288,10 @@ export function persistLayoutCommitment(
   });
 }
 export function persistLayoutContainerMigration(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   migration: LayoutContainerMigration | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -302,10 +311,10 @@ export function persistLayoutContainerMigration(
 }
 
 export function persistLayoutExtensionEvacuation(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   evacuation: LayoutExtensionEvacuation | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -326,10 +335,10 @@ export function persistLayoutExtensionEvacuation(
 }
 
 export function persistLayoutLabEvacuation(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   evacuation: LayoutLabEvacuation | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -349,10 +358,10 @@ export function persistLayoutLabEvacuation(
 }
 
 export function persistLayoutLinkEvacuation(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   evacuation: LayoutLinkEvacuation | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -372,10 +381,10 @@ export function persistLayoutLinkEvacuation(
 }
 
 export function persistLayoutSpawnEvacuation(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   evacuation: LayoutSpawnEvacuation | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -395,10 +404,10 @@ export function persistLayoutSpawnEvacuation(
 }
 
 export function persistLayoutTerminalEvacuation(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   evacuation: LayoutTerminalEvacuation | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -418,10 +427,10 @@ export function persistLayoutTerminalEvacuation(
 }
 
 export function persistLayoutTowerEvacuation(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   evacuation: LayoutTowerEvacuation | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -441,10 +450,10 @@ export function persistLayoutTowerEvacuation(
 }
 
 export function persistLayoutRemovalReceipt(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   receipt: LayoutStructureRemovalReceipt | null,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -464,7 +473,7 @@ export function persistLayoutRemovalReceipt(
 }
 
 export function freshSourceServicePlacements(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
 ): readonly LayoutPlacement[] {
   const record = owner.records.find((item) => item.roomName === roomName);
@@ -481,9 +490,9 @@ export function freshSourceServicePlacements(
   );
 }
 export function reconcileOwnedLayouts(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   ownedRoomNames: readonly string[],
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const owned = new Set(ownedRoomNames);
   const records = owner.records.filter((r) => owned.has(r.roomName));
   return records.length === owner.records.length
@@ -491,10 +500,10 @@ export function reconcileOwnedLayouts(
     : freeze({ ...owner, revision: owner.revision + 1, records });
 }
 export function persistConstructionSiteReceipt(
-  owner: LayoutsOwnerV19,
+  owner: LayoutsOwnerV20,
   roomName: string,
   receipt: ConstructionSiteAttemptReceipt,
-): LayoutsOwnerV19 {
+): LayoutsOwnerV20 {
   const records = owner.records.map((item) =>
     item.roomName === roomName
       ? {
@@ -591,7 +600,7 @@ function validRemovalReceipt(value: unknown): value is LayoutStructureRemovalRec
     identity(value.targetId, 128) &&
     identity(value.replacementId, 128) &&
     value.targetId !== value.replacementId &&
-    ["container", "extension", "lab", "link", "spawn", "terminal", "tower"].includes(
+    ["container", "extension", "lab", "link", "spawn", "storage", "terminal", "tower"].includes(
       String(value.targetStructureType),
     )
   );

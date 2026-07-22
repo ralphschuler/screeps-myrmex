@@ -284,6 +284,7 @@ export class ConstructionPlanner {
     let removalReceipt = input.removalReceipt ?? null;
     if (
       removalReceipt !== null &&
+      input.room.observedAt > removalReceipt.observedAt &&
       !(input.room.structures ?? []).some(
         ({ id, structureType }) =>
           id === removalReceipt?.targetId && structureType === removalReceipt.targetStructureType,
@@ -300,6 +301,9 @@ export class ConstructionPlanner {
       .sort(comparePlacement);
     const desiredTowers = input.placements
       .filter((placement) => placement.layer === "primary" && placement.structureType === "tower")
+      .sort(comparePlacement);
+    const desiredStorages = input.placements
+      .filter((placement) => placement.layer === "primary" && placement.structureType === "storage")
       .sort(comparePlacement);
     const desiredTerminals = input.placements
       .filter(
@@ -330,6 +334,15 @@ export class ConstructionPlanner {
         structure.structureType === "tower" &&
         !desiredTowers.some(({ pos }) => samePosition(pos, structure.pos)),
     );
+    const storageCandidates =
+      desiredStorages.length !== 1
+        ? []
+        : (input.room.structures ?? []).filter(
+            (structure) =>
+              structure.ownership === "owned" &&
+              structure.structureType === "storage" &&
+              !desiredStorages.some(({ pos }) => samePosition(pos, structure.pos)),
+          );
     const terminalCandidates = (input.room.structures ?? []).filter(
       (structure) =>
         structure.ownership === "owned" &&
@@ -389,6 +402,7 @@ export class ConstructionPlanner {
       ...labCandidates.map((target) => ({ kind: "lab" as const, target })),
       ...linkCandidates.map((target) => ({ kind: "link" as const, target })),
       ...spawnCandidates.map((target) => ({ kind: "spawn" as const, target })),
+      ...storageCandidates.map((target) => ({ kind: "storage" as const, target })),
       ...terminalCandidates.map((target) => ({ kind: "terminal" as const, target })),
       ...towerCandidates.map((target) => ({ kind: "tower" as const, target })),
     ].sort((left, right) => {
@@ -1402,6 +1416,96 @@ export class ConstructionPlanner {
         break;
       }
 
+      if (candidate.kind === "storage") {
+        if (
+          input.logisticsEvidenceReady !== true ||
+          input.activeLeasedWorkTargetIds === undefined ||
+          input.activeLogisticsEndpoints === undefined ||
+          input.activeLogisticsTargetIds === undefined
+        ) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-unavailable",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        const storageBoundLabEvacuation =
+          input.labEvacuation !== null &&
+          input.labEvacuation !== undefined &&
+          "destinationId" in input.labEvacuation &&
+          !("destinationStructureType" in input.labEvacuation) &&
+          input.labEvacuation.destinationId === candidate.target.id;
+        const storageBoundTerminalEvacuation =
+          input.terminalEvacuation !== null &&
+          input.terminalEvacuation !== undefined &&
+          input.terminalEvacuation.replacementId === candidate.target.id;
+        if (storageBoundLabEvacuation || storageBoundTerminalEvacuation) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-active",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        const storage = storageMigrationEvidence({
+          desiredStorages,
+          requiredTerminalId:
+            removalReceipt?.targetId === candidate.target.id &&
+            removalReceipt.targetStructureType === "storage"
+              ? removalReceipt.replacementId
+              : null,
+          room: input.room,
+          storageAllowance: input.colony.rclPolicy.unlocks?.storage ?? 0,
+          target: candidate.target,
+          terminalAllowance: input.colony.rclPolicy.unlocks?.terminal ?? 0,
+        });
+        if (storage.terminal === null) {
+          pushMigrationBlocker(blockers, {
+            reason: storage.reason ?? "replacement-pending",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        if (
+          input.activeLeasedWorkTargetIds.has(candidate.target.id) ||
+          input.activeLogisticsTargetIds.has(candidate.target.id) ||
+          input.activeLogisticsEndpoints.some(
+            ({ counterpartId, targetId }) =>
+              targetId === candidate.target.id || counterpartId === candidate.target.id,
+          )
+        ) {
+          pushMigrationBlocker(blockers, {
+            reason: "logistics-active",
+            roomName: input.room.name,
+            targetId: candidate.target.id,
+          });
+          break;
+        }
+        admitRemoval({
+          colonyId: input.colony.id,
+          layoutFingerprint: input.commitment.fingerprint,
+          observationFingerprint: input.observationFingerprint,
+          policyFingerprint: input.policyFingerprint,
+          pos: candidate.target.pos,
+          replacementExpectedStoreCapacity: MAX_LAYOUT_TERMINAL_CAPACITY,
+          replacementId: storage.terminal.id,
+          replacementStructureType: "terminal",
+          stableId: [
+            "remove-storage-v1",
+            input.colony.id,
+            input.commitment.fingerprint,
+            candidate.target.id,
+            storage.terminal.id,
+          ].join(":"),
+          targetId: candidate.target.id,
+          targetRequiresEmptyStore: true,
+          targetStructureType: "storage",
+        });
+        break;
+      }
+
       if (candidate.kind === "terminal") {
         if (terminalEvacuation !== null && terminalEvacuation.sourceId !== candidate.target.id)
           continue;
@@ -1917,6 +2021,7 @@ type MigrationCandidate =
   | { readonly kind: "lab"; readonly target: StructureSnapshot }
   | { readonly kind: "link"; readonly target: StructureSnapshot }
   | { readonly kind: "spawn"; readonly target: StructureSnapshot }
+  | { readonly kind: "storage"; readonly target: StructureSnapshot }
   | { readonly kind: "terminal"; readonly target: StructureSnapshot }
   | { readonly kind: "tower"; readonly target: StructureSnapshot };
 
@@ -3167,6 +3272,67 @@ function exactExtensionEnergy(extension: RoomSnapshot["ownedExtensions"][number]
     energy <= MAX_LAYOUT_EXTENSION_ENERGY
     ? energy
     : null;
+}
+
+function storageMigrationEvidence(input: {
+  readonly desiredStorages: readonly LayoutPlacement[];
+  readonly requiredTerminalId: string | null;
+  readonly room: RoomSnapshot;
+  readonly storageAllowance: number;
+  readonly target: StructureSnapshot;
+  readonly terminalAllowance: number;
+}): {
+  readonly reason: Extract<
+    LayoutMigrationBlocker,
+    "replacement-pending" | "site-conflict" | "target-stocked" | "target-unavailable"
+  > | null;
+  readonly terminal: NonNullable<RoomSnapshot["ownedTerminals"]>[number] | null;
+} {
+  const failure = (
+    reason: "replacement-pending" | "site-conflict" | "target-stocked" | "target-unavailable",
+  ) => ({ reason, terminal: null });
+  const controllerLevel = input.room.controller?.level;
+  if (
+    input.storageAllowance !== 1 ||
+    input.terminalAllowance !== 1 ||
+    input.desiredStorages.length !== 1 ||
+    controllerLevel === undefined ||
+    controllerLevel < 6 ||
+    controllerLevel > 8
+  )
+    return failure("replacement-pending");
+  const desiredStorage = input.desiredStorages[0];
+  if (
+    desiredStorage === undefined ||
+    input.room.constructionSites.some(({ pos }) => samePosition(pos, desiredStorage.pos)) ||
+    (input.room.structures ?? []).some(
+      ({ id, pos, structureType }) =>
+        id !== input.target.id &&
+        samePosition(pos, desiredStorage.pos) &&
+        structureType !== "road" &&
+        structureType !== "rampart",
+    )
+  )
+    return failure("site-conflict");
+  const storages = input.room.ownedStorages ?? [];
+  const observedTarget = storages.find(({ id }) => id === input.target.id);
+  if (storages.length !== 1 || observedTarget === undefined || !observedTarget.active)
+    return failure("target-unavailable");
+  const targetStore = exactInventoryStore(observedTarget, MAX_LAYOUT_STORAGE_CAPACITY);
+  if (targetStore === null) return failure("target-unavailable");
+  if (observedTarget.store.usedCapacity !== 0 || targetStore.resources.size !== 0)
+    return failure("target-stocked");
+  const terminals = input.room.ownedTerminals ?? [];
+  if (terminals.length !== 1) return failure("replacement-pending");
+  const terminal = terminals[0];
+  if (
+    terminal === undefined ||
+    !terminal.active ||
+    (input.requiredTerminalId !== null && terminal.id !== input.requiredTerminalId) ||
+    exactInventoryStore(terminal, MAX_LAYOUT_TERMINAL_CAPACITY) === null
+  )
+    return failure("replacement-pending");
+  return { reason: null, terminal };
 }
 
 function terminalMigrationEvidence(input: {
