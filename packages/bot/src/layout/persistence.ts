@@ -41,14 +41,20 @@ import {
   type LayoutStructureRemovalReceipt,
   type LayoutTerminalEvacuation,
   type LayoutTowerEvacuation,
-  type LayoutsOwnerV24,
+  type LayoutsOwnerV25,
+  type StaleLayoutRecord,
 } from "./contracts";
 import { normalizeConstructionSiteReceipts } from "./construction-site-arbiter";
 
-export function emptyLayoutsOwner(): LayoutsOwnerV24 {
-  return freeze({ schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION, revision: 0, records: [] });
+export function emptyLayoutsOwner(): LayoutsOwnerV25 {
+  return freeze({
+    schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
+    revision: 0,
+    records: [],
+    staleRecords: [],
+  });
 }
-export function parseLayoutsOwner(value: unknown): LayoutsOwnerV24 | null {
+export function parseLayoutsOwner(value: unknown): LayoutsOwnerV25 | null {
   if (
     !record(value) ||
     (value.schemaVersion !== 1 &&
@@ -74,14 +80,24 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV24 | null {
       value.schemaVersion !== 21 &&
       value.schemaVersion !== 22 &&
       value.schemaVersion !== 23 &&
+      value.schemaVersion !== 24 &&
       value.schemaVersion !== LAYOUT_OWNER_SCHEMA_VERSION) ||
     !integer(value.revision) ||
-    !Array.isArray(value.records) ||
-    value.records.length > MAX_LAYOUT_RECORDS
+    !Array.isArray(value.records)
   )
     return null;
+  const migratingBeforeV25 = value.schemaVersion < 25;
+  if (
+    (migratingBeforeV25 &&
+      value.staleRecords !== undefined &&
+      (!Array.isArray(value.staleRecords) || value.staleRecords.length !== 0)) ||
+    (!migratingBeforeV25 && !Array.isArray(value.staleRecords))
+  )
+    return null;
+  const rawStaleRecords = migratingBeforeV25 ? [] : (value.staleRecords as unknown[]);
+  if (value.records.length + rawStaleRecords.length > MAX_LAYOUT_RECORDS) return null;
   const records: LayoutRecord[] = [];
-  let staleRecords = 0;
+  const staleRecords: StaleLayoutRecord[] = [];
   const migratingV1 = value.schemaVersion === 1;
   const migratingBeforeV3 = value.schemaVersion === 1 || value.schemaVersion === 2;
   const migratingBeforeV4 = value.schemaVersion < 4;
@@ -235,19 +251,27 @@ export function parseLayoutsOwner(value: unknown): LayoutsOwnerV24 | null {
       return null;
     const item = migrateRemovalReceipt(rawItem, migratingBeforeV5);
     if (item === null) return null;
-    if (staleRecord(item)) {
-      staleRecords += 1;
+    if (validStaleRecord(item)) {
+      if (!migratingBeforeV25) return null;
+      staleRecords.push(item);
       continue;
     }
     if (!validRecord(item)) return null;
     records.push(item);
   }
+  for (const item of rawStaleRecords) {
+    if (!validStaleRecord(item)) return null;
+    staleRecords.push(item);
+  }
   records.sort((a, b) => compare(a.roomName, b.roomName));
-  if (new Set(records.map((r) => r.roomName)).size !== records.length) return null;
+  staleRecords.sort((a, b) => compare(a.roomName, b.roomName));
+  const roomNames = [...records, ...staleRecords].map(({ roomName }) => roomName);
+  if (new Set(roomNames).size !== roomNames.length) return null;
   return freeze({
     schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
-    revision: value.revision + (staleRecords > 0 ? 1 : 0) + (migratingBeforeV24 ? 1 : 0),
+    revision: value.revision + (migratingBeforeV25 ? 1 : 0),
     records,
+    staleRecords,
   });
 }
 
@@ -271,13 +295,14 @@ function migrateRemovalReceipt(value: unknown, migrating: boolean): unknown {
   };
 }
 export function persistLayoutCommitment(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   commitment: LayoutCommitment,
   placements: readonly LayoutPlacement[] = [],
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   const records = owner.records.filter((r) => r.roomName !== roomName);
+  const staleRecords = owner.staleRecords.filter((record) => record.roomName !== roomName);
   const sourceServices = placements.filter(
     (placement) => placement.service?.kind === "source-container",
   );
@@ -325,14 +350,15 @@ export function persistLayoutCommitment(
   return freeze({
     schemaVersion: LAYOUT_OWNER_SCHEMA_VERSION,
     revision: owner.revision + 1,
-    records: records.slice(0, MAX_LAYOUT_RECORDS),
+    records: records.slice(0, Math.max(0, MAX_LAYOUT_RECORDS - staleRecords.length)),
+    staleRecords,
   });
 }
 export function persistLayoutContainerMigration(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   migration: LayoutContainerMigration | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -352,10 +378,10 @@ export function persistLayoutContainerMigration(
 }
 
 export function persistLayoutExtensionEvacuation(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   evacuation: LayoutExtensionEvacuation | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -376,10 +402,10 @@ export function persistLayoutExtensionEvacuation(
 }
 
 export function persistLayoutLabEvacuation(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   evacuation: LayoutLabEvacuation | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -399,10 +425,10 @@ export function persistLayoutLabEvacuation(
 }
 
 export function persistLayoutLinkEvacuation(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   evacuation: LayoutLinkEvacuation | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -422,10 +448,10 @@ export function persistLayoutLinkEvacuation(
 }
 
 export function persistLayoutSpawnEvacuation(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   evacuation: LayoutSpawnEvacuation | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -445,10 +471,10 @@ export function persistLayoutSpawnEvacuation(
 }
 
 export function persistLayoutStorageEvacuation(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   evacuation: LayoutStorageEvacuation | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -468,10 +494,10 @@ export function persistLayoutStorageEvacuation(
 }
 
 export function persistLayoutTerminalEvacuation(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   evacuation: LayoutTerminalEvacuation | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -491,10 +517,10 @@ export function persistLayoutTerminalEvacuation(
 }
 
 export function persistLayoutTowerEvacuation(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   evacuation: LayoutTowerEvacuation | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -514,10 +540,10 @@ export function persistLayoutTowerEvacuation(
 }
 
 export function persistLayoutRemovalReceipt(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   receipt: LayoutStructureRemovalReceipt | null,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const prior = owner.records.find((record) => record.roomName === roomName);
   if (prior === undefined) return owner;
   if (
@@ -537,7 +563,7 @@ export function persistLayoutRemovalReceipt(
 }
 
 export function freshSourceServicePlacements(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
 ): readonly LayoutPlacement[] {
   const record = owner.records.find((item) => item.roomName === roomName);
@@ -554,20 +580,22 @@ export function freshSourceServicePlacements(
   );
 }
 export function reconcileOwnedLayouts(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   ownedRoomNames: readonly string[],
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const owned = new Set(ownedRoomNames);
-  const records = owner.records.filter((r) => owned.has(r.roomName));
-  return records.length === owner.records.length
+  const records = owner.records.filter((record) => owned.has(record.roomName));
+  const staleRecords = owner.staleRecords.filter((record) => owned.has(record.roomName));
+  return records.length === owner.records.length &&
+    staleRecords.length === owner.staleRecords.length
     ? owner
-    : freeze({ ...owner, revision: owner.revision + 1, records });
+    : freeze({ ...owner, revision: owner.revision + 1, records, staleRecords });
 }
 export function persistConstructionSiteReceipt(
-  owner: LayoutsOwnerV24,
+  owner: LayoutsOwnerV25,
   roomName: string,
   receipt: ConstructionSiteAttemptReceipt,
-): LayoutsOwnerV24 {
+): LayoutsOwnerV25 {
   const records = owner.records.map((item) =>
     item.roomName === roomName
       ? {
@@ -581,9 +609,20 @@ export function persistConstructionSiteReceipt(
     : owner;
 }
 function validRecord(v: unknown): v is LayoutRecord {
+  return validRecordShape(v, true);
+}
+function validStaleRecord(v: unknown): v is StaleLayoutRecord {
+  return validRecordShape(v, false);
+}
+function validRecordShape(v: unknown, currentAlgorithm: boolean): v is LayoutRecord {
   return (
     record(v) &&
-    v.algorithmRevision === LAYOUT_ALGORITHM_REVISION &&
+    typeof v.algorithmRevision === "string" &&
+    v.algorithmRevision.length > 0 &&
+    v.algorithmRevision.length <= 128 &&
+    (currentAlgorithm
+      ? v.algorithmRevision === LAYOUT_ALGORITHM_REVISION
+      : v.algorithmRevision !== LAYOUT_ALGORITHM_REVISION) &&
     typeof v.roomName === "string" &&
     v.roomName.length > 0 &&
     v.roomName.length <= 16 &&
@@ -986,24 +1025,6 @@ function validSourceServices(value: unknown, roomName: unknown): boolean {
         item.service.sourceId.length > 0 &&
         item.service.sourceId.length <= 128,
     )
-  );
-}
-function staleRecord(v: unknown): boolean {
-  return (
-    record(v) &&
-    typeof v.algorithmRevision === "string" &&
-    v.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
-    v.algorithmRevision.length <= 128 &&
-    typeof v.roomName === "string" &&
-    record(v.anchor) &&
-    v.anchor.roomName === v.roomName &&
-    coordinate(v.anchor.x) &&
-    coordinate(v.anchor.y) &&
-    integer(v.committedAt) &&
-    typeof v.fingerprint === "string" &&
-    integer(v.transform) &&
-    v.transform <= 7 &&
-    Array.isArray(v.blockers)
   );
 }
 function validServiceBlockers(value: unknown, roomName: unknown): boolean {

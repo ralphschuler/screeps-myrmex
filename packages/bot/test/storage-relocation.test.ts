@@ -347,7 +347,7 @@ describe("empty obsolete-storage relocation", () => {
 
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = reconcileStructureDestroyExecution(owner, execution, 100).owner;
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     const parsed = parseLayoutsOwner(JSON.parse(JSON.stringify(owner)));
     if (parsed === null) throw new Error("expected valid storage removal receipt");
     owner = parsed;

@@ -6,6 +6,7 @@ export {
   projectLayoutConvergencePlacements,
   reconstructCommittedLayout,
   selectLayoutPlanningWindow,
+  staleLayoutRevisionHandoffBlocker,
 } from "./planner";
 export { selectSourceServices } from "./source-services";
 export { compareLayoutSiteProposals, diffOwnedRoomLayout } from "./diff";

@@ -157,6 +157,7 @@ import {
   reconstructCommittedLayout,
   registerLayoutCompiledCache,
   selectLayoutPlanningWindow,
+  staleLayoutRevisionHandoffBlocker,
   type ConstructionSiteArbitrationResult,
   type ConstructionSiteExecutionResult,
   type LayoutCommitment,
@@ -167,7 +168,7 @@ import {
   type LayoutRecord,
   type LayoutRuntimePlanRecord,
   type LayoutRuntimeResult,
-  type LayoutsOwnerV24,
+  type LayoutsOwnerV25,
   type StructureDestroyExecutionResult,
   type StructureRemovalArbitrationResult,
 } from "../layout";
@@ -490,11 +491,11 @@ interface LayoutTickDraft {
   migrationProposals: readonly LayoutMigrationProposal[];
   migrationScannedCandidates: number;
   migrationTruncatedCandidates: number;
-  owner: LayoutsOwnerV24 | null;
+  owner: LayoutsOwnerV25 | null;
   planning: readonly LayoutRuntimePlanRecord[];
   receiptsWritten: number;
   reconciledEarly: boolean;
-  sourceServiceHandoffChanged: boolean;
+  ownerPrecommitRequired: boolean;
   status: LayoutRuntimeResult["status"];
   linkEvidence: readonly LinkRoomLayoutEvidence[];
   maintenanceLayouts: readonly {
@@ -546,7 +547,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     planning: Object.freeze([]),
     receiptsWritten: 0,
     reconciledEarly: false,
-    sourceServiceHandoffChanged: false,
+    ownerPrecommitRequired: false,
     status: "not-run",
     linkEvidence: Object.freeze([]),
     maintenanceLayouts: Object.freeze([]),
@@ -1704,7 +1705,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         mandatoryTail: false,
       },
       run: ({ context }) => {
-        if (!layoutDraft.sourceServiceHandoffChanged || layoutDraft.reconciledEarly)
+        if (!layoutDraft.ownerPrecommitRequired || layoutDraft.reconciledEarly)
           return staged(() => undefined);
         const reconciled = reconcileLayoutDraft(layoutDraft, context.tick);
         return staged(
@@ -2054,7 +2055,8 @@ function layoutPlanningSystem(
         });
       }
       if (input.manager === null) return staged(() => undefined);
-      const initialOwner = resolveLayoutsOwner(input.manager.ownerView("layouts"));
+      const rawOwner = input.manager.ownerView("layouts");
+      const initialOwner = resolveLayoutsOwner(rawOwner);
       const logistics = currentLogistics();
       const currentV3LogisticsActivity = projectCurrentV3LogisticsActivity(
         context.contractPlanning.contracts,
@@ -2090,8 +2092,10 @@ function layoutPlanningSystem(
         activeTerminalLogisticsTargetIds.add(request.execution.counterpartId);
       }
       let owner = initialOwner;
-      let changed = false;
-      let sourceServiceHandoffChanged = false;
+      let changed =
+        Object.keys(rawOwner).length > 0 &&
+        JSON.stringify(initialOwner) !== JSON.stringify(rawOwner);
+      let ownerPrecommitRequired = changed;
       const planning: LayoutRuntimePlanRecord[] = [];
       const linkEvidence: LinkRoomLayoutEvidence[] = [];
       const maintenanceLayouts: { placements: readonly LayoutPlacement[]; roomName: string }[] = [];
@@ -2107,8 +2111,14 @@ function layoutPlanningSystem(
         .filter(({ state, visibility }) => state !== "lost" && visibility === "visible")
         .sort((a, b) => a.id.localeCompare(b.id));
       const colonies = selectLayoutPlanningWindow(eligibleColonies, context.tick);
+      const staleRoomNames = new Set(initialOwner.staleRecords.map(({ roomName }) => roomName));
+      const planningColonies = [...colonies].sort(
+        (left, right) =>
+          Number(staleRoomNames.has(right.roomName)) - Number(staleRoomNames.has(left.roomName)) ||
+          left.id.localeCompare(right.id),
+      );
       const cache = getLayoutCompiledCache(input.cacheManager);
-      for (const colony of colonies) {
+      for (const colony of planningColonies) {
         const room = context.snapshot.rooms.find(({ name }) => name === colony.roomName);
         if (room?.controller?.ownership !== "owned") continue;
         authorizations.push({
@@ -2128,6 +2138,22 @@ function layoutPlanningSystem(
           continue;
         }
         const priorRecord = owner.records.find((record) => record.roomName === room.name);
+        const staleRecord = owner.staleRecords.find((record) => record.roomName === room.name);
+        const revisionHandoffBlocker =
+          staleRecord === undefined
+            ? null
+            : staleLayoutRevisionHandoffBlocker({ colony, record: staleRecord });
+        if (revisionHandoffBlocker !== null) {
+          planning.push({
+            blocker: revisionHandoffBlocker,
+            fingerprint: staleRecord?.fingerprint ?? null,
+            roomName: room.name,
+            status: "degraded",
+          });
+          continue;
+        }
+        const revisionHandoff = staleRecord !== undefined;
+        const priorSourceServiceRecord = priorRecord ?? staleRecord;
         const priorCommitment =
           priorRecord === undefined ? null : commitmentFromRecord(priorRecord);
         const labMigration = currentLabs().migrationRooms.find(
@@ -2166,9 +2192,9 @@ function layoutPlanningSystem(
               mineral: room.mineral ?? null,
               policy: colony.rclPolicy,
               priorCommitment,
-              ...(priorRecord?.sourceServices === undefined
+              ...(priorSourceServiceRecord?.sourceServices === undefined
                 ? {}
-                : { priorSourceServices: priorRecord.sourceServices }),
+                : { priorSourceServices: priorSourceServiceRecord.sourceServices }),
               roomName: room.name,
               sourceServiceHandoffAuthorized:
                 colony.activeThreat === false &&
@@ -2193,26 +2219,43 @@ function layoutPlanningSystem(
           priorCommitment?.fingerprint === result.commitment.fingerprint
             ? priorCommitment
             : result.commitment;
-        const priorSourceServices = freshSourceServicePlacements(owner, room.name);
+        const priorSourceServices = revisionHandoff
+          ? Object.freeze([...(staleRecord.sourceServices ?? [])])
+          : freshSourceServicePlacements(owner, room.name);
         const sourceServices = labHandoffPinned
           ? priorSourceServices
           : result.placements.filter((placement) => placement.service?.kind === "source-container");
         const sourceServicesChanged =
           !labHandoffPinned &&
           JSON.stringify(priorSourceServices) !== JSON.stringify(sourceServices);
-        sourceServiceHandoffChanged ||= sourceServices.some((service) => {
-          const sourceId = service.service?.sourceId;
-          const prior = priorSourceServices.find(
-            (candidate) => candidate.service?.sourceId === sourceId,
-          );
-          return (
-            service.service?.issuerSequence !== undefined &&
-            service.service.issuerSequence > (prior?.service?.issuerSequence ?? 1)
-          );
-        });
-        if (priorCommitment?.fingerprint !== commitment.fingerprint || sourceServicesChanged) {
+        if (!revisionHandoff)
+          ownerPrecommitRequired ||= sourceServices.some((service) => {
+            const sourceId = service.service?.sourceId;
+            const prior = priorSourceServices.find(
+              (candidate) => candidate.service?.sourceId === sourceId,
+            );
+            return (
+              service.service?.issuerSequence !== undefined &&
+              service.service.issuerSequence > (prior?.service?.issuerSequence ?? 1)
+            );
+          });
+        if (
+          revisionHandoff ||
+          priorCommitment?.fingerprint !== commitment.fingerprint ||
+          sourceServicesChanged
+        ) {
           owner = persistLayoutCommitment(owner, room.name, commitment, result.placements);
           changed = true;
+          ownerPrecommitRequired ||= revisionHandoff;
+        }
+        if (revisionHandoff) {
+          planning.push({
+            blocker: null,
+            fingerprint: commitment.fingerprint,
+            roomName: room.name,
+            status: "handoff",
+          });
+          break;
         }
         const observationFingerprint = layoutObservationFingerprint(room);
         const policyFingerprint = stableHash(JSON.stringify(colony.rclPolicy), "layout-policy-v1");
@@ -2363,7 +2406,7 @@ function layoutPlanningSystem(
         draft.migrationTruncatedCandidates = 0;
         draft.owner = owner;
         draft.planning = Object.freeze(planning);
-        draft.sourceServiceHandoffChanged = sourceServiceHandoffChanged;
+        draft.ownerPrecommitRequired = ownerPrecommitRequired;
         draft.linkEvidence = Object.freeze(linkEvidence);
         draft.maintenanceLayouts = Object.freeze(maintenanceLayouts);
         draft.status = "planned";
@@ -2735,7 +2778,7 @@ function mergeLeaseAgentPlans(left: LeaseAgentPlan, right: LeaseAgentPlan): Leas
 function reconcileLayoutDraft(
   draft: LayoutTickDraft,
   tick: number,
-): { readonly owner: LayoutsOwnerV24 | null; readonly receiptsWritten: number } {
+): { readonly owner: LayoutsOwnerV25 | null; readonly receiptsWritten: number } {
   if (draft.owner === null) return { owner: null, receiptsWritten: 0 };
   const site = reconcileConstructionSiteExecution(draft.owner, draft.execution, tick);
   const destroy =
@@ -2748,14 +2791,14 @@ function reconcileLayoutDraft(
   };
 }
 
-function resolveLayoutsOwner(value: unknown): LayoutsOwnerV24 {
+function resolveLayoutsOwner(value: unknown): LayoutsOwnerV25 {
   const parsed = parseLayoutsOwner(value);
   if (parsed !== null) return parsed;
   if (value !== null && typeof value === "object" && Object.keys(value).length === 0)
     return emptyLayoutsOwner();
   throw new Error("layouts-owner-invalid");
 }
-function commitmentFromRecord(record: LayoutsOwnerV24["records"][number]): LayoutCommitment {
+function commitmentFromRecord(record: LayoutsOwnerV25["records"][number]): LayoutCommitment {
   return {
     algorithmRevision: record.algorithmRevision,
     anchor: record.anchor,
@@ -3760,7 +3803,7 @@ function staticMiningLayouts(manager: MemoryManager | null) {
 
 export function projectPinnedLabHandoffLayout(input: {
   readonly handoffLayoutFingerprint: string | null;
-  readonly record: LayoutsOwnerV24["records"][number] | undefined;
+  readonly record: LayoutsOwnerV25["records"][number] | undefined;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly unlocks: ColonyRclUnlockAllowances | null;
@@ -3787,7 +3830,7 @@ export function projectPinnedLabHandoffLayout(input: {
 
 export function projectCommittedLabLayouts(
   snapshot: WorldSnapshot,
-  owner: LayoutsOwnerV24 | null,
+  owner: LayoutsOwnerV25 | null,
 ): readonly CommittedLabLayout[] {
   const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
   if (

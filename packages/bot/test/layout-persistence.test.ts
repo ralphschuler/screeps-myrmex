@@ -47,7 +47,7 @@ describe("layout persistence and cache", () => {
       structureType: "container",
     } as const;
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment, [placement]);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
 
     const { issuerSequence: _sequence, ...legacyService } = placement.service;
@@ -64,7 +64,7 @@ describe("layout persistence and cache", () => {
     };
     expect(parseLayoutsOwner(legacy)).toEqual({
       ...legacy,
-      schemaVersion: 24,
+      schemaVersion: 25,
       revision: owner.revision + 1,
     });
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 3 })).toBeNull();
@@ -75,7 +75,7 @@ describe("layout persistence and cache", () => {
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 14 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
-      schemaVersion: 24,
+      schemaVersion: 25,
     });
     const receipt = {
       attempt: 1,
@@ -91,13 +91,56 @@ describe("layout persistence and cache", () => {
     expect(parseLayoutsOwner({ ...owner, records })).toEqual({ ...owner, records });
   });
 
-  it("drops an old algorithm commitment as stale rebuild work instead of rejecting the owner", () => {
+  it("migrates a bounded old-algorithm commitment into isolated handoff evidence", () => {
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    const stale = {
-      ...owner,
-      records: [{ ...owner.records[0], algorithmRevision: "owned-room-layout-v1" }],
+    const { staleRecords: _staleRecords, ...legacyOwner } = owner as typeof owner & {
+      readonly staleRecords?: unknown;
     };
-    expect(parseLayoutsOwner(stale)).toMatchObject({ records: [], revision: owner.revision + 1 });
+    void _staleRecords;
+    const staleRecord = {
+      ...owner.records[0],
+      algorithmRevision: "owned-room-layout-v1",
+    };
+    const parsed = parseLayoutsOwner({
+      ...legacyOwner,
+      records: [staleRecord],
+      schemaVersion: 24,
+    });
+
+    expect(parsed).toEqual({
+      records: [],
+      revision: owner.revision + 1,
+      schemaVersion: 25,
+      staleRecords: [staleRecord],
+    });
+    expect(
+      parseLayoutsOwner({
+        records: [staleRecord],
+        revision: owner.revision,
+        schemaVersion: 25,
+        staleRecords: [],
+      }),
+    ).toBeNull();
+    expect(
+      parseLayoutsOwner({
+        records: owner.records,
+        revision: owner.revision,
+        schemaVersion: 25,
+        staleRecords: [staleRecord],
+      }),
+    ).toBeNull();
+    expect(
+      parseLayoutsOwner({
+        records: owner.records,
+        revision: owner.revision,
+        schemaVersion: 25,
+        staleRecords: Array.from({ length: 64 }, (_, index) => ({
+          ...staleRecord,
+          anchor: { ...staleRecord.anchor, roomName: `W${String(index)}N1` },
+          roomName: `W${String(index)}N1`,
+        })),
+      }),
+    ).toBeNull();
   });
   it("persists one bounded extension evacuation and drops it on layout revision", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
@@ -153,7 +196,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutTowerEvacuation(owner, "W1N1", evacuation);
 
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 7 })).toEqual({
       ...owner,
@@ -203,7 +246,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutLinkEvacuation(owner, "W1N1", evacuation);
 
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(persistLayoutCommitment(owner, "W1N1", commitment).records[0]?.linkEvacuation).toEqual(
       evacuation,
@@ -234,7 +277,7 @@ describe("layout persistence and cache", () => {
 
   it("migrates V10 without inventing lab evacuation and preserves bounded energy terms", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 10 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
@@ -280,7 +323,7 @@ describe("layout persistence and cache", () => {
 
   it("migrates V11 energy terms and persists one bounded V12 mineral evacuation", () => {
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     const energy = {
       amount: 750,
       expiresAt: 160,
@@ -332,7 +375,7 @@ describe("layout persistence and cache", () => {
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 12 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
-      schemaVersion: 24,
+      schemaVersion: 25,
     });
 
     const mixed = {
@@ -348,7 +391,7 @@ describe("layout persistence and cache", () => {
       startedAt: 10,
     } as const;
     owner = persistLayoutLabEvacuation(owner, "W1N1", mixed);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 12 })).toBeNull();
 
@@ -374,7 +417,7 @@ describe("layout persistence and cache", () => {
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 13 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
-      schemaVersion: 24,
+      schemaVersion: 25,
     });
 
     const terminal = {
@@ -390,7 +433,7 @@ describe("layout persistence and cache", () => {
     } as const;
     owner = persistLayoutLabEvacuation(owner, "W1N1", terminal);
 
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner(JSON.parse(JSON.stringify(owner)))).toEqual(owner);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 13 })).toBeNull();
 
@@ -429,7 +472,7 @@ describe("layout persistence and cache", () => {
 
   it("migrates V9 without inventing lab receipts and rejects spoofed legacy evidence", () => {
     const owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
-    expect(owner.schemaVersion).toBe(24);
+    expect(owner.schemaVersion).toBe(25);
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 9 })).toEqual({
       ...owner,
       revision: owner.revision + 1,
@@ -645,7 +688,7 @@ describe("layout persistence and cache", () => {
     });
     expect(migrated).toMatchObject({
       revision: owner.revision + 1,
-      schemaVersion: 24,
+      schemaVersion: 25,
       records: [
         {
           removalReceipt: {
