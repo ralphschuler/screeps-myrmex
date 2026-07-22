@@ -189,9 +189,9 @@ RCL6+ terminal. One active empty zero-cooldown external terminal is eligible onl
 storage preserves local inventory service, Industry's current terminal-work projection is quiescent,
 and no terminal-bound lab evacuation or Logistics endpoint remains. Current send proposals mark both
 source and destination rooms active; an unattributable active/backoff send receipt fails the
-complete view closed. The sole removal arbiter admits only the narrow `terminal → storage`
-continuity form, and fresh execution rechecks exact 300,000/1,000,000-unit general-purpose Stores
-before destruction. Stocked, cooling, active-work, storage-unavailable, unsafe, or drifted terminals
+complete view closed. The sole removal arbiter admits the narrow `terminal → storage` continuity
+form, and fresh execution rechecks exact 300,000/1,000,000-unit general-purpose Stores before
+destruction. Stocked, cooling, active-work, storage-unavailable, unsafe, or drifted terminals
 remain. Observed disappearance exposes the committed terminal through the ordinary
 site/funding/build chain. [ADR 0068](adr/0068-empty-obsolete-terminal-relocation.md) records this
 intentional outage.
@@ -214,6 +214,18 @@ resumable. Removal requires every exact destination gain plus complete manifest 
 retirement. Refill, consumption, overgain, malformed/reordered terms, bounded overflow, or partial
 authorization keeps removal closed.
 [ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records this composition.
+
+Storage convergence accepts the inverse bounded local-inventory outage only at RCL6-RCL8. The pure
+projection retains compatible external storage at RCL4-RCL5, then restores the committed storage
+position once policy unlocks one terminal. One sole active external storage may be removed only when
+its exact 1,000,000-unit Store is empty, one active exact 300,000-unit terminal remains, the
+committed tile is clear, and every colony/site safety gate passes. The Logistics gate must be
+effective with one exact current healthy room row; current assigned/active work, same-tick projected
+V3 requests, and durable lab or terminal evacuation destinations naming the storage block removal.
+The arbiter's exact `storage → terminal` form and live executor checks preserve terminal continuity
+while accepting a temporary capacity contraction until the existing 30,000-energy build chain
+restores storage. Stocked, pre-RCL6, work-bound, unsafe, or uncertain storage remains.
+[ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records this boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

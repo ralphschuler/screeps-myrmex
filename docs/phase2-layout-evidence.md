@@ -88,8 +88,12 @@ layout-admission proof that every observed owned source retains one distinct sem
 legal spawn-reachable adjacent work tile. Issue
 [#369](https://github.com/ralphschuler/screeps-myrmex/issues/369) applies the same private/owned/
 public rampart passability rule to the production local-path projection and lease-agent outcome.
-Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
-structure migration and dismantling.
+Issue [#371](https://github.com/ralphschuler/screeps-myrmex/issues/371) restores committed storage
+geometry at RCL6+ and permits one active empty external storage to use an exact active terminal as
+bounded local inventory continuity only with an effective Logistics gate, one exact current healthy
+room row, retired current/projected work, and no durable layout destination. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -125,21 +129,24 @@ structure migration and dismantling.
    pure projection restores committed geometry for compatible external extensions, towers, links,
    and labs, allowing the ordinary diff/site chain to spend spare controller allowance without
    changing current world usability. RCL7/RCL8 spawn convergence similarly restores committed
-   primary geometry while current external spawns remain usable. The sole RCL6+ terminal position is
-   also restored; removal remains separate and requires one active empty zero-cooldown external
-   target, exact active storage, current terminal quiescence, and no unrelated terminal-bound layout
-   or Logistics work. One single-resource target or canonical two-to-eight-resource manifest of at
-   most 3,000 total units may instead persist a 150-tick exact terminal-to-storage handoff before
-   that empty-target gate. Tower removal remains separate and requires full allowance of at least
-   two, exactly allowance minus one active committed towers, one active empty unshared obsolete
-   target, and an exact active committed replacement holding at least 10 energy. A stocked target
-   may first persist one exact 150-tick energy evacuation only when that replacement can hold the
-   full amount. The observed movement projection reuses the same static passability helper as this
-   layout witness: private foreign ramparts are blocked while owned/public ramparts are walkable.
-   Changed effective passability alters the traversal revision, and a private-only local corridor
-   suspends its lease with no movement intent. The diff also follows current engine co-location:
-   planned primary geometry may retain existing roads/ramparts, and planned road/rampart layers may
-   share another buildable structure; current sites and incompatible primary occupancy still block.
+   primary geometry while current external spawns remain usable. At RCL6+, committed storage
+   geometry is similarly restored while the external storage remains usable until its separate
+   exact-empty, active-terminal, effective/current/healthy Logistics, work-retirement,
+   destination-retirement, and safety removal gates pass. The sole RCL6+ terminal position is also
+   restored; removal remains separate and requires one active empty zero-cooldown external target,
+   exact active storage, current terminal quiescence, and no unrelated terminal-bound layout or
+   Logistics work. One single-resource target or canonical two-to-eight-resource manifest of at most
+   3,000 total units may instead persist a 150-tick exact terminal-to-storage handoff before that
+   empty-target gate. Tower removal remains separate and requires full allowance of at least two,
+   exactly allowance minus one active committed towers, one active empty unshared obsolete target,
+   and an exact active committed replacement holding at least 10 energy. A stocked target may first
+   persist one exact 150-tick energy evacuation only when that replacement can hold the full amount.
+   The observed movement projection reuses the same static passability helper as this layout
+   witness: private foreign ramparts are blocked while owned/public ramparts are walkable. Changed
+   effective passability alters the traversal revision, and a private-only local corridor suspends
+   its lease with no movement intent. The diff also follows current engine co-location: planned
+   primary geometry may retain existing roads/ramparts, and planned road/rampart layers may share
+   another buildable structure; current sites and incompatible primary occupancy still block.
    `ConstructionPlanner` may then project one active empty external extension after exact current
    replacement evidence, one compact stocked-extension evacuation commitment, one unselected source
    container with a different exact selected service for the same source, or one compact
@@ -295,15 +302,17 @@ structure migration and dismantling.
    ownership/activity, and one exact active same-room lab. Spawn removal rechecks an active idle
    owned target with an exact empty 300-energy Store plus one exact active idle same-room
    replacement. A stocked intent additionally carries and rechecks the baseline-plus-amount minimum
-   replacement energy immediately before destruction. Terminal removal rechecks the exact empty
-   300,000-unit target Store, zero cooldown, and one exact active same-room 1,000,000-unit storage.
+   replacement energy immediately before destruction. Storage removal rechecks the exact active
+   empty 1,000,000-unit target Store and one exact active same-room 300,000-unit terminal. Terminal
+   removal rechecks the exact empty 300,000-unit target Store, zero cooldown, and one exact active
+   same-room 1,000,000-unit storage.
 8. On a selected-service switch only, `layout.handoff-reconcile` reconciles the complete layout
-   draft and stages layouts-owner V19 before the root commit. The predecessor remains executable. On
+   draft and stages layouts-owner V20 before the root commit. The predecessor remains executable. On
    the following tick, StaticMiningPlanner consumes the durable coordinate; Reconcile atomically
    cancels the predecessor, creates/funds its exact next sequence, and leaves exactly one
    commitment.
 9. Ordinary `layout.reconcile` converts site results and every
-   extension/container/spawn/terminal/tower/link/lab destroy result to bounded fingerprinted
+   extension/container/spawn/storage/terminal/tower/link/lab destroy result to bounded fingerprinted
    receipts and stages `layouts`; on the handoff path it publishes the already-reconciled draft
    without a second write. The generic removal receipt binds exact target, replacement, type,
    attempt, code, and next eligibility. `OK`/`TARGET_ABSENT` waits for fresh disappearance; other
@@ -328,19 +337,20 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - two accepted globally and one per room per tick;
 - 64 inspected proposals and ten active sites per room;
 - 32 receipts per room;
-- at most 128 container/extension/spawn/terminal/tower/link/lab-removal candidates and
+- at most 128 container/extension/spawn/storage/terminal/tower/link/lab-removal candidates and
   authorizations; over-cap batches fail before traversal;
 - one accepted removal globally per tick;
 - terminal-work publication accepts at most 64 owned rooms, 64 current sends, and 128 persisted send
   states; over-cap or unattributable active/backoff evidence makes the complete view unavailable;
-- layouts owner-local schema V19 migrates V1-V18 records, preserves V3's optional bounded source
+- layouts owner-local schema V20 migrates V1-V19 records, preserves V3's optional bounded source
   identity and V4's optional source-service issuance coordinate, moves a valid legacy nested receipt
   to the generic field, preserves V6 tower receipts, V7 tower evacuations, V8 link receipts, V9
   reserve-link evacuations, V10 lab receipts, V11 energy evacuations, V12 mineral evacuations, V13
   mixed terms, V14 terminal destinations, V15 spawn receipts, V16 spawn evacuations, V17 terminal
-  receipts, and V18 single-resource terminal evacuations; it adds one optional terminal manifest,
-  rejects spoofed pre-V15 spawn receipts, pre-V16 spawn evacuations, pre-V17 terminal receipts,
-  pre-V18 terminal evacuations, or V18 terminal manifests, and makes rollback fail closed;
+  receipts, V18 single-resource terminal evacuations, and V19 terminal manifests; it adds `storage`
+  only to the fixed removal-receipt discriminator, rejects spoofed pre-V15 spawn receipts, pre-V16
+  spawn evacuations, pre-V17 terminal receipts, pre-V18 terminal evacuations, V18 terminal
+  manifests, or pre-V20 storage receipts, and makes rollback fail closed;
 - reserve-link role proof stays within the existing 16-link classification cap and persists no role
   map, transfer receipt, or migration queue;
 - at most one compact extension, spawn, terminal, tower, reserve-link, and lab stock evacuation, one
@@ -442,35 +452,41 @@ resource/amount/baseline rows, and emits distinct flows sharing one storage aggr
 Tests prove reorder/reset identity, asymmetric partial delivery, complete-current-row admission,
 post-budget atomicity, malformed/duplicate/over-3,000 rejection, over-64-flow suppression without a
 prefix, every exact destination gain, retired manifest work, and the unchanged
-one-command/final-site outcome. Tower replacement-first convergence proves one operational adopted
-tower makes a committed replacement site eligible under spare allowance. Its stocked continuation
-persists one exact amount only when that active committed replacement begins with 10 energy and has
-complete capacity; one externally funded acquire/deliver flow suppresses obsolete-target refill and
-reserves replacement capacity. Quiescent lab convergence proves nine labs including one external
-target produce one ordinary committed lab site; observing ten labs with nine exact committed
-positions, matching idle industry evidence, no logistics endpoint, and a valid post-removal cluster
-admits one destroy. Exact Store/cooldown checks, JSON reset/reordering, pending-success duplicate
-suppression, observed disappearance, and final canonical site eligibility pass while active work and
-drift fail closed. The energy-only lab continuation persists one exact amount/baseline, publishes
-one funded V3 flow only under current quiescence, and retains agent execution only while the current
-logistics contract projection remains executable. One multi-tick outcome survives partial delivery
-plus JSON reset/reordering, then proves fresh target emptiness, replacement gain, retired endpoints,
-one command, pending-success duplicate suppression, observed disappearance, and final canonical
-lab-site eligibility. The mineral-only continuation persists one exact storage destination,
-resource, amount, and baseline under V12; Industry refuses inactive, duplicate, or terminal-only
-destinations. The V14 extension in
-[issue #343](https://github.com/ralphschuler/screeps-myrmex/issues/343) preserves storage precedence
-but permits one quiescent terminal-only room to persist the exact active idle terminal. One funded
-V3 mineral flow uses shared 300,000-unit aggregate capacity, and the Industry send policy suppresses
-both source- and destination-room sends while that commitment exists. Partial transfer plus JSON
-reset/reorder retains byte-equivalent terms; terminal contention, activity/capacity/identity drift,
-or unauthorized active lab work blocks. Fresh target emptiness, baseline-plus-amount terminal stock,
-retired endpoints, and unchanged destination admit one destroy. Issue
-[#345](https://github.com/ralphschuler/screeps-myrmex/issues/345) extends that exact V14 record to
-one durable role-identical reaction handoff. The rebound remains command-free; the ready handoff
-then publishes one funded flow through reset/reordered observation, retains it through a pending
-post-handoff reaction effect, and waits for exact terminal gain plus complete work retirement before
-one active-reaction destroy proposal. Issue
+one-command/final-site outcome. Empty storage convergence proves one compatible external storage is
+retained at RCL4-RCL5 and replaced by committed geometry only when exact terminal continuity exists
+at RCL6-RCL8. One exact empty active target passes planner, narrow `storage → terminal` arbitration,
+live Store revalidation, V20 receipt reconciliation, fresh disappearance, and final committed-site
+reconstruction across reordered observation and JSON reset. Disabled Logistics,
+missing/stale/failed/duplicate health, stock, malformed capacity, duplicate/inactive terminal,
+current/projected target work, durable lab/terminal destination claims, site conflict, threat, and
+live drift fail closed. Tower replacement-first convergence proves one operational adopted tower
+makes a committed replacement site eligible under spare allowance. Its stocked continuation persists
+one exact amount only when that active committed replacement begins with 10 energy and has complete
+capacity; one externally funded acquire/deliver flow suppresses obsolete-target refill and reserves
+replacement capacity. Quiescent lab convergence proves nine labs including one external target
+produce one ordinary committed lab site; observing ten labs with nine exact committed positions,
+matching idle industry evidence, no logistics endpoint, and a valid post-removal cluster admits one
+destroy. Exact Store/cooldown checks, JSON reset/reordering, pending-success duplicate suppression,
+observed disappearance, and final canonical site eligibility pass while active work and drift fail
+closed. The energy-only lab continuation persists one exact amount/baseline, publishes one funded V3
+flow only under current quiescence, and retains agent execution only while the current logistics
+contract projection remains executable. One multi-tick outcome survives partial delivery plus JSON
+reset/reordering, then proves fresh target emptiness, replacement gain, retired endpoints, one
+command, pending-success duplicate suppression, observed disappearance, and final canonical lab-site
+eligibility. The mineral-only continuation persists one exact storage destination, resource, amount,
+and baseline under V12; Industry refuses inactive, duplicate, or terminal-only destinations. The V14
+extension in [issue #343](https://github.com/ralphschuler/screeps-myrmex/issues/343) preserves
+storage precedence but permits one quiescent terminal-only room to persist the exact active idle
+terminal. One funded V3 mineral flow uses shared 300,000-unit aggregate capacity, and the Industry
+send policy suppresses both source- and destination-room sends while that commitment exists. Partial
+transfer plus JSON reset/reorder retains byte-equivalent terms; terminal contention,
+activity/capacity/identity drift, or unauthorized active lab work blocks. Fresh target emptiness,
+baseline-plus-amount terminal stock, retired endpoints, and unchanged destination admit one destroy.
+Issue [#345](https://github.com/ralphschuler/screeps-myrmex/issues/345) extends that exact V14
+record to one durable role-identical reaction handoff. The rebound remains command-free; the ready
+handoff then publishes one funded flow through reset/reordered observation, retains it through a
+pending post-handoff reaction effect, and waits for exact terminal gain plus complete work
+retirement before one active-reaction destroy proposal. Issue
 [#347](https://github.com/ralphschuler/screeps-myrmex/issues/347) reuses the same record for one
 role-identical explicit boost. The first rebound publishes no terminal; durable readiness publishes
 the funded flow, and a current boost intent or matching pending effect retains evacuation while

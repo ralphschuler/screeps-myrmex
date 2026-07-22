@@ -172,6 +172,7 @@ export function projectLayoutConvergencePlacements(input: {
     );
   const labConvergenceSafe = input.unlocks.labs === 10;
   const spawnConvergenceSafe = input.unlocks.spawns >= 2;
+  const storageConvergenceSafe = input.unlocks.storage === 1 && input.unlocks.terminal === 1;
   const terminalConvergenceSafe = input.unlocks.terminal === 1;
   return freeze(
     [
@@ -181,6 +182,7 @@ export function projectLayoutConvergencePlacements(input: {
           (structureType !== "lab" || !labConvergenceSafe) &&
           structureType !== "link" &&
           (structureType !== "spawn" || !spawnConvergenceSafe) &&
+          (structureType !== "storage" || !storageConvergenceSafe) &&
           (structureType !== "terminal" || !terminalConvergenceSafe) &&
           structureType !== "tower" &&
           (structureType !== "container" ||
@@ -194,6 +196,7 @@ export function projectLayoutConvergencePlacements(input: {
             (structureType === "lab" && labConvergenceSafe) ||
             structureType === "link" ||
             (structureType === "spawn" && spawnConvergenceSafe) ||
+            (structureType === "storage" && storageConvergenceSafe) ||
             (structureType === "terminal" && terminalConvergenceSafe) ||
             structureType === "tower" ||
             (structureType === "container" && containerConvergenceSafe)),

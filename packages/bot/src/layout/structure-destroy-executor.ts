@@ -69,6 +69,11 @@ export class StructureDestroyExecutor {
         !hasExactGeneralStore(replacement, MAX_LAYOUT_STORAGE_CAPACITY)
       )
         return result(intent, false, "ERR_INVALID_TARGET", "replacement-store-mismatch");
+      if (
+        intent.replacementStructureType === "terminal" &&
+        !hasExactGeneralStore(replacement, MAX_LAYOUT_TERMINAL_CAPACITY)
+      )
+        return result(intent, false, "ERR_INVALID_TARGET", "replacement-store-mismatch");
       if (intent.replacementStructureType === "spawn" && !isIdleSpawn(replacement))
         return result(intent, false, "ERR_BUSY", "replacement-busy");
       if (
@@ -120,6 +125,8 @@ function hasEmptyCurrentStore(
   if (!removableInOwnedRoom || !candidate.isActive() || used !== 0) return false;
   if (targetStructureType === "lab") return hasExactEmptyLabStore(target);
   if (targetStructureType === "spawn") return hasExactSpawnStore(target, true);
+  if (targetStructureType === "storage")
+    return hasExactGeneralStore(target, MAX_LAYOUT_STORAGE_CAPACITY, true);
   if (targetStructureType === "terminal")
     return hasExactGeneralStore(target, MAX_LAYOUT_TERMINAL_CAPACITY, true);
   if (targetStructureType !== "link") return true;

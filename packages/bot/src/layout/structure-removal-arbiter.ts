@@ -1,5 +1,6 @@
 import {
   MAX_LAYOUT_STORAGE_CAPACITY,
+  MAX_LAYOUT_TERMINAL_CAPACITY,
   type DestroyOwnedStructureIntent,
   type LayoutMigrationAuthorization,
   type LayoutMigrationProposal,
@@ -92,6 +93,9 @@ function validProposal(proposal: LayoutMigrationProposal): boolean {
       terms.targetStructureType,
     ) &&
       terms.replacementStructureType === terms.targetStructureType) ||
+    (terms.targetStructureType === "storage" &&
+      terms.replacementStructureType === "terminal" &&
+      terms.replacementExpectedStoreCapacity === MAX_LAYOUT_TERMINAL_CAPACITY) ||
     (terms.targetStructureType === "terminal" &&
       terms.replacementStructureType === "storage" &&
       terms.replacementExpectedStoreCapacity === MAX_LAYOUT_STORAGE_CAPACITY);
@@ -185,6 +189,15 @@ function intent(proposal: LayoutMigrationProposal): DestroyOwnedStructureIntent 
       targetRequiresEmptyStore: true,
       targetRequiresZeroCooldown: true,
       targetStructureType: "lab",
+    };
+  if (proposal.targetStructureType === "storage")
+    return {
+      ...envelope,
+      replacementExpectedStoreCapacity: MAX_LAYOUT_TERMINAL_CAPACITY,
+      replacementId: proposal.replacementId,
+      replacementStructureType: "terminal",
+      targetRequiresEmptyStore: true,
+      targetStructureType: "storage",
     };
   if (proposal.targetStructureType === "terminal")
     return {
