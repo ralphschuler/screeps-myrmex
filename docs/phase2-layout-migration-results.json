@@ -113,7 +113,7 @@
     "maximumActiveSites": 1,
     "maximumCpuPerTick": 0.25,
     "maximumEnergyPerTick": 100,
-    "persistentSchemaVersion": 22
+    "persistentSchemaVersion": 23
   },
   "safety": {
     "minimumActiveExtensions": 9,
@@ -127,14 +127,14 @@
       "site": {
         "id": "site-extension-18-20",
         "initialProgress": 2900,
+        "layoutFingerprint": "phase2-layout-extension-migration-layout-v1",
         "pos": {
           "roomName": "W1N1",
           "x": 18,
           "y": 20
         },
         "progressTotal": 3000,
-        "structureType": "extension",
-        "layoutFingerprint": "phase2-layout-extension-migration-layout-v1"
+        "structureType": "extension"
       },
       "variants": {
         "warm": {
@@ -161,9 +161,9 @@
       "contractSubmitted": true,
       "creepBuildScheduled": true,
       "growthCandidateObserved": true,
+      "layoutCommitmentObserved": true,
       "leaseAssigned": true,
-      "leaseExecuted": true,
-      "layoutCommitmentObserved": true
+      "leaseExecuted": true
     },
     "authorityTrace": {
       "actionArbitratedAt": [60002, 60003, 60004, 60005],
@@ -215,23 +215,23 @@
       "siteCount": 0
     },
     "directProgressMutation": false,
-    "finalGameplayPersistentHash": "fnv1a64-utf16:4f7d1f0c076e317d",
+    "finalGameplayPersistentHash": "fnv1a64-utf16:4820f60c03a19f76",
     "maximumModeledCpuPerTick": 0.129,
     "maximumPersistentBytes": 13477,
     "semanticBytesIdentical": true,
     "semanticHashes": {
-      "reordered": "fnv1a64-utf16:d761a70b02b615e0",
-      "reset": "fnv1a64-utf16:d761a70b02b615e0",
-      "warm": "fnv1a64-utf16:d761a70b02b615e0"
+      "reordered": "fnv1a64-utf16:9141a107004c5b06",
+      "reset": "fnv1a64-utf16:9141a107004c5b06",
+      "warm": "fnv1a64-utf16:9141a107004c5b06"
     },
     "siteObservedAbsentAfterCompletion": true
   },
   "equivalence": {
     "semanticBytesIdentical": true,
     "outcomeHashes": {
-      "warm": "fnv1a64-utf16:61e2e5b564a3d2c9",
-      "reset": "fnv1a64-utf16:61e2e5b564a3d2c9",
-      "reordered": "fnv1a64-utf16:61e2e5b564a3d2c9"
+      "warm": "fnv1a64-utf16:4d6105ff18154b31",
+      "reset": "fnv1a64-utf16:4d6105ff18154b31",
+      "reordered": "fnv1a64-utf16:4d6105ff18154b31"
     },
     "semanticHashes": {
       "warm": "fnv1a64-utf16:5401faa924f0fd35",

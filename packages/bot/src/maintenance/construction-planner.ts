@@ -17,6 +17,7 @@ import {
   LAYOUT_LINK_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS,
+  LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS,
   LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS,
   MAX_LAYOUT_CONTAINER_ENERGY,
@@ -31,6 +32,7 @@ import {
   MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT,
   MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES,
   MAX_LAYOUT_STORAGE_RESOURCES,
+  MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT,
   MAX_LAYOUT_TERMINAL_CAPACITY,
   MAX_LAYOUT_TERMINAL_EVACUATION_AMOUNT,
   MAX_LAYOUT_TERMINAL_EVACUATION_RESOURCES,
@@ -70,6 +72,7 @@ import {
   type LayoutSpawnEvacuation,
   type LayoutStorageEvacuation,
   type LayoutStorageEvacuationResource,
+  type LayoutStorageSequentialEvacuation,
   type LayoutStructureRemovalReceipt,
   type LayoutTerminalEvacuation,
   type LayoutTerminalEvacuationResource,
@@ -1529,9 +1532,14 @@ export class ConstructionPlanner {
             });
             break;
           }
+          const sequentialSingleResource =
+            storage.targetResources.length === 1 &&
+            storage.targetAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
+            storage.targetAmount <= MAX_LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_AMOUNT;
           if (
             storage.targetResources.length > MAX_LAYOUT_STORAGE_EVACUATION_RESOURCES ||
-            storage.targetAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT
+            (storage.targetAmount > MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
+              !sequentialSingleResource)
           ) {
             pushMigrationBlocker(blockers, {
               reason: "target-stocked",
@@ -1563,8 +1571,13 @@ export class ConstructionPlanner {
             resourceManifest.length === 1
               ? {
                   amount: resourceManifest[0]?.[1] ?? 0,
-                  expiresAt: input.room.observedAt + LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS,
+                  expiresAt:
+                    input.room.observedAt +
+                    (sequentialSingleResource
+                      ? LAYOUT_STORAGE_SEQUENTIAL_EVACUATION_TIMEOUT_TICKS
+                      : LAYOUT_STORAGE_EVACUATION_TIMEOUT_TICKS),
                   resourceType: resourceManifest[0]?.[0] ?? "",
+                  ...(sequentialSingleResource ? { settledAmount: 0 } : {}),
                   sourceId: candidate.target.id,
                   startedAt: input.room.observedAt,
                   terminalId: storage.terminal.id,
@@ -1690,6 +1703,19 @@ export class ConstructionPlanner {
             ([resourceType, amount, initialAmount]) =>
               (terminalByResource.get(resourceType) ?? 0) === initialAmount + amount,
           );
+          const sequentialEvacuation = isSequentialStorageEvacuation(storageEvacuation)
+            ? storageEvacuation
+            : null;
+          const [sourceResource] = storage.targetResources;
+          const firstBatchComplete =
+            sequentialEvacuation?.settledAmount === 0 &&
+            storage.targetResources.length === 1 &&
+            sourceResource !== undefined &&
+            sourceResource[0] === sequentialEvacuation.resourceType &&
+            sourceResource[1] ===
+              sequentialEvacuation.amount - MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT &&
+            (terminalByResource.get(sequentialEvacuation.resourceType) ?? 0) ===
+              sequentialEvacuation.terminalInitialAmount + MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT;
           const endpointsRetired =
             !input.activeLeasedWorkTargetIds.has(storageEvacuation.sourceId) &&
             !input.activeLeasedWorkTargetIds.has(storageEvacuation.terminalId) &&
@@ -1717,7 +1743,21 @@ export class ConstructionPlanner {
             )
           )
             reason = "logistics-active";
-          else if (storage.targetAmount > 0) reason = "target-stocked";
+          else if (firstBatchComplete && flowActive) reason = "evacuation-pending";
+          else if (firstBatchComplete && !endpointsRetired) reason = "logistics-active";
+          else if (firstBatchComplete) {
+            storageEvacuation = {
+              ...sequentialEvacuation,
+              settledAmount: MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT,
+            };
+            pushMigrationBlocker(blockers, {
+              reason: "evacuation-pending",
+              roomName: input.room.name,
+              targetId: candidate.target.id,
+            });
+            break;
+          } else if (storage.targetAmount > 0) reason = "target-stocked";
+          else if (sequentialEvacuation?.settledAmount === 0) reason = "evacuation-incomplete";
           else if (flowActive) reason = "evacuation-pending";
           else if (!deliveredExactly) reason = "evacuation-incomplete";
           else if (!endpointsRetired) reason = "logistics-active";
@@ -3342,6 +3382,12 @@ function spawnMigrationEvidence(
   return replacementEnergy === null
     ? { reason: "replacement-pending", replacement: null }
     : { reason: null, replacement, replacementEnergy, targetEnergy };
+}
+
+function isSequentialStorageEvacuation(
+  evacuation: LayoutStorageEvacuation,
+): evacuation is LayoutStorageSequentialEvacuation {
+  return "settledAmount" in evacuation && typeof evacuation.settledAmount === "number";
 }
 
 function hasUnrelatedMigrationEndpoint(

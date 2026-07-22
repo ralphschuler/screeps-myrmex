@@ -345,7 +345,7 @@ describe("empty obsolete-storage relocation", () => {
 
     let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
     owner = reconcileStructureDestroyExecution(owner, execution, 100).owner;
-    expect(owner.schemaVersion).toBe(22);
+    expect(owner.schemaVersion).toBe(23);
     const parsed = parseLayoutsOwner(JSON.parse(JSON.stringify(owner)));
     if (parsed === null) throw new Error("expected valid storage removal receipt");
     owner = parsed;
@@ -406,6 +406,32 @@ describe("empty obsolete-storage relocation", () => {
       terminalId,
       terminalInitialAmount: 25_000,
     });
+  });
+
+  it("persists one fixed two-batch continuation for larger single-resource stock", () => {
+    for (const amount of [3_001, 6_000]) {
+      const result = plan({ room: room({ target: storage({ store: store(1_000_000, amount) }) }) });
+
+      expect(result.proposals).toEqual([]);
+      expect(result.storageEvacuation).toEqual({
+        amount,
+        expiresAt: 400,
+        resourceType: "energy",
+        settledAmount: 0,
+        sourceId: targetId,
+        startedAt: 100,
+        terminalId,
+        terminalInitialAmount: 25_000,
+      });
+    }
+    expect(
+      plan({
+        room: room({
+          target: storage({ store: store(1_000_000, 6_000) }),
+          terminals: [terminal({ store: store(300_000, 295_000) })],
+        }),
+      }).storageEvacuation,
+    ).toBeNull();
   });
 
   it("persists canonical mixed-resource terms across resource and structure reordering", () => {
@@ -617,6 +643,188 @@ describe("empty obsolete-storage relocation", () => {
     ).toEqual([expect.objectContaining({ pos: storagePlacement.pos, structureType: "storage" })]);
   });
 
+  it("advances exactly once after first-batch delivery and work retirement", () => {
+    const staged = plan({
+      room: room({ target: storage({ store: store(1_000_000, 6_000) }) }),
+    }).storageEvacuation;
+    if (staged === null || !("settledAmount" in staged))
+      throw new Error("expected sequential storage evacuation");
+    const firstFlowId = layoutStorageEvacuationFlowId(roomName, staged);
+    if (firstFlowId === null) throw new Error("expected first batch flow");
+    const firstDelivered = room({
+      observedAt: 150,
+      target: storage({ store: store(1_000_000, 3_000) }),
+      terminals: [terminal({ store: store(300_000, 28_000) })],
+    });
+
+    expect(
+      plan({
+        activeFlowIds: new Set([firstFlowId]),
+        room: firstDelivered,
+        storageEvacuation: staged,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-pending" })],
+      storageEvacuation: staged,
+    });
+    expect(
+      plan({
+        activeTargetIds: new Set([targetId, terminalId]),
+        room: firstDelivered,
+        storageEvacuation: staged,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "logistics-active" })],
+      storageEvacuation: staged,
+    });
+    const advanced = plan({ room: firstDelivered, storageEvacuation: staged });
+    expect(advanced.proposals).toEqual([]);
+    expect(advanced.blockers).toEqual([expect.objectContaining({ reason: "evacuation-pending" })]);
+    expect(advanced.storageEvacuation).toEqual({ ...staged, settledAmount: 3_000 });
+    const reorderedFirstDelivered = {
+      ...firstDelivered,
+      ownedStorages: [...(firstDelivered.ownedStorages ?? [])].reverse(),
+      ownedTerminals: [...(firstDelivered.ownedTerminals ?? [])].reverse(),
+      storedStructures: [...firstDelivered.storedStructures].reverse(),
+      structures: [...(firstDelivered.structures ?? [])].reverse(),
+    };
+    expect(
+      plan({
+        room: reorderedFirstDelivered,
+        storageEvacuation: JSON.parse(JSON.stringify(staged)) as typeof staged,
+      }).storageEvacuation,
+    ).toEqual(advanced.storageEvacuation);
+    expect(
+      plan({
+        room: room({
+          observedAt: staged.expiresAt,
+          target: storage({ store: store(1_000_000, 3_000) }),
+          terminals: [terminal({ store: store(300_000, 28_000) })],
+        }),
+        storageEvacuation: staged,
+      }),
+    ).toMatchObject({
+      blockers: [expect.objectContaining({ reason: "evacuation-expired" })],
+      storageEvacuation: staged,
+    });
+    expect(
+      plan({
+        room: room({
+          observedAt: 151,
+          target: storage(),
+          terminals: [terminal({ store: store(300_000, 31_000) })],
+        }),
+        storageEvacuation: staged,
+      }).proposals,
+    ).toEqual([]);
+
+    const reconstructed = parseLayoutsOwner(
+      JSON.parse(
+        JSON.stringify(
+          persistLayoutStorageEvacuation(
+            persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment),
+            roomName,
+            advanced.storageEvacuation,
+          ),
+        ),
+      ),
+    )?.records[0]?.storageEvacuation;
+    if (reconstructed === undefined) throw new Error("expected reconstructed second batch");
+    const secondFlowId = layoutStorageEvacuationFlowId(roomName, reconstructed);
+    expect(secondFlowId).not.toBe(firstFlowId);
+
+    const delivered = room({
+      observedAt: 200,
+      target: storage(),
+      terminals: [terminal({ store: store(300_000, 31_000) })],
+    });
+    expect(
+      plan({
+        activeFlowIds: new Set([secondFlowId as string]),
+        room: delivered,
+        storageEvacuation: reconstructed,
+      }),
+    ).toMatchObject({ blockers: [expect.objectContaining({ reason: "evacuation-pending" })] });
+    const completed = plan({ room: delivered, storageEvacuation: reconstructed });
+    expect(completed.proposals).toHaveLength(1);
+    if (completed.authorization === null)
+      throw new Error("expected sequential removal authorization");
+    const arbitration = arbitrateStructureRemovals({
+      authorizations: [completed.authorization],
+      limits: STRUCTURE_REMOVAL_LIMITS,
+      proposals: completed.proposals,
+    });
+    const destroy = vi.fn(() => 0);
+    const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
+    const liveStore = (capacity: number, used: number) => ({
+      getCapacity: () => capacity,
+      getFreeCapacity: () => capacity - used,
+      getUsedCapacity: () => used,
+    });
+    const execution = new StructureDestroyExecutor().execute(arbitration.intents, {
+      hasCurrentHostiles: () => false,
+      isCurrentCommitment: () => true,
+      resolveRoom: () => liveRoom,
+      resolveStructure: (id) =>
+        id === targetId
+          ? ({
+              destroy,
+              id: targetId,
+              isActive: () => true,
+              my: true,
+              pos: pos(30, 30),
+              room: liveRoom,
+              store: liveStore(1_000_000, 0),
+              structureType: "storage",
+            } as unknown as Structure)
+          : id === terminalId
+            ? ({
+                id: terminalId,
+                isActive: () => true,
+                my: true,
+                pos: pos(21, 20),
+                room: liveRoom,
+                store: liveStore(300_000, 31_000),
+                structureType: "terminal",
+              } as unknown as Structure)
+            : null,
+    });
+    expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), roomName, commitment);
+    owner = persistLayoutStorageEvacuation(owner, roomName, reconstructed);
+    owner = reconcileStructureDestroyExecution(owner, execution, 200).owner;
+    const receipt = owner.records[0]?.removalReceipt;
+    if (receipt === undefined) throw new Error("expected sequential removal receipt");
+    expect(
+      plan({ removalReceipt: receipt, room: delivered, storageEvacuation: reconstructed })
+        .proposals,
+    ).toEqual([]);
+    const disappeared = plan({
+      removalReceipt: receipt,
+      room: room({ observedAt: 201, target: null }),
+      storageEvacuation: reconstructed,
+    });
+    expect(disappeared).toMatchObject({ removalReceipt: null, storageEvacuation: null });
+    expect(
+      diffOwnedRoomLayout({
+        colonyId: roomName,
+        commitment,
+        commitmentConflicted: false,
+        constructionSites: [],
+        observationFingerprint: "obs-201",
+        placements: [storagePlacement, terminalPlacement],
+        policy: colony.rclPolicy,
+        policyEnabled: true,
+        policyFingerprint: "policy-storage",
+        roomName,
+        roomStatus: "owned",
+        structures: room({ observedAt: 201, target: null }).structures ?? [],
+      }).proposals,
+    ).toEqual([expect.objectContaining({ pos: storagePlacement.pos, structureType: "storage" })]);
+  });
+
   it("resumes partial evacuation and waits for exact work retirement before removal", () => {
     const staged = plan({
       room: room({ target: storage({ store: store(1_000_000, 3_000) }) }),
@@ -781,7 +989,7 @@ describe("empty obsolete-storage relocation", () => {
           }),
         }),
       }),
-      plan({ room: room({ target: storage({ store: store(1_000_000, 3_001) }) }) }),
+      plan({ room: room({ target: storage({ store: store(1_000_000, 6_001) }) }) }),
       plan({
         room: room({
           target: storage({ store: store(1_000_000, 3_000) }),

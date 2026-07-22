@@ -129,7 +129,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377)", () => {
       maximumActiveSites: 1,
       maximumCpuPerTick: 0.25,
       maximumEnergyPerTick: 100,
-      persistentSchemaVersion: 22,
+      persistentSchemaVersion: 23,
     });
     expect(actual.safety.minimumActiveExtensions).toBeGreaterThanOrEqual(9);
     expect(actual.safety).toMatchObject({

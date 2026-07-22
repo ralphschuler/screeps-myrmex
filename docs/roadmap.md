@@ -223,9 +223,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   two-to-eight-resource alternative under the same 3,000-unit and 150-tick limits: each current row
   receives a distinct funded V3 flow, every terminal sink shares one aggregate-capacity reservation,
   current rows admit atomically through Logistics and colony funding, and removal waits for every
-  exact gain plus complete work retirement. Larger storage stock, uninterrupted storage/terminal
-  service, broad dynamic movement/pathfinding proof, autonomous boost manifest production, defensive
-  migration, and creep dismantling remain issue #99.
+  exact gain plus complete work retirement. Issue #379 advances layouts V23 for one single resource
+  totaling 3,001–6,000 units: exactly two batch-qualified flows execute sequentially under one fixed
+  300-tick deadline, and batch two waits for fresh first-batch delivery plus complete prior-work
+  retirement. Mixed storage stock above 3,000 units, uninterrupted storage/terminal service, broad
+  dynamic movement/pathfinding proof, autonomous boost manifest production, defensive migration, and
+  creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
