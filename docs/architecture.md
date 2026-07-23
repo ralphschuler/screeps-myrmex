@@ -216,17 +216,17 @@ original gain conserved. The terminal remains an ordinary local source/sink whil
 site/growth-contract/build path reconstructs the committed 30,000-energy storage; stale, unknown,
 present, or drifted evidence preserves suppression. No owner field, schema, authority, or command
 path changes. Issue [#385](https://github.com/ralphschuler/screeps-myrmex/issues/385) advances
-layouts V25 by isolating fully validated older-algorithm records from gameplay. Issues #413 and #415
-let one otherwise-quiescent extension or tower evacuation finish through its exact existing flow;
-neither can authorize stale geometry or removal. Only a quiescent record in one currently safe
-visible colony may atomically become one complete current source/access-safe commitment, and that
-handoff tick publishes no command-bearing layout, maintenance, site, migration, or evacuation
-output. Issue [#387](https://github.com/ralphschuler/screeps-myrmex/issues/387) permits one exact
-`OK` site receipt to leave that active set only after a newer owned site or completed owned
-structure matches its canonical encoded room, position, type, and stale fingerprint. Issue
-[#389](https://github.com/ralphschuler/screeps-myrmex/issues/389) permits one otherwise-quiescent,
-safe, terminal-success non-storage removal receipt to settle only from a newer complete owned-room
-observation in which its exact target ID is absent. Issue
+layouts V25 by isolating fully validated older-algorithm records from gameplay. Issues #413, #415,
+and #417 let one otherwise-quiescent extension, tower, or spawn evacuation finish through its exact
+existing flow; none can authorize stale geometry or removal. Only a quiescent record in one
+currently safe visible colony may atomically become one complete current source/access-safe
+commitment, and that handoff tick publishes no command-bearing layout, maintenance, site, migration,
+or evacuation output. Issue [#387](https://github.com/ralphschuler/screeps-myrmex/issues/387)
+permits one exact `OK` site receipt to leave that active set only after a newer owned site or
+completed owned structure matches its canonical encoded room, position, type, and stale fingerprint.
+Issue [#389](https://github.com/ralphschuler/screeps-myrmex/issues/389) permits one
+otherwise-quiescent, safe, terminal-success non-storage removal receipt to settle only from a newer
+complete owned-room observation in which its exact target ID is absent. Issue
 [#391](https://github.com/ralphschuler/screeps-myrmex/issues/391) admits one exact completed
 extension-evacuation pair under the same absence and safety proof only when receipt type, target,
 replacement, and tick within the fixed evacuation interval match; issues
@@ -255,9 +255,11 @@ leases without a stale-layout suspension. Previously authorized unrelated curren
 and lease work is not cancelled or reclassified. Issue #413 permits one otherwise-quiescent stale
 extension evacuation to continue through the same bounded funded Logistics/V3 path. Issue #415 adds
 that exact continuation for one tower evacuation while retaining the operational replacement's
-10-energy floor. Fresh exact empty-source, baseline-plus-amount replacement energy, retired
-flow/endpoints, and unchanged safe policy clear only the applicable term command-free; the revision
-handoff remains a later tick. Every other unfinished stale migration remains inert.
+10-energy floor. Issue #417 adds the exact spawn continuation only while current SpawnBroker
+planning selects neither active idle 300-capacity endpoint. Fresh exact empty-source,
+baseline-plus-amount replacement energy, retired flow/endpoints, and unchanged safe policy clear
+only the applicable term command-free; the revision handoff remains a later tick. Every other
+unfinished stale migration remains inert.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
@@ -722,19 +724,21 @@ its CPU budget and its publication is discarded, so mandatory-tail `spawn.settle
 API call that already happened; an intent with no result is treated as not scheduled. If settlement
 or colony staging is not staged, downstream contracts receive no invented active authorization.
 
-One exact otherwise-quiescent stale extension or tower evacuation remains an input to its ordinary
-evacuation projection even though every other stale-layout gameplay projection is inert. It retains
-the original fixed deadline and aggregate 64-record/64-flow bounds; a tower replacement also retains
-at least one 10-energy action. Layout planning may clear only that term from fresh exact delivered
-stock plus complete current V3 flow/endpoint retirement under the existing safe handoff policy; that
-command-free settlement suppresses new layout output globally and cannot perform the revision
-handoff until a later tick. Unexpired-term source refill suppression applies to both ordinary
-Logistics and SurvivalFlow independently of optional-work policy admission. Extension replacement
-refill remains suppressed while source energy remains; during an unexpired tower attempt, both
-source and replacement refill remain suppressed so in-flight delivery cannot compete. Tower expiry
-restores ordinary defense service but preserves removal- and handoff-blocking evidence. Existing
-stale leases additionally require the current safe policy, exact projected flow, and active budget
-reservation before execution.
+One exact otherwise-quiescent stale extension, spawn, or tower evacuation remains an input to its
+ordinary evacuation projection even though every other stale-layout gameplay projection is inert. It
+retains the original fixed deadline and aggregate 64-record/64-flow bounds; a tower replacement also
+retains at least one 10-energy action. Spawn continuation additionally requires a completed current
+SpawnBroker plan selecting neither exact active idle endpoint. Layout planning may clear only that
+term from fresh exact delivered stock plus complete current V3 flow/endpoint retirement under the
+existing safe handoff policy; that command-free settlement suppresses new layout output globally and
+cannot perform the revision handoff until a later tick. Unexpired-term source refill suppression
+applies to both ordinary Logistics and SurvivalFlow independently of optional-work policy admission.
+Extension and spawn replacement refill remain suppressed while source energy remains; malformed
+spawn evidence suppresses both endpoints. During an unexpired tower attempt, both source and
+replacement refill remain suppressed so in-flight delivery cannot compete. Spawn or tower expiry
+restores ordinary service but preserves removal- and handoff-blocking evidence. Existing stale
+leases additionally require the current safe policy, exact projected flow, active budget
+reservation, and, for spawn work, current broker exclusion before execution.
 
 `contracts.reconcile` runs only when the effective `phase1.contracts` gate is enabled and the
 current colony result can supply a bounded authorization view. A disabled or prerequisite-blocked
@@ -1676,11 +1680,11 @@ optional fixed-shape single-resource storage evacuation, V22 adds its bounded tw
 manifest alternative, V23 adds the exact settled-batch cursor for one 3,001–6,000-unit
 single-resource continuation, V24 permits that cursor on a canonical two-to-eight-resource manifest
 under the same total, and V25 isolates validated stale-algorithm records in a separate collection
-until one command-free safe handoff. Only #413/#415's exact unfinished extension or tower evacuation
-may remain a funded Logistics input until its separate command-free settlement. Degraded, unknown,
-lost, stale, denied, or CPU-skipped work preserves prior commitments and authorizes no command.
-Every observed owned layout site enters the existing funded survival-growth build flow, while
-controller risk, recovery, maintenance, and protected reserves retain precedence.
+until one command-free safe handoff. Only #413/#415/#417's exact unfinished extension, tower, or
+spawn evacuation may remain a funded Logistics input until its separate command-free settlement.
+Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments and
+authorizes no command. Every observed owned layout site enters the existing funded survival-growth
+build flow, while controller risk, recovery, maintenance, and protected reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -2786,8 +2790,9 @@ Required architecture assertions include:
   ordinary terminal service but remains removal-blocking; the narrow `terminal → storage` continuity
   form cannot weaken same-type replacement checks for another structure kind;
 - a validated older-algorithm layout record is isolated from gameplay except for one otherwise-
-  quiescent exact unfinished extension or tower evacuation continuing through the existing funded V3
-  path; a tower continuation retains at least 10 replacement energy, and the applicable term clears
+  quiescent exact unfinished extension, spawn, or tower evacuation continuing through the existing
+  funded V3 path; a tower continuation retains at least 10 replacement energy, spawn continuation
+  requires current broker-unselected active idle exact endpoints, and the applicable term clears
   only from fresh source-empty, replacement-gain, retired flow/endpoints, and safe policy evidence
   in a command-free tick before a later revision handoff; one exact successful stale
   construction-site receipt may settle only from newer matching owned-site or
@@ -2799,23 +2804,23 @@ Required architecture assertions include:
   mixed, storage-destination, and terminal-destination forms, scalar and manifest terminal forms,
   and scalar, manifest, and two-batch storage forms share their respective identity contracts;
   storage additionally requires current exact retained-terminal/quiescence and complete
-  original-resource conservation evidence; one otherwise-quiescent unfinished extension or tower
-  evacuation may continue only through its exact existing funded V3 flow and clear command-free from
-  fresh source-empty, replacement-gain, and retired flow/endpoint evidence before the later revision
-  handoff; one otherwise-quiescent failed receipt may clear only from newer complete exact-target
-  presence under the same safe policy, without retry, either alone or atomically with its sole exact
-  type/target/replacement/interval-matched evacuation term; every settlement is command-free, and
-  only a then-quiescent record under fresh safe visible-colony and complete current source/access
-  evidence may enter the separate command-free current-revision handoff on a later tick; an explicit
-  source-service coordinate additionally requires exactly one current ContractLedger planning record
-  with matching derived ID, sequence, source, owner, budget, continuous V2 harvest terms, work
-  position, and canonical full request signature, plus a current plan in the existing two-room
-  window that preserves the complete source/position/effective-sequence set before colony budgeting;
-  only that accepted exact stale set may enter the sole static-mining budget/contract projection,
-  preserving its contract and lease without a stale-layout suspension, while unrelated-active,
-  unsafe, blocked, reset, reordered, malformed, evacuation-bearing records without one sole exact
-  match, foreign, unpaired storage, conservation drift, or other ambiguous evidence remains bounded
-  and fail-closed;
+  original-resource conservation evidence; one otherwise-quiescent unfinished extension, spawn, or
+  tower evacuation may continue only through its exact existing funded V3 flow and clear command-
+  free from fresh source-empty, replacement-gain, and retired flow/endpoint evidence before the
+  later revision handoff; one otherwise-quiescent failed receipt may clear only from newer complete
+  exact-target presence under the same safe policy, without retry, either alone or atomically with
+  its sole exact type/target/replacement/interval-matched evacuation term; every settlement is
+  command-free, and only a then-quiescent record under fresh safe visible-colony and complete
+  current source/access evidence may enter the separate command-free current-revision handoff on a
+  later tick; an explicit source-service coordinate additionally requires exactly one current
+  ContractLedger planning record with matching derived ID, sequence, source, owner, budget,
+  continuous V2 harvest terms, work position, and canonical full request signature, plus a current
+  plan in the existing two-room window that preserves the complete
+  source/position/effective-sequence set before colony budgeting; only that accepted exact stale set
+  may enter the sole static-mining budget/contract projection, preserving its contract and lease
+  without a stale-layout suspension, while unrelated-active, unsafe, blocked, reset, reordered,
+  malformed, evacuation-bearing records without one sole exact match, foreign, unpaired storage,
+  conservation drift, or other ambiguous evidence remains bounded and fail-closed;
 - obsolete-storage removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact
   empty 1,000,000-unit external storage, one exact active 300,000-unit same-room terminal, an
   effective Logistics gate with one exact current healthy room row, no current/projected Logistics

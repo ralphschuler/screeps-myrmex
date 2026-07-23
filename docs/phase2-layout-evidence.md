@@ -137,7 +137,9 @@ command-free revision handoff. Issue
 unfinished stale extension evacuation to continue through its existing funded Logistics/V3 path,
 then clears only that term command-free after fresh exact delivery and complete work retirement.
 Issue [#415](https://github.com/ralphschuler/screeps-myrmex/issues/415) adds the equivalent tower
-continuation while retaining the exact 10-energy operational-replacement floor. Parent issue
+continuation while retaining the exact 10-energy operational-replacement floor. Issue
+[#417](https://github.com/ralphschuler/screeps-myrmex/issues/417) adds the spawn continuation under
+current active/idle/Store and SpawnBroker exclusion evidence. Parent issue
 [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
 and dismantling.
 
@@ -251,19 +253,21 @@ and dismantling.
    budget. No stale-layout suspension or new contract is produced for an accepted handoff, which
    retains the exact matching contract and lease; mismatch, unavailable or terminal-only evidence,
    source or room loss, changed source planning, and unsuccessful handoff remain fail-closed. One
-   otherwise-quiescent stale extension or tower evacuation remains the sole active stale gameplay
-   projection. The existing `optional-growth` budget and Logistics/V3 contract path move its exact
-   energy under the original deadline while source refill is suppressed. Extension replacement
-   refill remains suppressed during acquisition; during an unexpired tower attempt, both source and
-   replacement refill remain suppressed, including while cargo is in flight. Tower expiry restores
-   ordinary defense service but keeps removal and revision handoff blocked. Tower continuation also
-   retains at least the exact 10-energy action floor. A later fresh observation may clear only that
-   term when the source is empty, replacement energy is exactly baseline plus amount, no current V3
-   planning record names the flow or either endpoint, and the same safe handoff policy still passes.
-   This settlement precommits only layouts, emits no layout command in any room, and leaves the
-   revision handoff to a later tick. Another active stale term, source-service sequence, unsafe
-   policy, malformed, refilled, consumed, or drifted Store evidence, active work, expiry, or missing
-   vision remains fail-closed.
+   otherwise-quiescent stale extension, spawn, or tower evacuation remains the sole active stale
+   gameplay projection. The existing `optional-growth` budget and Logistics/V3 contract path move
+   its exact energy under the original deadline while source refill is suppressed. Extension and
+   spawn replacement refill remain suppressed during acquisition; malformed spawn evidence keeps
+   both exact endpoints suppressed. Spawn work additionally requires active idle 300-capacity exact
+   endpoints and a completed current SpawnBroker plan selecting neither. During an unexpired tower
+   attempt, both source and replacement refill remain suppressed, including while cargo is in
+   flight. Spawn or tower expiry restores ordinary service but keeps removal and revision handoff
+   blocked. Tower continuation also retains at least the exact 10-energy action floor. A later fresh
+   observation may clear only that term when the source is empty, replacement energy is exactly
+   baseline plus amount, no current V3 planning record names the flow or either endpoint, and the
+   same safe handoff policy still passes. This settlement precommits only layouts, emits no layout
+   command in any room, and leaves the revision handoff to a later tick. Another active stale term,
+   source-service sequence, unsafe policy, malformed, refilled, consumed, or drifted Store evidence,
+   active work, expiry, or missing vision remains fail-closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -539,6 +543,19 @@ byte-equivalent owner, planning, and command outcomes. Focused projection contro
 flow, source, or replacement endpoints, refill, underdelivery, threat, expiry, and aggregate
 over-cap input. Existing V3 withdraw/transfer executor tests retain command-result and retry
 coverage; #413 adds no command path or persistent field.
+
+Issue #417's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
+300-energy spawn evacuation and exact active idle 300-capacity endpoints. The current SpawnBroker
+plan selects neither spawn, the colony budget grants the existing `optional-growth` issuer, and the
+specialized `migration.layout` continuation submits and re-admits only that exact funded V3 flow.
+Production runtime evidence excludes an existing acquire lease immediately when unsafe policy
+withdraws the current flow and reservation. Fresh source-empty, exact 300-energy replacement, and
+complete flow/endpoint retirement clear only that term. Settlement and the following handoff each
+issue zero layout commands; warm, module-reset, and reversed-structure variants are byte-equivalent.
+Focused controls prove current broker-selection exclusion, exact Store conservation, durable source
+suppression, replacement release only after source emptiness, malformed/duplicate/busy/inactive
+failure, active flow/endpoints, expiry, and over-cap input. Existing V3 executor tests retain
+withdraw/transfer result coverage. No schema, authority, executor, or persistent field is added.
 
 Issue #415's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
 500-energy tower evacuation and an exact active replacement retaining the 10-energy action floor.

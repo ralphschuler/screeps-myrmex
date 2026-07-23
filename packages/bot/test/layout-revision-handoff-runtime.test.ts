@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   layoutExtensionEvacuationBudgetIssuer,
   layoutExtensionEvacuationFlowId,
+  layoutSpawnEvacuationBudgetIssuer,
+  layoutSpawnEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
   layoutTowerEvacuationFlowId,
   parseLayoutsOwner,
@@ -42,6 +44,10 @@ interface GameOptions {
   readonly roomEnergyAvailable?: number;
   readonly roomEnergyCapacityAvailable?: number;
   readonly staleExtensionEvacuation?: {
+    readonly replacementEnergy: number;
+    readonly sourceEnergy: number;
+  };
+  readonly staleSpawnEvacuation?: {
     readonly replacementEnergy: number;
     readonly sourceEnergy: number;
   };
@@ -266,10 +272,11 @@ type StaleActiveEvidence =
   | "evacuation"
   | "site-receipt"
   | "source-handoff"
+  | "spawn-evacuation"
   | "tower-evacuation"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -470,6 +477,146 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       ),
     ).not.toBe(true);
     expect(layoutsOwner(memory).staleRecords[0]?.extensionEvacuation).toEqual(evacuation);
+  });
+
+  it("continues one stale spawn evacuation through the existing funded logistics path", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands, { staticMiner: true }), memory });
+    runTick({ game: game(101, commands, { staticMiner: true }), memory });
+    seedStaleOwner(memory, "spawn-evacuation");
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const pending = runTick({
+      game: game(202, commands, {
+        roomEnergyAvailable: 600,
+        roomEnergyCapacityAvailable: 900,
+        staleSpawnEvacuation: { replacementEnergy: 0, sourceEnergy: 300 },
+        staticMiner: true,
+      }),
+      memory,
+    });
+    const record = layoutsOwner(memory).staleRecords[0];
+    const evacuation = record?.spawnEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale spawn evacuation");
+    const budgetIssuer = layoutSpawnEvacuationBudgetIssuer(ROOM_NAME, evacuation);
+    const flowId = layoutSpawnEvacuationFlowId(ROOM_NAME, evacuation);
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+          }[];
+        }
+      | undefined;
+
+    expect(pending.kernel.faults).toEqual([]);
+    expect(pending.colony.reservations).toContainEqual(
+      expect.objectContaining({
+        category: "optional-growth",
+        colonyId: ROOM_NAME,
+        issuer: budgetIssuer,
+        status: "active",
+      }),
+    );
+    expect(contracts?.active?.some(({ execution }) => execution?.flowId === flowId)).toBe(true);
+    expect(pending.layout.planning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(layoutsOwner(memory).records).toEqual([]);
+    expect(layoutsOwner(memory).staleRecords[0]?.spawnEvacuation).toEqual(evacuation);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
+  it("settles delivered stale spawn stock command-free before a later revision handoff", async () => {
+    const forward = await runCompletedStaleSpawnEvacuationVariant(false, false);
+    const reset = await runCompletedStaleSpawnEvacuationVariant(false, true);
+    const reordered = await runCompletedStaleSpawnEvacuationVariant(true, false);
+
+    expect(forward.settlementPlanning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(forward.settlementOwner.records).toEqual([]);
+    expect(forward.settlementOwner.staleRecords).toHaveLength(1);
+    expect(forward.settlementOwner.staleRecords[0]?.spawnEvacuation).toBeUndefined();
+    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.handoffOwner).toMatchObject({
+      records: [
+        expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+      ],
+      staleRecords: [],
+    });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
+  });
+
+  it("blocks an existing stale spawn lease when colony policy turns unsafe", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    const baseOptions = {
+      roomEnergyAvailable: 600,
+      roomEnergyCapacityAvailable: 900,
+      staleSpawnEvacuation: { replacementEnergy: 0, sourceEnergy: 300 },
+      staticMiner: true,
+    } as const;
+    runTick({ game: game(100, commands, { staticMiner: true }), memory });
+    runTick({ game: game(101, commands, { staticMiner: true }), memory });
+    seedStaleOwner(memory, "spawn-evacuation");
+    const evacuation = layoutsOwner(memory).staleRecords[0]?.spawnEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale spawn evacuation");
+    const flowId = layoutSpawnEvacuationFlowId(ROOM_NAME, evacuation);
+    if (flowId === null) throw new Error("expected bounded spawn flow id");
+
+    for (let tick = 202; tick <= 205; tick += 1)
+      runTick({ game: game(tick, commands, baseOptions), memory });
+    const contractsBefore = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+            readonly lease?: unknown;
+            readonly state?: string;
+          }[];
+        }
+      | undefined;
+    expect(
+      contractsBefore?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId === flowId &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).toBe(true);
+    expect(commands.withdrawEnergy).toHaveBeenCalled();
+    commands.transferEnergy.mockClear();
+    commands.withdrawEnergy.mockClear();
+
+    runTick({ game: game(206, commands, { ...baseOptions, threat: true }), memory });
+    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+
+    expect(commands.withdrawEnergy).not.toHaveBeenCalled();
+    expect(commands.transferEnergy).not.toHaveBeenCalled();
+    expect(
+      contractsAfter?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId === flowId &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).not.toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.spawnEvacuation).toEqual(evacuation);
   });
 
   it("continues one stale tower evacuation through the existing funded logistics path", () => {
@@ -3279,15 +3426,15 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
           },
         }
       : {}),
-    ...(completedSpawnEvacuation
+    ...(active === "spawn-evacuation" || completedSpawnEvacuation
       ? {
           spawnEvacuation: {
             amount: 300,
-            expiresAt: 250,
+            expiresAt: completedSpawnEvacuation ? 250 : 350,
             replacementId: "spawn-replacement",
             replacementInitialEnergy: 0,
             sourceId: "spawn-obsolete",
-            startedAt: 100,
+            startedAt: completedSpawnEvacuation ? 100 : 200,
           },
         }
       : {}),
@@ -3627,6 +3774,62 @@ async function runCompletedStaleExtensionEvacuationVariant(reverse: boolean, res
   };
 }
 
+async function runCompletedStaleSpawnEvacuationVariant(reverse: boolean, reset: boolean) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  executeTick({ game: game(100, commands, { reverse, staticMiner: true }), memory });
+  executeTick({ game: game(101, commands, { reverse, staticMiner: true }), memory });
+  seedStaleOwner(memory, "spawn-evacuation");
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const settlement = executeTick({
+    game: game(202, commands, {
+      reverse,
+      roomEnergyAvailable: 600,
+      roomEnergyCapacityAvailable: 900,
+      staleSpawnEvacuation: { replacementEnergy: 300, sourceEnergy: 0 },
+      staticMiner: true,
+    }),
+    memory,
+  });
+  const settlementOwner = layoutsOwner(memory);
+  const settlementCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+  };
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const handoff = executeTick({
+    game: game(203, commands, {
+      reverse,
+      roomEnergyAvailable: 600,
+      roomEnergyCapacityAvailable: 900,
+      staleSpawnEvacuation: { replacementEnergy: 300, sourceEnergy: 0 },
+      staticMiner: true,
+    }),
+    memory,
+  });
+  return {
+    handoffCommands: {
+      create: commands.createConstructionSite.mock.calls.length,
+      destroy: commands.destroyStructure.mock.calls.length,
+    },
+    handoffOwner: layoutsOwner(memory),
+    handoffPlanning: handoff.layout.planning,
+    settlementCommands,
+    settlementOwner,
+    settlementPlanning: settlement.layout.planning,
+  };
+}
+
 async function runCompletedStaleTowerEvacuationVariant(reverse: boolean, reset: boolean) {
   const commands = commandSpies();
   let memory = {} as Memory;
@@ -3715,7 +3918,10 @@ function game(
     my: true,
     name: `worker-${roomName}`,
     owner: { username: "Myrmex" },
-    pos: options.staleTowerEvacuation === undefined ? pos(25, 25) : pos(39, 39),
+    pos:
+      options.staleSpawnEvacuation === undefined && options.staleTowerEvacuation === undefined
+        ? pos(25, 25)
+        : pos(39, 39),
     room: { name: roomName },
     spawning: false,
     store: { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 },
@@ -3917,6 +4123,37 @@ function game(
           41,
           staleExtensionEvacuation.replacementEnergy,
         );
+  const staleSpawnEvacuation = options.staleSpawnEvacuation;
+  const evacuationSpawn = (id: string, x: number, energy: number) =>
+    ({
+      destroy: commands.destroyStructure,
+      hits: 5_000,
+      hitsMax: 5_000,
+      id,
+      isActive: () => true,
+      my: true,
+      name: id,
+      owner: { username: "Myrmex" },
+      pos: pos(x, 38),
+      room: { name: roomName },
+      spawnCreep: () => 0,
+      spawning: null,
+      store: {
+        ...(energy > 0 ? { energy } : {}),
+        getCapacity: () => 300,
+        getFreeCapacity: () => 300 - energy,
+        getUsedCapacity: () => energy,
+      },
+      structureType: "spawn",
+    }) as unknown as StructureSpawn;
+  const staleSpawnSource =
+    staleSpawnEvacuation === undefined
+      ? null
+      : evacuationSpawn("spawn-obsolete", 40, staleSpawnEvacuation.sourceEnergy);
+  const staleSpawnReplacement =
+    staleSpawnEvacuation === undefined
+      ? null
+      : evacuationSpawn("spawn-replacement", 41, staleSpawnEvacuation.replacementEnergy);
   const staleTowerEvacuation = options.staleTowerEvacuation;
   const evacuationTower = (id: string, x: number, energy: number) =>
     ({
@@ -3992,6 +4229,8 @@ function game(
         ...(storageTerminal === null ? [] : [storageTerminal]),
         ...(staleEvacuationSource === null ? [] : [staleEvacuationSource]),
         ...(staleEvacuationReplacement === null ? [] : [staleEvacuationReplacement]),
+        ...(staleSpawnSource === null ? [] : [staleSpawnSource]),
+        ...(staleSpawnReplacement === null ? [] : [staleSpawnReplacement]),
         ...(staleTowerSource === null ? [] : [staleTowerSource]),
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
@@ -4002,6 +4241,8 @@ function game(
         ...(storageTerminal === null ? [] : [storageTerminal]),
         ...(staleEvacuationSource === null ? [] : [staleEvacuationSource]),
         ...(staleEvacuationReplacement === null ? [] : [staleEvacuationReplacement]),
+        ...(staleSpawnSource === null ? [] : [staleSpawnSource]),
+        ...(staleSpawnReplacement === null ? [] : [staleSpawnReplacement]),
         ...(staleTowerSource === null ? [] : [staleTowerSource]),
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
@@ -4049,11 +4290,15 @@ function game(
                   ? staleEvacuationSource
                   : id === staleEvacuationReplacement?.id
                     ? staleEvacuationReplacement
-                    : id === staleTowerSource?.id
-                      ? staleTowerSource
-                      : id === staleTowerReplacement?.id
-                        ? staleTowerReplacement
-                        : null,
+                    : id === staleSpawnSource?.id
+                      ? staleSpawnSource
+                      : id === staleSpawnReplacement?.id
+                        ? staleSpawnReplacement
+                        : id === staleTowerSource?.id
+                          ? staleTowerSource
+                          : id === staleTowerReplacement?.id
+                            ? staleTowerReplacement
+                            : null,
     rooms: { [roomName]: room },
     shard: { name: "shard3" },
     time,

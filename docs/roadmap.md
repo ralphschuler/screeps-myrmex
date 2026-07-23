@@ -260,13 +260,15 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   contract and lease remain active without stale-layout suspension. Issue #413 lets one otherwise-
   quiescent unfinished stale extension evacuation continue through its exact existing funded V3
   flow. Issue #415 adds the equivalent exact tower continuation while retaining at least 10
-  replacement energy for one defense action. Fresh exact empty-source and baseline-plus-amount
-  replacement energy, complete flow/endpoint retirement, and unchanged safe policy clear only the
-  applicable term command-free; the ordinary revision handoff remains a later tick. Unrelated
-  active, mismatched, multiple-pair, unpaired storage, unsafe, same-tick, incomplete, terminal-only,
-  or drifted evidence remains blocked. Uninterrupted same-structure storage/terminal service, broad
-  dynamic movement/pathfinding proof, autonomous boost manifest production, defensive or active
-  revision migration, and creep dismantling remain issue #99.
+  replacement energy for one defense action. Issue #417 adds the exact spawn continuation only while
+  current SpawnBroker evidence selects neither active idle 300-capacity endpoint. Fresh exact
+  empty-source and baseline-plus-amount replacement energy, complete flow/endpoint retirement, and
+  unchanged safe policy clear only the applicable term command-free; the ordinary revision handoff
+  remains a later tick. Unrelated active, mismatched, multiple-pair, unpaired storage, unsafe,
+  same-tick, incomplete, terminal-only, or drifted evidence remains blocked. Uninterrupted
+  same-structure storage/terminal service, broad dynamic movement/pathfinding proof, autonomous
+  boost manifest production, defensive or active revision migration, and creep dismantling remain
+  issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

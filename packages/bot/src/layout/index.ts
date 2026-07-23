@@ -7,9 +7,11 @@ export {
   reconstructCommittedLayout,
   selectLayoutPlanningWindow,
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutSpawnEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   staleLayoutExtensionEvacuationSettlementBlocker,
   staleLayoutRemovalSettlementBlocker,
+  staleLayoutSpawnEvacuationSettlementBlocker,
   staleLayoutTowerEvacuationSettlementBlocker,
   staleLayoutRevisionHandoffBlocker,
 } from "./planner";
@@ -34,6 +36,7 @@ export {
 } from "./reconciliation";
 export {
   clearStaleLayoutExtensionEvacuation,
+  clearStaleLayoutSpawnEvacuation,
   clearStaleLayoutTowerEvacuation,
   emptyLayoutsOwner,
   parseLayoutsOwner,

@@ -30,6 +30,69 @@ export function authorizedLayoutSpawnEvacuationBudgets(
   return freeze(projection.budgets.filter(({ issuer }) => authorizedIssuers.has(issuer)));
 }
 
+/** Durable refill suppression for every current layout-owned spawn evacuation term. */
+export function projectLayoutSpawnEvacuationSuppressedSinkTargetIds(input: {
+  readonly records: readonly LayoutRecord[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): readonly string[] {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return Object.freeze([]);
+  const suppressed = new Set<string>();
+  for (const record of [...input.records].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
+    const evacuation = record.spawnEvacuation;
+    if (!isCurrentLayoutSpawnEvacuationTerm(evacuation, input.tick)) continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (room?.controller?.ownership !== "owned" || room.observedAt !== input.tick) continue;
+    suppressed.add(evacuation.sourceId);
+    const evidence = exactSpawnEvacuationEvidence(room.ownedSpawns, evacuation);
+    if (evidence === null || evidence.sourceEnergy > 0) suppressed.add(evacuation.replacementId);
+  }
+  return Object.freeze([...suppressed]);
+}
+
+/** Fresh command-free completion evidence for an already-authorized spawn evacuation. */
+export function completedLayoutSpawnEvacuationRoomNames(input: {
+  readonly activeFlowIds: ReadonlySet<string>;
+  readonly activeTargetIds: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+  readonly selectedSpawnIds: ReadonlySet<string>;
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): readonly string[] {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return Object.freeze([]);
+  const completed: string[] = [];
+  for (const record of [...input.records].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
+    const evacuation = record.spawnEvacuation;
+    if (!isCurrentLayoutSpawnEvacuationTerm(evacuation, input.tick)) continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (
+      room?.controller?.ownership !== "owned" ||
+      room.observedAt !== input.tick ||
+      room.hostileCreeps.length > 0 ||
+      input.selectedSpawnIds.has(evacuation.sourceId) ||
+      input.selectedSpawnIds.has(evacuation.replacementId)
+    )
+      continue;
+    const evidence = exactSpawnEvacuationEvidence(room.ownedSpawns, evacuation);
+    if (
+      evidence === null ||
+      evidence.sourceEnergy !== 0 ||
+      evidence.replacementEnergy !== evacuation.replacementInitialEnergy + evacuation.amount
+    )
+      continue;
+    const flowId = layoutSpawnEvacuationFlowId(room.name, evacuation);
+    if (
+      flowId === null ||
+      input.activeFlowIds.has(flowId) ||
+      input.activeTargetIds.has(evidence.source.id) ||
+      input.activeTargetIds.has(evidence.replacement.id)
+    )
+      continue;
+    completed.push(room.name);
+  }
+  return Object.freeze(completed);
+}
+
 /** Projects one fixed layout-owned spawn evacuation per room into the sole logistics graph. */
 export function projectLayoutSpawnEvacuations(input: {
   readonly existingBudgets: readonly {
@@ -48,52 +111,19 @@ export function projectLayoutSpawnEvacuations(input: {
   const edges: LogisticsResourceDemandProjection["edges"][number][] = [];
   const endpoints: LogisticsResourceDemandProjection["endpoints"][number][] = [];
   const nodes: LogisticsResourceDemandProjection["nodes"][number][] = [];
-  const suppressedSinkTargetIds: string[] = [];
+  const suppressedSinkTargetIds = projectLayoutSpawnEvacuationSuppressedSinkTargetIds(input);
 
   for (const record of [...input.records].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
     const evacuation = record.spawnEvacuation;
-    if (
-      evacuation === undefined ||
-      evacuation.amount <= 0 ||
-      evacuation.amount > MAX_LAYOUT_SPAWN_ENERGY ||
-      evacuation.replacementInitialEnergy < 0 ||
-      evacuation.replacementInitialEnergy + evacuation.amount > MAX_LAYOUT_SPAWN_ENERGY ||
-      evacuation.expiresAt - evacuation.startedAt !== LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS ||
-      input.tick <= evacuation.startedAt ||
-      input.tick >= evacuation.expiresAt
-    )
-      continue;
+    if (!isCurrentLayoutSpawnEvacuationTerm(evacuation, input.tick)) continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
     if (room?.controller?.ownership !== "owned" || room.observedAt !== input.tick) continue;
-    // Keep ordinary logistics from refilling a durable obsolete target even when current drift
-    // suppresses the optional evacuation flow.
-    suppressedSinkTargetIds.push(evacuation.sourceId);
     if (room.hostileCreeps.length > 0) continue;
-    const sources = room.ownedSpawns.filter(({ id }) => id === evacuation.sourceId);
-    const replacements = room.ownedSpawns.filter(({ id }) => id === evacuation.replacementId);
-    const source = sources[0];
-    const replacement = replacements[0];
-    if (
-      sources.length !== 1 ||
-      replacements.length !== 1 ||
-      source?.active !== true ||
-      replacement?.active !== true ||
-      source.spawning !== null ||
-      replacement.spawning !== null
-    )
-      continue;
-    const sourceEnergy = exactEnergy(source.store);
-    const replacementEnergy = exactEnergy(replacement.store);
+    const evidence = exactSpawnEvacuationEvidence(room.ownedSpawns, evacuation);
+    if (evidence === null) continue;
+    const { replacement, source, sourceEnergy } = evidence;
     const replacementFreeCapacity = replacement.store.freeCapacity;
-    if (
-      sourceEnergy === null ||
-      replacementEnergy === null ||
-      replacementFreeCapacity === null ||
-      sourceEnergy > evacuation.amount ||
-      (sourceEnergy > 0 && replacementEnergy < evacuation.replacementInitialEnergy) ||
-      replacementEnergy > evacuation.replacementInitialEnergy + evacuation.amount - sourceEnergy
-    )
-      continue;
+    if (replacementFreeCapacity === null) continue;
     const flowId = layoutSpawnEvacuationFlowId(room.name, evacuation);
     const issuer = layoutSpawnEvacuationBudgetIssuer(room.name, evacuation);
     if (flowId === null || issuer === null) continue;
@@ -159,7 +189,6 @@ export function projectLayoutSpawnEvacuations(input: {
       sinkNodeId,
       sourceNodeId,
     });
-    if (sourceEnergy > 0) suppressedSinkTargetIds.push(replacement.id);
     budgets.push({
       colonyId: room.name,
       category: "optional-growth",
@@ -173,6 +202,58 @@ export function projectLayoutSpawnEvacuations(input: {
   }
 
   return freeze({ budgets, demands: { edges, endpoints, nodes, suppressedSinkTargetIds } });
+}
+
+function isCurrentLayoutSpawnEvacuationTerm(
+  evacuation: LayoutRecord["spawnEvacuation"],
+  tick: number,
+): evacuation is NonNullable<LayoutRecord["spawnEvacuation"]> {
+  return (
+    evacuation !== undefined &&
+    evacuation.amount > 0 &&
+    evacuation.amount <= MAX_LAYOUT_SPAWN_ENERGY &&
+    evacuation.replacementInitialEnergy >= 0 &&
+    evacuation.replacementInitialEnergy + evacuation.amount <= MAX_LAYOUT_SPAWN_ENERGY &&
+    evacuation.expiresAt - evacuation.startedAt === LAYOUT_SPAWN_EVACUATION_TIMEOUT_TICKS &&
+    tick > evacuation.startedAt &&
+    tick < evacuation.expiresAt
+  );
+}
+
+function exactSpawnEvacuationEvidence(
+  spawns: WorldSnapshot["rooms"][number]["ownedSpawns"],
+  evacuation: NonNullable<LayoutRecord["spawnEvacuation"]>,
+): {
+  readonly replacement: WorldSnapshot["rooms"][number]["ownedSpawns"][number];
+  readonly replacementEnergy: number;
+  readonly source: WorldSnapshot["rooms"][number]["ownedSpawns"][number];
+  readonly sourceEnergy: number;
+} | null {
+  const sources = spawns.filter(({ id }) => id === evacuation.sourceId);
+  const replacements = spawns.filter(({ id }) => id === evacuation.replacementId);
+  const source = sources[0];
+  const replacement = replacements[0];
+  if (
+    sources.length !== 1 ||
+    replacements.length !== 1 ||
+    source?.active !== true ||
+    replacement?.active !== true ||
+    source.spawning !== null ||
+    replacement.spawning !== null ||
+    source.id === replacement.id
+  )
+    return null;
+  const sourceEnergy = exactEnergy(source.store);
+  const replacementEnergy = exactEnergy(replacement.store);
+  if (
+    sourceEnergy === null ||
+    replacementEnergy === null ||
+    sourceEnergy > evacuation.amount ||
+    (sourceEnergy > 0 && replacementEnergy < evacuation.replacementInitialEnergy) ||
+    replacementEnergy > evacuation.replacementInitialEnergy + evacuation.amount - sourceEnergy
+  )
+    return null;
+  return { replacement, replacementEnergy, source, sourceEnergy };
 }
 
 function renewedRevision(
