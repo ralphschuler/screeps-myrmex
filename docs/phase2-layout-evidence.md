@@ -122,8 +122,10 @@ pair, issue [#397](https://github.com/ralphschuler/screeps-myrmex/issues/397) ad
 reserve-link pair, issue [#399](https://github.com/ralphschuler/screeps-myrmex/issues/399) adds the
 completed container-migration pair, and issue
 [#401](https://github.com/ralphschuler/screeps-myrmex/issues/401) adds the completed lab-evacuation
-pair, and issue [#403](https://github.com/ralphschuler/screeps-myrmex/issues/403) adds the completed
-terminal-evacuation pair. Parent issue
+pair, issue [#403](https://github.com/ralphschuler/screeps-myrmex/issues/403) adds the completed
+terminal-evacuation pair, and issue
+[#405](https://github.com/ralphschuler/screeps-myrmex/issues/405) adds the completed storage-
+evacuation pair under its stronger conservation proof. Parent issue
 [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
 and dismantling.
 
@@ -207,16 +209,18 @@ and dismantling.
    persists its exact amount and the replacement's current energy. A target with one non-energy kind
    or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline
    tuples; energy as the only manifest row, malformed stock, or insufficient aggregate capacity
-   fails closed. Before any revision handoff, one stale terminal-success non-storage removal receipt
-   may clear only when every other stale term is quiescent, the same colony policy is safe, and a
-   newer complete owned-room structure projection omits its exact target ID. The settlement
-   precommits only the layouts owner and ends all rooms' new site/removal planning for that tick;
-   storage, failed, present, same-tick, incomplete, active, or unsafe evidence remains inert. One
-   exact completed container migration or extension, lab, tower, spawn, terminal, or reserve-link
-   evacuation may accompany that receipt only when type, target, replacement, terminal result, and
-   receipt tick within its fixed interval match; all canonical lab stock/destination forms and both
-   scalar/manifest terminal forms share their respective source/replacement/interval terms. Newer
-   target absence then clears both terms atomically.
+   fails closed. Before any revision handoff, one stale terminal-success removal receipt may clear
+   only when every other stale term is quiescent, the same colony policy is safe, and a newer
+   complete owned-room structure projection omits its exact target ID. A bare storage receipt
+   remains excluded. The settlement precommits only the layouts owner and ends all rooms' new
+   site/removal planning for that tick; failed, present, same-tick, incomplete, active, or unsafe
+   evidence remains inert. One exact completed container migration or extension, lab, tower, spawn,
+   terminal, storage, or reserve-link evacuation may accompany that receipt only when type, target,
+   replacement, terminal result, and receipt tick within its fixed interval match; all canonical lab
+   stock/destination forms, both scalar/manifest terminal forms, and scalar, manifest, or two-batch
+   storage forms share their respective source/replacement/interval terms. Storage additionally
+   reuses its fresh exact active/ quiescent retained-terminal and complete original-resource
+   conservation proof. Newer target absence then clears both terms atomically.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -511,8 +515,8 @@ clears only the receipt, retains the stale record, reports degraded `revision-ha
 produces zero site/destroy calls in both rooms. The following tick performs #385's separate
 command-free handoff. Warm, JSON/global-heap reset, and reversed-structure variants produce equal
 owner, planning, and command outcomes. Direct reconciliation also admits `TARGET_ABSENT`; present,
-same-tick, incomplete, storage, failed, active-evacuation, and unsafe-policy evidence preserves the
-original owner.
+same-tick, incomplete, bare-storage, failed, active-evacuation, and unsafe-policy evidence preserves
+the original owner.
 
 The #391 continuation repeats that sequence with one exact persisted extension evacuation whose
 source/replacement identities match the terminal-success extension receipt and whose receipt tick
@@ -530,12 +534,17 @@ one source/replacement/interval identity contract. Issue #403 composes the compl
 evacuation pair without changing owner schema, Logistics, Industry, ContractLedger, or the original
 stock, storage-capacity, quiescence, send-suppression, and endpoint-retirement gates. Scalar and
 canonical two-to-eight-row manifest forms use one source/storage-replacement/interval identity.
+Issue #405 composes every scalar, two-to-eight-row manifest, two-batch scalar, and two-batch
+manifest storage form without changing owner schema, Logistics, Industry, ContractLedger, or the
+original terminal continuity and complete stock-conservation proof. Current exact active terminal
+and quiescence evidence plus every baseline-plus-original-amount resource gain remain mandatory.
 Newer target absence atomically removes any one pair in one owner revision, emits zero site/destroy
 calls in two rooms, and leaves the #385 handoff to the next tick. Warm, real module reset, and
 reversed-structure variants produce equal owner, planning, and command outcomes. Both `OK` and
 `TARGET_ABSENT` settle. Target/replacement/type mismatch, receipt before the migration or evacuation
 or at its exclusive expiry, target presence, same-tick/incomplete observation, nonterminal result,
-unsafe policy, or another active term preserves the original owner.
+unsafe policy, another active term, terminal/capacity drift, or incomplete conservation preserves
+the original owner.
 
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
@@ -767,10 +776,10 @@ lint, type, test, documentation, bundle, and package evidence.
   codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
-  the operation; #389, #391, #393, #395, #397, #399, #401, and #403 still require newer complete
-  target-absence observation before settlement. #391, #393, #395, #397, #399, #401, and #403
-  additionally bind that result to the exact extension, tower, spawn, reserve-link, container, lab,
-  or terminal evacuation/migration identity and fixed interval.
+  the operation; #389, #391, #393, #395, #397, #399, #401, #403, and #405 still require newer
+  complete target-absence observation before settlement. #391, #393, #395, #397, #399, #401, #403,
+  and #405 additionally bind that result to the exact extension, tower, spawn, reserve-link,
+  container, lab, terminal, or storage evacuation/migration identity and fixed interval.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the
@@ -810,7 +819,9 @@ lint, type, test, documentation, bundle, and package evidence.
   prove that a non-public rampart owned by another user blocks movement while owned/public ramparts
   remain walkable.
 - Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one
-  RCL4+ owned general-purpose store, its 1,000,000-unit capacity, and its 30,000 build cost.
+  RCL4+ owned general-purpose store, its 1,000,000-unit capacity, and its 30,000 build cost. Issue
+  #405 consumes only newer exact target absence and retains the existing complete original-resource
+  conservation and retained-terminal continuity proof before stale evidence can clear.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
   RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary. Issue
   #403 consumes only fresh exact target absence and does not reinterpret stock delivery, storage
