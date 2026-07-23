@@ -297,26 +297,28 @@ export interface LayoutRecord extends LayoutCommitment {
 
 /** A fully validated older-algorithm record isolated from every gameplay projection. */
 export type StaleLayoutRecord = LayoutRecord;
-export type CompletedStaleLayoutEvacuationKind = "extension" | "tower";
+export type CompletedStaleLayoutEvacuationKind = "extension" | "spawn" | "tower";
 
 export function completedStaleLayoutEvacuationKind(
   record: StaleLayoutRecord,
 ): CompletedStaleLayoutEvacuationKind | null {
-  const extension = record.extensionEvacuation;
-  const tower = record.towerEvacuation;
-  if ((extension === undefined) === (tower === undefined)) return null;
-  const kind = extension === undefined ? "tower" : "extension";
-  const evacuation = extension ?? tower;
+  const evacuations = [
+    { evacuation: record.extensionEvacuation, kind: "extension" as const },
+    { evacuation: record.spawnEvacuation, kind: "spawn" as const },
+    { evacuation: record.towerEvacuation, kind: "tower" as const },
+  ].filter(({ evacuation }) => evacuation !== undefined);
+  if (evacuations.length !== 1) return null;
+  const completed = evacuations[0];
+  if (completed?.evacuation === undefined) return null;
   const receipt = record.removalReceipt;
-  return evacuation !== undefined &&
-    receipt !== undefined &&
+  return receipt !== undefined &&
     (receipt.code === "OK" || receipt.code === "TARGET_ABSENT") &&
-    receipt.targetStructureType === kind &&
-    receipt.targetId === evacuation.sourceId &&
-    receipt.replacementId === evacuation.replacementId &&
-    receipt.observedAt >= evacuation.startedAt &&
-    receipt.observedAt < evacuation.expiresAt
-    ? kind
+    receipt.targetStructureType === completed.kind &&
+    receipt.targetId === completed.evacuation.sourceId &&
+    receipt.replacementId === completed.evacuation.replacementId &&
+    receipt.observedAt >= completed.evacuation.startedAt &&
+    receipt.observedAt < completed.evacuation.expiresAt
+    ? completed.kind
     : null;
 }
 

@@ -47,7 +47,9 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
   const record = input.owner.staleRecords.find(({ roomName }) => roomName === input.roomName);
   const receipt = record?.removalReceipt;
   const hasPairedEvacuation =
-    record?.extensionEvacuation !== undefined || record?.towerEvacuation !== undefined;
+    record?.extensionEvacuation !== undefined ||
+    record?.spawnEvacuation !== undefined ||
+    record?.towerEvacuation !== undefined;
   const completedEvacuationKind =
     record === undefined ? null : completedStaleLayoutEvacuationKind(record);
   if (
