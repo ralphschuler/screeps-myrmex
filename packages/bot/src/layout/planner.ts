@@ -48,7 +48,7 @@ function staleLayoutRevisionBlocker(
     : null;
   if (
     record.algorithmRevision === LAYOUT_ALGORITHM_REVISION ||
-    record.containerMigration !== undefined ||
+    (record.containerMigration !== undefined && completedEvacuationKind !== "container") ||
     (record.extensionEvacuation !== undefined && completedEvacuationKind !== "extension") ||
     record.labEvacuation !== undefined ||
     (record.linkEvacuation !== undefined && completedEvacuationKind !== "link") ||

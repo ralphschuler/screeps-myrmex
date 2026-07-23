@@ -297,16 +297,38 @@ export interface LayoutRecord extends LayoutCommitment {
 
 /** A fully validated older-algorithm record isolated from every gameplay projection. */
 export type StaleLayoutRecord = LayoutRecord;
-export type CompletedStaleLayoutEvacuationKind = "extension" | "link" | "spawn" | "tower";
+export type CompletedStaleLayoutEvacuationKind =
+  "container" | "extension" | "link" | "spawn" | "tower";
 
 export function completedStaleLayoutEvacuationKind(
   record: StaleLayoutRecord,
 ): CompletedStaleLayoutEvacuationKind | null {
   const evacuations = [
-    { evacuation: record.extensionEvacuation, kind: "extension" as const },
-    { evacuation: record.linkEvacuation, kind: "link" as const },
-    { evacuation: record.spawnEvacuation, kind: "spawn" as const },
-    { evacuation: record.towerEvacuation, kind: "tower" as const },
+    {
+      evacuation: record.containerMigration,
+      kind: "container" as const,
+      targetId: record.containerMigration?.targetId,
+    },
+    {
+      evacuation: record.extensionEvacuation,
+      kind: "extension" as const,
+      targetId: record.extensionEvacuation?.sourceId,
+    },
+    {
+      evacuation: record.linkEvacuation,
+      kind: "link" as const,
+      targetId: record.linkEvacuation?.sourceId,
+    },
+    {
+      evacuation: record.spawnEvacuation,
+      kind: "spawn" as const,
+      targetId: record.spawnEvacuation?.sourceId,
+    },
+    {
+      evacuation: record.towerEvacuation,
+      kind: "tower" as const,
+      targetId: record.towerEvacuation?.sourceId,
+    },
   ].filter(({ evacuation }) => evacuation !== undefined);
   if (evacuations.length !== 1) return null;
   const completed = evacuations[0];
@@ -315,7 +337,7 @@ export function completedStaleLayoutEvacuationKind(
   return receipt !== undefined &&
     (receipt.code === "OK" || receipt.code === "TARGET_ABSENT") &&
     receipt.targetStructureType === completed.kind &&
-    receipt.targetId === completed.evacuation.sourceId &&
+    receipt.targetId === completed.targetId &&
     receipt.replacementId === completed.evacuation.replacementId &&
     receipt.observedAt >= completed.evacuation.startedAt &&
     receipt.observedAt < completed.evacuation.expiresAt
