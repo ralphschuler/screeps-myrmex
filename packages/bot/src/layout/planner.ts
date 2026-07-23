@@ -54,7 +54,7 @@ function staleLayoutRevisionBlocker(
     (record.linkEvacuation !== undefined && completedEvacuationKind !== "link") ||
     (record.spawnEvacuation !== undefined && completedEvacuationKind !== "spawn") ||
     record.storageEvacuation !== undefined ||
-    record.terminalEvacuation !== undefined ||
+    (record.terminalEvacuation !== undefined && completedEvacuationKind !== "terminal") ||
     (record.towerEvacuation !== undefined && completedEvacuationKind !== "tower") ||
     (!allowRemovalReceipt && record.removalReceipt !== undefined) ||
     (record.siteReceipts?.length ?? 0) > 0 ||

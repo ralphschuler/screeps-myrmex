@@ -52,6 +52,7 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
     record?.labEvacuation !== undefined ||
     record?.linkEvacuation !== undefined ||
     record?.spawnEvacuation !== undefined ||
+    record?.terminalEvacuation !== undefined ||
     record?.towerEvacuation !== undefined;
   const completedEvacuationKind =
     record === undefined ? null : completedStaleLayoutEvacuationKind(record);

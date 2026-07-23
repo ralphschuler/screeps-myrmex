@@ -243,12 +243,13 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   removal receipt only after a newer complete owned-room observation proves its exact target absent.
   Issue #391 permits one matching completed extension evacuation to settle atomically with that
   receipt when exact target/replacement/type/interval evidence and the same safe newer absence hold;
-  issues #393, #395, #397, #399, and #401 add the equivalent exact completed tower, spawn,
-  reserve-link, container, and lab pairs under the same gates. Every canonical lab stock/destination
-  form shares the same source/replacement/interval identity. Unrelated active, mismatched, storage,
-  failed, unsafe, same-tick, or incomplete evidence remains blocked. Uninterrupted same-structure
-  storage/terminal service, broad dynamic movement/pathfinding proof, autonomous boost manifest
-  production, defensive or active revision migration, and creep dismantling remain issue #99.
+  issues #393, #395, #397, #399, #401, and #403 add the equivalent exact completed tower, spawn,
+  reserve-link, container, lab, and terminal pairs under the same gates. Every canonical lab stock/
+  destination form and scalar/manifest terminal form shares its respective source, replacement, and
+  interval identity. Unrelated active, mismatched, storage, failed, unsafe, same-tick, or incomplete
+  evidence remains blocked. Uninterrupted same-structure storage/terminal service, broad dynamic
+  movement/pathfinding proof, autonomous boost manifest production, defensive or active revision
+  migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

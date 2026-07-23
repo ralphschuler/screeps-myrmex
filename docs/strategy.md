@@ -275,14 +275,14 @@ receipt, emits no command from that evidence, and defers the existing handoff un
 One otherwise-quiescent stale non-storage removal receipt may likewise settle only when it records
 `OK` or `TARGET_ABSENT`, the same safe handoff policy holds, and a newer complete owned-room
 observation proves its exact target ID absent. One completed container migration or extension, lab,
-link, spawn, or tower evacuation may remain paired with that receipt only when exact type, target,
-replacement, and receipt-within-interval evidence match; every canonical lab stock/destination form
-uses that same source/replacement/interval identity. Fresh target absence atomically clears both
-terms. Storage keeps its stronger conservation boundary; unrelated active, mismatched, failed,
-present, incomplete, same-tick, or unsafe evidence remains inert. New layout site/removal planning
-stops globally for either settlement tick without cancelling previously authorized unrelated
-current-layout work. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this
-revision boundary.
+link, spawn, terminal, or tower evacuation may remain paired with that receipt only when exact type,
+target, replacement, and receipt-within-interval evidence match; every canonical lab stock/
+destination form and both scalar/manifest terminal forms use their respective source, replacement,
+and interval identity. Fresh target absence atomically clears both terms. Storage keeps its stronger
+conservation boundary; unrelated active, mismatched, failed, present, incomplete, same-tick, or
+unsafe evidence remains inert. New layout site/removal planning stops globally for either settlement
+tick without cancelling previously authorized unrelated current-layout work.
+[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

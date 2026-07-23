@@ -298,7 +298,7 @@ export interface LayoutRecord extends LayoutCommitment {
 /** A fully validated older-algorithm record isolated from every gameplay projection. */
 export type StaleLayoutRecord = LayoutRecord;
 export type CompletedStaleLayoutEvacuationKind =
-  "container" | "extension" | "lab" | "link" | "spawn" | "tower";
+  "container" | "extension" | "lab" | "link" | "spawn" | "terminal" | "tower";
 
 export function completedStaleLayoutEvacuationKind(
   record: StaleLayoutRecord,
@@ -328,6 +328,11 @@ export function completedStaleLayoutEvacuationKind(
       evacuation: record.spawnEvacuation,
       kind: "spawn" as const,
       targetId: record.spawnEvacuation?.sourceId,
+    },
+    {
+      evacuation: record.terminalEvacuation,
+      kind: "terminal" as const,
+      targetId: record.terminalEvacuation?.sourceId,
     },
     {
       evacuation: record.towerEvacuation,

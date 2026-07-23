@@ -122,8 +122,10 @@ pair, issue [#397](https://github.com/ralphschuler/screeps-myrmex/issues/397) ad
 reserve-link pair, issue [#399](https://github.com/ralphschuler/screeps-myrmex/issues/399) adds the
 completed container-migration pair, and issue
 [#401](https://github.com/ralphschuler/screeps-myrmex/issues/401) adds the completed lab-evacuation
-pair. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
-structure migration and dismantling.
+pair, and issue [#403](https://github.com/ralphschuler/screeps-myrmex/issues/403) adds the completed
+terminal-evacuation pair. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -210,10 +212,11 @@ structure migration and dismantling.
    newer complete owned-room structure projection omits its exact target ID. The settlement
    precommits only the layouts owner and ends all rooms' new site/removal planning for that tick;
    storage, failed, present, same-tick, incomplete, active, or unsafe evidence remains inert. One
-   exact completed container migration or extension, lab, tower, spawn, or reserve-link evacuation
-   may accompany that receipt only when type, target, replacement, terminal result, and receipt tick
-   within its fixed interval match; all canonical lab stock/destination forms share those same
-   source/replacement/interval terms. Newer target absence then clears both terms atomically.
+   exact completed container migration or extension, lab, tower, spawn, terminal, or reserve-link
+   evacuation may accompany that receipt only when type, target, replacement, terminal result, and
+   receipt tick within its fixed interval match; all canonical lab stock/destination forms and both
+   scalar/manifest terminal forms share their respective source/replacement/interval terms. Newer
+   target absence then clears both terms atomically.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -523,13 +526,16 @@ Logistics, ContractLedger, selected source service, or the original stock/endpoi
 Issue #401 composes the completed lab-evacuation pair without changing owner schema, Logistics,
 Industry, ContractLedger, or the original stock, destination, assignment, and endpoint-retirement
 gates. Energy-only, mineral-only, mixed, storage-destination, and terminal-destination records use
-one source/replacement/interval identity contract. Newer target absence atomically removes any one
-pair in one owner revision, emits zero site/destroy calls in two rooms, and leaves the #385 handoff
-to the next tick. Warm, real module reset, and reversed-structure variants produce equal owner,
-planning, and command outcomes. Both `OK` and `TARGET_ABSENT` settle. Target/replacement/type
-mismatch, receipt before the migration or evacuation or at its exclusive expiry, target presence,
-same-tick/incomplete observation, nonterminal result, unsafe policy, or another active term
-preserves the original owner.
+one source/replacement/interval identity contract. Issue #403 composes the completed terminal-
+evacuation pair without changing owner schema, Logistics, Industry, ContractLedger, or the original
+stock, storage-capacity, quiescence, send-suppression, and endpoint-retirement gates. Scalar and
+canonical two-to-eight-row manifest forms use one source/storage-replacement/interval identity.
+Newer target absence atomically removes any one pair in one owner revision, emits zero site/destroy
+calls in two rooms, and leaves the #385 handoff to the next tick. Warm, real module reset, and
+reversed-structure variants produce equal owner, planning, and command outcomes. Both `OK` and
+`TARGET_ABSENT` settle. Target/replacement/type mismatch, receipt before the migration or evacuation
+or at its exclusive expiry, target presence, same-tick/incomplete observation, nonterminal result,
+unsafe policy, or another active term preserves the original owner.
 
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
@@ -761,10 +767,10 @@ lint, type, test, documentation, bundle, and package evidence.
   codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
-  the operation; #389, #391, #393, #395, #397, #399, and #401 still require newer complete
-  target-absence observation before settlement. #391, #393, #395, #397, #399, and #401 additionally
-  bind that result to the exact extension, tower, spawn, reserve-link, container, or lab evacuation/
-  migration identity and fixed interval.
+  the operation; #389, #391, #393, #395, #397, #399, #401, and #403 still require newer complete
+  target-absence observation before settlement. #391, #393, #395, #397, #399, #401, and #403
+  additionally bind that result to the exact extension, tower, spawn, reserve-link, container, lab,
+  or terminal evacuation/migration identity and fixed interval.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the
@@ -806,7 +812,9 @@ lint, type, test, documentation, bundle, and package evidence.
 - Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one
   RCL4+ owned general-purpose store, its 1,000,000-unit capacity, and its 30,000 build cost.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
-  RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary.
+  RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary. Issue
+  #403 consumes only fresh exact target absence and does not reinterpret stock delivery, storage
+  capacity, send suppression, quiescence, endpoint retirement, or replacement continuity.
 - Official [`Store`](https://docs.screeps.com/api/#Store) defines resource-specific stock and shared
   general-purpose used/free-capacity checks.
 - Official [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw) and
