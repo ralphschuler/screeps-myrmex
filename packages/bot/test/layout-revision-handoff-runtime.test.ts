@@ -5,6 +5,7 @@ import {
   reconcileStaleLayoutSiteReceipt,
   type LayoutLabEvacuation,
   type LayoutsOwnerV25,
+  type LayoutTerminalEvacuation,
 } from "../src/layout";
 import type { RuntimeGame } from "../src/runtime/context";
 import { runTick } from "../src/runtime/tick";
@@ -23,7 +24,8 @@ interface StaleSiteEvidence {
   readonly y: number;
 }
 
-type CompletedStaleEvacuationKind = "container" | "extension" | "lab" | "link" | "spawn" | "tower";
+type CompletedStaleEvacuationKind =
+  "container" | "extension" | "lab" | "link" | "spawn" | "terminal" | "tower";
 
 interface GameOptions {
   readonly blockedTerrain?: boolean;
@@ -117,6 +119,43 @@ const LAB_EVACUATION_VARIANTS = [
   readonly name: string;
 }[];
 
+const TERMINAL_EVACUATION_VARIANTS = [
+  {
+    evacuation: {
+      amount: 100,
+      expiresAt: 250,
+      replacementId: "terminal-replacement",
+      replacementInitialAmount: 0,
+      resourceType: "energy",
+      sourceId: "terminal-obsolete",
+      startedAt: 100,
+    },
+    name: "single resource",
+  },
+  {
+    evacuation: {
+      expiresAt: 250,
+      replacementId: "terminal-replacement",
+      resourceManifest: [
+        ["H", 100, 0],
+        ["O", 100, 0],
+        ["U", 100, 0],
+        ["X", 100, 0],
+        ["Z", 100, 0],
+        ["energy", 100, 0],
+        ["power", 100, 0],
+        ["silicon", 100, 0],
+      ],
+      sourceId: "terminal-obsolete",
+      startedAt: 100,
+    },
+    name: "eight-resource manifest",
+  },
+] as const satisfies readonly {
+  readonly evacuation: LayoutTerminalEvacuation;
+  readonly name: string;
+}[];
+
 type StaleActiveEvidence =
   | "completed-container-migration"
   | "completed-container-migration-with-site"
@@ -128,6 +167,8 @@ type StaleActiveEvidence =
   | "completed-link-evacuation-with-site"
   | "completed-spawn-evacuation"
   | "completed-spawn-evacuation-with-site"
+  | "completed-terminal-evacuation"
+  | "completed-terminal-evacuation-with-site"
   | "completed-tower-evacuation"
   | "completed-tower-evacuation-with-site"
   | "container-migration"
@@ -136,7 +177,7 @@ type StaleActiveEvidence =
   | "source-handoff"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -237,7 +278,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(secondCommands.destroyStructure).not.toHaveBeenCalled();
   });
 
-  it.each(["container", "extension", "lab", "link", "spawn", "tower"] as const)(
+  it.each(["container", "extension", "lab", "link", "spawn", "terminal", "tower"] as const)(
     "suppresses every room's layout commands while settling one stale %s pair",
     (kind) => {
       const firstCommands = commandSpies();
@@ -445,7 +486,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     ).toMatchObject({ code: "TARGET_ABSENT" });
   });
 
-  it.each(["container", "extension", "lab", "link", "spawn", "tower"] as const)(
+  it.each(["container", "extension", "lab", "link", "spawn", "terminal", "tower"] as const)(
     "atomically settles one completed stale %s migration pair",
     (kind) => {
       const commands = commandSpies();
@@ -552,6 +593,55 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
         expect(forward.pendingOwner.staleRecords[0]?.labEvacuation).toEqual(evacuation);
         expect(forward.pendingOwner.staleRecords[0]?.removalReceipt).toMatchObject({ code });
         expect(forward.settlementOwner.staleRecords[0]?.labEvacuation).toBeUndefined();
+        expect(forward.settlementOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
+        expect(forward.settlementOwner.records).toEqual([]);
+        expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+        expect(forward.settlementPlanning).toEqual([
+          expect.objectContaining({
+            blocker: "revision-handoff-active",
+            roomName: ROOM_NAME,
+            status: "degraded",
+          }),
+        ]);
+        expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+        expect(forward.handoffPlanning).toEqual([
+          expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+        ]);
+        expect(reset).toEqual(forward);
+        expect(reordered).toEqual(forward);
+      }
+    },
+  );
+
+  it.each(TERMINAL_EVACUATION_VARIANTS)(
+    "settles completed stale terminal $name records across command, reset, and reorder variants",
+    async ({ evacuation }) => {
+      for (const code of ["OK", "TARGET_ABSENT"] as const) {
+        const forward = await runStaleRemovalSettlementVariant(
+          false,
+          false,
+          "terminal",
+          code,
+          evacuation,
+        );
+        const reset = await runStaleRemovalSettlementVariant(
+          false,
+          true,
+          "terminal",
+          code,
+          evacuation,
+        );
+        const reordered = await runStaleRemovalSettlementVariant(
+          true,
+          false,
+          "terminal",
+          code,
+          evacuation,
+        );
+
+        expect(forward.pendingOwner.staleRecords[0]?.terminalEvacuation).toEqual(evacuation);
+        expect(forward.pendingOwner.staleRecords[0]?.removalReceipt).toMatchObject({ code });
+        expect(forward.settlementOwner.staleRecords[0]?.terminalEvacuation).toBeUndefined();
         expect(forward.settlementOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
         expect(forward.settlementOwner.records).toEqual([]);
         expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
@@ -1136,6 +1226,73 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(result.owner).toBe(owner);
   });
 
+  it.each([
+    { name: "target present", observedAt: 102, receipt: {}, structures: ["terminal-obsolete"] },
+    { name: "same tick", observedAt: 101, receipt: {}, structures: [] },
+    { name: "failed", observedAt: 102, receipt: { code: "ERR_BUSY" }, structures: [] },
+    {
+      name: "incomplete structure projection",
+      observedAt: 102,
+      receipt: {},
+      structures: undefined,
+    },
+    {
+      name: "unsafe policy",
+      blocker: "policy-unavailable",
+      observedAt: 102,
+      receipt: {},
+      structures: [],
+    },
+    {
+      name: "wrong target",
+      observedAt: 102,
+      receipt: { targetId: "different-terminal" },
+      structures: [],
+    },
+    {
+      name: "wrong replacement",
+      observedAt: 102,
+      receipt: { replacementId: "different-storage" },
+      structures: [],
+    },
+    {
+      name: "wrong type",
+      observedAt: 102,
+      receipt: { targetStructureType: "extension" },
+      structures: [],
+    },
+    {
+      name: "receipt predates evacuation",
+      observedAt: 102,
+      receipt: { observedAt: 99 },
+      structures: [],
+    },
+    {
+      name: "receipt at evacuation expiry",
+      observedAt: 251,
+      receipt: { observedAt: 250 },
+      structures: [],
+    },
+  ] as const)("preserves a stale terminal pair when $name", (testCase) => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleRemovalReceipt(memory, testCase.receipt, "completed-terminal-evacuation");
+    const owner = layoutsOwner(memory);
+
+    const result = reconcileStaleLayoutRemovalReceipt({
+      blocker: "blocker" in testCase ? testCase.blocker : null,
+      observedAt: testCase.observedAt,
+      owner,
+      roomName: ROOM_NAME,
+      structures: testCase.structures?.map((id) => ({ id })),
+    });
+
+    expect(result.settled).toBeNull();
+    expect(result.owner).toBe(owner);
+  });
+
   it("keeps stale removal receipts blocked by active or unsafe runtime evidence", () => {
     for (const testCase of [
       { active: "evacuation", name: "active evacuation", options: {} },
@@ -1162,6 +1319,11 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       {
         active: "completed-spawn-evacuation-with-site",
         name: "completed spawn evacuation with another active term",
+        options: {},
+      },
+      {
+        active: "completed-terminal-evacuation-with-site",
+        name: "completed terminal evacuation with another active term",
         options: {},
       },
       {
@@ -1352,7 +1514,7 @@ async function runStaleRemovalSettlementVariant(
   reset: boolean,
   completedEvacuation: CompletedStaleEvacuationKind | null = null,
   receiptCode: "OK" | "TARGET_ABSENT" = "OK",
-  labEvacuation?: LayoutLabEvacuation,
+  evacuationOverride?: LayoutLabEvacuation | LayoutTerminalEvacuation,
 ) {
   const commands = commandSpies();
   let memory = {} as Memory;
@@ -1363,7 +1525,7 @@ async function runStaleRemovalSettlementVariant(
     memory,
     { code: receiptCode },
     completedEvacuation === null ? null : completedStaleEvidence(completedEvacuation),
-    labEvacuation,
+    evacuationOverride,
   );
   commands.createConstructionSite.mockClear();
   commands.destroyStructure.mockClear();
@@ -1441,7 +1603,7 @@ function seedStaleRemovalReceipt(
   memory: Memory,
   overrides: Partial<NonNullable<LayoutsOwnerV25["records"][number]["removalReceipt"]>>,
   active: StaleActiveEvidence = null,
-  labEvacuation?: LayoutLabEvacuation,
+  evacuationOverride?: LayoutLabEvacuation | LayoutTerminalEvacuation,
 ): void {
   seedStaleOwner(memory, active);
   const owner = layoutsOwner(memory);
@@ -1455,9 +1617,11 @@ function seedStaleRemovalReceipt(
         ? ("link" as const)
         : active?.startsWith("completed-spawn-evacuation")
           ? ("spawn" as const)
-          : active?.startsWith("completed-tower-evacuation")
-            ? ("tower" as const)
-            : ("extension" as const);
+          : active?.startsWith("completed-terminal-evacuation")
+            ? ("terminal" as const)
+            : active?.startsWith("completed-tower-evacuation")
+              ? ("tower" as const)
+              : ("extension" as const);
   const removalReceipt = {
     attempt: 1,
     code: "OK" as const,
@@ -1475,7 +1639,12 @@ function seedStaleRemovalReceipt(
       staleRecords: [
         {
           ...staleRecord,
-          ...(labEvacuation === undefined ? {} : { labEvacuation }),
+          ...(evacuationOverride === undefined || structureType !== "lab"
+            ? {}
+            : { labEvacuation: evacuationOverride }),
+          ...(evacuationOverride === undefined || structureType !== "terminal"
+            ? {}
+            : { terminalEvacuation: evacuationOverride }),
           removalReceipt,
         },
       ],
@@ -1571,6 +1740,8 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
   const completedLinkEvacuation = active !== null && active.startsWith("completed-link-evacuation");
   const completedSpawnEvacuation =
     active !== null && active.startsWith("completed-spawn-evacuation");
+  const completedTerminalEvacuation =
+    active !== null && active.startsWith("completed-terminal-evacuation");
   const completedTowerEvacuation =
     active !== null && active.startsWith("completed-tower-evacuation");
   const staleRecord = {
@@ -1634,6 +1805,19 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
           },
         }
       : {}),
+    ...(completedTerminalEvacuation
+      ? {
+          terminalEvacuation: {
+            amount: 100,
+            expiresAt: 250,
+            replacementId: "terminal-replacement",
+            replacementInitialAmount: 0,
+            resourceType: "energy",
+            sourceId: "terminal-obsolete",
+            startedAt: 100,
+          },
+        }
+      : {}),
     ...(completedTowerEvacuation
       ? {
           towerEvacuation: {
@@ -1652,6 +1836,7 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
       active === "completed-lab-evacuation-with-site" ||
       active === "completed-link-evacuation-with-site" ||
       active === "completed-spawn-evacuation-with-site" ||
+      active === "completed-terminal-evacuation-with-site" ||
       active === "completed-tower-evacuation-with-site") &&
     _siteReceipts?.[0] !== undefined
       ? { siteReceipts: [_siteReceipts[0]] }
@@ -1691,7 +1876,9 @@ function staleEvacuation(
           ? record?.linkEvacuation
           : kind === "spawn"
             ? record?.spawnEvacuation
-            : record?.towerEvacuation;
+            : kind === "terminal"
+              ? record?.terminalEvacuation
+              : record?.towerEvacuation;
 }
 
 function withoutCompletedEvacuation(
@@ -1723,6 +1910,11 @@ function withoutCompletedEvacuation(
   if (kind === "spawn") {
     const { spawnEvacuation: _spawnEvacuation, ...retained } = withoutReceipt;
     void _spawnEvacuation;
+    return retained;
+  }
+  if (kind === "terminal") {
+    const { terminalEvacuation: _terminalEvacuation, ...retained } = withoutReceipt;
+    void _terminalEvacuation;
     return retained;
   }
   const { towerEvacuation: _towerEvacuation, ...retained } = withoutReceipt;
@@ -1869,7 +2061,9 @@ function game(
         ? 3_000
         : staleRemovalTargetType === "lab"
           ? 500
-          : 1_000;
+          : staleRemovalTargetType === "terminal"
+            ? 3_000
+            : 1_000;
   const staleRemovalCapacity =
     staleRemovalTargetType === "container"
       ? 2_000
@@ -1881,7 +2075,9 @@ function game(
             ? 800
             : staleRemovalTargetType === "lab"
               ? 2_000
-              : 50;
+              : staleRemovalTargetType === "terminal"
+                ? 300_000
+                : 50;
   const staleRemovalTarget = options.staleRemovalTarget
     ? ({
         destroy: commands.destroyStructure,
@@ -1898,7 +2094,9 @@ function game(
               ? { cooldown: 0, transferEnergy: () => 0 }
               : staleRemovalTargetType === "lab"
                 ? { cooldown: 0, mineralType: null }
-                : {}),
+                : staleRemovalTargetType === "terminal"
+                  ? { cooldown: 0, send: () => 0 }
+                  : {}),
         owner: { username: "Myrmex" },
         pos: pos(40, 40),
         room: { name: roomName },

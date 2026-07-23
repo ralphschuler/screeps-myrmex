@@ -662,7 +662,9 @@ export function clearStaleLayoutCompletedEvacuationReceipt(
             ? prior?.linkEvacuation
             : kind === "spawn"
               ? prior?.spawnEvacuation
-              : prior?.towerEvacuation;
+              : kind === "terminal"
+                ? prior?.terminalEvacuation
+                : prior?.towerEvacuation;
   if (prior?.removalReceipt === undefined || evacuation === undefined) return owner;
   const staleRecords = owner.staleRecords.map((record) => {
     if (record.roomName !== roomName) return record;
@@ -709,6 +711,15 @@ export function clearStaleLayoutCompletedEvacuationReceipt(
         ...retained
       } = record;
       void [_removalReceipt, _spawnEvacuation];
+      return retained;
+    }
+    if (kind === "terminal") {
+      const {
+        removalReceipt: _removalReceipt,
+        terminalEvacuation: _terminalEvacuation,
+        ...retained
+      } = record;
+      void [_removalReceipt, _terminalEvacuation];
       return retained;
     }
     const {

@@ -16,9 +16,9 @@ Issue #385 requires one bounded revision transition without creating a second la
 migration queue, command path, or compatibility layer. Issue #387 extends that transition only far
 enough to reconcile one already-successful stale construction-site command from current observation.
 Issue #389 adds the equivalent observation-only continuation for one terminal-success non-storage
-removal receipt. Issues #391, #393, #395, #397, #399, and #401 permit that receipt to retain one
-exact completed extension-, tower-, spawn-, reserve-link-, container-, or lab-evacuation/migration
-term, respectively, until newer observation proves the target absent.
+removal receipt. Issues #391, #393, #395, #397, #399, #401, and #403 permit that receipt to retain
+one exact completed extension-, tower-, spawn-, reserve-link-, container-, lab-, or terminal-
+evacuation/migration term, respectively, until newer observation proves the target absent.
 
 ## Decision
 
@@ -46,14 +46,15 @@ term, respectively, until newer observation proves the target absent.
 - One otherwise-quiescent stale non-storage removal receipt with `OK` or `TARGET_ABSENT` may settle
   only while the same handoff safety policy holds and a newer complete visible owned-room structure
   projection omits its exact target ID. Settlement removes only that receipt and ends new layout
-  planning globally for the tick. Issues #391, #393, #395, #397, #399, and #401 also admit one exact
-  paired extension, tower, spawn, reserve-link, container, or lab evacuation/migration,
-  respectively, only when receipt type, target, replacement, terminal result, and receipt tick
-  within the fixed interval all match. Energy-only, mineral-only, and mixed lab forms use those same
-  source/replacement/interval terms whether mineral destination is storage or terminal. That
-  settlement atomically removes both bounded terms. Storage keeps its specialized stock-conservation
-  and retained-terminal continuity proof. Present, incomplete, same-tick, unsafe, unrelated-active,
-  mismatched, storage, or failed evidence remains inert.
+  planning globally for the tick. Issues #391, #393, #395, #397, #399, #401, and #403 also admit one
+  exact paired extension, tower, spawn, reserve-link, container, lab, or terminal evacuation/
+  migration, respectively, only when receipt type, target, replacement, terminal result, and receipt
+  tick within the fixed interval all match. Energy-only, mineral-only, and mixed lab forms use those
+  same source/replacement/interval terms whether mineral destination is storage or terminal. Scalar
+  and manifest terminal forms likewise share source, storage replacement, and interval identity.
+  That settlement atomically removes both bounded terms. Storage keeps its specialized stock-
+  conservation and retained-terminal continuity proof. Present, incomplete, same-tick, unsafe,
+  unrelated-active, mismatched, storage, or failed evidence remains inert.
 - The existing bounded `LayoutPlanner` must derive one complete current commitment with source and
   access proof. Failure or unsafe evidence preserves the stale record and emits no command.
 - A successful handoff atomically replaces only that room's stale record through the existing
@@ -66,10 +67,10 @@ term, respectively, until newer observation proves the target absent.
 
 A source revision can no longer erase pending irreversible evidence or issue a same-tick command.
 One observed successful site receipt, one terminal-success non-storage removal receipt, and one
-exact completed extension-, tower-, spawn-, reserve-link-, container-, or lab-evacuation/migration
-receipt pair can now converge toward quiescence without reissuing or cancelling its command; the
-separate handoff remains delayed until a later tick. Rooms advance deterministically across
-JSON/global-heap reconstruction and reordered world facts. Other active, mismatched, storage,
+exact completed extension-, tower-, spawn-, reserve-link-, container-, lab-, or terminal-evacuation/
+migration receipt pair can now converge toward quiescence without reissuing or cancelling its
+command; the separate handoff remains delayed until a later tick. Rooms advance deterministically
+across JSON/global-heap reconstruction and reordered world facts. Other active, mismatched, storage,
 failed, or unsafe records remain fail-closed until a later explicit policy handles them; this
 decision does not reinterpret or cancel their work.
 
@@ -87,10 +88,11 @@ uninterrupted same-structure availability remain outside this decision.
 
 ## Mechanics sources
 
-Reviewed 2026-07-22 for #385 and #387; `Structure.destroy` and both indexes rechecked 2026-07-23 for
-issues #389, #391, #393, #395, #397, #399, and #401; `StructureTower` was also checked for #393,
-`StructureSpawn` for #395, `StructureLink` for #397, `StructureContainer` for #399, and
-`StructureLab` for #401:
+Reviewed 2026-07-22 for #385 and #387. `Structure.destroy` and both indexes were rechecked
+2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, and #403. Relevant structure pages
+were also checked: `StructureTower` for #393, `StructureSpawn` for #395, `StructureLink` for #397,
+`StructureContainer` for #399, `StructureLab` for #401, and `StructureTerminal` plus `Store` for
+[issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403):
 
 - Official [Screeps documentation](https://docs.screeps.com/),
   [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy), and
@@ -98,12 +100,12 @@ issues #389, #391, #393, #395, #397, #399, and #401; `StructureTower` was also c
   [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite) define the irreversible
   owned-structure command, successful site scheduling result, and current site facts. `OK` schedules
   destruction while `ERR_NOT_OWNER` and `ERR_BUSY` are failures; issues #389, #391, #393, #395,
-  #397, #399, and #401 additionally require newer complete target absence. The paired #391, #393,
-  #395, #397, #399, and #401 settlements also require the exact extension, tower, spawn, link,
-  container, or lab target/replacement and a terminal receipt produced within its fixed interval.
-  Official [`StructureTower`](https://docs.screeps.com/api/#StructureTower) defines the 1,000-energy
-  capacity and 10-energy action cost already enforced by the original migration path; #393 does not
-  reinterpret stock or operational readiness. Official
+  #397, #399, #401, and #403 additionally require newer complete target absence. The paired #391,
+  #393, #395, #397, #399, #401, and #403 settlements also require the exact extension, tower, spawn,
+  link, container, lab, or terminal target/replacement and a terminal receipt produced within its
+  fixed interval. Official [`StructureTower`](https://docs.screeps.com/api/#StructureTower) defines
+  the 1,000-energy capacity and 10-energy action cost already enforced by the original migration
+  path; #393 does not reinterpret stock or operational readiness. Official
   [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn) defines the 300-energy capacity,
   5,000 hits, and creep-production service already enforced by the original spawn migration path;
   #395 does not reinterpret stock, activity, or spawn-slot readiness. Official
@@ -117,14 +119,20 @@ issues #389, #391, #393, #395, #397, #399, and #401; `StructureTower` was also c
   allowance of ten, 3,000-mineral/2,000-energy capacities, range-two reaction geometry, cooldown
   behavior, and 30-mineral/20-energy boost cost already enforced by lab migration and Industry; #401
   does not reinterpret any stock, destination, assignment, reaction, boost, or replacement
-  readiness. Settlement consumes newer observation only; neither settlement nor handoff reaches a
+  readiness. Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) and
+  [`Store`](https://docs.screeps.com/api/#Store) define the one-per-room RCL6+ terminal,
+  300,000-unit shared capacity, resource rows, and cooldown already enforced by terminal migration;
+  #403 does not reinterpret stock, delivery, endpoint retirement, Industry quiescence, or storage
+  continuity. Settlement consumes newer observation only; neither settlement nor handoff reaches a
   command boundary.
 - Screeps Wiki [index](https://wiki.screepspl.us/Main_Page/),
   [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/),
   [`StructureLink`](https://wiki.screepspl.us/StructureLink/),
   [`StructureSpawn`](https://wiki.screepspl.us/StructureSpawn/), and
   [`StructureTower`](https://wiki.screepspl.us/StructureTower/),
-  [`StructureLab`](https://wiki.screepspl.us/StructureLab/), and
+  [`StructureLab`](https://wiki.screepspl.us/StructureLab/),
+  [`StructureStorage`](https://wiki.screepspl.us/StructureStorage/),
+  [Energy](https://wiki.screepspl.us/Energy/), and
   [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/) provide layout, link, spawn,
-  tower, lab, and container-service terminology only. The MYRMEX owner, handoff, access, and command
-  boundaries are independently defined by repository contracts.
+  tower, lab, local-inventory, hauling, and container-service terminology only. The MYRMEX owner,
+  handoff, access, and command boundaries are independently defined by repository contracts.

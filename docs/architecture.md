@@ -232,16 +232,17 @@ replacement, and tick within the fixed evacuation interval match; issues
 [#393](https://github.com/ralphschuler/screeps-myrmex/issues/393),
 [#395](https://github.com/ralphschuler/screeps-myrmex/issues/395),
 [#397](https://github.com/ralphschuler/screeps-myrmex/issues/397),
-[#399](https://github.com/ralphschuler/screeps-myrmex/issues/399), and
-[#401](https://github.com/ralphschuler/screeps-myrmex/issues/401) add the equivalent exact tower,
-spawn, reserve-link, container-migration, and lab-evacuation pairs. Both terms clear atomically.
-Either settlement publishes no new layout site/removal proposal in any room and cannot perform the
-revision handoff until a later tick; every mismatch preserves inert evidence. Previously authorized
-unrelated current-layout Logistics and lease work is not cancelled or reclassified.
-[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
-`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
-`Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
-result reuses the same fixed receipt.
+[#399](https://github.com/ralphschuler/screeps-myrmex/issues/399),
+[#401](https://github.com/ralphschuler/screeps-myrmex/issues/401), and
+[#403](https://github.com/ralphschuler/screeps-myrmex/issues/403) add the equivalent exact tower,
+spawn, reserve-link, container-migration, lab-evacuation, and terminal-evacuation pairs. Both terms
+clear atomically. Either settlement publishes no new layout site/removal proposal in any room and
+cannot perform the revision handoff until a later tick; every mismatch preserves inert evidence.
+Previously authorized unrelated current-layout Logistics and lease work is not cancelled or
+reclassified. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the
+boundary. `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone
+calls `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and
+lab result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -2066,17 +2067,18 @@ command authority, queue, or resource budget changes.
 Issue #389 adds the equivalent bounded continuation for one stale removal receipt. Only `OK` or
 `TARGET_ABSENT` on an otherwise-quiescent non-storage record may settle, and only when the same safe
 handoff policy holds and a newer complete visible owned-room structure projection omits the exact
-target ID. Issues #391, #393, #395, #397, #399, and #401 permit one completed extension, tower,
-spawn, reserve-link, container, or lab evacuation/migration, respectively, to accompany that receipt
-only when the receipt type, target and replacement IDs, and receipt tick within its fixed interval
-match. Every canonical energy-only, mineral-only, or mixed lab record shares those source,
-replacement, and interval terms regardless of storage or terminal mineral destination. Settlement
-then atomically removes both terms. Storage retains its specialized conservation and
-terminal-continuity proof. Present, same-tick, incomplete, unsafe, unrelated-active, mismatched,
-storage, or failed evidence preserves every byte. Settlement precommits the existing layouts owner,
-suppresses all rooms' new site and removal output for that tick, and leaves the separate revision
-handoff until a later tick. No owner field, schema, command authority, queue, scan outside the
-two-room planning window, or resource budget changes.
+target ID. Issues #391, #393, #395, #397, #399, #401, and #403 permit one completed extension,
+tower, spawn, reserve-link, container, lab, or terminal evacuation/migration, respectively, to
+accompany that receipt only when the receipt type, target and replacement IDs, and receipt tick
+within its fixed interval match. Every canonical energy-only, mineral-only, or mixed lab record
+shares those source, replacement, and interval terms regardless of storage or terminal mineral
+destination. Scalar and manifest terminal records likewise share source, storage replacement, and
+interval identity. Settlement then atomically removes both terms. Storage retains its specialized
+conservation and terminal-continuity proof. Present, same-tick, incomplete, unsafe,
+unrelated-active, mismatched, storage, or failed evidence preserves every byte. Settlement
+precommits the existing layouts owner, suppresses all rooms' new site and removal output for that
+tick, and leaves the separate revision handoff until a later tick. No owner field, schema, command
+authority, queue, scan outside the two-room planning window, or resource budget changes.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2715,14 +2717,15 @@ Required architecture assertions include:
   successful stale construction-site receipt may settle only from newer matching owned-site or
   completed-owned-structure evidence, and one otherwise-quiescent terminal-success non-storage
   removal receipt may settle only from newer complete exact-target absence under the same safe
-  policy; one completed container migration or extension, lab, link, spawn, or tower evacuation may
-  clear atomically with that receipt only when exact type, target, replacement, and
+  policy; one completed container migration or extension, lab, link, spawn, terminal, or tower
+  evacuation may clear atomically with that receipt only when exact type, target, replacement, and
   receipt-within-interval evidence match; lab energy, mineral, mixed, storage-destination, and
-  terminal-destination forms share that identity contract; either settlement is command-free, and
-  only a then-quiescent record under fresh safe visible-colony and complete current source/access
-  evidence may enter the separate command-free current-revision handoff on a later tick, while
-  unrelated-active, unsafe, blocked, reset, reordered, malformed, failed, foreign, storage, or
-  mismatched evidence remains bounded and fail-closed;
+  terminal-destination forms plus scalar and manifest terminal forms share their respective identity
+  contracts; either settlement is command-free, and only a then-quiescent record under fresh safe
+  visible-colony and complete current source/access evidence may enter the separate command-free
+  current-revision handoff on a later tick, while unrelated-active, unsafe, blocked, reset,
+  reordered, malformed, failed, foreign, storage, or mismatched evidence remains bounded and
+  fail-closed;
 - obsolete-storage removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact
   empty 1,000,000-unit external storage, one exact active 300,000-unit same-room terminal, an
   effective Logistics gate with one exact current healthy room row, no current/projected Logistics
