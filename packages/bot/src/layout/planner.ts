@@ -50,7 +50,7 @@ function staleLayoutRevisionBlocker(
     record.algorithmRevision === LAYOUT_ALGORITHM_REVISION ||
     (record.containerMigration !== undefined && completedEvacuationKind !== "container") ||
     (record.extensionEvacuation !== undefined && completedEvacuationKind !== "extension") ||
-    record.labEvacuation !== undefined ||
+    (record.labEvacuation !== undefined && completedEvacuationKind !== "lab") ||
     (record.linkEvacuation !== undefined && completedEvacuationKind !== "link") ||
     (record.spawnEvacuation !== undefined && completedEvacuationKind !== "spawn") ||
     record.storageEvacuation !== undefined ||
