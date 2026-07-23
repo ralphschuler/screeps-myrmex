@@ -27,6 +27,20 @@ export function staleLayoutRevisionHandoffBlocker(input: {
   readonly colony: ColonyView;
   readonly record: StaleLayoutRecord;
 }): LayoutBlocker | null {
+  return staleLayoutRevisionBlocker(input, false);
+}
+
+export function staleLayoutRemovalSettlementBlocker(input: {
+  readonly colony: ColonyView;
+  readonly record: StaleLayoutRecord;
+}): LayoutBlocker | null {
+  return staleLayoutRevisionBlocker(input, true);
+}
+
+function staleLayoutRevisionBlocker(
+  input: { readonly colony: ColonyView; readonly record: StaleLayoutRecord },
+  allowRemovalReceipt: boolean,
+): LayoutBlocker | null {
   const { colony, record } = input;
   if (
     record.algorithmRevision === LAYOUT_ALGORITHM_REVISION ||
@@ -38,7 +52,7 @@ export function staleLayoutRevisionHandoffBlocker(input: {
     record.storageEvacuation !== undefined ||
     record.terminalEvacuation !== undefined ||
     record.towerEvacuation !== undefined ||
-    record.removalReceipt !== undefined ||
+    (!allowRemovalReceipt && record.removalReceipt !== undefined) ||
     (record.siteReceipts?.length ?? 0) > 0 ||
     record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true
   )

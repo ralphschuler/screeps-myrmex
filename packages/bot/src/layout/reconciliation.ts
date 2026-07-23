@@ -2,12 +2,14 @@ import type { ConstructionSiteSnapshot, StructureSnapshot } from "../world/snaps
 import type {
   ConstructionSiteExecutionResult,
   ConstructionSiteAttemptReceipt,
+  LayoutBlocker,
   LayoutStructureRemovalReceipt,
   LayoutsOwnerV25,
   StructureDestroyExecutionResult,
 } from "./contracts";
 import { deriveConstructionSiteAttemptReceipt } from "./construction-site-arbiter";
 import {
+  clearStaleLayoutRemovalReceipt,
   persistConstructionSiteReceipt,
   persistLayoutRemovalReceipt,
   persistStaleConstructionSiteReceipts,
@@ -26,6 +28,36 @@ export interface StructureDestroyReconciliationResult {
 export interface StaleLayoutSiteReceiptReconciliationResult {
   readonly owner: LayoutsOwnerV25;
   readonly settled: ConstructionSiteAttemptReceipt | null;
+}
+
+export interface StaleLayoutRemovalReceiptReconciliationResult {
+  readonly owner: LayoutsOwnerV25;
+  readonly settled: LayoutStructureRemovalReceipt | null;
+}
+
+export function reconcileStaleLayoutRemovalReceipt(input: {
+  readonly blocker: LayoutBlocker | null;
+  readonly observedAt: number;
+  readonly owner: LayoutsOwnerV25;
+  readonly roomName: string;
+  readonly structures: readonly Pick<StructureSnapshot, "id">[] | undefined;
+}): StaleLayoutRemovalReceiptReconciliationResult {
+  const record = input.owner.staleRecords.find(({ roomName }) => roomName === input.roomName);
+  const receipt = record?.removalReceipt;
+  if (
+    input.blocker !== null ||
+    receipt === undefined ||
+    input.structures === undefined ||
+    input.observedAt <= receipt.observedAt ||
+    (receipt.code !== "OK" && receipt.code !== "TARGET_ABSENT") ||
+    receipt.targetStructureType === "storage" ||
+    input.structures.some(({ id }) => id === receipt.targetId)
+  )
+    return Object.freeze({ owner: input.owner, settled: null });
+  return Object.freeze({
+    owner: clearStaleLayoutRemovalReceipt(input.owner, input.roomName),
+    settled: receipt,
+  });
 }
 
 export function reconcileStaleLayoutSiteReceipt(input: {

@@ -238,7 +238,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   commitment; older active evidence remains isolated and fail-closed. Issue #387 settles at most one
   exact successful stale construction-site receipt from a newer owned-site or
   completed-owned-structure observation, performs a command-free settlement step with no new
-  site/removal output, and leaves every mismatch fail-closed before #385's handoff. Uninterrupted
+  site/removal output, and leaves every mismatch fail-closed before #385's handoff. Issue #389 adds
+  the equivalent command-free settlement for one otherwise-quiescent terminal-success non-storage
+  removal receipt only after a newer complete owned-room observation proves its exact target absent;
+  storage, failed, unsafe, active, same-tick, or incomplete evidence remains blocked. Uninterrupted
   same-structure storage/terminal service, broad dynamic movement/pathfinding proof, autonomous
   boost manifest production, defensive or active revision migration, and creep dismantling remain
   issue #99.
