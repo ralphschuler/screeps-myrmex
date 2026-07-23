@@ -28,6 +28,7 @@ import {
   MAX_LAYOUT_RECORDS,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
+  type CompletedStaleLayoutEvacuationKind,
   type ConstructionSiteAttemptReceipt,
   type LayoutCommitment,
   type LayoutContainerMigration,
@@ -644,20 +645,36 @@ export function clearStaleLayoutRemovalReceipt(
   return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
 }
 
-export function clearStaleLayoutExtensionEvacuationReceipt(
+export function clearStaleLayoutCompletedEvacuationReceipt(
   owner: LayoutsOwnerV25,
   roomName: string,
+  kind: CompletedStaleLayoutEvacuationKind,
 ): LayoutsOwnerV25 {
   const prior = owner.staleRecords.find((record) => record.roomName === roomName);
-  if (prior?.extensionEvacuation === undefined || prior.removalReceipt === undefined) return owner;
+  if (
+    prior?.removalReceipt === undefined ||
+    (kind === "extension"
+      ? prior.extensionEvacuation === undefined
+      : prior.towerEvacuation === undefined)
+  )
+    return owner;
   const staleRecords = owner.staleRecords.map((record) => {
     if (record.roomName !== roomName) return record;
+    if (kind === "extension") {
+      const {
+        extensionEvacuation: _extensionEvacuation,
+        removalReceipt: _removalReceipt,
+        ...retained
+      } = record;
+      void [_extensionEvacuation, _removalReceipt];
+      return retained;
+    }
     const {
-      extensionEvacuation: _extensionEvacuation,
+      towerEvacuation: _towerEvacuation,
       removalReceipt: _removalReceipt,
       ...retained
     } = record;
-    void [_extensionEvacuation, _removalReceipt];
+    void [_towerEvacuation, _removalReceipt];
     return retained;
   });
   return freeze({ ...owner, revision: owner.revision + 1, staleRecords });

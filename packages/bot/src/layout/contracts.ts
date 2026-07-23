@@ -297,20 +297,27 @@ export interface LayoutRecord extends LayoutCommitment {
 
 /** A fully validated older-algorithm record isolated from every gameplay projection. */
 export type StaleLayoutRecord = LayoutRecord;
+export type CompletedStaleLayoutEvacuationKind = "extension" | "tower";
 
-export function hasCompletedExtensionEvacuationReceipt(record: StaleLayoutRecord): boolean {
-  const evacuation = record.extensionEvacuation;
+export function completedStaleLayoutEvacuationKind(
+  record: StaleLayoutRecord,
+): CompletedStaleLayoutEvacuationKind | null {
+  const extension = record.extensionEvacuation;
+  const tower = record.towerEvacuation;
+  if ((extension === undefined) === (tower === undefined)) return null;
+  const kind = extension === undefined ? "tower" : "extension";
+  const evacuation = extension ?? tower;
   const receipt = record.removalReceipt;
-  return (
-    evacuation !== undefined &&
+  return evacuation !== undefined &&
     receipt !== undefined &&
     (receipt.code === "OK" || receipt.code === "TARGET_ABSENT") &&
-    receipt.targetStructureType === "extension" &&
+    receipt.targetStructureType === kind &&
     receipt.targetId === evacuation.sourceId &&
     receipt.replacementId === evacuation.replacementId &&
     receipt.observedAt >= evacuation.startedAt &&
     receipt.observedAt < evacuation.expiresAt
-  );
+    ? kind
+    : null;
 }
 
 export function layoutContainerMigrationFlowId(

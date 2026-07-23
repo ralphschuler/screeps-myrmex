@@ -9,7 +9,7 @@ import {
 import { compileOwnedRoomLayoutV1 } from "./layout-v1";
 import { selectSourceServices } from "./source-services";
 import {
-  hasCompletedExtensionEvacuationReceipt,
+  completedStaleLayoutEvacuationKind,
   LAYOUT_ALGORITHM_REVISION,
   MAX_LAYOUT_CANDIDATES,
   MAX_LAYOUT_FLOOD_CELLS,
@@ -43,18 +43,19 @@ function staleLayoutRevisionBlocker(
   allowRemovalReceipt: boolean,
 ): LayoutBlocker | null {
   const { colony, record } = input;
-  const matchingCompletedExtensionEvacuation =
-    allowRemovalReceipt && hasCompletedExtensionEvacuationReceipt(record);
+  const completedEvacuationKind = allowRemovalReceipt
+    ? completedStaleLayoutEvacuationKind(record)
+    : null;
   if (
     record.algorithmRevision === LAYOUT_ALGORITHM_REVISION ||
     record.containerMigration !== undefined ||
-    (record.extensionEvacuation !== undefined && !matchingCompletedExtensionEvacuation) ||
+    (record.extensionEvacuation !== undefined && completedEvacuationKind !== "extension") ||
     record.labEvacuation !== undefined ||
     record.linkEvacuation !== undefined ||
     record.spawnEvacuation !== undefined ||
     record.storageEvacuation !== undefined ||
     record.terminalEvacuation !== undefined ||
-    record.towerEvacuation !== undefined ||
+    (record.towerEvacuation !== undefined && completedEvacuationKind !== "tower") ||
     (!allowRemovalReceipt && record.removalReceipt !== undefined) ||
     (record.siteReceipts?.length ?? 0) > 0 ||
     record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true

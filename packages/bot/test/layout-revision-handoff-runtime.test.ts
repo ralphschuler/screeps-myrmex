@@ -28,6 +28,7 @@ interface GameOptions {
   readonly controllerRisk?: boolean;
   readonly reverse?: boolean;
   readonly staleRemovalTarget?: boolean;
+  readonly staleRemovalTargetType?: "extension" | "tower";
   readonly staleSiteEvidence?: StaleSiteEvidence;
   readonly threat?: boolean;
   readonly visible?: boolean;
@@ -38,7 +39,18 @@ interface Commands {
   readonly destroyStructure: ReturnType<typeof vi.fn<() => number>>;
 }
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
+type StaleActiveEvidence =
+  | "completed-extension-evacuation"
+  | "completed-extension-evacuation-with-site"
+  | "completed-tower-evacuation"
+  | "completed-tower-evacuation-with-site"
+  | "container-migration"
+  | "evacuation"
+  | "site-receipt"
+  | "source-handoff"
+  | null;
+
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -139,54 +151,63 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
     expect(secondCommands.destroyStructure).not.toHaveBeenCalled();
   });
 
-  it("suppresses every room's layout commands while settling one stale evacuation pair", () => {
-    const firstCommands = commandSpies();
-    const secondCommands = commandSpies();
-    const memory = {} as Memory;
-    runTick({ game: twoRoomGame(100, firstCommands, secondCommands), memory });
-    runTick({ game: twoRoomGame(101, firstCommands, secondCommands), memory });
-    seedStaleRemovalReceipt(memory, {}, "completed-extension-evacuation");
-    runTick({
-      game: twoRoomGame(102, firstCommands, secondCommands, { staleRemovalTarget: true }),
-      memory,
-    });
-    const priorOwner = layoutsOwner(memory);
-    const priorOtherRoom = priorOwner.records.find(({ roomName }) => roomName === "W2N2");
-    if (priorOtherRoom === undefined) throw new Error("expected unaffected second-room record");
-    firstCommands.createConstructionSite.mockClear();
-    firstCommands.destroyStructure.mockClear();
-    secondCommands.createConstructionSite.mockClear();
-    secondCommands.destroyStructure.mockClear();
+  it.each(["extension", "tower"] as const)(
+    "suppresses every room's layout commands while settling one stale %s pair",
+    (kind) => {
+      const firstCommands = commandSpies();
+      const secondCommands = commandSpies();
+      const memory = {} as Memory;
+      runTick({ game: twoRoomGame(100, firstCommands, secondCommands), memory });
+      runTick({ game: twoRoomGame(101, firstCommands, secondCommands), memory });
+      seedStaleRemovalReceipt(memory, {}, `completed-${kind}-evacuation`);
+      runTick({
+        game: twoRoomGame(102, firstCommands, secondCommands, {
+          staleRemovalTarget: true,
+          staleRemovalTargetType: kind,
+        }),
+        memory,
+      });
+      const priorOwner = layoutsOwner(memory);
+      const priorOtherRoom = priorOwner.records.find(({ roomName }) => roomName === "W2N2");
+      if (priorOtherRoom === undefined) throw new Error("expected unaffected second-room record");
+      firstCommands.createConstructionSite.mockClear();
+      firstCommands.destroyStructure.mockClear();
+      secondCommands.createConstructionSite.mockClear();
+      secondCommands.destroyStructure.mockClear();
 
-    const settlement = runTick({ game: twoRoomGame(103, firstCommands, secondCommands), memory });
+      const settlement = runTick({ game: twoRoomGame(103, firstCommands, secondCommands), memory });
 
-    const settledOwner = layoutsOwner(memory);
-    expect(settledOwner.revision).toBe(priorOwner.revision + 1);
-    expect(settledOwner.staleRecords[0]?.extensionEvacuation).toBeUndefined();
-    expect(settledOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
-    expect(settledOwner.records.find(({ roomName }) => roomName === "W2N2")).toEqual(
-      priorOtherRoom,
-    );
-    expect(settlement.layout.planning).toEqual([
-      expect.objectContaining({
-        blocker: "revision-handoff-active",
-        roomName: ROOM_NAME,
-        status: "degraded",
-      }),
-    ]);
-    expect(settlement.layout.arbitration?.accepted ?? []).toEqual([]);
-    expect(settlement.layout.arbitration?.deferred ?? []).toEqual([]);
-    expect(settlement.layout.arbitration?.intents ?? []).toEqual([]);
-    expect(settlement.layout.arbitration?.rejected ?? []).toEqual([]);
-    expect(settlement.layout.execution).toEqual([]);
-    expect(settlement.layout.migration.proposals).toEqual([]);
-    expect(settlement.layout.migration.arbitration?.intents ?? []).toEqual([]);
-    expect(settlement.layout.migration.execution).toEqual([]);
-    expect(firstCommands.createConstructionSite).not.toHaveBeenCalled();
-    expect(firstCommands.destroyStructure).not.toHaveBeenCalled();
-    expect(secondCommands.createConstructionSite).not.toHaveBeenCalled();
-    expect(secondCommands.destroyStructure).not.toHaveBeenCalled();
-  });
+      const settledOwner = layoutsOwner(memory);
+      const settledRecord = settledOwner.staleRecords[0];
+      expect(settledOwner.revision).toBe(priorOwner.revision + 1);
+      expect(
+        kind === "extension" ? settledRecord?.extensionEvacuation : settledRecord?.towerEvacuation,
+      ).toBeUndefined();
+      expect(settledRecord?.removalReceipt).toBeUndefined();
+      expect(settledOwner.records.find(({ roomName }) => roomName === "W2N2")).toEqual(
+        priorOtherRoom,
+      );
+      expect(settlement.layout.planning).toEqual([
+        expect.objectContaining({
+          blocker: "revision-handoff-active",
+          roomName: ROOM_NAME,
+          status: "degraded",
+        }),
+      ]);
+      expect(settlement.layout.arbitration?.accepted ?? []).toEqual([]);
+      expect(settlement.layout.arbitration?.deferred ?? []).toEqual([]);
+      expect(settlement.layout.arbitration?.intents ?? []).toEqual([]);
+      expect(settlement.layout.arbitration?.rejected ?? []).toEqual([]);
+      expect(settlement.layout.execution).toEqual([]);
+      expect(settlement.layout.migration.proposals).toEqual([]);
+      expect(settlement.layout.migration.arbitration?.intents ?? []).toEqual([]);
+      expect(settlement.layout.migration.execution).toEqual([]);
+      expect(firstCommands.createConstructionSite).not.toHaveBeenCalled();
+      expect(firstCommands.destroyStructure).not.toHaveBeenCalled();
+      expect(secondCommands.createConstructionSite).not.toHaveBeenCalled();
+      expect(secondCommands.destroyStructure).not.toHaveBeenCalled();
+    },
+  );
 
   it("settles an exact owned construction-site observation without changing another receipt", () => {
     const commands = commandSpies();
@@ -340,64 +361,68 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
     ).toMatchObject({ code: "TARGET_ABSENT" });
   });
 
-  it("atomically settles one completed stale extension evacuation pair", () => {
-    const commands = commandSpies();
-    const memory = {} as Memory;
-    runTick({ game: game(100, commands), memory });
-    runTick({ game: game(101, commands), memory });
-    seedStaleRemovalReceipt(memory, {}, "completed-extension-evacuation");
-    const owner = layoutsOwner(memory);
-    const priorRecord = owner.staleRecords[0];
-    if (priorRecord?.extensionEvacuation === undefined || priorRecord.removalReceipt === undefined)
-      throw new Error("expected completed stale extension evacuation");
+  it.each(["extension", "tower"] as const)(
+    "atomically settles one completed stale %s evacuation pair",
+    (kind) => {
+      const commands = commandSpies();
+      const memory = {} as Memory;
+      runTick({ game: game(100, commands), memory });
+      runTick({ game: game(101, commands), memory });
+      seedStaleRemovalReceipt(memory, {}, `completed-${kind}-evacuation`);
+      const owner = layoutsOwner(memory);
+      const priorRecord = owner.staleRecords[0];
+      const evacuation =
+        kind === "extension" ? priorRecord?.extensionEvacuation : priorRecord?.towerEvacuation;
+      if (
+        priorRecord === undefined ||
+        evacuation === undefined ||
+        priorRecord.removalReceipt === undefined
+      )
+        throw new Error(`expected completed stale ${kind} evacuation`);
 
-    const result = reconcileStaleLayoutRemovalReceipt({
-      blocker: null,
-      observedAt: 102,
-      owner,
-      roomName: ROOM_NAME,
-      structures: [],
-    });
+      const result = reconcileStaleLayoutRemovalReceipt({
+        blocker: null,
+        observedAt: 102,
+        owner,
+        roomName: ROOM_NAME,
+        structures: [],
+      });
+      const evacuationKey = `${kind}Evacuation`;
 
-    expect(result.settled).toMatchObject({
-      code: "OK",
-      replacementId: priorRecord.extensionEvacuation.replacementId,
-      targetId: priorRecord.extensionEvacuation.sourceId,
-      targetStructureType: "extension",
-    });
-    expect(result.owner.revision).toBe(owner.revision + 1);
-    expect(result.owner.staleRecords).toHaveLength(1);
-    expect(result.owner.staleRecords[0]).not.toHaveProperty("extensionEvacuation");
-    expect(result.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
-    const {
-      extensionEvacuation: _extensionEvacuation,
-      removalReceipt: _pairedReceipt,
-      ...retained
-    } = priorRecord;
-    void [_extensionEvacuation, _pairedReceipt];
-    expect(result.owner.staleRecords[0]).toEqual(retained);
+      expect(result.settled).toMatchObject({
+        code: "OK",
+        replacementId: evacuation.replacementId,
+        targetId: evacuation.sourceId,
+        targetStructureType: kind,
+      });
+      expect(result.owner.revision).toBe(owner.revision + 1);
+      expect(result.owner.staleRecords).toHaveLength(1);
+      expect(result.owner.staleRecords[0]).not.toHaveProperty(evacuationKey);
+      expect(result.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
+      expect(result.owner.staleRecords[0]).toEqual(withoutCompletedEvacuation(priorRecord, kind));
 
-    const targetAbsentOwner = parseLayoutsOwner({
-      ...owner,
-      staleRecords: [
-        {
-          ...priorRecord,
-          removalReceipt: { ...priorRecord.removalReceipt, code: "TARGET_ABSENT" },
-        },
-      ],
-    });
-    if (targetAbsentOwner === null) throw new Error("expected paired target-absent owner");
-    const targetAbsentResult = reconcileStaleLayoutRemovalReceipt({
-      blocker: null,
-      observedAt: 102,
-      owner: targetAbsentOwner,
-      roomName: ROOM_NAME,
-      structures: [],
-    });
-    expect(targetAbsentResult.settled).toMatchObject({ code: "TARGET_ABSENT" });
-    expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty("extensionEvacuation");
-    expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
-  });
+      const targetAbsentOwner = parseLayoutsOwner({
+        ...owner,
+        staleRecords: [
+          {
+            ...priorRecord,
+            removalReceipt: { ...priorRecord.removalReceipt, code: "TARGET_ABSENT" },
+          },
+        ],
+      });
+      if (targetAbsentOwner === null) throw new Error("expected paired target-absent owner");
+      const targetAbsentResult = reconcileStaleLayoutRemovalReceipt({
+        blocker: null,
+        observedAt: 102,
+        owner: targetAbsentOwner,
+        roomName: ROOM_NAME,
+        structures: [],
+      });
+      expect(targetAbsentResult.settled).toMatchObject({ code: "TARGET_ABSENT" });
+      expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty(evacuationKey);
+      expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
+    },
+  );
 
   it("settles stale removal command-free before a later revision handoff", async () => {
     const forward = await runStaleRemovalSettlementVariant(false, false);
@@ -424,32 +449,46 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
     expect(reordered).toEqual(forward);
   });
 
-  it("settles a completed stale extension evacuation before a later revision handoff", async () => {
-    const forward = await runStaleRemovalSettlementVariant(false, false, true);
-    const reset = await runStaleRemovalSettlementVariant(false, true, true);
-    const reordered = await runStaleRemovalSettlementVariant(true, false, true);
+  it.each(["extension", "tower"] as const)(
+    "settles a completed stale %s evacuation before a later revision handoff",
+    async (kind) => {
+      const forward = await runStaleRemovalSettlementVariant(false, false, kind);
+      const reset = await runStaleRemovalSettlementVariant(false, true, kind);
+      const reordered = await runStaleRemovalSettlementVariant(true, false, kind);
+      const pendingRecord = forward.pendingOwner.staleRecords[0];
+      const settlementRecord = forward.settlementOwner.staleRecords[0];
 
-    expect(forward.pendingOwner.staleRecords[0]?.extensionEvacuation).toBeDefined();
-    expect(forward.pendingOwner.staleRecords[0]?.removalReceipt).toMatchObject({ code: "OK" });
-    expect(forward.settlementOwner.staleRecords[0]?.extensionEvacuation).toBeUndefined();
-    expect(forward.settlementOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
-    expect(forward.settlementOwner.records).toEqual([]);
-    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
-    expect(forward.settlementPlanning).toEqual([
-      expect.objectContaining({
-        blocker: "revision-handoff-active",
-        roomName: ROOM_NAME,
-        status: "degraded",
-      }),
-    ]);
-    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
-    expect(forward.handoffPlanning).toEqual([
-      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
-    ]);
-    expect(forward.handoffOwner).toMatchObject({ records: [expect.anything()], staleRecords: [] });
-    expect(reset).toEqual(forward);
-    expect(reordered).toEqual(forward);
-  });
+      expect(
+        kind === "extension" ? pendingRecord?.extensionEvacuation : pendingRecord?.towerEvacuation,
+      ).toBeDefined();
+      expect(pendingRecord?.removalReceipt).toMatchObject({ code: "OK" });
+      expect(
+        kind === "extension"
+          ? settlementRecord?.extensionEvacuation
+          : settlementRecord?.towerEvacuation,
+      ).toBeUndefined();
+      expect(settlementRecord?.removalReceipt).toBeUndefined();
+      expect(forward.settlementOwner.records).toEqual([]);
+      expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+      expect(forward.settlementPlanning).toEqual([
+        expect.objectContaining({
+          blocker: "revision-handoff-active",
+          roomName: ROOM_NAME,
+          status: "degraded",
+        }),
+      ]);
+      expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+      expect(forward.handoffPlanning).toEqual([
+        expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+      ]);
+      expect(forward.handoffOwner).toMatchObject({
+        records: [expect.anything()],
+        staleRecords: [],
+      });
+      expect(reset).toEqual(forward);
+      expect(reordered).toEqual(forward);
+    },
+  );
 
   it("preserves stale removal receipts without exact terminal-success absence evidence", () => {
     for (const testCase of [
@@ -481,35 +520,106 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
         observedAt: 102,
         receipt: { targetId: "different-extension" },
         structures: [],
-        withCompletedEvacuation: true,
+        completedEvacuation: "extension",
       },
       {
         name: "wrong paired replacement",
         observedAt: 102,
         receipt: { replacementId: "different-extension" },
         structures: [],
-        withCompletedEvacuation: true,
+        completedEvacuation: "extension",
       },
       {
         name: "wrong paired type",
         observedAt: 102,
         receipt: { targetStructureType: "container" },
         structures: [],
-        withCompletedEvacuation: true,
+        completedEvacuation: "extension",
       },
       {
         name: "receipt predates evacuation",
         observedAt: 102,
         receipt: { observedAt: 99 },
         structures: [],
-        withCompletedEvacuation: true,
+        completedEvacuation: "extension",
       },
       {
         name: "receipt at evacuation expiry",
         observedAt: 251,
         receipt: { observedAt: 250 },
         structures: [],
-        withCompletedEvacuation: true,
+        completedEvacuation: "extension",
+      },
+      {
+        name: "tower target present",
+        observedAt: 102,
+        receipt: {},
+        structures: ["tower-obsolete"],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "tower same tick",
+        observedAt: 101,
+        receipt: {},
+        structures: [],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "tower failed",
+        observedAt: 102,
+        receipt: { code: "ERR_BUSY" },
+        structures: [],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "incomplete tower structure projection",
+        observedAt: 102,
+        receipt: {},
+        structures: undefined,
+        completedEvacuation: "tower",
+      },
+      {
+        name: "unsafe tower policy",
+        blocker: "policy-unavailable",
+        observedAt: 102,
+        receipt: {},
+        structures: [],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "wrong tower target",
+        observedAt: 102,
+        receipt: { targetId: "different-tower" },
+        structures: [],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "wrong tower replacement",
+        observedAt: 102,
+        receipt: { replacementId: "different-tower" },
+        structures: [],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "wrong tower type",
+        observedAt: 102,
+        receipt: { targetStructureType: "extension" },
+        structures: [],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "tower receipt predates evacuation",
+        observedAt: 102,
+        receipt: { observedAt: 99 },
+        structures: [],
+        completedEvacuation: "tower",
+      },
+      {
+        name: "tower receipt at evacuation expiry",
+        observedAt: 251,
+        receipt: { observedAt: 250 },
+        structures: [],
+        completedEvacuation: "tower",
       },
       {
         name: "unsafe policy",
@@ -523,14 +633,16 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
       const memory = {} as Memory;
       runTick({ game: game(100, commands), memory });
       runTick({ game: game(101, commands), memory });
+      const completedEvacuation =
+        "completedEvacuation" in testCase ? testCase.completedEvacuation : null;
       seedStaleRemovalReceipt(
         memory,
         testCase.receipt,
-        testCase.withCompletedEvacuation === true
-          ? "completed-extension-evacuation"
-          : testCase.withEvacuation === true
+        completedEvacuation === null
+          ? testCase.withEvacuation === true
             ? "evacuation"
-            : null,
+            : null
+          : `completed-${completedEvacuation}-evacuation`,
       );
       const owner = layoutsOwner(memory);
       const result = reconcileStaleLayoutRemovalReceipt({
@@ -551,7 +663,12 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
       { active: "evacuation", name: "active evacuation", options: {} },
       {
         active: "completed-extension-evacuation-with-site",
-        name: "completed evacuation with another active term",
+        name: "completed extension evacuation with another active term",
+        options: {},
+      },
+      {
+        active: "completed-tower-evacuation-with-site",
+        name: "completed tower evacuation with another active term",
         options: {},
       },
       { active: "container-migration", name: "active migration", options: {} },
@@ -735,7 +852,7 @@ function runStaleSiteSettlementVariant(reverse: boolean, reset: boolean) {
 async function runStaleRemovalSettlementVariant(
   reverse: boolean,
   reset: boolean,
-  withCompletedExtensionEvacuation = false,
+  completedEvacuation: "extension" | "tower" | null = null,
 ) {
   const commands = commandSpies();
   let memory = {} as Memory;
@@ -745,12 +862,19 @@ async function runStaleRemovalSettlementVariant(
   seedStaleRemovalReceipt(
     memory,
     {},
-    withCompletedExtensionEvacuation ? "completed-extension-evacuation" : null,
+    completedEvacuation === null ? null : `completed-${completedEvacuation}-evacuation`,
   );
   commands.createConstructionSite.mockClear();
   commands.destroyStructure.mockClear();
 
-  executeTick({ game: game(102, commands, { reverse, staleRemovalTarget: true }), memory });
+  executeTick({
+    game: game(102, commands, {
+      reverse,
+      staleRemovalTarget: true,
+      ...(completedEvacuation === null ? {} : { staleRemovalTargetType: completedEvacuation }),
+    }),
+    memory,
+  });
   const pendingOwner = layoutsOwner(memory);
   if (reset) {
     memory = JSON.parse(JSON.stringify(memory)) as Memory;
@@ -811,27 +935,21 @@ function runHandoffVariant(reverse: boolean, reset: boolean) {
 function seedStaleRemovalReceipt(
   memory: Memory,
   overrides: Partial<NonNullable<LayoutsOwnerV25["records"][number]["removalReceipt"]>>,
-  active:
-    | "completed-extension-evacuation"
-    | "completed-extension-evacuation-with-site"
-    | "container-migration"
-    | "evacuation"
-    | "site-receipt"
-    | "source-handoff"
-    | null = null,
+  active: StaleActiveEvidence = null,
 ): void {
   seedStaleOwner(memory, active);
   const owner = layoutsOwner(memory);
   const staleRecord = owner.staleRecords.find((record) => record.roomName === ROOM_NAME);
   if (staleRecord === undefined) throw new Error("expected stale layout record");
+  const tower = active?.startsWith("completed-tower-evacuation") === true;
   const removalReceipt = {
     attempt: 1,
     code: "OK" as const,
     nextEligibleTick: Number.MAX_SAFE_INTEGER,
     observedAt: 101,
-    replacementId: "extension-replacement",
-    targetId: "extension-obsolete",
-    targetStructureType: "extension" as const,
+    replacementId: tower ? "tower-replacement" : "extension-replacement",
+    targetId: tower ? "tower-obsolete" : "extension-obsolete",
+    targetStructureType: tower ? ("tower" as const) : ("extension" as const),
     ...overrides,
   };
   memory.myrmex = {
@@ -899,18 +1017,7 @@ function parseSiteIdentity(proposalId: string): {
   return { structureType, x, y };
 }
 
-function seedStaleOwner(
-  memory: Memory,
-  active:
-    | "completed-extension-evacuation"
-    | "completed-extension-evacuation-with-site"
-    | "container-migration"
-    | "evacuation"
-    | "site-receipt"
-    | "source-handoff"
-    | null,
-  roomName = ROOM_NAME,
-): void {
+function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = ROOM_NAME): void {
   const owner = layoutsOwner(memory);
   const current = owner.records.find((record) => record.roomName === roomName);
   if (current === undefined) throw new Error("expected initialized layout record");
@@ -941,6 +1048,8 @@ function seedStaleOwner(
   ];
   const completedExtensionEvacuation =
     active !== null && active.startsWith("completed-extension-evacuation");
+  const completedTowerEvacuation =
+    active !== null && active.startsWith("completed-tower-evacuation");
   const staleRecord = {
     ...stable,
     algorithmRevision: "owned-room-layout-v1",
@@ -966,7 +1075,21 @@ function seedStaleOwner(
           },
         }
       : {}),
-    ...((active === "site-receipt" || active === "completed-extension-evacuation-with-site") &&
+    ...(completedTowerEvacuation
+      ? {
+          towerEvacuation: {
+            amount: 500,
+            expiresAt: 250,
+            replacementId: "tower-replacement",
+            replacementInitialEnergy: 10,
+            sourceId: "tower-obsolete",
+            startedAt: 100,
+          },
+        }
+      : {}),
+    ...((active === "site-receipt" ||
+      active === "completed-extension-evacuation-with-site" ||
+      active === "completed-tower-evacuation-with-site") &&
     _siteReceipts?.[0] !== undefined
       ? { siteReceipts: [_siteReceipts[0]] }
       : {}),
@@ -989,6 +1112,22 @@ function seedStaleOwner(
       schemaVersion: 24,
     },
   } as unknown as NonNullable<Memory["myrmex"]>;
+}
+
+function withoutCompletedEvacuation(
+  record: LayoutsOwnerV25["staleRecords"][number],
+  kind: "extension" | "tower",
+): LayoutsOwnerV25["staleRecords"][number] {
+  const { removalReceipt: _removalReceipt, ...withoutReceipt } = record;
+  void _removalReceipt;
+  if (kind === "extension") {
+    const { extensionEvacuation: _extensionEvacuation, ...retained } = withoutReceipt;
+    void _extensionEvacuation;
+    return retained;
+  }
+  const { towerEvacuation: _towerEvacuation, ...retained } = withoutReceipt;
+  void _towerEvacuation;
+  return retained;
 }
 
 function layoutsOwner(memory: Memory): LayoutsOwnerV25 {
@@ -1122,23 +1261,24 @@ function game(
           },
           structureType: options.staleSiteEvidence.structureType,
         } as unknown as AnyStructure);
+  const staleRemovalTargetType = options.staleRemovalTargetType ?? "extension";
   const staleRemovalTarget = options.staleRemovalTarget
     ? ({
         destroy: commands.destroyStructure,
-        hits: 1_000,
-        hitsMax: 1_000,
-        id: "extension-obsolete",
+        hits: staleRemovalTargetType === "tower" ? 3_000 : 1_000,
+        hitsMax: staleRemovalTargetType === "tower" ? 3_000 : 1_000,
+        id: `${staleRemovalTargetType}-obsolete`,
         isActive: () => true,
         my: true,
         owner: { username: "Myrmex" },
         pos: pos(40, 40),
         room: { name: roomName },
         store: {
-          getCapacity: () => 50,
-          getFreeCapacity: () => 50,
+          getCapacity: () => (staleRemovalTargetType === "tower" ? 1_000 : 50),
+          getFreeCapacity: () => (staleRemovalTargetType === "tower" ? 1_000 : 50),
           getUsedCapacity: () => 0,
         },
-        structureType: "extension",
+        structureType: staleRemovalTargetType,
       } as unknown as AnyStructure)
     : null;
   const structures = options.reverse
