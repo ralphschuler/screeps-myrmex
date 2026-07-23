@@ -4,7 +4,7 @@ Status: **Normative target architecture**
 
 Applies to: `packages/bot`
 
-Last updated: 2026-07-22
+Last updated: 2026-07-23
 
 This document defines the core systems of MYRMEX, the authority each system owns, and the only
 supported ways those systems integrate. It is deliberately specific so that human and AI
@@ -222,9 +222,12 @@ current source/access-safe commitment, and that handoff tick publishes no comman
 maintenance, site, migration, or evacuation output. Issue
 [#387](https://github.com/ralphschuler/screeps-myrmex/issues/387) permits one exact `OK` site
 receipt to leave that active set only after a newer owned site or completed owned structure matches
-its canonical encoded room, position, type, and stale fingerprint. The settlement clears only that
-receipt, publishes no new layout site/removal proposal in any room, and cannot perform the revision
-handoff until a later tick; every mismatch preserves inert evidence. Previously authorized unrelated
+its canonical encoded room, position, type, and stale fingerprint. Issue
+[#389](https://github.com/ralphschuler/screeps-myrmex/issues/389) permits one otherwise-quiescent,
+safe, terminal-success non-storage removal receipt to settle only from a newer complete owned-room
+observation in which its exact target ID is absent. Either settlement clears only its receipt,
+publishes no new layout site/removal proposal in any room, and cannot perform the revision handoff
+until a later tick; every mismatch preserves inert evidence. Previously authorized unrelated
 current-layout Logistics and lease work is not cancelled or reclassified.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
@@ -670,10 +673,10 @@ failed continuation therefore emits no new spawn-evacuation request, funding tra
 ordinary Logistics retirement may still fail closed when its projected flow disappears. On the rare
 explicit selected-source handoff, `layout.handoff-reconcile` stages the complete layout draft before
 its root commit; the following tick's contract reconciliation consumes that durable coordinate. The
-same precommit stages one observation-settled stale site receipt before ending command-free layout
-planning for that tick; no separate reconciliation or owner exists. It is a continuation of the same
-layout owner, not a second planner or state authority. Later outcomes replace their own foundation
-markers without adding another loop.
+same precommit stages one observation-settled stale site or terminal-success non-storage removal
+receipt before ending command-free layout planning for that tick; no separate reconciliation or
+owner exists. It is a continuation of the same layout owner, not a second planner or state
+authority. Later outcomes replace their own foundation markers without adding another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -2051,6 +2054,16 @@ evidence remains inert. If that was the final active term, the unchanged issue #
 source/access proof may hand off no earlier than the next eligible tick. No owner field, schema,
 command authority, queue, or resource budget changes.
 
+Issue #389 adds the equivalent bounded continuation for one stale removal receipt. Only `OK` or
+`TARGET_ABSENT` on an otherwise-quiescent non-storage record may settle, and only when the same safe
+handoff policy holds and a newer complete visible owned-room structure projection omits the exact
+target ID. Storage retains its specialized conservation and terminal-continuity proof. Present,
+same-tick, incomplete, unsafe, active, storage, or failed evidence preserves every byte. Settlement
+removes only the receipt, precommits the existing layouts owner, suppresses all rooms' new site and
+removal output for that tick, and leaves the separate revision handoff until a later tick. No owner
+field, schema, command authority, queue, scan outside the two-room planning window, or resource
+budget changes.
+
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
 and `LayoutPlanner` commits at most one semantic `source-container` placement per source. Sources
@@ -2686,10 +2699,12 @@ Required architecture assertions include:
   form cannot weaken same-type replacement checks for another structure kind;
 - a validated older-algorithm layout record is isolated from every gameplay projection; one exact
   successful stale construction-site receipt may settle only from newer matching owned-site or
-  completed-owned-structure evidence in a command-free tick, and only a then-quiescent record under
-  fresh safe visible-colony and complete current source/access evidence may enter the separate
-  command-free current-revision handoff on a later tick, while active, unsafe, blocked, reset,
-  reordered, malformed, failed, foreign, or mismatched evidence remains bounded and fail-closed;
+  completed-owned-structure evidence, and one otherwise-quiescent terminal-success non-storage
+  removal receipt may settle only from newer complete exact-target absence under the same safe
+  policy; either settlement is command-free, and only a then-quiescent record under fresh safe
+  visible-colony and complete current source/access evidence may enter the separate command-free
+  current-revision handoff on a later tick, while active, unsafe, blocked, reset, reordered,
+  malformed, failed, foreign, storage, or mismatched evidence remains bounded and fail-closed;
 - obsolete-storage removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact
   empty 1,000,000-unit external storage, one exact active 300,000-unit same-room terminal, an
   effective Logistics gate with one exact current healthy room row, no current/projected Logistics

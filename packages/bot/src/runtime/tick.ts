@@ -153,11 +153,13 @@ import {
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
+  reconcileStaleLayoutRemovalReceipt,
   reconcileStaleLayoutSiteReceipt,
   reconcileStructureDestroyExecution,
   reconstructCommittedLayout,
   registerLayoutCompiledCache,
   selectLayoutPlanningWindow,
+  staleLayoutRemovalSettlementBlocker,
   staleLayoutRevisionHandoffBlocker,
   type ConstructionSiteArbitrationResult,
   type ConstructionSiteExecutionResult,
@@ -2140,8 +2142,20 @@ function layoutPlanningSystem(
         }
         const priorRecord = owner.records.find((record) => record.roomName === room.name);
         const staleRecord = owner.staleRecords.find((record) => record.roomName === room.name);
-        const staleSiteSettlement =
+        const staleRemovalSettlement =
           staleRecord === undefined
+            ? null
+            : reconcileStaleLayoutRemovalReceipt({
+                blocker: staleLayoutRemovalSettlementBlocker({ colony, record: staleRecord }),
+                observedAt: room.observedAt,
+                owner,
+                roomName: room.name,
+                structures: room.structures,
+              });
+        const staleRemovalSettled =
+          staleRemovalSettlement !== null && staleRemovalSettlement.settled !== null;
+        const staleSiteSettlement =
+          staleRecord === undefined || staleRemovalSettled
             ? null
             : reconcileStaleLayoutSiteReceipt({
                 constructionSites: room.constructionSites,
@@ -2150,12 +2164,15 @@ function layoutPlanningSystem(
                 roomName: room.name,
                 structures: room.structures ?? [],
               });
-        if (
-          staleRecord !== undefined &&
-          staleSiteSettlement !== null &&
-          staleSiteSettlement.settled !== null
-        ) {
-          owner = staleSiteSettlement.owner;
+        const staleSiteSettled =
+          staleSiteSettlement !== null && staleSiteSettlement.settled !== null;
+        const settledStaleOwner = staleRemovalSettled
+          ? staleRemovalSettlement.owner
+          : staleSiteSettled
+            ? staleSiteSettlement.owner
+            : undefined;
+        if (staleRecord !== undefined && settledStaleOwner !== undefined) {
+          owner = settledStaleOwner;
           changed = true;
           ownerPrecommitRequired = true;
           planning.push({

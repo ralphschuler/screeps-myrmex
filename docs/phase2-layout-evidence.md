@@ -111,7 +111,9 @@ and checks one complete committed storage reconstruction across warm/reset/reord
 and performs one safe quiescent command-free revision handoff before ordinary convergence resumes.
 Issue [#387](https://github.com/ralphschuler/screeps-myrmex/issues/387) reconciles one exact
 observed successful site receipt in a separate command-free tick before that handoff can become
-eligible. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+eligible. Issue [#389](https://github.com/ralphschuler/screeps-myrmex/issues/389) adds the
+equivalent fresh-absence settlement for one otherwise-quiescent terminal-success non-storage removal
+receipt. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
 other structure migration and dismantling.
 
 ## Runtime order
@@ -194,7 +196,11 @@ other structure migration and dismantling.
    persists its exact amount and the replacement's current energy. A target with one non-energy kind
    or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline
    tuples; energy as the only manifest row, malformed stock, or insufficient aggregate capacity
-   fails closed.
+   fails closed. Before any revision handoff, one stale terminal-success non-storage removal receipt
+   may clear only when every other stale term is quiescent, the same colony policy is safe, and a
+   newer complete owned-room structure projection omits its exact target ID. The settlement
+   precommits only the layouts owner and ends all rooms' new site/removal planning for that tick;
+   storage, failed, present, same-tick, incomplete, active, or unsafe evidence remains inert.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -384,8 +390,8 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - official site cap 100 with five reserved slots;
 - two accepted globally and one per room per tick;
 - 64 inspected proposals and ten active sites per room;
-- 32 receipts per room; stale-site settlement checks that existing cap and clears at most one exact
-  deterministic match globally per layout tick;
+- 32 site receipts plus one fixed removal receipt per room; stale settlement clears at most one
+  exact site or terminal-success non-storage removal receipt globally per layout tick;
 - at most 128 container/extension/spawn/storage/terminal/tower/link/lab-removal candidates and
   authorizations; over-cap batches fail before traversal;
 - one accepted removal globally per tick;
@@ -482,6 +488,15 @@ evidence. New site/removal output is globally empty for the settlement tick; pre
 unrelated current-layout Logistics and lease work remains outside this reconciliation. Direct
 reconciliation proves the owned-site form, one-index-only removal, survivor ordering, and warm/reset
 equivalence.
+
+The #389 continuation starts with one stale `OK` extension-removal receipt and observes the target
+present before a newer complete owned-room snapshot omits its exact ID. That second observation
+clears only the receipt, retains the stale record, reports degraded `revision-handoff-active`, and
+produces zero site/destroy calls in both rooms. The following tick performs #385's separate
+command-free handoff. Warm, JSON/global-heap reset, and reversed-structure variants produce equal
+owner, planning, and command outcomes. Direct reconciliation also admits `TARGET_ABSENT`; present,
+same-tick, incomplete, storage, failed, active-evacuation, and unsafe-policy evidence preserves the
+original owner.
 
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
@@ -712,7 +727,8 @@ lint, type, test, documentation, bundle, and package evidence.
   defines the range-three scheduled command, per-`WORK` build power, energy consumption, and return
   codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
-  removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results.
+  removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
+  the operation; #389 still requires newer complete target-absence observation before settlement.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the

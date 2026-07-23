@@ -6,6 +6,7 @@ export {
   projectLayoutConvergencePlacements,
   reconstructCommittedLayout,
   selectLayoutPlanningWindow,
+  staleLayoutRemovalSettlementBlocker,
   staleLayoutRevisionHandoffBlocker,
 } from "./planner";
 export { selectSourceServices } from "./source-services";
@@ -23,6 +24,7 @@ export {
 } from "./structure-destroy-executor";
 export {
   reconcileConstructionSiteExecution,
+  reconcileStaleLayoutRemovalReceipt,
   reconcileStaleLayoutSiteReceipt,
   reconcileStructureDestroyExecution,
 } from "./reconciliation";

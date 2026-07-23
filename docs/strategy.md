@@ -272,9 +272,12 @@ convergence resumes no earlier than the next tick. One exact successful stale co
 receipt may first settle only from a newer owned site or completed owned structure whose canonical
 encoded room, position, type, and stale fingerprint all match. That settlement clears only one
 receipt, emits no command from that evidence, and defers the existing handoff until a later tick.
-New layout site/removal planning stops for the tick without cancelling previously authorized
-unrelated current-layout work. Foreign, absent, malformed, failed, same-tick, unsafe, stale-vision,
-or blocked evidence remains fail-closed.
+One otherwise-quiescent stale non-storage removal receipt may likewise settle only when it records
+`OK` or `TARGET_ABSENT`, the same safe handoff policy holds, and a newer complete owned-room
+observation proves its exact target ID absent. Storage keeps its stronger conservation boundary;
+active, failed, present, incomplete, same-tick, or unsafe evidence remains inert. New layout
+site/removal planning stops globally for either settlement tick without cancelling previously
+authorized unrelated current-layout work.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
