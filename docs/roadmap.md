@@ -249,11 +249,14 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   batch storage form shares its respective source, replacement, and interval identity. Storage also
   requires current retained-terminal/quiescence and complete original-stock conservation evidence.
   Issue #407 clears one otherwise-quiescent failed receipt only from newer complete exact-target-
-  presence evidence under the same safe policy, without a retry or same-tick handoff. Unrelated
-  active, mismatched, unpaired storage, failed receipts paired with active terms, unsafe, same-tick,
-  incomplete, or drifted evidence remains blocked. Uninterrupted same-structure storage/terminal
-  service, broad dynamic movement/pathfinding proof, autonomous boost manifest production, defensive
-  or active revision migration, and creep dismantling remain issue #99.
+  presence evidence under the same safe policy, without a retry or same-tick handoff. Issue #409
+  atomically clears that no-effect receipt with its sole exact container, extension, lab, reserve-
+  link, spawn, storage, terminal, or tower evacuation/migration when type, target, replacement, and
+  receipt-within-interval terms match. Unrelated active, mismatched, multiple-pair, unpaired
+  storage, unsafe, same-tick, incomplete, or drifted evidence remains blocked. Uninterrupted
+  same-structure storage/terminal service, broad dynamic movement/pathfinding proof, autonomous
+  boost manifest production, defensive or active revision migration, and creep dismantling remain
+  issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

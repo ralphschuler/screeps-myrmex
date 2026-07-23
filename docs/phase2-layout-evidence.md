@@ -127,7 +127,9 @@ terminal-evacuation pair, and issue
 [#405](https://github.com/ralphschuler/screeps-myrmex/issues/405) adds the completed storage-
 evacuation pair under its stronger conservation proof. Issue
 [#407](https://github.com/ralphschuler/screeps-myrmex/issues/407) settles one otherwise-quiescent
-failed stale removal receipt only from newer complete exact-target-presence evidence. Parent issue
+failed stale removal receipt only from newer complete exact-target-presence evidence. Issue
+[#409](https://github.com/ralphschuler/screeps-myrmex/issues/409) atomically settles that no-effect
+receipt with its sole exact evacuation/migration term. Parent issue
 [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
 and dismantling.
 
@@ -216,16 +218,18 @@ and dismantling.
    complete owned-room structure projection omits its exact target ID. A bare storage receipt
    remains excluded. One otherwise-quiescent failed receipt may instead clear only when the same
    safe policy and newer complete projection still contains its exact target ID, proving no effect
-   without a retry. The settlement precommits only the layouts owner and ends all rooms' new
-   site/removal planning for that tick; failed receipts paired with active terms, terminal-success
-   target presence, failed-target absence, same-tick, incomplete, active, or unsafe evidence remains
-   inert. One exact completed container migration or extension, lab, tower, spawn, terminal,
-   storage, or reserve-link evacuation may accompany that receipt only when type, target,
-   replacement, terminal result, and receipt tick within its fixed interval match; all canonical lab
-   stock/destination forms, both scalar/manifest terminal forms, and scalar, manifest, or two-batch
-   storage forms share their respective source/replacement/interval terms. Storage additionally
-   reuses its fresh exact active/ quiescent retained-terminal and complete original-resource
-   conservation proof. Newer target absence then clears both terms atomically.
+   without a retry. It may retain one sole exact evacuation/migration only when receipt type,
+   target, replacement, and tick within the fixed interval match; both terms then clear atomically.
+   The settlement precommits only the layouts owner and ends all rooms' new site/removal planning
+   for that tick; evacuation-bearing records without one sole exact match, terminal-success target
+   presence, failed-target absence, same-tick, incomplete, active, or unsafe evidence remains inert.
+   One exact completed container migration or extension, lab, tower, spawn, terminal, storage, or
+   reserve-link evacuation may accompany that receipt only when type, target, replacement, terminal
+   result, and receipt tick within its fixed interval match; all canonical lab stock/destination
+   forms, both scalar/manifest terminal forms, and scalar, manifest, or two-batch storage forms
+   share their respective source/replacement/interval terms. Storage additionally reuses its fresh
+   exact active/ quiescent retained-terminal and complete original-resource conservation proof.
+   Newer target absence then clears both terms atomically.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -559,6 +563,17 @@ real module reset, and reversed-structure variants produce equal owner, planning
 outcomes. Target absence, same-tick/incomplete observation, wrong target, terminal-success result,
 unsafe policy, or another active stale term preserves the original owner.
 
+The #409 continuation applies that no-effect proof to one sole exact container, extension, lab,
+reserve-link, spawn, storage, terminal, or tower evacuation/migration. Every normalized failure code
+settles across all eight forms when structure kind, target, replacement, receipt interval, safe
+policy, and newer target presence match. One extension runtime row clears both terms in one owner
+revision, emits zero site/destroy calls in two rooms across warm, real module reset, and reordered
+facts, then performs #385's separate handoff on the following tick. Wrong target/replacement/type,
+receipt before start or at expiry, target absence, same-tick/incomplete observation, multiple pairs,
+site/source-service activity, or unsafe policy preserves both terms. No fresh stock-conservation
+claim is needed: the recorded removal attempt proves that the old evacuation reached its command
+boundary, while current target presence proves no removal effect.
+
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
 access checks. The handoff tick records zero construction-site calls and `handoff` status; the next
@@ -791,10 +806,11 @@ lint, type, test, documentation, bundle, and package evidence.
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
   the operation; #389, #391, #393, #395, #397, #399, #401, #403, and #405 still require newer
   complete target-absence observation before settlement. Issue #407 instead requires newer complete
-  exact-target presence before one otherwise-quiescent failed receipt can clear. #391, #393, #395,
-  #397, #399, #401, #403, and #405 additionally bind that result to the exact extension, tower,
-  spawn, reserve-link, container, lab, terminal, or storage evacuation/migration identity and fixed
-  interval.
+  exact-target presence before one otherwise-quiescent failed receipt can clear. Issue #409 binds
+  that no-effect result to one sole exact evacuation/migration type, target, replacement, and fixed
+  interval before both terms clear atomically. #391, #393, #395, #397, #399, #401, #403, and #405
+  additionally bind their success result to the exact extension, tower, spawn, reserve-link,
+  container, lab, terminal, or storage evacuation/migration identity and fixed interval.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the

@@ -1,5 +1,5 @@
 import type { ConstructionSiteSnapshot, StructureSnapshot } from "../world/snapshot";
-import { completedStaleLayoutEvacuationKind } from "./contracts";
+import { matchedStaleLayoutEvacuationKind } from "./contracts";
 import type {
   ConstructionSiteExecutionResult,
   ConstructionSiteAttemptReceipt,
@@ -56,33 +56,38 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
     record?.storageEvacuation !== undefined ||
     record?.terminalEvacuation !== undefined ||
     record?.towerEvacuation !== undefined;
-  const completedEvacuationKind =
-    record === undefined ? null : completedStaleLayoutEvacuationKind(record);
+  const pairedEvacuationKind =
+    record === undefined ? null : matchedStaleLayoutEvacuationKind(record);
   const targetPresent = input.structures?.some(({ id }) => id === receipt?.targetId) === true;
   const terminalSuccess = receipt?.code === "OK" || receipt?.code === "TARGET_ABSENT";
+  const terminalFailure =
+    receipt?.code === "ERR_NOT_OWNER" ||
+    receipt?.code === "ERR_BUSY" ||
+    receipt?.code === "ERR_INVALID_TARGET" ||
+    receipt?.code === "UNEXPECTED";
   const observesExpectedOutcome = terminalSuccess
     ? !targetPresent
-    : !hasPairedEvacuation && targetPresent;
+    : terminalFailure && targetPresent;
   if (
     input.blocker !== null ||
     receipt === undefined ||
-    (hasPairedEvacuation && completedEvacuationKind === null) ||
+    (hasPairedEvacuation && pairedEvacuationKind === null) ||
     input.structures === undefined ||
     input.observedAt <= receipt.observedAt ||
     !observesExpectedOutcome ||
     (terminalSuccess &&
       receipt.targetStructureType === "storage" &&
-      (completedEvacuationKind !== "storage" || input.storageRemovalCompleted !== true))
+      (pairedEvacuationKind !== "storage" || input.storageRemovalCompleted !== true))
   )
     return Object.freeze({ owner: input.owner, settled: null });
   return Object.freeze({
     owner:
-      completedEvacuationKind === null
+      pairedEvacuationKind === null
         ? clearStaleLayoutRemovalReceipt(input.owner, input.roomName)
         : clearStaleLayoutCompletedEvacuationReceipt(
             input.owner,
             input.roomName,
-            completedEvacuationKind,
+            pairedEvacuationKind,
           ),
     settled: receipt,
   });

@@ -20,7 +20,8 @@ removal receipt. Issues #391, #393, #395, #397, #399, #401, #403, and #405 permi
 retain one exact completed extension-, tower-, spawn-, reserve-link-, container-, lab-, terminal-,
 or storage-evacuation/migration term, respectively, until newer observation proves the target
 absent. Issue #407 adds the complementary no-effect proof for one otherwise-quiescent failed receipt
-whose exact target remains present in newer complete observation.
+whose exact target remains present in newer complete observation. Issue #409 extends that proof to
+one failed receipt carrying its sole exact evacuation/migration term.
 
 ## Decision
 
@@ -64,10 +65,15 @@ whose exact target remains present in newer complete observation.
 - One otherwise-quiescent stale removal receipt with `ERR_NOT_OWNER`, `ERR_BUSY`,
   `ERR_INVALID_TARGET`, or `UNEXPECTED` may settle only while the same handoff safety policy holds
   and a newer complete visible owned-room structure projection still contains its exact target ID.
-  Fresh target presence is no-effect evidence for the recorded attempt; settlement clears only the
-  receipt, emits no command, and leaves the revision handoff to a later tick. Target absence,
-  incomplete or same-tick observation, active evacuation/migration/site/source-service terms, or
-  unsafe policy preserves the receipt. Failed receipts paired with another active term remain inert.
+  Fresh target presence is no-effect evidence for the recorded attempt; settlement emits no command
+  and leaves the revision handoff to a later tick. The receipt may retain exactly one container,
+  extension, lab, reserve-link, spawn, storage, terminal, or tower evacuation/migration only when
+  receipt type, target, replacement, and tick within the fixed interval match. The recorded destroy
+  attempt proves that the old authority reached its removal boundary; current target presence proves
+  no removal effect, so both terms clear atomically without inventing new inventory-conservation
+  evidence. Target absence, incomplete or same-tick observation, unsafe policy, an evacuation-
+  bearing record without one sole exact match, site receipts, or source-service issuance preserves
+  the record.
 - The existing bounded `LayoutPlanner` must derive one complete current commitment with source and
   access proof. Failure or unsafe evidence preserves the stale record and emits no command.
 - A successful handoff atomically replaces only that room's stale record through the existing
@@ -81,13 +87,13 @@ whose exact target remains present in newer complete observation.
 A source revision can no longer erase pending irreversible evidence or issue a same-tick command.
 One observed successful site receipt, one terminal-success non-storage removal receipt, one exact
 completed extension-, tower-, spawn-, reserve-link-, container-, lab-, terminal-, or storage-
-evacuation/migration receipt pair, and one otherwise-quiescent failed receipt whose target remains
-present can now converge toward quiescence without reissuing or cancelling a command; the separate
-handoff remains delayed until a later tick. Rooms advance deterministically across JSON/global-heap
-reconstruction and reordered world facts. Other active, mismatched, unpaired storage, failed
-receipts paired with active terms, unsafe, terminal-drifted, or conservation-incomplete records
-remain fail-closed until a later explicit policy handles them; this decision does not reinterpret or
-cancel their work.
+evacuation/migration receipt pair, and one otherwise-quiescent failed receipt—alone or paired with
+its sole exact evacuation/migration term—can now converge toward quiescence without reissuing or
+cancelling its command; the separate handoff remains delayed until a later tick. Rooms advance
+deterministically across JSON/global-heap reconstruction and reordered world facts. Other active,
+evacuation-bearing records without one sole exact match, unpaired storage, unsafe, terminal-drifted,
+or conservation-incomplete records remain fail-closed until a later explicit policy handles them;
+this decision does not reinterpret or cancel their work.
 
 Persistent cost is one empty `staleRecords` array in normal owner state and at most one fully
 bounded record per already-capped room during handoff. Planning retains the existing two-room
@@ -96,16 +102,16 @@ game resource. No root owner, authority, dependency, cache, executor, command, q
 history is added.
 
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
-settlement or handoff. Unfinished or other migration/evacuation continuation, failed receipts paired
-with another active term, source-service reconciliation, arbitrary geometry algorithms, defensive
-migration, dynamic room routing, autonomous boost-manifest production, creep dismantling, and
-uninterrupted same-structure availability remain outside this decision.
+settlement or handoff. Unfinished migration/evacuation continuation, mismatched or multiple failed
+pairs, source-service reconciliation, arbitrary geometry algorithms, defensive migration, dynamic
+room routing, autonomous boost-manifest production, creep dismantling, and uninterrupted same-
+structure availability remain outside this decision.
 
 ## Mechanics sources
 
 Reviewed 2026-07-22 for #385 and #387. `Structure.destroy` and both indexes were rechecked
-2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, #403, #405, and #407. The relevant
-pages were also checked: `StructureTower` for issue #393, `StructureSpawn` for issue #395,
+2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, #403, #405, #407, and #409. The
+relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn` for issue #395,
 `StructureLink` for issue #397, `StructureContainer` for issue #399, `StructureLab` for issue #401,
 and `StructureTerminal` plus `Store` for
 [issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403), and `StructureStorage`,
@@ -120,10 +126,12 @@ and `StructureTerminal` plus `Store` for
   destruction while `ERR_NOT_OWNER` and `ERR_BUSY` are failures; issues #389, #391, #393, #395,
   #397, #399, #401, #403, and #405 additionally require newer complete target absence. Issue #407
   instead requires newer complete exact-target presence before one otherwise-quiescent failed
-  receipt can clear; a normalized adapter failure receives the same observation proof. The paired
-  #391, #393, #395, #397, #399, #401, #403, and #405 settlements also require the exact extension,
-  tower, spawn, link, container, lab, terminal, or storage target/replacement and a terminal receipt
-  produced within its fixed interval. Official
+  receipt can clear; a normalized adapter failure receives the same observation proof. Issue #409
+  applies that no-effect proof to one sole exact pair whose failed receipt demonstrates that the old
+  evacuation reached the destroy boundary. Both terms clear only after structure kind, target,
+  replacement, and fixed interval match. The paired #391, #393, #395, #397, #399, #401, #403, and
+  #405 settlements also require the exact extension, tower, spawn, link, container, lab, terminal,
+  or storage target/replacement and a terminal receipt produced within its fixed interval. Official
   [`StructureTower`](https://docs.screeps.com/api/#StructureTower) defines the 1,000-energy capacity
   and 10-energy action cost already enforced by the original migration path; #393 does not
   reinterpret stock or operational readiness. Official

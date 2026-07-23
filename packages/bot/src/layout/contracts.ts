@@ -300,7 +300,7 @@ export type StaleLayoutRecord = LayoutRecord;
 export type CompletedStaleLayoutEvacuationKind =
   "container" | "extension" | "lab" | "link" | "spawn" | "storage" | "terminal" | "tower";
 
-export function completedStaleLayoutEvacuationKind(
+export function matchedStaleLayoutEvacuationKind(
   record: StaleLayoutRecord,
 ): CompletedStaleLayoutEvacuationKind | null {
   const evacuations = [
@@ -358,7 +358,6 @@ export function completedStaleLayoutEvacuationKind(
   if (completed?.evacuation === undefined) return null;
   const receipt = record.removalReceipt;
   return receipt !== undefined &&
-    (receipt.code === "OK" || receipt.code === "TARGET_ABSENT") &&
     receipt.targetStructureType === completed.kind &&
     receipt.targetId === completed.targetId &&
     receipt.replacementId === completed.replacementId &&

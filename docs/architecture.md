@@ -240,10 +240,12 @@ spawn, reserve-link, container-migration, lab-evacuation, terminal-evacuation, a
 storage-evacuation pairs. Storage additionally requires its existing exact terminal-continuity and
 full original-stock conservation proof. Both terms clear atomically. Issue #407 permits one
 otherwise-quiescent failed receipt to clear only when newer complete safe observation still contains
-its exact target ID, proving no effect without issuing a retry. Any settlement publishes no new
-layout site/removal proposal in any room and cannot perform the revision handoff until a later tick;
-every mismatch preserves inert evidence. Previously authorized unrelated current-layout Logistics
-and lease work is not cancelled or reclassified.
+its exact target ID, proving no effect without issuing a retry. Issue #409 permits that same no-
+effect receipt to clear atomically with its sole exact evacuation/migration term when structure
+kind, target, replacement, and receipt-within-interval evidence match. Any settlement publishes no
+new layout site/removal proposal in any room and cannot perform the revision handoff until a later
+tick; every mismatch preserves inert evidence. Previously authorized unrelated current-layout
+Logistics and lease work is not cancelled or reclassified.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
@@ -2083,16 +2085,22 @@ interval identity. Every scalar, manifest, and two-batch storage form shares sou
 replacement, and interval identity, then additionally requires current Industry quiescence, complete
 terminal facts, and exact conservation of every original resource gain. Settlement then atomically
 removes both terms. Present, same-tick, incomplete, unsafe, unrelated-active, mismatched, unpaired
-storage, failed receipts paired with active terms, or conservation/terminal drift evidence preserves
-every byte. Settlement precommits the existing layouts owner, suppresses all rooms' new site and
-removal output for that tick, and leaves the separate revision handoff until a later tick.
+storage, failed or conservation/terminal-drift evidence preserves every byte. Settlement precommits
+the existing layouts owner, suppresses all rooms' new site and removal output for that tick, and
+leaves the separate revision handoff until a later tick.
 [Issue #407](https://github.com/ralphschuler/screeps-myrmex/issues/407) adds the complementary
 no-effect path for one otherwise-quiescent `ERR_NOT_OWNER`, `ERR_BUSY`, `ERR_INVALID_TARGET`, or
 `UNEXPECTED` receipt: the same safe policy and a newer complete visible owned-room projection must
-still contain its exact target ID. It clears only that receipt without a retry; target absence,
-same-tick or incomplete observation, unsafe policy, or any paired active term remains inert. No
-owner field, schema, command authority, queue, scan outside the two-room planning window, or
-resource budget changes.
+still contain its exact target ID. It clears only that receipt without a retry. Issue
+[#409](https://github.com/ralphschuler/screeps-myrmex/issues/409) permits the failed receipt to
+retain exactly one of those eight evacuation/migration forms only when receipt type, target,
+replacement, and tick within the fixed interval match. Fresh exact-target presence then atomically
+clears both terms; the recorded attempt already proves that the old authority reached its removal
+boundary, and the retained structure makes a new inventory-conservation inference unnecessary.
+Target absence, same-tick or incomplete observation, unsafe policy, an evacuation-bearing record
+without one sole exact match, site work, or source-service issuance remains inert. No owner field,
+schema, command authority, queue, scan outside the two-room planning window, or resource budget
+changes.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2738,12 +2746,13 @@ Required architecture assertions include:
   and scalar, manifest, and two-batch storage forms share their respective identity contracts;
   storage additionally requires current exact retained-terminal/quiescence and complete
   original-resource conservation evidence; one otherwise-quiescent failed receipt may clear only
-  from newer complete exact-target presence under the same safe policy, without retry; every
+  from newer complete exact-target presence under the same safe policy, without retry, either alone
+  or atomically with its sole exact type/target/replacement/interval-matched evacuation term; every
   settlement is command-free, and only a then-quiescent record under fresh safe visible-colony and
   complete current source/access evidence may enter the separate command-free current-revision
   handoff on a later tick, while unrelated-active, unsafe, blocked, reset, reordered, malformed,
-  failed receipts paired with active terms, foreign, unpaired storage, conservation drift, or
-  mismatched evidence remains bounded and fail-closed;
+  evacuation-bearing records without one sole exact match, foreign, unpaired storage, conservation
+  drift, or other ambiguous evidence remains bounded and fail-closed;
 - obsolete-storage removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact
   empty 1,000,000-unit external storage, one exact active 300,000-unit same-room terminal, an
   effective Logistics gate with one exact current healthy room row, no current/projected Logistics
