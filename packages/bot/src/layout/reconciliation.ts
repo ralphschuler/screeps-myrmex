@@ -49,6 +49,7 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
   const hasPairedEvacuation =
     record?.containerMigration !== undefined ||
     record?.extensionEvacuation !== undefined ||
+    record?.labEvacuation !== undefined ||
     record?.linkEvacuation !== undefined ||
     record?.spawnEvacuation !== undefined ||
     record?.towerEvacuation !== undefined;

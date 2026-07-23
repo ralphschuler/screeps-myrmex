@@ -3,6 +3,7 @@ import {
   parseLayoutsOwner,
   reconcileStaleLayoutRemovalReceipt,
   reconcileStaleLayoutSiteReceipt,
+  type LayoutLabEvacuation,
   type LayoutsOwnerV25,
 } from "../src/layout";
 import type { RuntimeGame } from "../src/runtime/context";
@@ -22,13 +23,15 @@ interface StaleSiteEvidence {
   readonly y: number;
 }
 
+type CompletedStaleEvacuationKind = "container" | "extension" | "lab" | "link" | "spawn" | "tower";
+
 interface GameOptions {
   readonly blockedTerrain?: boolean;
   readonly controllerLevel?: number;
   readonly controllerRisk?: boolean;
   readonly reverse?: boolean;
   readonly staleRemovalTarget?: boolean;
-  readonly staleRemovalTargetType?: "container" | "extension" | "link" | "spawn" | "tower";
+  readonly staleRemovalTargetType?: CompletedStaleEvacuationKind;
   readonly staleSiteEvidence?: StaleSiteEvidence;
   readonly threat?: boolean;
   readonly visible?: boolean;
@@ -39,11 +42,88 @@ interface Commands {
   readonly destroyStructure: ReturnType<typeof vi.fn<() => number>>;
 }
 
+const LAB_EVACUATION_VARIANTS = [
+  {
+    evacuation: {
+      amount: 100,
+      expiresAt: 250,
+      replacementId: "lab-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "lab-obsolete",
+      startedAt: 100,
+    },
+    name: "energy-only",
+  },
+  {
+    evacuation: {
+      amount: 100,
+      destinationId: "storage-destination",
+      destinationInitialAmount: 0,
+      expiresAt: 250,
+      replacementId: "lab-replacement",
+      resourceType: "H",
+      sourceId: "lab-obsolete",
+      startedAt: 100,
+    },
+    name: "mineral-only storage",
+  },
+  {
+    evacuation: {
+      amount: 100,
+      destinationId: "terminal-destination",
+      destinationInitialAmount: 0,
+      destinationStructureType: "terminal",
+      expiresAt: 250,
+      replacementId: "lab-replacement",
+      resourceType: "H",
+      sourceId: "lab-obsolete",
+      startedAt: 100,
+    },
+    name: "mineral-only terminal",
+  },
+  {
+    evacuation: {
+      destinationId: "storage-destination",
+      destinationInitialAmount: 0,
+      energyAmount: 100,
+      expiresAt: 250,
+      mineralAmount: 100,
+      replacementId: "lab-replacement",
+      replacementInitialEnergy: 0,
+      resourceType: "H",
+      sourceId: "lab-obsolete",
+      startedAt: 100,
+    },
+    name: "mixed storage",
+  },
+  {
+    evacuation: {
+      destinationId: "terminal-destination",
+      destinationInitialAmount: 0,
+      destinationStructureType: "terminal",
+      energyAmount: 100,
+      expiresAt: 250,
+      mineralAmount: 100,
+      replacementId: "lab-replacement",
+      replacementInitialEnergy: 0,
+      resourceType: "H",
+      sourceId: "lab-obsolete",
+      startedAt: 100,
+    },
+    name: "mixed terminal",
+  },
+] as const satisfies readonly {
+  readonly evacuation: LayoutLabEvacuation;
+  readonly name: string;
+}[];
+
 type StaleActiveEvidence =
   | "completed-container-migration"
   | "completed-container-migration-with-site"
   | "completed-extension-evacuation"
   | "completed-extension-evacuation-with-site"
+  | "completed-lab-evacuation"
+  | "completed-lab-evacuation-with-site"
   | "completed-link-evacuation"
   | "completed-link-evacuation-with-site"
   | "completed-spawn-evacuation"
@@ -56,7 +136,7 @@ type StaleActiveEvidence =
   | "source-handoff"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -157,7 +237,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(secondCommands.destroyStructure).not.toHaveBeenCalled();
   });
 
-  it.each(["container", "extension", "link", "spawn", "tower"] as const)(
+  it.each(["container", "extension", "lab", "link", "spawn", "tower"] as const)(
     "suppresses every room's layout commands while settling one stale %s pair",
     (kind) => {
       const firstCommands = commandSpies();
@@ -365,7 +445,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     ).toMatchObject({ code: "TARGET_ABSENT" });
   });
 
-  it.each(["container", "extension", "link", "spawn", "tower"] as const)(
+  it.each(["container", "extension", "lab", "link", "spawn", "tower"] as const)(
     "atomically settles one completed stale %s migration pair",
     (kind) => {
       const commands = commandSpies();
@@ -446,6 +526,49 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
           structures: [],
         }).settled,
       ).toMatchObject({ observedAt: evacuation.startedAt });
+    },
+  );
+
+  it.each(LAB_EVACUATION_VARIANTS)(
+    "settles completed stale lab $name records across command, reset, and reorder variants",
+    async ({ evacuation }) => {
+      for (const code of ["OK", "TARGET_ABSENT"] as const) {
+        const forward = await runStaleRemovalSettlementVariant(
+          false,
+          false,
+          "lab",
+          code,
+          evacuation,
+        );
+        const reset = await runStaleRemovalSettlementVariant(false, true, "lab", code, evacuation);
+        const reordered = await runStaleRemovalSettlementVariant(
+          true,
+          false,
+          "lab",
+          code,
+          evacuation,
+        );
+
+        expect(forward.pendingOwner.staleRecords[0]?.labEvacuation).toEqual(evacuation);
+        expect(forward.pendingOwner.staleRecords[0]?.removalReceipt).toMatchObject({ code });
+        expect(forward.settlementOwner.staleRecords[0]?.labEvacuation).toBeUndefined();
+        expect(forward.settlementOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
+        expect(forward.settlementOwner.records).toEqual([]);
+        expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+        expect(forward.settlementPlanning).toEqual([
+          expect.objectContaining({
+            blocker: "revision-handoff-active",
+            roomName: ROOM_NAME,
+            status: "degraded",
+          }),
+        ]);
+        expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+        expect(forward.handoffPlanning).toEqual([
+          expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+        ]);
+        expect(reset).toEqual(forward);
+        expect(reordered).toEqual(forward);
+      }
     },
   );
 
@@ -946,6 +1069,73 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     }
   });
 
+  it.each([
+    { name: "target present", observedAt: 102, receipt: {}, structures: ["lab-obsolete"] },
+    { name: "same tick", observedAt: 101, receipt: {}, structures: [] },
+    { name: "failed", observedAt: 102, receipt: { code: "ERR_BUSY" }, structures: [] },
+    {
+      name: "incomplete structure projection",
+      observedAt: 102,
+      receipt: {},
+      structures: undefined,
+    },
+    {
+      name: "unsafe policy",
+      blocker: "policy-unavailable",
+      observedAt: 102,
+      receipt: {},
+      structures: [],
+    },
+    {
+      name: "wrong target",
+      observedAt: 102,
+      receipt: { targetId: "different-lab" },
+      structures: [],
+    },
+    {
+      name: "wrong replacement",
+      observedAt: 102,
+      receipt: { replacementId: "different-lab" },
+      structures: [],
+    },
+    {
+      name: "wrong type",
+      observedAt: 102,
+      receipt: { targetStructureType: "extension" },
+      structures: [],
+    },
+    {
+      name: "receipt predates evacuation",
+      observedAt: 102,
+      receipt: { observedAt: 99 },
+      structures: [],
+    },
+    {
+      name: "receipt at evacuation expiry",
+      observedAt: 251,
+      receipt: { observedAt: 250 },
+      structures: [],
+    },
+  ] as const)("preserves a stale lab pair when $name", (testCase) => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleRemovalReceipt(memory, testCase.receipt, "completed-lab-evacuation");
+    const owner = layoutsOwner(memory);
+
+    const result = reconcileStaleLayoutRemovalReceipt({
+      blocker: "blocker" in testCase ? testCase.blocker : null,
+      observedAt: testCase.observedAt,
+      owner,
+      roomName: ROOM_NAME,
+      structures: testCase.structures?.map((id) => ({ id })),
+    });
+
+    expect(result.settled).toBeNull();
+    expect(result.owner).toBe(owner);
+  });
+
   it("keeps stale removal receipts blocked by active or unsafe runtime evidence", () => {
     for (const testCase of [
       { active: "evacuation", name: "active evacuation", options: {} },
@@ -957,6 +1147,11 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       {
         active: "completed-extension-evacuation-with-site",
         name: "completed extension evacuation with another active term",
+        options: {},
+      },
+      {
+        active: "completed-lab-evacuation-with-site",
+        name: "completed lab evacuation with another active term",
         options: {},
       },
       {
@@ -1155,8 +1350,9 @@ function runStaleSiteSettlementVariant(reverse: boolean, reset: boolean) {
 async function runStaleRemovalSettlementVariant(
   reverse: boolean,
   reset: boolean,
-  completedEvacuation: "container" | "extension" | "link" | "spawn" | "tower" | null = null,
+  completedEvacuation: CompletedStaleEvacuationKind | null = null,
   receiptCode: "OK" | "TARGET_ABSENT" = "OK",
+  labEvacuation?: LayoutLabEvacuation,
 ) {
   const commands = commandSpies();
   let memory = {} as Memory;
@@ -1167,6 +1363,7 @@ async function runStaleRemovalSettlementVariant(
     memory,
     { code: receiptCode },
     completedEvacuation === null ? null : completedStaleEvidence(completedEvacuation),
+    labEvacuation,
   );
   commands.createConstructionSite.mockClear();
   commands.destroyStructure.mockClear();
@@ -1236,9 +1433,7 @@ function runHandoffVariant(reverse: boolean, reset: boolean) {
   };
 }
 
-function completedStaleEvidence(
-  kind: "container" | "extension" | "link" | "spawn" | "tower",
-): StaleActiveEvidence {
+function completedStaleEvidence(kind: CompletedStaleEvacuationKind): StaleActiveEvidence {
   return kind === "container" ? "completed-container-migration" : `completed-${kind}-evacuation`;
 }
 
@@ -1246,6 +1441,7 @@ function seedStaleRemovalReceipt(
   memory: Memory,
   overrides: Partial<NonNullable<LayoutsOwnerV25["records"][number]["removalReceipt"]>>,
   active: StaleActiveEvidence = null,
+  labEvacuation?: LayoutLabEvacuation,
 ): void {
   seedStaleOwner(memory, active);
   const owner = layoutsOwner(memory);
@@ -1253,13 +1449,15 @@ function seedStaleRemovalReceipt(
   if (staleRecord === undefined) throw new Error("expected stale layout record");
   const structureType = active?.startsWith("completed-container-migration")
     ? ("container" as const)
-    : active?.startsWith("completed-link-evacuation")
-      ? ("link" as const)
-      : active?.startsWith("completed-spawn-evacuation")
-        ? ("spawn" as const)
-        : active?.startsWith("completed-tower-evacuation")
-          ? ("tower" as const)
-          : ("extension" as const);
+    : active?.startsWith("completed-lab-evacuation")
+      ? ("lab" as const)
+      : active?.startsWith("completed-link-evacuation")
+        ? ("link" as const)
+        : active?.startsWith("completed-spawn-evacuation")
+          ? ("spawn" as const)
+          : active?.startsWith("completed-tower-evacuation")
+            ? ("tower" as const)
+            : ("extension" as const);
   const removalReceipt = {
     attempt: 1,
     code: "OK" as const,
@@ -1277,6 +1475,7 @@ function seedStaleRemovalReceipt(
       staleRecords: [
         {
           ...staleRecord,
+          ...(labEvacuation === undefined ? {} : { labEvacuation }),
           removalReceipt,
         },
       ],
@@ -1368,6 +1567,7 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
     active !== null && active.startsWith("completed-container-migration");
   const completedExtensionEvacuation =
     active !== null && active.startsWith("completed-extension-evacuation");
+  const completedLabEvacuation = active !== null && active.startsWith("completed-lab-evacuation");
   const completedLinkEvacuation = active !== null && active.startsWith("completed-link-evacuation");
   const completedSpawnEvacuation =
     active !== null && active.startsWith("completed-spawn-evacuation");
@@ -1395,6 +1595,18 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
             replacementInitialEnergy: 0,
             sourceId: "extension-obsolete",
             startedAt: completedExtensionEvacuation ? 100 : 200,
+          },
+        }
+      : {}),
+    ...(completedLabEvacuation
+      ? {
+          labEvacuation: {
+            amount: 100,
+            expiresAt: 250,
+            replacementId: "lab-replacement",
+            replacementInitialEnergy: 0,
+            sourceId: "lab-obsolete",
+            startedAt: 100,
           },
         }
       : {}),
@@ -1437,6 +1649,7 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
     ...((active === "site-receipt" ||
       active === "completed-container-migration-with-site" ||
       active === "completed-extension-evacuation-with-site" ||
+      active === "completed-lab-evacuation-with-site" ||
       active === "completed-link-evacuation-with-site" ||
       active === "completed-spawn-evacuation-with-site" ||
       active === "completed-tower-evacuation-with-site") &&
@@ -1466,22 +1679,24 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
 
 function staleEvacuation(
   record: LayoutsOwnerV25["staleRecords"][number] | undefined,
-  kind: "container" | "extension" | "link" | "spawn" | "tower",
+  kind: CompletedStaleEvacuationKind,
 ) {
   return kind === "container"
     ? record?.containerMigration
     : kind === "extension"
       ? record?.extensionEvacuation
-      : kind === "link"
-        ? record?.linkEvacuation
-        : kind === "spawn"
-          ? record?.spawnEvacuation
-          : record?.towerEvacuation;
+      : kind === "lab"
+        ? record?.labEvacuation
+        : kind === "link"
+          ? record?.linkEvacuation
+          : kind === "spawn"
+            ? record?.spawnEvacuation
+            : record?.towerEvacuation;
 }
 
 function withoutCompletedEvacuation(
   record: LayoutsOwnerV25["staleRecords"][number],
-  kind: "container" | "extension" | "link" | "spawn" | "tower",
+  kind: CompletedStaleEvacuationKind,
 ): LayoutsOwnerV25["staleRecords"][number] {
   const { removalReceipt: _removalReceipt, ...withoutReceipt } = record;
   void _removalReceipt;
@@ -1493,6 +1708,11 @@ function withoutCompletedEvacuation(
   if (kind === "extension") {
     const { extensionEvacuation: _extensionEvacuation, ...retained } = withoutReceipt;
     void _extensionEvacuation;
+    return retained;
+  }
+  if (kind === "lab") {
+    const { labEvacuation: _labEvacuation, ...retained } = withoutReceipt;
+    void _labEvacuation;
     return retained;
   }
   if (kind === "link") {
@@ -1643,7 +1863,13 @@ function game(
         } as unknown as AnyStructure);
   const staleRemovalTargetType = options.staleRemovalTargetType ?? "extension";
   const staleRemovalHits =
-    staleRemovalTargetType === "spawn" ? 5_000 : staleRemovalTargetType === "tower" ? 3_000 : 1_000;
+    staleRemovalTargetType === "spawn"
+      ? 5_000
+      : staleRemovalTargetType === "tower"
+        ? 3_000
+        : staleRemovalTargetType === "lab"
+          ? 500
+          : 1_000;
   const staleRemovalCapacity =
     staleRemovalTargetType === "container"
       ? 2_000
@@ -1653,7 +1879,9 @@ function game(
           ? 1_000
           : staleRemovalTargetType === "link"
             ? 800
-            : 50;
+            : staleRemovalTargetType === "lab"
+              ? 2_000
+              : 50;
   const staleRemovalTarget = options.staleRemovalTarget
     ? ({
         destroy: commands.destroyStructure,
@@ -1668,13 +1896,22 @@ function game(
             ? { name: "ObsoleteSpawn", spawnCreep: () => 0, spawning: null }
             : staleRemovalTargetType === "link"
               ? { cooldown: 0, transferEnergy: () => 0 }
-              : {}),
+              : staleRemovalTargetType === "lab"
+                ? { cooldown: 0, mineralType: null }
+                : {}),
         owner: { username: "Myrmex" },
         pos: pos(40, 40),
         room: { name: roomName },
         store: {
-          getCapacity: () => staleRemovalCapacity,
-          getFreeCapacity: () => staleRemovalCapacity,
+          ...(staleRemovalTargetType === "lab" ? { energy: 0 } : {}),
+          getCapacity: (resourceType?: string) =>
+            staleRemovalTargetType === "lab" && resourceType !== "energy"
+              ? 3_000
+              : staleRemovalCapacity,
+          getFreeCapacity: (resourceType?: string) =>
+            staleRemovalTargetType === "lab" && resourceType !== "energy"
+              ? 3_000
+              : staleRemovalCapacity,
           getUsedCapacity: () => 0,
         },
         structureType: staleRemovalTargetType,

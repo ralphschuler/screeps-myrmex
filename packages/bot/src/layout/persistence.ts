@@ -656,11 +656,13 @@ export function clearStaleLayoutCompletedEvacuationReceipt(
       ? prior?.containerMigration
       : kind === "extension"
         ? prior?.extensionEvacuation
-        : kind === "link"
-          ? prior?.linkEvacuation
-          : kind === "spawn"
-            ? prior?.spawnEvacuation
-            : prior?.towerEvacuation;
+        : kind === "lab"
+          ? prior?.labEvacuation
+          : kind === "link"
+            ? prior?.linkEvacuation
+            : kind === "spawn"
+              ? prior?.spawnEvacuation
+              : prior?.towerEvacuation;
   if (prior?.removalReceipt === undefined || evacuation === undefined) return owner;
   const staleRecords = owner.staleRecords.map((record) => {
     if (record.roomName !== roomName) return record;
@@ -680,6 +682,15 @@ export function clearStaleLayoutCompletedEvacuationReceipt(
         ...retained
       } = record;
       void [_extensionEvacuation, _removalReceipt];
+      return retained;
+    }
+    if (kind === "lab") {
+      const {
+        labEvacuation: _labEvacuation,
+        removalReceipt: _removalReceipt,
+        ...retained
+      } = record;
+      void [_labEvacuation, _removalReceipt];
       return retained;
     }
     if (kind === "link") {
