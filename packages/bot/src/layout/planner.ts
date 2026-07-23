@@ -9,8 +9,8 @@ import {
 import { compileOwnedRoomLayoutV1 } from "./layout-v1";
 import { selectSourceServices } from "./source-services";
 import {
-  completedStaleLayoutEvacuationKind,
   LAYOUT_ALGORITHM_REVISION,
+  matchedStaleLayoutEvacuationKind,
   MAX_LAYOUT_CANDIDATES,
   MAX_LAYOUT_FLOOD_CELLS,
   MAX_LAYOUT_ROOMS_PER_TICK,
@@ -43,19 +43,19 @@ function staleLayoutRevisionBlocker(
   allowRemovalReceipt: boolean,
 ): LayoutBlocker | null {
   const { colony, record } = input;
-  const completedEvacuationKind = allowRemovalReceipt
-    ? completedStaleLayoutEvacuationKind(record)
+  const pairedEvacuationKind = allowRemovalReceipt
+    ? matchedStaleLayoutEvacuationKind(record)
     : null;
   if (
     record.algorithmRevision === LAYOUT_ALGORITHM_REVISION ||
-    (record.containerMigration !== undefined && completedEvacuationKind !== "container") ||
-    (record.extensionEvacuation !== undefined && completedEvacuationKind !== "extension") ||
-    (record.labEvacuation !== undefined && completedEvacuationKind !== "lab") ||
-    (record.linkEvacuation !== undefined && completedEvacuationKind !== "link") ||
-    (record.spawnEvacuation !== undefined && completedEvacuationKind !== "spawn") ||
-    (record.storageEvacuation !== undefined && completedEvacuationKind !== "storage") ||
-    (record.terminalEvacuation !== undefined && completedEvacuationKind !== "terminal") ||
-    (record.towerEvacuation !== undefined && completedEvacuationKind !== "tower") ||
+    (record.containerMigration !== undefined && pairedEvacuationKind !== "container") ||
+    (record.extensionEvacuation !== undefined && pairedEvacuationKind !== "extension") ||
+    (record.labEvacuation !== undefined && pairedEvacuationKind !== "lab") ||
+    (record.linkEvacuation !== undefined && pairedEvacuationKind !== "link") ||
+    (record.spawnEvacuation !== undefined && pairedEvacuationKind !== "spawn") ||
+    (record.storageEvacuation !== undefined && pairedEvacuationKind !== "storage") ||
+    (record.terminalEvacuation !== undefined && pairedEvacuationKind !== "terminal") ||
+    (record.towerEvacuation !== undefined && pairedEvacuationKind !== "tower") ||
     (!allowRemovalReceipt && record.removalReceipt !== undefined) ||
     (record.siteReceipts?.length ?? 0) > 0 ||
     record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true
