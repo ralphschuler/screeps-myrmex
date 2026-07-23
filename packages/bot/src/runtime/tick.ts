@@ -131,6 +131,7 @@ import {
   arbitrateConstructionSites,
   arbitrateStructureRemovals,
   clearStaleLayoutExtensionEvacuation,
+  clearStaleLayoutTowerEvacuation,
   diffOwnedRoomLayout,
   emptyLayoutsOwner,
   freshSourceServicePlacements,
@@ -139,11 +140,13 @@ import {
   isLayoutSpawnEvacuationFlowId,
   isLayoutStorageEvacuationFlowId,
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutTowerEvacuationContinuation,
   layoutLabEvacuationFlowIds,
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationFlowId,
   layoutStorageEvacuationFlowIds,
   layoutTerminalEvacuationFlowIds,
+  layoutTowerEvacuationFlowId,
   parseLayoutsOwner,
   persistLayoutCommitment,
   persistLayoutContainerMigration,
@@ -167,6 +170,7 @@ import {
   staleLayoutExtensionEvacuationSettlementBlocker,
   staleLayoutRemovalSettlementBlocker,
   staleLayoutRevisionHandoffBlocker,
+  staleLayoutTowerEvacuationSettlementBlocker,
   type ConstructionSiteArbitrationResult,
   type ConstructionSiteExecutionResult,
   type LayoutCommitment,
@@ -229,7 +233,12 @@ import {
   completeExecutableLayoutTerminalEvacuationFlowIds,
   projectLayoutTerminalEvacuations,
 } from "../logistics/terminal-evacuation";
-import { projectLayoutTowerEvacuations } from "../logistics/tower-evacuation";
+import {
+  completedLayoutTowerEvacuationRoomNames,
+  projectLayoutTowerEvacuations,
+  projectLayoutTowerEvacuationSuppressedSinkTargetIds,
+  type LayoutTowerEvacuationProjection,
+} from "../logistics/tower-evacuation";
 import type { LogisticsResourceDemandProjection } from "../logistics/resource-demands";
 import {
   LinkExecutor,
@@ -628,6 +637,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let authorizedTerminalEvacuationFlowIds: ReadonlySet<string> = new Set();
   let suppressedTerminalEvacuationTargetIds: ReadonlySet<string> =
     persistedLayoutTerminalEvacuationTargetIds(input.manager, input.runtime.context.tick);
+  let authorizedTowerEvacuationFlowIds: ReadonlySet<string> = new Set();
+  let suppressedTowerEvacuationTargetIds: ReadonlySet<string> = new Set();
   let linkDraft = emptyLinkRuntimeResult();
   let maintenanceBudget: MaintenanceBudgetProjection = Object.freeze({
     budgets: Object.freeze([]),
@@ -823,6 +834,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         activeTerminalEvacuations,
         authorizedTerminalEvacuations,
         suppressedTerminalEvacuationTargets,
+        authorizedTowerEvacuations,
+        suppressedTowerEvacuationTargets,
       ) => {
         survivalCandidates = economy;
         maintenanceCandidates = maintenance;
@@ -845,6 +858,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         activeTerminalEvacuationFlowIds = activeTerminalEvacuations;
         authorizedTerminalEvacuationFlowIds = authorizedTerminalEvacuations;
         suppressedTerminalEvacuationTargetIds = suppressedTerminalEvacuationTargets;
+        authorizedTowerEvacuationFlowIds = authorizedTowerEvacuations;
+        suppressedTowerEvacuationTargetIds = suppressedTowerEvacuationTargets;
       },
     ),
     industryPublicationSystem(input, industryDraft),
@@ -1236,6 +1251,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           context.colony,
           logisticsRuntime,
         );
+        const blockedStaleTowerEvacuationFlowIds = blockedStaleLayoutTowerEvacuationFlowIds(
+          input.manager,
+          context.colony,
+          logisticsRuntime,
+        );
         const planned = planLeaseAgents({
           availablePathCpu: localPathSearchAllowance(budget),
           execution: withoutSuppressedLeaseTargets(
@@ -1250,6 +1270,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                 ),
                 ...blockedStorageEvacuationFlowIds,
                 ...blockedStaleExtensionEvacuationFlowIds,
+                ...blockedStaleTowerEvacuationFlowIds,
                 ...[...activeTerminalEvacuationFlowIds].filter(
                   (flowId) => !authorizedTerminalEvacuationFlowIds.has(flowId),
                 ),
@@ -1261,10 +1282,12 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
               ...suppressedSpawnEvacuationTargetIds,
               ...suppressedStorageEvacuationTargetIds,
               ...suppressedTerminalEvacuationTargetIds,
+              ...suppressedTowerEvacuationTargetIds,
             ]),
             new Set([
               ...authorizedStorageEvacuationFlowIds,
               ...authorizedTerminalEvacuationFlowIds,
+              ...authorizedTowerEvacuationFlowIds,
             ]),
           ),
           paths: context.localPathPlanning,
@@ -2248,6 +2271,15 @@ function layoutPlanningSystem(
           tick: context.tick,
         }),
       );
+      const completedStaleTowerEvacuationRooms = new Set(
+        completedLayoutTowerEvacuationRoomNames({
+          activeFlowIds: activeLogisticsFlowIds,
+          activeTargetIds: currentLogisticsTargetIds,
+          records: initialOwner.staleRecords.filter(isStaleLayoutTowerEvacuationContinuation),
+          snapshot: context.snapshot,
+          tick: context.tick,
+        }),
+      );
       let owner = initialOwner;
       let changed =
         Object.keys(rawOwner).length > 0 &&
@@ -2302,6 +2334,22 @@ function layoutPlanningSystem(
           staleLayoutExtensionEvacuationSettlementBlocker({ colony, record: staleRecord }) === null
         ) {
           owner = clearStaleLayoutExtensionEvacuation(owner, room.name);
+          changed = true;
+          ownerPrecommitRequired = true;
+          planning.push({
+            blocker: "revision-handoff-active",
+            fingerprint: staleRecord.fingerprint,
+            roomName: room.name,
+            status: "degraded",
+          });
+          break;
+        }
+        if (
+          staleRecord !== undefined &&
+          completedStaleTowerEvacuationRooms.has(room.name) &&
+          staleLayoutTowerEvacuationSettlementBlocker({ colony, record: staleRecord }) === null
+        ) {
+          owner = clearStaleLayoutTowerEvacuation(owner, room.name);
           changed = true;
           ownerPrecommitRequired = true;
           planning.push({
@@ -3161,6 +3209,8 @@ function colonyDirectorSystem(
     activeTerminalEvacuations: ReadonlySet<string>,
     authorizedTerminalEvacuations: ReadonlySet<string>,
     suppressedTerminalEvacuationTargets: ReadonlySet<string>,
+    authorizedTowerEvacuations: ReadonlySet<string>,
+    suppressedTowerEvacuationTargets: ReadonlySet<string>,
   ) => void,
 ): TickSystem<TickContext> {
   return {
@@ -3185,7 +3235,8 @@ function colonyDirectorSystem(
       const stalePolicyPlanningAdmitted =
         mode === "normal" &&
         (hasExplicitStaleSourceService(input.manager) ||
-          hasStaleLayoutExtensionEvacuationContinuation(input.manager)) &&
+          hasStaleLayoutExtensionEvacuationContinuation(input.manager) ||
+          hasStaleLayoutTowerEvacuationContinuation(input.manager)) &&
         input.game.cpu.getUsed() + 1.5 <= budget.hardCeiling;
       if (stalePolicyPlanningAdmitted) {
         const stalePolicy = colonyDirector.begin({
@@ -3285,6 +3336,22 @@ function colonyDirectorSystem(
             staleLayoutExtensionEvacuationSettlementBlocker({ colony, record }) === null
           );
         }),
+      ];
+      const staleTowerEvacuationRecords =
+        persistedLayoutsOwner?.staleRecords.filter(isStaleLayoutTowerEvacuationContinuation) ?? [];
+      const towerEvacuationRecords = [
+        ...layoutRecords,
+        ...(layoutWorkEnabled
+          ? staleTowerEvacuationRecords.filter((record) => {
+              const colony = staleLayoutPolicyColonies.find(
+                ({ roomName }) => roomName === record.roomName,
+              );
+              return (
+                colony !== undefined &&
+                staleLayoutTowerEvacuationSettlementBlocker({ colony, record }) === null
+              );
+            })
+          : []),
       ];
       const terminalSendBlockedRoomNames = projectLayoutTerminalSendBlockedRoomNames(
         persistedLayoutRecords,
@@ -3423,12 +3490,32 @@ function colonyDirectorSystem(
         snapshot: context.snapshot,
         tick: context.tick,
       });
-      const layoutTowerEvacuations = projectLayoutTowerEvacuations({
+      const projectedLayoutTowerEvacuations = projectLayoutTowerEvacuations({
         existingBudgets: priorLedger,
-        records: layoutRecords,
+        records: towerEvacuationRecords,
         snapshot: context.snapshot,
         tick: context.tick,
       });
+      const towerEvacuationSuppressedSinkTargetIds =
+        projectLayoutTowerEvacuationSuppressedSinkTargetIds({
+          records: [...persistedLayoutRecords, ...staleTowerEvacuationRecords],
+          snapshot: context.snapshot,
+          tick: context.tick,
+        });
+      const layoutTowerEvacuations: LayoutTowerEvacuationProjection = Object.freeze({
+        budgets: projectedLayoutTowerEvacuations.budgets,
+        demands: Object.freeze({
+          ...projectedLayoutTowerEvacuations.demands,
+          suppressedSinkTargetIds: towerEvacuationSuppressedSinkTargetIds,
+        }),
+      });
+      economyCandidates = withoutSuppressedSurvivalTransfers(
+        economyCandidates,
+        new Set(towerEvacuationSuppressedSinkTargetIds),
+      );
+      const projectedTowerEvacuationFlowIds = new Set(
+        layoutTowerEvacuations.demands.edges.map(({ id }) => id),
+      );
       const fundedIndustryBudgetIds = new Set(
         priorLedger
           .filter(
@@ -3526,6 +3613,10 @@ function colonyDirectorSystem(
       const logistics = renewLogisticsBudgets(
         logisticsPlan,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
+      );
+      const logisticsExecutableTowerEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
+        projectedTowerEvacuationFlowIds,
+        logistics,
       );
       const provisionalMaintenance = projectMaintenanceBudgets({
         existing: resolveColoniesOwner(owner).owner?.ledger ?? [],
@@ -3918,6 +4009,20 @@ function colonyDirectorSystem(
           records: layoutRecords,
         });
       }
+      const activeTowerEvacuationBudgetIssuers = new Set(
+        session.result.reservations.flatMap(({ category, issuer, status }) =>
+          category === "optional-growth" && status === "active" ? [issuer] : [],
+        ),
+      );
+      const executableTowerEvacuationFlowIds = new Set(
+        layoutTowerEvacuations.demands.edges.flatMap(({ budgetBinding, id }) =>
+          logisticsExecutableTowerEvacuationFlowIds.has(id) &&
+          budgetBinding !== undefined &&
+          activeTowerEvacuationBudgetIssuers.has(budgetBinding.issuer)
+            ? [id]
+            : [],
+        ),
+      );
       publishCandidates(
         economyCandidates,
         maintenanceCandidates,
@@ -3940,6 +4045,8 @@ function colonyDirectorSystem(
         persistedLayoutTerminalEvacuationFlowIds(input.manager),
         executableTerminalEvacuationFlowIds,
         persistedLayoutTerminalEvacuationTargetIds(input.manager, context.tick),
+        executableTowerEvacuationFlowIds,
+        new Set(towerEvacuationSuppressedSinkTargetIds),
       );
       const intents = authorizedSpawnIntents(session, selections, context.tick);
       spawnDraft.session = session;
@@ -4146,6 +4253,15 @@ function hasStaleLayoutExtensionEvacuationContinuation(manager: MemoryManager | 
   );
 }
 
+function hasStaleLayoutTowerEvacuationContinuation(manager: MemoryManager | null): boolean {
+  if (manager === null) return false;
+  return (
+    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
+      isStaleLayoutTowerEvacuationContinuation,
+    ) === true
+  );
+}
+
 function blockedStaleLayoutExtensionEvacuationFlowIds(
   manager: MemoryManager | null,
   colonyPlanning: ColonyPlanningResult,
@@ -4172,6 +4288,41 @@ function blockedStaleLayoutExtensionEvacuationFlowIds(
         binding !== undefined &&
         colony !== undefined &&
         staleLayoutExtensionEvacuationSettlementBlocker({ colony, record }) === null &&
+        activeReservations.has(`${record.roomName}\u0000${binding.category}\u0000${binding.issuer}`)
+      )
+        return [];
+      return [flowId];
+    }),
+  );
+}
+
+function blockedStaleLayoutTowerEvacuationFlowIds(
+  manager: MemoryManager | null,
+  colonyPlanning: ColonyPlanningResult,
+  logistics: LogisticsRuntimeProjection,
+): readonly string[] {
+  if (manager === null) return Object.freeze([]);
+  const owner = parseLayoutsOwner(manager.ownerView("layouts"));
+  if (owner === null) return Object.freeze([]);
+  const activeReservations = new Set(
+    colonyPlanning.reservations.flatMap(({ category, colonyId, issuer, status }) =>
+      status === "active" ? [`${colonyId}\u0000${category}\u0000${issuer}`] : [],
+    ),
+  );
+  return Object.freeze(
+    owner.staleRecords.flatMap((record) => {
+      if (!isStaleLayoutTowerEvacuationContinuation(record)) return [];
+      const evacuation = record.towerEvacuation;
+      if (evacuation === undefined) return [];
+      const flowId = layoutTowerEvacuationFlowId(record.roomName, evacuation);
+      if (flowId === null) return [];
+      const edge = logistics.graph.edges.find(({ id }) => id === flowId);
+      const colony = colonyPlanning.colonies.find(({ roomName }) => roomName === record.roomName);
+      const binding = edge?.budgetBinding;
+      if (
+        binding !== undefined &&
+        colony !== undefined &&
+        staleLayoutTowerEvacuationSettlementBlocker({ colony, record }) === null &&
         activeReservations.has(`${record.roomName}\u0000${binding.category}\u0000${binding.issuer}`)
       )
         return [];

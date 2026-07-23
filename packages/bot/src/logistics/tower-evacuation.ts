@@ -1,6 +1,7 @@
 import type { BudgetRequest } from "../colony";
 import {
   LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS,
+  MAX_LAYOUT_RECORDS,
   MAX_LAYOUT_TOWER_ENERGY,
   MINIMUM_OPERATIONAL_TOWER_ENERGY,
   layoutTowerEvacuationBudgetIssuer,
@@ -13,6 +14,69 @@ import type { LogisticsResourceDemandProjection } from "./resource-demands";
 export interface LayoutTowerEvacuationProjection {
   readonly budgets: readonly BudgetRequest[];
   readonly demands: LogisticsResourceDemandProjection;
+}
+
+/** Durable refill suppression for a persisted term, independent of optional-work authorization. */
+export function projectLayoutTowerEvacuationSuppressedSinkTargetIds(input: {
+  readonly records: readonly LayoutRecord[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): readonly string[] {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return Object.freeze([]);
+  const suppressed = new Set<string>();
+  for (const record of [...input.records].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
+    const evacuation = record.towerEvacuation;
+    if (!isCurrentLayoutTowerEvacuationTerm(evacuation, input.tick)) continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (room?.controller?.ownership !== "owned" || room.observedAt !== input.tick) continue;
+    suppressed.add(evacuation.sourceId);
+    suppressed.add(evacuation.replacementId);
+  }
+  return Object.freeze([...suppressed]);
+}
+
+/** Fresh command-free completion evidence for an already-authorized tower evacuation. */
+export function completedLayoutTowerEvacuationRoomNames(input: {
+  readonly activeFlowIds: ReadonlySet<string>;
+  readonly activeTargetIds: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): readonly string[] {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return Object.freeze([]);
+  const completed: string[] = [];
+  for (const record of [...input.records].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
+    const evacuation = record.towerEvacuation;
+    if (
+      !isCurrentLayoutTowerEvacuationTerm(evacuation, input.tick) ||
+      input.tick <= evacuation.startedAt
+    )
+      continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (
+      room?.controller?.ownership !== "owned" ||
+      room.observedAt !== input.tick ||
+      room.hostileCreeps.length > 0
+    )
+      continue;
+    const evidence = exactTowerEvacuationEvidence(room.ownedTowers, evacuation);
+    if (
+      evidence === null ||
+      evidence.sourceEnergy !== 0 ||
+      evidence.replacementEnergy !== evacuation.replacementInitialEnergy + evacuation.amount
+    )
+      continue;
+    const flowId = layoutTowerEvacuationFlowId(room.name, evacuation);
+    if (
+      flowId === null ||
+      input.activeFlowIds.has(flowId) ||
+      input.activeTargetIds.has(evidence.source.id) ||
+      input.activeTargetIds.has(evidence.replacement.id)
+    )
+      continue;
+    completed.push(room.name);
+  }
+  return Object.freeze(completed);
 }
 
 /** Projects layout-owned tower evacuation terms into the sole logistics graph and budget owner. */
@@ -28,25 +92,16 @@ export function projectLayoutTowerEvacuations(input: {
   readonly snapshot: WorldSnapshot;
   readonly tick: number;
 }): LayoutTowerEvacuationProjection {
-  if (input.records.length > 64) return emptyProjection();
+  if (input.records.length > MAX_LAYOUT_RECORDS) return emptyProjection();
   const budgets: BudgetRequest[] = [];
   const edges: LogisticsResourceDemandProjection["edges"][number][] = [];
   const endpoints: LogisticsResourceDemandProjection["endpoints"][number][] = [];
   const nodes: LogisticsResourceDemandProjection["nodes"][number][] = [];
-  const suppressedSinkTargetIds: string[] = [];
+  const suppressedSinkTargetIds = projectLayoutTowerEvacuationSuppressedSinkTargetIds(input);
 
   for (const record of [...input.records].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
     const evacuation = record.towerEvacuation;
-    if (
-      evacuation === undefined ||
-      evacuation.amount <= 0 ||
-      evacuation.amount > MAX_LAYOUT_TOWER_ENERGY ||
-      evacuation.replacementInitialEnergy < MINIMUM_OPERATIONAL_TOWER_ENERGY ||
-      evacuation.replacementInitialEnergy + evacuation.amount > MAX_LAYOUT_TOWER_ENERGY ||
-      evacuation.expiresAt - evacuation.startedAt !== LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS ||
-      input.tick >= evacuation.expiresAt
-    )
-      continue;
+    if (!isCurrentLayoutTowerEvacuationTerm(evacuation, input.tick)) continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
     if (
       room?.controller?.ownership !== "owned" ||
@@ -54,20 +109,11 @@ export function projectLayoutTowerEvacuations(input: {
       room.hostileCreeps.length > 0
     )
       continue;
-    const source = room.ownedTowers.find(({ id }) => id === evacuation.sourceId);
-    const replacement = room.ownedTowers.find(({ id }) => id === evacuation.replacementId);
-    if (source?.active !== true || replacement?.active !== true) continue;
-    const sourceEnergy = exactEnergy(source.store);
-    const replacementEnergy = exactEnergy(replacement.store);
+    const evidence = exactTowerEvacuationEvidence(room.ownedTowers, evacuation);
+    if (evidence === null) continue;
+    const { replacement, source, sourceEnergy } = evidence;
     const replacementFreeCapacity = replacement.store.freeCapacity;
-    if (
-      sourceEnergy === null ||
-      replacementEnergy === null ||
-      replacementFreeCapacity === null ||
-      sourceEnergy > evacuation.amount ||
-      replacementEnergy < evacuation.replacementInitialEnergy
-    )
-      continue;
+    if (replacementFreeCapacity === null) continue;
     const flowId = layoutTowerEvacuationFlowId(room.name, evacuation);
     const issuer = layoutTowerEvacuationBudgetIssuer(room.name, evacuation);
     if (flowId === null || issuer === null) continue;
@@ -131,8 +177,6 @@ export function projectLayoutTowerEvacuations(input: {
       sinkNodeId,
       sourceNodeId,
     });
-    suppressedSinkTargetIds.push(source.id);
-    if (sourceEnergy > 0) suppressedSinkTargetIds.push(replacement.id);
     budgets.push({
       colonyId: room.name,
       category: "optional-growth",
@@ -145,7 +189,10 @@ export function projectLayoutTowerEvacuations(input: {
     });
   }
 
-  return freeze({ budgets, demands: { edges, endpoints, nodes, suppressedSinkTargetIds } });
+  return freeze({
+    budgets,
+    demands: { edges, endpoints, nodes, suppressedSinkTargetIds },
+  });
 }
 
 function renewedRevision(
@@ -172,7 +219,56 @@ function renewedRevision(
     : Math.max(proposed, prior.revision + 1);
 }
 
-function exactEnergy(store: {
+function isCurrentLayoutTowerEvacuationTerm(
+  evacuation: LayoutRecord["towerEvacuation"],
+  tick: number,
+): evacuation is NonNullable<LayoutRecord["towerEvacuation"]> {
+  return (
+    evacuation !== undefined &&
+    evacuation.amount > 0 &&
+    evacuation.amount <= MAX_LAYOUT_TOWER_ENERGY &&
+    evacuation.replacementInitialEnergy >= MINIMUM_OPERATIONAL_TOWER_ENERGY &&
+    evacuation.replacementInitialEnergy + evacuation.amount <= MAX_LAYOUT_TOWER_ENERGY &&
+    evacuation.expiresAt - evacuation.startedAt === LAYOUT_TOWER_EVACUATION_TIMEOUT_TICKS &&
+    tick < evacuation.expiresAt
+  );
+}
+
+function exactTowerEvacuationEvidence(
+  towers: WorldSnapshot["rooms"][number]["ownedTowers"],
+  evacuation: NonNullable<LayoutRecord["towerEvacuation"]>,
+): {
+  readonly replacement: WorldSnapshot["rooms"][number]["ownedTowers"][number];
+  readonly replacementEnergy: number;
+  readonly source: WorldSnapshot["rooms"][number]["ownedTowers"][number];
+  readonly sourceEnergy: number;
+} | null {
+  const sources = towers.filter(({ id }) => id === evacuation.sourceId);
+  const replacements = towers.filter(({ id }) => id === evacuation.replacementId);
+  const source = sources[0];
+  const replacement = replacements[0];
+  if (
+    sources.length !== 1 ||
+    replacements.length !== 1 ||
+    source?.active !== true ||
+    replacement?.active !== true ||
+    source.id === replacement.id
+  )
+    return null;
+  const sourceEnergy = exactTowerStoreEnergy(source.store);
+  const replacementEnergy = exactTowerStoreEnergy(replacement.store);
+  if (
+    sourceEnergy === null ||
+    replacementEnergy === null ||
+    sourceEnergy > evacuation.amount ||
+    replacementEnergy < evacuation.replacementInitialEnergy ||
+    sourceEnergy + replacementEnergy - evacuation.replacementInitialEnergy > evacuation.amount
+  )
+    return null;
+  return { replacement, replacementEnergy, source, sourceEnergy };
+}
+
+function exactTowerStoreEnergy(store: {
   readonly capacity: number | null;
   readonly freeCapacity: number | null;
   readonly resources: readonly { readonly amount: number; readonly resourceType: string }[];
@@ -183,7 +279,7 @@ function exactEnergy(store: {
     store.resources.length > 1 ||
     store.resources.some(
       ({ amount, resourceType }) =>
-        resourceType !== "energy" || !Number.isSafeInteger(amount) || amount <= 0,
+        resourceType !== "energy" || !Number.isSafeInteger(amount) || amount < 0,
     )
   )
     return null;

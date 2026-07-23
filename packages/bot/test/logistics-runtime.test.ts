@@ -14,6 +14,7 @@ import {
   layoutLinkEvacuationBudgetIssuer,
   layoutLinkEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
+  layoutTowerEvacuationFlowId,
   type LayoutRecord,
 } from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
@@ -33,7 +34,11 @@ import {
   observeLogisticsGraph,
   planLogisticsRuntime,
 } from "../src/logistics/runtime";
-import { projectLayoutTowerEvacuations } from "../src/logistics/tower-evacuation";
+import {
+  completedLayoutTowerEvacuationRoomNames,
+  projectLayoutTowerEvacuations,
+  projectLayoutTowerEvacuationSuppressedSinkTargetIds,
+} from "../src/logistics/tower-evacuation";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 describe("logistics runtime adapter", () => {
@@ -1673,6 +1678,120 @@ describe("logistics runtime adapter", () => {
       budgets: [],
       demands: { edges: [], endpoints: [], nodes: [], suppressedSinkTargetIds: [] },
     });
+
+    const flowId = layoutTowerEvacuationFlowId("W1N1", terms);
+    if (flowId === null) throw new Error("tower evacuation flow identity overflowed");
+    const deliveredWorld = {
+      ...snapshot,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          ownedTowers: [tower("tower-obsolete", 11, 0), tower("tower-replacement", 12, 510)],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    expect(
+      completedLayoutTowerEvacuationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        records: [record],
+        snapshot: deliveredWorld,
+        tick: 11,
+      }),
+    ).toEqual(["W1N1"]);
+    expect(
+      projectLayoutTowerEvacuationSuppressedSinkTargetIds({
+        records: [record],
+        snapshot: deliveredWorld,
+        tick: 11,
+      }),
+    ).toEqual(["tower-obsolete", "tower-replacement"]);
+    expect(
+      projectLayoutTowerEvacuationSuppressedSinkTargetIds({
+        records: [record],
+        snapshot: deliveredWorld,
+        tick: terms.expiresAt,
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutTowerEvacuationRoomNames({
+        activeFlowIds: new Set([flowId]),
+        activeTargetIds: new Set(),
+        records: [record],
+        snapshot: deliveredWorld,
+        tick: 11,
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutTowerEvacuationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set([terms.replacementId]),
+        records: [record],
+        snapshot: deliveredWorld,
+        tick: 11,
+      }),
+    ).toEqual([]);
+
+    const observedEvacuationRoom = evacuationWorld.rooms[0];
+    const hostile = room.ownedCreeps[0];
+    if (observedEvacuationRoom === undefined || hostile === undefined)
+      throw new Error("threatened tower evacuation fixture incomplete");
+    const threatenedWorld = {
+      ...evacuationWorld,
+      rooms: [
+        {
+          ...observedEvacuationRoom,
+          hostileCreeps: [{ ...hostile, id: "hostile", ownerUsername: "enemy" }],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    expect(
+      projectLayoutTowerEvacuationSuppressedSinkTargetIds({
+        records: [record],
+        snapshot: threatenedWorld,
+        tick: 10,
+      }),
+    ).toEqual(["tower-obsolete", "tower-replacement"]);
+    expect(
+      projectLayoutTowerEvacuations({
+        existingBudgets: [],
+        records: [record],
+        snapshot: {
+          ...evacuationWorld,
+          rooms: [
+            {
+              ...room,
+              ownedTowers: [tower("tower-obsolete", 11, 500), tower("tower-replacement", 12, 11)],
+            },
+          ],
+        },
+        tick: 10,
+      }).demands.edges,
+    ).toEqual([]);
+
+    const sourceTower = tower("tower-obsolete", 11, 500);
+    const replacementTower = tower("tower-replacement", 12, 10);
+    const invalidTowerSets = [
+      [sourceTower, { ...sourceTower, pos: position(13, 12) }, replacementTower],
+      [{ ...sourceTower, active: false }, replacementTower],
+      [
+        {
+          ...sourceTower,
+          store: { ...sourceTower.store, freeCapacity: sourceTower.store.freeCapacity - 1 },
+        },
+        replacementTower,
+      ],
+    ];
+    for (const ownedTowers of invalidTowerSets)
+      expect(
+        projectLayoutTowerEvacuations({
+          existingBudgets: [],
+          records: [record],
+          snapshot: { ...evacuationWorld, rooms: [{ ...room, ownedTowers }] },
+          tick: 10,
+        }).demands.edges,
+      ).toEqual([]);
   });
 
   it("routes one persisted reserve-link evacuation through the sole logistics graph", () => {

@@ -72,6 +72,35 @@ export function staleLayoutExtensionEvacuationSettlementBlocker(input: {
   return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
 }
 
+/** Exact stale shape whose existing tower evacuation may continue without authorizing removal. */
+export function isStaleLayoutTowerEvacuationContinuation(record: StaleLayoutRecord): boolean {
+  return (
+    record.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
+    record.towerEvacuation !== undefined &&
+    record.containerMigration === undefined &&
+    record.extensionEvacuation === undefined &&
+    record.labEvacuation === undefined &&
+    record.linkEvacuation === undefined &&
+    record.spawnEvacuation === undefined &&
+    record.storageEvacuation === undefined &&
+    record.terminalEvacuation === undefined &&
+    record.removalReceipt === undefined &&
+    (record.siteReceipts?.length ?? 0) === 0 &&
+    record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) !== true
+  );
+}
+
+/** Reuses the safe handoff policy after logically removing one exactly delivered tower term. */
+export function staleLayoutTowerEvacuationSettlementBlocker(input: {
+  readonly colony: ColonyView;
+  readonly record: StaleLayoutRecord;
+}): LayoutBlocker | null {
+  if (!isStaleLayoutTowerEvacuationContinuation(input.record)) return "revision-handoff-active";
+  const { towerEvacuation: _towerEvacuation, ...settled } = input.record;
+  void _towerEvacuation;
+  return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
+}
+
 function staleLayoutRevisionBlocker(
   input: {
     readonly colony: ColonyView;

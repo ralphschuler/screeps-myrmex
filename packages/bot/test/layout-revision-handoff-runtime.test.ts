@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   layoutExtensionEvacuationBudgetIssuer,
   layoutExtensionEvacuationFlowId,
+  layoutTowerEvacuationBudgetIssuer,
+  layoutTowerEvacuationFlowId,
   parseLayoutsOwner,
   reconcileStaleLayoutRemovalReceipt,
   reconcileStaleLayoutSiteReceipt,
@@ -43,6 +45,10 @@ interface GameOptions {
     readonly replacementEnergy: number;
     readonly sourceEnergy: number;
   };
+  readonly staleTowerEvacuation?: {
+    readonly replacementEnergy: number;
+    readonly sourceEnergy: number;
+  };
   readonly staleRemovalTarget?: boolean;
   readonly staleRemovalTargetType?: CompletedStaleEvacuationKind;
   readonly staleSiteEvidence?: StaleSiteEvidence;
@@ -58,6 +64,8 @@ interface GameOptions {
 interface Commands {
   readonly createConstructionSite: ReturnType<typeof vi.fn<() => number>>;
   readonly destroyStructure: ReturnType<typeof vi.fn<() => number>>;
+  readonly transferEnergy: ReturnType<typeof vi.fn<() => number>>;
+  readonly withdrawEnergy: ReturnType<typeof vi.fn<() => number>>;
 }
 
 const LAB_EVACUATION_VARIANTS = [
@@ -258,9 +266,10 @@ type StaleActiveEvidence =
   | "evacuation"
   | "site-receipt"
   | "source-handoff"
+  | "tower-evacuation"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -461,6 +470,199 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       ),
     ).not.toBe(true);
     expect(layoutsOwner(memory).staleRecords[0]?.extensionEvacuation).toEqual(evacuation);
+  });
+
+  it("continues one stale tower evacuation through the existing funded logistics path", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands, { controllerLevel: 5 }), memory });
+    runTick({ game: game(101, commands, { controllerLevel: 5 }), memory });
+    seedStaleOwner(memory, "tower-evacuation");
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const pending = runTick({
+      game: game(202, commands, {
+        controllerLevel: 5,
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 1_800,
+        staleTowerEvacuation: { replacementEnergy: 10, sourceEnergy: 500 },
+      }),
+      memory,
+    });
+    const record = layoutsOwner(memory).staleRecords[0];
+    const evacuation = record?.towerEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale tower evacuation");
+    const budgetIssuer = layoutTowerEvacuationBudgetIssuer(ROOM_NAME, evacuation);
+    const flowId = layoutTowerEvacuationFlowId(ROOM_NAME, evacuation);
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+          }[];
+        }
+      | undefined;
+
+    expect(pending.kernel.faults).toEqual([]);
+    expect(pending.colony.reservations).toContainEqual(
+      expect.objectContaining({
+        category: "optional-growth",
+        colonyId: ROOM_NAME,
+        issuer: budgetIssuer,
+        status: "active",
+      }),
+    );
+    expect(contracts?.active?.some(({ execution }) => execution?.flowId === flowId)).toBe(true);
+    expect(layoutsOwner(memory).records).toEqual([]);
+    expect(layoutsOwner(memory).staleRecords[0]?.towerEvacuation).toEqual(evacuation);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
+  it("settles delivered stale tower stock command-free before a later revision handoff", async () => {
+    const forward = await runCompletedStaleTowerEvacuationVariant(false, false);
+    const reset = await runCompletedStaleTowerEvacuationVariant(false, true);
+    const reordered = await runCompletedStaleTowerEvacuationVariant(true, false);
+
+    expect(forward.settlementPlanning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(forward.settlementOwner.records).toEqual([]);
+    expect(forward.settlementOwner.staleRecords).toHaveLength(1);
+    expect(forward.settlementOwner.staleRecords[0]?.towerEvacuation).toBeUndefined();
+    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.handoffOwner).toMatchObject({
+      records: [
+        expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+      ],
+      staleRecords: [],
+    });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
+  });
+
+  it.each([
+    { name: "threat", options: { threat: true } },
+    { name: "controller risk", options: { controllerRisk: true } },
+  ] as const)("does not continue pending stale tower work under $name", ({ options }) => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands, { controllerLevel: 5 }), memory });
+    runTick({ game: game(101, commands, { controllerLevel: 5 }), memory });
+    seedStaleOwner(memory, "tower-evacuation");
+    const evacuation = layoutsOwner(memory).staleRecords[0]?.towerEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale tower evacuation");
+    const budgetIssuer = layoutTowerEvacuationBudgetIssuer(ROOM_NAME, evacuation);
+    const flowId = layoutTowerEvacuationFlowId(ROOM_NAME, evacuation);
+
+    const blocked = runTick({
+      game: game(202, commands, {
+        ...options,
+        controllerLevel: 5,
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 1_800,
+        staleTowerEvacuation: { replacementEnergy: 20, sourceEnergy: 490 },
+      }),
+      memory,
+    });
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly counterpartId?: string; readonly flowId?: string };
+            readonly targetId?: string;
+          }[];
+        }
+      | undefined;
+
+    expect(blocked.colony.reservations).not.toContainEqual(
+      expect.objectContaining({ issuer: budgetIssuer, status: "active" }),
+    );
+    expect(contracts?.active?.some(({ execution }) => execution?.flowId === flowId)).not.toBe(true);
+    expect(
+      contracts?.active?.some(
+        ({ execution, targetId }) =>
+          targetId === evacuation.sourceId ||
+          targetId === evacuation.replacementId ||
+          execution?.counterpartId === evacuation.sourceId ||
+          execution?.counterpartId === evacuation.replacementId,
+      ),
+    ).not.toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.towerEvacuation).toEqual(evacuation);
+  });
+
+  it("blocks an existing stale tower lease when colony policy turns unsafe", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands, { controllerLevel: 5, staticMiner: true }), memory });
+    runTick({ game: game(101, commands, { controllerLevel: 5, staticMiner: true }), memory });
+    seedStaleOwner(memory, "tower-evacuation");
+    const evacuation = layoutsOwner(memory).staleRecords[0]?.towerEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale tower evacuation");
+    const flowId = layoutTowerEvacuationFlowId(ROOM_NAME, evacuation);
+    const safeGame = (tick: number) =>
+      game(tick, commands, {
+        controllerLevel: 5,
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 1_800,
+        staleTowerEvacuation: { replacementEnergy: 10, sourceEnergy: 500 },
+        staticMiner: true,
+      });
+    runTick({ game: safeGame(202), memory });
+    runTick({ game: safeGame(203), memory });
+    runTick({ game: safeGame(204), memory });
+    runTick({ game: safeGame(205), memory });
+    const contractsBefore = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+            readonly lease?: unknown;
+            readonly state?: string;
+          }[];
+        }
+      | undefined;
+    expect(
+      contractsBefore?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId === flowId &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).toBe(true);
+    expect(commands.withdrawEnergy).toHaveBeenCalled();
+    commands.transferEnergy.mockClear();
+    commands.withdrawEnergy.mockClear();
+
+    runTick({
+      game: game(206, commands, {
+        controllerLevel: 5,
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 1_800,
+        staleTowerEvacuation: { replacementEnergy: 10, sourceEnergy: 500 },
+        staticMiner: true,
+        threat: true,
+      }),
+      memory,
+    });
+    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+
+    expect(commands.withdrawEnergy).not.toHaveBeenCalled();
+    expect(commands.transferEnergy).not.toHaveBeenCalled();
+    expect(
+      contractsAfter?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId === flowId &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).not.toBe(true);
   });
 
   it("reconciles one settled stale source-service issuance without interrupting mining", async () => {
@@ -3115,15 +3317,15 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
           },
         }
       : {}),
-    ...(completedTowerEvacuation
+    ...(active === "tower-evacuation" || completedTowerEvacuation
       ? {
           towerEvacuation: {
             amount: 500,
-            expiresAt: 250,
+            expiresAt: completedTowerEvacuation ? 250 : 350,
             replacementId: "tower-replacement",
             replacementInitialEnergy: 10,
             sourceId: "tower-obsolete",
-            startedAt: 100,
+            startedAt: completedTowerEvacuation ? 100 : 200,
           },
         }
       : {}),
@@ -3350,6 +3552,8 @@ function commandSpies(): Commands {
   return {
     createConstructionSite: vi.fn(() => 0),
     destroyStructure: vi.fn(() => 0),
+    transferEnergy: vi.fn(() => 0),
+    withdrawEnergy: vi.fn(() => 0),
   };
 }
 
@@ -3423,6 +3627,63 @@ async function runCompletedStaleExtensionEvacuationVariant(reverse: boolean, res
   };
 }
 
+async function runCompletedStaleTowerEvacuationVariant(reverse: boolean, reset: boolean) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  executeTick({ game: game(100, commands, { controllerLevel: 5, reverse }), memory });
+  executeTick({ game: game(101, commands, { controllerLevel: 5, reverse }), memory });
+  seedStaleOwner(memory, "tower-evacuation");
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const settlementGame = game(202, commands, {
+    controllerLevel: 5,
+    reverse,
+    roomEnergyAvailable: 350,
+    roomEnergyCapacityAvailable: 1_800,
+    staleTowerEvacuation: { replacementEnergy: 510, sourceEnergy: 0 },
+  });
+  const settlement = executeTick({
+    game: settlementGame,
+    memory,
+  });
+  const settlementOwner = layoutsOwner(memory);
+  const settlementCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+  };
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const handoff = executeTick({
+    game: game(203, commands, {
+      controllerLevel: 5,
+      reverse,
+      roomEnergyAvailable: 350,
+      roomEnergyCapacityAvailable: 1_800,
+      staleTowerEvacuation: { replacementEnergy: 510, sourceEnergy: 0 },
+    }),
+    memory,
+  });
+  return {
+    handoffCommands: {
+      create: commands.createConstructionSite.mock.calls.length,
+      destroy: commands.destroyStructure.mock.calls.length,
+    },
+    handoffOwner: layoutsOwner(memory),
+    handoffPlanning: handoff.layout.planning,
+    settlementCommands,
+    settlementOwner,
+    settlementPlanning: settlement.layout.planning,
+  };
+}
+
 function game(
   time: number,
   commands: Commands,
@@ -3454,10 +3715,12 @@ function game(
     my: true,
     name: `worker-${roomName}`,
     owner: { username: "Myrmex" },
-    pos: pos(25, 25),
+    pos: options.staleTowerEvacuation === undefined ? pos(25, 25) : pos(39, 39),
     room: { name: roomName },
     spawning: false,
     store: { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 },
+    transfer: commands.transferEnergy,
+    withdraw: commands.withdrawEnergy,
     ticksToLive: 1_000,
   } as unknown as Creep;
   const staticMiner = options.staticMiner
@@ -3654,6 +3917,37 @@ function game(
           41,
           staleExtensionEvacuation.replacementEnergy,
         );
+  const staleTowerEvacuation = options.staleTowerEvacuation;
+  const evacuationTower = (id: string, x: number, energy: number) =>
+    ({
+      attack: () => 0,
+      destroy: commands.destroyStructure,
+      heal: () => 0,
+      hits: 3_000,
+      hitsMax: 3_000,
+      id,
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: pos(x, 39),
+      repair: () => 0,
+      room: { name: roomName },
+      store: {
+        energy,
+        getCapacity: () => 1_000,
+        getFreeCapacity: () => 1_000 - energy,
+        getUsedCapacity: () => energy,
+      },
+      structureType: "tower",
+    }) as unknown as StructureTower;
+  const staleTowerSource =
+    staleTowerEvacuation === undefined
+      ? null
+      : evacuationTower("tower-obsolete", 40, staleTowerEvacuation.sourceEnergy);
+  const staleTowerReplacement =
+    staleTowerEvacuation === undefined
+      ? null
+      : evacuationTower("tower-replacement", 41, staleTowerEvacuation.replacementEnergy);
   const staleRemovalTarget = options.staleRemovalTarget
     ? ({
         destroy: commands.destroyStructure,
@@ -3698,6 +3992,8 @@ function game(
         ...(storageTerminal === null ? [] : [storageTerminal]),
         ...(staleEvacuationSource === null ? [] : [staleEvacuationSource]),
         ...(staleEvacuationReplacement === null ? [] : [staleEvacuationReplacement]),
+        ...(staleTowerSource === null ? [] : [staleTowerSource]),
+        ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
       ].reverse()
     : [
@@ -3706,6 +4002,8 @@ function game(
         ...(storageTerminal === null ? [] : [storageTerminal]),
         ...(staleEvacuationSource === null ? [] : [staleEvacuationSource]),
         ...(staleEvacuationReplacement === null ? [] : [staleEvacuationReplacement]),
+        ...(staleTowerSource === null ? [] : [staleTowerSource]),
+        ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
       ];
   const ownedCreeps =
@@ -3751,7 +4049,11 @@ function game(
                   ? staleEvacuationSource
                   : id === staleEvacuationReplacement?.id
                     ? staleEvacuationReplacement
-                    : null,
+                    : id === staleTowerSource?.id
+                      ? staleTowerSource
+                      : id === staleTowerReplacement?.id
+                        ? staleTowerReplacement
+                        : null,
     rooms: { [roomName]: room },
     shard: { name: "shard3" },
     time,
