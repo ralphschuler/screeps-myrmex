@@ -134,7 +134,10 @@ describe("link runtime projection", () => {
       name: "W1N1",
       observedAt: 100,
       ownedLinks: links,
-      sources: [{ id: "source-a" }, { id: "source-b" }],
+      sources: [
+        { id: "source-a", pos: pos(9, 10) },
+        { id: "source-b", pos: pos(39, 10) },
+      ],
     } as unknown as RoomSnapshot;
     const candidate = {
       id: "layout-link-evacuation:W1N1:reserve-external:reserve-exact",
@@ -155,7 +158,44 @@ describe("link runtime projection", () => {
       validateReserveLinkEvacuationContinuity({
         candidates: [candidate],
         layouts: [evidence],
-        rooms: [{ ...room, sources: [{ id: "source-a" }] } as unknown as RoomSnapshot],
+        rooms: [
+          { ...room, sources: [{ id: "source-a", pos: pos(9, 10) }] } as unknown as RoomSnapshot,
+        ],
+        tick: 100,
+      }),
+    ).toEqual([]);
+    expect(
+      validateReserveLinkEvacuationContinuity({
+        candidates: [candidate],
+        layouts: [evidence],
+        rooms: [
+          {
+            ...room,
+            sources: [
+              { id: "source-a", pos: pos(30, 10) },
+              { id: "source-b", pos: pos(39, 10) },
+            ],
+          } as unknown as RoomSnapshot,
+        ],
+        tick: 100,
+      }),
+    ).toEqual([]);
+    expect(
+      validateReserveLinkEvacuationContinuity({
+        candidates: [candidate],
+        layouts: [
+          {
+            ...evidence,
+            evidence: {
+              ...evidence.evidence,
+              sourceServices: [
+                { pos: pos(10, 10), sourceId: "source-a" },
+                { pos: pos(10, 10), sourceId: "source-b" },
+              ],
+            },
+          },
+        ],
+        rooms: [room],
         tick: 100,
       }),
     ).toEqual([]);

@@ -2,20 +2,24 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   layoutExtensionEvacuationBudgetIssuer,
   layoutExtensionEvacuationFlowId,
+  layoutLinkEvacuationBudgetIssuer,
+  layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationBudgetIssuer,
   layoutSpawnEvacuationFlowId,
   layoutTowerEvacuationBudgetIssuer,
   layoutTowerEvacuationFlowId,
   parseLayoutsOwner,
   reconcileStaleLayoutRemovalReceipt,
+  reconstructStaleLayoutLinkPlacements,
   reconcileStaleLayoutSiteReceipt,
   type LayoutLabEvacuation,
   type LayoutsOwnerV25,
   type LayoutStorageEvacuation,
   type LayoutTerminalEvacuation,
 } from "../src/layout";
-import { reservationIdFor, type BudgetRequest } from "../src/colony";
+import { COLONY_RCL_POLICY_TABLE, reservationIdFor, type BudgetRequest } from "../src/colony";
 import { contractIdFor, requestSignature, type WorkContractRequest } from "../src/contracts";
+import { deriveLinkRoleAnchors, type LinkLayoutEvidence } from "../src/links";
 import type { RuntimeGame } from "../src/runtime/context";
 import { runTick } from "../src/runtime/tick";
 import { PLAIN_ROOM_TERRAIN } from "./support/room-terrain-fixture";
@@ -39,6 +43,7 @@ type CompletedStaleEvacuationKind =
 interface GameOptions {
   readonly blockedTerrain?: boolean;
   readonly controllerLevel?: number;
+  readonly controllerPosition?: { readonly x: number; readonly y: number };
   readonly controllerRisk?: boolean;
   readonly reverse?: boolean;
   readonly roomEnergyAvailable?: number;
@@ -46,6 +51,18 @@ interface GameOptions {
   readonly staleExtensionEvacuation?: {
     readonly replacementEnergy: number;
     readonly sourceEnergy: number;
+  };
+  readonly staleLinkEvacuation?: {
+    readonly exactLinks: readonly {
+      readonly cooldown?: number;
+      readonly energy: number;
+      readonly id: string;
+      readonly x: number;
+      readonly y: number;
+    }[];
+    readonly replacementEnergy: number;
+    readonly sourceEnergy: number;
+    readonly storage: { readonly x: number; readonly y: number };
   };
   readonly staleSpawnEvacuation?: {
     readonly replacementEnergy: number;
@@ -62,6 +79,7 @@ interface GameOptions {
   readonly storageTerminalCapacity?: number;
   readonly unavailableIndustryTerminalWork?: boolean;
   readonly storageTerminalResources?: readonly (readonly [string, number])[];
+  readonly sourcePosition?: { readonly x: number; readonly y: number };
   readonly staticMiner?: boolean;
   readonly threat?: boolean;
   readonly visible?: boolean;
@@ -70,6 +88,7 @@ interface GameOptions {
 interface Commands {
   readonly createConstructionSite: ReturnType<typeof vi.fn<() => number>>;
   readonly destroyStructure: ReturnType<typeof vi.fn<() => number>>;
+  readonly transferLinkEnergy: ReturnType<typeof vi.fn<() => number>>;
   readonly transferEnergy: ReturnType<typeof vi.fn<() => number>>;
   readonly withdrawEnergy: ReturnType<typeof vi.fn<() => number>>;
 }
@@ -272,11 +291,12 @@ type StaleActiveEvidence =
   | "evacuation"
   | "site-receipt"
   | "source-handoff"
+  | "link-evacuation"
   | "spawn-evacuation"
   | "tower-evacuation"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -810,6 +830,146 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
           (state === "assigned" || state === "active"),
       ),
     ).not.toBe(true);
+  });
+
+  it("continues one stale reserve-link evacuation without a native transfer", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    const base = {
+      controllerLevel: 8,
+      roomEnergyAvailable: 12_900,
+      roomEnergyCapacityAvailable: 12_900,
+      staticMiner: true,
+    } as const;
+    runTick({ game: game(100, commands, base), memory });
+    runTick({ game: game(101, commands, base), memory });
+    seedStaleOwner(memory, "link-evacuation");
+    const linkOptions = staleLinkEvacuationOptions(memory, 300, 0);
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+    commands.transferLinkEnergy.mockClear();
+
+    const pending = runTick({ game: game(202, commands, { ...base, ...linkOptions }), memory });
+    const evacuation = layoutsOwner(memory).staleRecords[0]?.linkEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale reserve-link evacuation");
+    const budgetIssuer = layoutLinkEvacuationBudgetIssuer(ROOM_NAME, evacuation);
+    const flowId = layoutLinkEvacuationFlowId(ROOM_NAME, evacuation);
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[];
+        }
+      | undefined;
+
+    expect(pending.kernel.faults).toEqual([]);
+    expect(pending.colony.reservations).toContainEqual(
+      expect.objectContaining({
+        category: "optional-growth",
+        colonyId: ROOM_NAME,
+        issuer: budgetIssuer,
+        status: "active",
+      }),
+    );
+    expect(contracts?.active?.some(({ execution }) => execution?.flowId === flowId)).toBe(true);
+    expect(layoutsOwner(memory).records).toEqual([]);
+    expect(layoutsOwner(memory).staleRecords[0]?.linkEvacuation).toEqual(evacuation);
+    expect(commands.transferLinkEnergy).not.toHaveBeenCalled();
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
+  it("blocks an existing stale reserve-link lease when current link safety drifts", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    const base = {
+      controllerLevel: 8,
+      roomEnergyAvailable: 12_900,
+      roomEnergyCapacityAvailable: 12_900,
+      staticMiner: true,
+    } as const;
+    runTick({ game: game(100, commands, base), memory });
+    runTick({ game: game(101, commands, base), memory });
+    seedStaleOwner(memory, "link-evacuation");
+    const safe = staleLinkEvacuationOptions(memory, 300, 0);
+    const evacuation = layoutsOwner(memory).staleRecords[0]?.linkEvacuation;
+    if (evacuation === undefined || safe.staleLinkEvacuation === undefined)
+      throw new Error("expected stale reserve-link evacuation");
+    const flowId = layoutLinkEvacuationFlowId(ROOM_NAME, evacuation);
+    if (flowId === null) throw new Error("expected bounded reserve-link flow");
+    for (let tick = 202; tick <= 205; tick += 1)
+      runTick({ game: game(tick, commands, { ...base, ...safe }), memory });
+    const contractsBefore = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+            readonly lease?: unknown;
+            readonly state?: string;
+          }[];
+        }
+      | undefined;
+    expect(
+      contractsBefore?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId === flowId &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).toBe(true);
+    commands.transferEnergy.mockClear();
+    commands.withdrawEnergy.mockClear();
+    commands.transferLinkEnergy.mockClear();
+
+    const drifted = {
+      ...safe,
+      staleLinkEvacuation: {
+        ...safe.staleLinkEvacuation,
+        exactLinks: safe.staleLinkEvacuation.exactLinks.map((link) =>
+          link.id === "link-replacement" ? { ...link, cooldown: 1 } : link,
+        ),
+      },
+    };
+    runTick({ game: game(206, commands, { ...base, ...drifted }), memory });
+    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+
+    expect(commands.withdrawEnergy).not.toHaveBeenCalled();
+    expect(commands.transferEnergy).not.toHaveBeenCalled();
+    expect(commands.transferLinkEnergy).not.toHaveBeenCalled();
+    expect(
+      contractsAfter?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId === flowId &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).not.toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.linkEvacuation).toEqual(evacuation);
+  });
+
+  it("settles delivered stale reserve-link stock command-free before a later handoff", async () => {
+    const forward = await runCompletedStaleLinkEvacuationVariant(false, false);
+    const reset = await runCompletedStaleLinkEvacuationVariant(false, true);
+    const reordered = await runCompletedStaleLinkEvacuationVariant(true, false);
+
+    expect(forward.settlementPlanning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(forward.settlementOwner.staleRecords[0]?.linkEvacuation).toBeUndefined();
+    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0, link: 0 });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.handoffOwner).toMatchObject({
+      records: [
+        expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+      ],
+      staleRecords: [],
+    });
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0, link: 0 });
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
   });
 
   it("reconciles one settled stale source-service issuance without interrupting mining", async () => {
@@ -3414,15 +3574,15 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
           },
         }
       : {}),
-    ...(completedLinkEvacuation
+    ...(active === "link-evacuation" || completedLinkEvacuation
       ? {
           linkEvacuation: {
-            amount: 800,
-            expiresAt: 250,
+            amount: completedLinkEvacuation ? 800 : 300,
+            expiresAt: completedLinkEvacuation ? 250 : 350,
             replacementId: "link-replacement",
             replacementInitialEnergy: 0,
             sourceId: "link-obsolete",
-            startedAt: 100,
+            startedAt: completedLinkEvacuation ? 100 : 200,
           },
         }
       : {}),
@@ -3699,6 +3859,7 @@ function commandSpies(): Commands {
   return {
     createConstructionSite: vi.fn(() => 0),
     destroyStructure: vi.fn(() => 0),
+    transferLinkEnergy: vi.fn(() => 0),
     transferEnergy: vi.fn(() => 0),
     withdrawEnergy: vi.fn(() => 0),
   };
@@ -3887,6 +4048,177 @@ async function runCompletedStaleTowerEvacuationVariant(reverse: boolean, reset: 
   };
 }
 
+async function runCompletedStaleLinkEvacuationVariant(reverse: boolean, reset: boolean) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  const base = {
+    controllerLevel: 8,
+    roomEnergyAvailable: 12_900,
+    roomEnergyCapacityAvailable: 12_900,
+    staticMiner: true,
+  } as const;
+  executeTick({ game: game(100, commands, { ...base, reverse }), memory });
+  executeTick({ game: game(101, commands, { ...base, reverse }), memory });
+  seedStaleOwner(memory, "link-evacuation");
+  const delivered = staleLinkEvacuationOptions(memory, 0, 300);
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+  commands.transferLinkEnergy.mockClear();
+
+  const settlement = executeTick({
+    game: game(202, commands, { ...base, ...delivered, reverse }),
+    memory,
+  });
+  const settlementOwner = layoutsOwner(memory);
+  const settlementCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+    link: commands.transferLinkEnergy.mock.calls.length,
+  };
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+  commands.transferLinkEnergy.mockClear();
+
+  const handoff = executeTick({
+    game: game(203, commands, { ...base, ...delivered, reverse }),
+    memory,
+  });
+  return {
+    handoffCommands: {
+      create: commands.createConstructionSite.mock.calls.length,
+      destroy: commands.destroyStructure.mock.calls.length,
+      link: commands.transferLinkEnergy.mock.calls.length,
+    },
+    handoffOwner: layoutsOwner(memory),
+    handoffPlanning: handoff.layout.planning,
+    settlementCommands,
+    settlementOwner,
+    settlementPlanning: settlement.layout.planning,
+  };
+}
+
+function staleLinkEvacuationOptions(
+  memory: Memory,
+  sourceEnergy: number,
+  replacementEnergy: number,
+): Pick<GameOptions, "controllerPosition" | "sourcePosition" | "staleLinkEvacuation"> {
+  const record = layoutsOwner(memory).staleRecords.find(({ roomName }) => roomName === ROOM_NAME);
+  const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
+  if (record === undefined || unlocks === undefined) throw new Error("stale RCL8 layout missing");
+  const linkPlacements = reconstructStaleLayoutLinkPlacements({
+    commitment: record,
+    roomName: ROOM_NAME,
+    unlocks,
+  });
+  if (linkPlacements === null || linkPlacements.length !== 6)
+    throw new Error("known stale link geometry missing");
+  const service = record.sourceServices?.find(
+    (placement) => placement.service?.kind === "source-container",
+  );
+  if (service?.service === undefined) throw new Error("stale source service missing");
+  const occupied = new Set(linkPlacements.map(({ x, y }) => `${String(x)}:${String(y)}`));
+  const around = (origin: (typeof linkPlacements)[number]) =>
+    [-2, -1, 0, 1, 2].flatMap((dy) =>
+      [-2, -1, 0, 1, 2].flatMap((dx) => {
+        const candidate = { roomName: ROOM_NAME, x: origin.x + dx, y: origin.y + dy };
+        return candidate.x > 0 &&
+          candidate.x < 49 &&
+          candidate.y > 0 &&
+          candidate.y < 49 &&
+          !occupied.has(`${String(candidate.x)}:${String(candidate.y)}`)
+          ? [candidate]
+          : [];
+      }),
+    );
+  const [sourceAnchor, controllerAnchor, storageAnchor] = linkPlacements;
+  if (sourceAnchor === undefined || controllerAnchor === undefined || storageAnchor === undefined)
+    throw new Error("stale role anchors missing");
+  const sourceCandidates = around(sourceAnchor);
+  const controllerCandidates = around(controllerAnchor);
+  const storageCandidates = around(storageAnchor);
+  for (const sourceService of sourceCandidates) {
+    for (const controller of controllerCandidates) {
+      for (const storage of storageCandidates) {
+        const evidence: LinkLayoutEvidence = {
+          algorithmRevision: record.algorithmRevision,
+          controller,
+          fingerprint: record.fingerprint,
+          linkPlacements,
+          sourceServices: [{ pos: sourceService, sourceId: service.service.sourceId }],
+          storage,
+        };
+        const anchors = deriveLinkRoleAnchors(evidence);
+        const reserves = anchors.filter(({ role }) => role === "reserve");
+        if (
+          anchors.filter(({ role }) => role === "source").length !== 1 ||
+          anchors.filter(({ role }) => role === "controller").length !== 1 ||
+          anchors.filter(({ role }) => role === "hub").length !== 1 ||
+          reserves.length < 2
+        )
+          continue;
+        const replacement = reserves[0];
+        const missing = reserves[reserves.length - 1];
+        if (replacement === undefined || missing === undefined || replacement.id === missing.id)
+          continue;
+        const owner = layoutsOwner(memory);
+        memory.myrmex = {
+          ...memory.myrmex,
+          layouts: {
+            ...owner,
+            staleRecords: owner.staleRecords.map((stale) =>
+              stale.roomName === ROOM_NAME
+                ? {
+                    ...stale,
+                    sourceServices: (stale.sourceServices ?? []).map((placement) =>
+                      placement.service?.kind === "source-container"
+                        ? { ...placement, pos: sourceService }
+                        : placement,
+                    ),
+                  }
+                : stale,
+            ),
+          },
+        } as unknown as NonNullable<Memory["myrmex"]>;
+        const sourcePosition = {
+          x: sourceService.x === 48 ? sourceService.x - 1 : sourceService.x + 1,
+          y: sourceService.y,
+        };
+        return {
+          controllerPosition: { x: controller.x, y: controller.y },
+          sourcePosition,
+          staleLinkEvacuation: {
+            exactLinks: anchors.flatMap((anchor, index) =>
+              anchor.id === missing.id
+                ? []
+                : [
+                    {
+                      energy: anchor.id === replacement.id ? replacementEnergy : 0,
+                      id:
+                        anchor.id === replacement.id
+                          ? "link-replacement"
+                          : `link-exact-${String(index)}`,
+                      x: anchor.pos.x,
+                      y: anchor.pos.y,
+                    },
+                  ],
+            ),
+            replacementEnergy,
+            sourceEnergy,
+            storage: { x: storage.x, y: storage.y },
+          },
+        };
+      }
+    }
+  }
+  throw new Error("could not derive distinct stale source/controller/hub/reserve roles");
+}
+
 function game(
   time: number,
   commands: Commands,
@@ -3906,7 +4238,7 @@ function game(
     energy: 3_000,
     energyCapacity: 3_000,
     id: `source-${roomName}`,
-    pos: pos(10, 10),
+    pos: pos(options.sourcePosition?.x ?? 10, options.sourcePosition?.y ?? 10),
     ticksToRegeneration: 300,
   } as unknown as Source;
   const worker = {
@@ -3919,7 +4251,9 @@ function game(
     name: `worker-${roomName}`,
     owner: { username: "Myrmex" },
     pos:
-      options.staleSpawnEvacuation === undefined && options.staleTowerEvacuation === undefined
+      options.staleLinkEvacuation === undefined &&
+      options.staleSpawnEvacuation === undefined &&
+      options.staleTowerEvacuation === undefined
         ? pos(25, 25)
         : pos(39, 39),
     room: { name: roomName },
@@ -3968,6 +4302,30 @@ function game(
         ticksToLive: 1_000,
       } as unknown as Creep)
     : null;
+  const linkWorkers =
+    options.staleLinkEvacuation === undefined
+      ? []
+      : Array.from(
+          { length: 4 },
+          (_, index) =>
+            ({
+              body: ["work", "carry", "move"].map((type) => ({ hits: 100, type })),
+              fatigue: 0,
+              hits: 300,
+              hitsMax: 300,
+              id: `link-worker-${String(index)}-${roomName}`,
+              my: true,
+              name: `link-worker-${String(index)}-${roomName}`,
+              owner: { username: "Myrmex" },
+              pos: index === 0 ? pos(39, 37) : pos(39 - index, 39),
+              room: { name: roomName },
+              spawning: false,
+              store: { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 },
+              transfer: commands.transferEnergy,
+              withdraw: commands.withdrawEnergy,
+              ticksToLive: 1_000,
+            }) as unknown as Creep,
+        );
   const spawn = {
     hits: 5_000,
     hitsMax: 5_000,
@@ -4002,7 +4360,7 @@ function game(
     level: options.controllerLevel ?? 3,
     my: true,
     owner: { username: "Myrmex" },
-    pos: pos(25, 20),
+    pos: pos(options.controllerPosition?.x ?? 25, options.controllerPosition?.y ?? 20),
     progress: 0,
     progressTotal: 1_000,
     safeMode: undefined,
@@ -4185,6 +4543,57 @@ function game(
     staleTowerEvacuation === undefined
       ? null
       : evacuationTower("tower-replacement", 41, staleTowerEvacuation.replacementEnergy);
+  const staleLinkEvacuation = options.staleLinkEvacuation;
+  const evacuationLink = (id: string, x: number, y: number, energy: number, cooldown = 0) =>
+    ({
+      cooldown,
+      destroy: commands.destroyStructure,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: pos(x, y),
+      room: { name: roomName },
+      store: {
+        ...(energy > 0 ? { energy } : {}),
+        getCapacity: () => 800,
+        getFreeCapacity: () => 800 - energy,
+        getUsedCapacity: () => energy,
+      },
+      structureType: "link",
+      transferEnergy: commands.transferLinkEnergy,
+    }) as unknown as StructureLink;
+  const staleLinkStructures =
+    staleLinkEvacuation === undefined
+      ? []
+      : [
+          evacuationLink("link-obsolete", 40, 37, staleLinkEvacuation.sourceEnergy),
+          ...staleLinkEvacuation.exactLinks.map(({ cooldown, energy, id, x, y }) =>
+            evacuationLink(id, x, y, energy, cooldown),
+          ),
+        ];
+  const staleLinkStorage =
+    staleLinkEvacuation === undefined
+      ? null
+      : ({
+          destroy: commands.destroyStructure,
+          hits: 10_000,
+          hitsMax: 10_000,
+          id: "stale-link-storage",
+          isActive: () => true,
+          my: true,
+          owner: { username: "Myrmex" },
+          pos: pos(staleLinkEvacuation.storage.x, staleLinkEvacuation.storage.y),
+          room: { name: roomName },
+          store: {
+            getCapacity: () => 1_000_000,
+            getFreeCapacity: () => 1_000_000,
+            getUsedCapacity: () => 0,
+          },
+          structureType: "storage",
+        } as unknown as StructureStorage);
   const staleRemovalTarget = options.staleRemovalTarget
     ? ({
         destroy: commands.destroyStructure,
@@ -4233,6 +4642,8 @@ function game(
         ...(staleSpawnReplacement === null ? [] : [staleSpawnReplacement]),
         ...(staleTowerSource === null ? [] : [staleTowerSource]),
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
+        ...staleLinkStructures,
+        ...(staleLinkStorage === null ? [] : [staleLinkStorage]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
       ].reverse()
     : [
@@ -4245,12 +4656,14 @@ function game(
         ...(staleSpawnReplacement === null ? [] : [staleSpawnReplacement]),
         ...(staleTowerSource === null ? [] : [staleTowerSource]),
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
+        ...staleLinkStructures,
+        ...(staleLinkStorage === null ? [] : [staleLinkStorage]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
       ];
   const ownedCreeps =
     staticMiner === null || supportWorker === null
-      ? [worker]
-      : [worker, supportWorker, staticMiner];
+      ? [worker, ...linkWorkers]
+      : [worker, supportWorker, staticMiner, ...linkWorkers];
   const creeps = options.threat ? [...ownedCreeps, hostile] : ownedCreeps;
   const room = {
     controller,
@@ -4282,23 +4695,24 @@ function game(
           ? supportWorker
           : id === staticMiner?.id
             ? staticMiner
-            : id === spawn.id
-              ? spawn
-              : id === source.id
-                ? source
-                : id === staleEvacuationSource?.id
-                  ? staleEvacuationSource
-                  : id === staleEvacuationReplacement?.id
-                    ? staleEvacuationReplacement
-                    : id === staleSpawnSource?.id
-                      ? staleSpawnSource
-                      : id === staleSpawnReplacement?.id
-                        ? staleSpawnReplacement
-                        : id === staleTowerSource?.id
-                          ? staleTowerSource
-                          : id === staleTowerReplacement?.id
-                            ? staleTowerReplacement
-                            : null,
+            : (linkWorkers.find((creep) => creep.id === id) ??
+              (id === spawn.id
+                ? spawn
+                : id === source.id
+                  ? source
+                  : id === staleEvacuationSource?.id
+                    ? staleEvacuationSource
+                    : id === staleEvacuationReplacement?.id
+                      ? staleEvacuationReplacement
+                      : id === staleSpawnSource?.id
+                        ? staleSpawnSource
+                        : id === staleSpawnReplacement?.id
+                          ? staleSpawnReplacement
+                          : id === staleTowerSource?.id
+                            ? staleTowerSource
+                            : id === staleTowerReplacement?.id
+                              ? staleTowerReplacement
+                              : (staleLinkStructures.find((link) => link.id === id) ?? null))),
     rooms: { [roomName]: room },
     shard: { name: "shard3" },
     time,

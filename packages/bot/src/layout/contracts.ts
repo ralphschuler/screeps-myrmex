@@ -7,6 +7,7 @@ import type {
   TerrainSnapshot,
 } from "../world/snapshot";
 
+export const LAYOUT_V1_ALGORITHM_REVISION = "owned-room-layout-v1" as const;
 export const LAYOUT_ALGORITHM_REVISION = "owned-room-layout-v2-source-services" as const;
 export const LAYOUT_OWNER_SCHEMA_VERSION = 25 as const;
 export const MAX_LAYOUT_ROOMS_PER_TICK = 2 as const;
@@ -296,8 +297,10 @@ export interface LayoutRecord extends LayoutCommitment {
 }
 
 /**
- * Fully validated older-algorithm evidence. Only one exact otherwise-quiescent extension, spawn, or
- * tower evacuation may remain a Logistics input; stale geometry and removal stay inert.
+ * Fully validated older-algorithm evidence. Only one exact otherwise-quiescent extension, reserve-
+ * link, spawn, or tower evacuation may remain a Logistics input; stale geometry and removal stay
+ * inert. Reserve-link continuation accepts only the known source-defined V1 geometry as role-safety
+ * evidence.
  */
 export type StaleLayoutRecord = LayoutRecord;
 export type CompletedStaleLayoutEvacuationKind =

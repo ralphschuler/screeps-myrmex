@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CacheManager } from "../src/cache";
 import {
+  clearStaleLayoutLinkEvacuation,
   clearStaleLayoutTowerEvacuation,
   emptyLayoutsOwner,
   layoutCacheDependencies,
@@ -280,6 +281,19 @@ describe("layout persistence and cache", () => {
       persistLayoutLinkEvacuation(owner, "W1N1", null).records[0]?.linkEvacuation,
     ).toBeUndefined();
     expect(parseLayoutsOwner({ ...owner, schemaVersion: 8 })).toBeNull();
+
+    const current = owner.records[0];
+    if (current === undefined) throw new Error("expected persisted layout record");
+    const staleOwner: LayoutsOwnerV25 = {
+      ...owner,
+      records: [],
+      staleRecords: [{ ...current, algorithmRevision: "owned-room-layout-v1" }],
+    };
+    const settled = clearStaleLayoutLinkEvacuation(staleOwner, "W1N1");
+    expect(settled.revision).toBe(staleOwner.revision + 1);
+    expect(settled.records).toEqual([]);
+    expect(settled.staleRecords[0]?.linkEvacuation).toBeUndefined();
+    expect(clearStaleLayoutLinkEvacuation(settled, "W1N1")).toBe(settled);
 
     for (const invalid of [
       { ...evacuation, amount: 0 },

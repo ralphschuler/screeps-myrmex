@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
   projectLayoutConvergencePlacements,
+  reconstructStaleLayoutLinkPlacements,
   selectLayoutPlanningWindow,
   type LayoutPlanningInput,
   type StaleLayoutRecord,
@@ -149,6 +151,107 @@ describe("stale tower evacuation continuation", () => {
           targetId: "tower-obsolete",
           targetStructureType: "tower",
         },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("stale reserve-link evacuation continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    fingerprint: "stale-layout",
+    linkEvacuation: {
+      amount: 800,
+      expiresAt: 250,
+      replacementId: "link-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "link-obsolete",
+      startedAt: 100,
+    },
+    roomName: "W1N1",
+    sourceServices: [
+      {
+        adoption: "exact",
+        layer: "primary",
+        minimumRcl: 2,
+        pos: { roomName: "W1N1", x: 11, y: 11 },
+        service: { kind: "source-container", sourceId: "source-a" },
+        structureType: "container",
+      },
+    ],
+    transform: 0,
+  });
+
+  it("reconstructs only known V1 link positions as narrow role-safety evidence", () => {
+    const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
+    if (unlocks === undefined) throw new Error("RCL8 policy missing");
+    expect(
+      reconstructStaleLayoutLinkPlacements({
+        commitment: staleRecord(),
+        roomName: "W1N1",
+        unlocks,
+      }),
+    ).toHaveLength(6);
+    expect(
+      reconstructStaleLayoutLinkPlacements({
+        commitment: { ...staleRecord(), algorithmRevision: "unknown-layout-revision" },
+        roomName: "W1N1",
+        unlocks,
+      }),
+    ).toBeNull();
+    expect(
+      reconstructStaleLayoutLinkPlacements({
+        commitment: {
+          ...staleRecord(),
+          algorithmRevision: "owned-room-layout-v2-source-services",
+        },
+        roomName: "W1N1",
+        unlocks,
+      }),
+    ).toBeNull();
+  });
+
+  it("admits only the sole otherwise-quiescent known stale reserve-link term", () => {
+    const sourceService = staleRecord().sourceServices?.[0];
+    if (sourceService === undefined) throw new Error("stale source service fixture missing");
+    expect(isStaleLayoutLinkEvacuationContinuation(staleRecord())).toBe(true);
+    expect(
+      isStaleLayoutLinkEvacuationContinuation({
+        ...staleRecord(),
+        algorithmRevision: "unknown-layout-revision",
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutLinkEvacuationContinuation({
+        ...staleRecord(),
+        algorithmRevision: "owned-room-layout-v2-source-services",
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutLinkEvacuationContinuation({
+        ...staleRecord(),
+        spawnEvacuation: {
+          amount: 300,
+          expiresAt: 250,
+          replacementId: "spawn-replacement",
+          replacementInitialEnergy: 0,
+          sourceId: "spawn-obsolete",
+          startedAt: 100,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutLinkEvacuationContinuation({
+        ...staleRecord(),
+        sourceServices: [
+          {
+            ...sourceService,
+            service: { issuerSequence: 2, kind: "source-container", sourceId: "source-a" },
+          },
+        ],
       }),
     ).toBe(false);
   });

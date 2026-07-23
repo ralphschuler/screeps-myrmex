@@ -5,11 +5,14 @@ export {
   planOwnedRoomLayouts,
   projectLayoutConvergencePlacements,
   reconstructCommittedLayout,
+  reconstructStaleLayoutLinkPlacements,
   selectLayoutPlanningWindow,
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   staleLayoutExtensionEvacuationSettlementBlocker,
+  staleLayoutLinkEvacuationSettlementBlocker,
   staleLayoutRemovalSettlementBlocker,
   staleLayoutSpawnEvacuationSettlementBlocker,
   staleLayoutTowerEvacuationSettlementBlocker,
@@ -36,6 +39,7 @@ export {
 } from "./reconciliation";
 export {
   clearStaleLayoutExtensionEvacuation,
+  clearStaleLayoutLinkEvacuation,
   clearStaleLayoutSpawnEvacuation,
   clearStaleLayoutTowerEvacuation,
   emptyLayoutsOwner,
