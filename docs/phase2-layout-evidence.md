@@ -109,8 +109,10 @@ releases the retained terminal from local Logistics suppression on fresh exact s
 and checks one complete committed storage reconstruction across warm/reset/reordered variants. Issue
 [#385](https://github.com/ralphschuler/screeps-myrmex/issues/385) isolates older-algorithm records
 and performs one safe quiescent command-free revision handoff before ordinary convergence resumes.
-Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
-structure migration and dismantling.
+Issue [#387](https://github.com/ralphschuler/screeps-myrmex/issues/387) reconciles one exact
+observed successful site receipt in a separate command-free tick before that handoff can become
+eligible. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration and dismantling.
 
 ## Runtime order
 
@@ -382,7 +384,8 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 - official site cap 100 with five reserved slots;
 - two accepted globally and one per room per tick;
 - 64 inspected proposals and ten active sites per room;
-- 32 receipts per room;
+- 32 receipts per room; stale-site settlement checks that existing cap and clears at most one exact
+  deterministic match globally per layout tick;
 - at most 128 container/extension/spawn/storage/terminal/tower/link/lab-removal candidates and
   authorizations; over-cap batches fail before traversal;
 - one accepted removal globally per tick;
@@ -467,6 +470,18 @@ live collections complete at the same tick with byte-identical authority traces,
 hashes, calls, and outcomes. Modeled Screeps CPU accounting is at most 0.129 per tick and persistent
 Memory remains within 13,495 UTF-8 bytes. This closes the explicit production build-chain proof gap
 without claiming measured host CPU or that scenario-kit simulates all preceding 2,900 build energy.
+
+The #387 continuation gives one stale `OK` receipt a canonical room, fingerprint, position, and type
+identity. A newer exact owned site or completed owned structure clears only that receipt with zero
+site/destroy calls and degraded `revision-handoff-active` status; the separate following tick
+performs the issue #385 handoff with zero site/destroy calls. Warm, JSON/global-heap reset, and
+reordered structure variants produce identical owner, command, and planning outcomes. Foreign,
+wrong-position, wrong-type, malformed-identity, fingerprint-mismatched, non-`OK`, same-tick,
+cross-room, and absent evidence preserves the exact receipt and authorizes no command from that
+evidence. New site/removal output is globally empty for the settlement tick; previously authorized
+unrelated current-layout Logistics and lease work remains outside this reconciliation. Direct
+reconciliation proves the owned-site form, one-index-only removal, survivor ordering, and warm/reset
+equivalence.
 
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and

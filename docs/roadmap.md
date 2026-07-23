@@ -235,9 +235,13 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   generic production build proof, and a checked 30,000-energy reconstruction model across
   warm/reset/reordered variants. Issue #385 advances layouts V25 with one command-free handoff from
   a fully validated quiescent stale algorithm record to one current complete source/access-safe
-  commitment; older active evidence remains isolated and fail-closed. Uninterrupted same-structure
-  storage/terminal service, broad dynamic movement/pathfinding proof, autonomous boost manifest
-  production, defensive or active revision migration, and creep dismantling remain issue #99.
+  commitment; older active evidence remains isolated and fail-closed. Issue #387 settles at most one
+  exact successful stale construction-site receipt from a newer owned-site or
+  completed-owned-structure observation, performs a command-free settlement step with no new
+  site/removal output, and leaves every mismatch fail-closed before #385's handoff. Uninterrupted
+  same-structure storage/terminal service, broad dynamic movement/pathfinding proof, autonomous
+  boost manifest production, defensive or active revision migration, and creep dismantling remain
+  issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

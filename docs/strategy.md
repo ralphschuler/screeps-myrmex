@@ -268,9 +268,14 @@ planning. Layouts V25 isolates every fully validated older-algorithm record from
 quiescent record in a visible, progression-authorized, unthreatened colony with legal workforce,
 restored reserve, no controller risk, and complete current source/access proof may advance. The
 handoff tick emits no construction, removal, evacuation, or dismantle command; existing bounded
-convergence resumes no earlier than the next tick. Active, unsafe, stale-vision, or blocked evidence
-remains fail-closed. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this
-revision boundary.
+convergence resumes no earlier than the next tick. One exact successful stale construction-site
+receipt may first settle only from a newer owned site or completed owned structure whose canonical
+encoded room, position, type, and stale fingerprint all match. That settlement clears only one
+receipt, emits no command from that evidence, and defers the existing handoff until a later tick.
+New layout site/removal planning stops for the tick without cancelling previously authorized
+unrelated current-layout work. Foreign, absent, malformed, failed, same-tick, unsafe, stale-vision,
+or blocked evidence remains fail-closed.
+[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

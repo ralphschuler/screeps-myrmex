@@ -1,3 +1,4 @@
+import type { ConstructionSiteSnapshot, StructureSnapshot } from "../world/snapshot";
 import type {
   ConstructionSiteExecutionResult,
   ConstructionSiteAttemptReceipt,
@@ -6,7 +7,11 @@ import type {
   StructureDestroyExecutionResult,
 } from "./contracts";
 import { deriveConstructionSiteAttemptReceipt } from "./construction-site-arbiter";
-import { persistConstructionSiteReceipt, persistLayoutRemovalReceipt } from "./persistence";
+import {
+  persistConstructionSiteReceipt,
+  persistLayoutRemovalReceipt,
+  persistStaleConstructionSiteReceipts,
+} from "./persistence";
 
 export interface ConstructionSiteReconciliationResult {
   readonly owner: LayoutsOwnerV25;
@@ -16,6 +21,52 @@ export interface ConstructionSiteReconciliationResult {
 export interface StructureDestroyReconciliationResult {
   readonly owner: LayoutsOwnerV25;
   readonly receipts: readonly LayoutStructureRemovalReceipt[];
+}
+
+export interface StaleLayoutSiteReceiptReconciliationResult {
+  readonly owner: LayoutsOwnerV25;
+  readonly settled: ConstructionSiteAttemptReceipt | null;
+}
+
+export function reconcileStaleLayoutSiteReceipt(input: {
+  readonly constructionSites: readonly ConstructionSiteSnapshot[];
+  readonly observedAt: number;
+  readonly owner: LayoutsOwnerV25;
+  readonly roomName: string;
+  readonly structures: readonly StructureSnapshot[];
+}): StaleLayoutSiteReceiptReconciliationResult {
+  const record = input.owner.staleRecords.find(({ roomName }) => roomName === input.roomName);
+  if (record === undefined || record.siteReceipts === undefined)
+    return Object.freeze({ owner: input.owner, settled: null });
+  const observed = new Set(
+    [...input.constructionSites, ...input.structures]
+      .filter(({ ownership, pos }) => ownership === "owned" && pos.roomName === input.roomName)
+      .map(({ pos, structureType }) => targetKey(pos.roomName, structureType, pos.y, pos.x)),
+  );
+  const settled = record.siteReceipts
+    .map((receipt, index) => ({ index, receipt }))
+    .sort(
+      (left, right) => compareSiteReceipts(left.receipt, right.receipt) || left.index - right.index,
+    )
+    .find(({ receipt }) => {
+      if (
+        receipt.code !== "OK" ||
+        receipt.layoutFingerprint !== record.fingerprint ||
+        input.observedAt <= receipt.observedAt
+      )
+        return false;
+      const identity = parseSiteProposalIdentity(receipt, record.roomName);
+      return (
+        identity !== null &&
+        observed.has(targetKey(record.roomName, identity.structureType, identity.y, identity.x))
+      );
+    });
+  if (settled === undefined) return Object.freeze({ owner: input.owner, settled: null });
+  const receipts = record.siteReceipts.filter((_receipt, index) => index !== settled.index);
+  return Object.freeze({
+    owner: persistStaleConstructionSiteReceipts(input.owner, input.roomName, receipts),
+    settled: settled.receipt,
+  });
 }
 
 export function reconcileStructureDestroyExecution(
@@ -92,4 +143,60 @@ export function reconcileConstructionSiteExecution(
     receipts.push(receipt);
   }
   return Object.freeze({ owner: next, receipts: Object.freeze(receipts) });
+}
+
+function parseSiteProposalIdentity(
+  receipt: ConstructionSiteAttemptReceipt,
+  roomName: string,
+): { readonly structureType: string; readonly x: number; readonly y: number } | null {
+  const prefix = "site-v1:";
+  const marker = `:${roomName}:${receipt.layoutFingerprint}:`;
+  const markerAt = receipt.proposalId.indexOf(marker, prefix.length);
+  if (
+    !receipt.proposalId.startsWith(prefix) ||
+    markerAt <= prefix.length ||
+    receipt.proposalId.indexOf(marker, markerAt + marker.length) !== -1
+  )
+    return null;
+  const colonyId = receipt.proposalId.slice(prefix.length, markerAt);
+  const fields = receipt.proposalId.slice(markerAt + marker.length).split(":");
+  if (colonyId.length === 0 || colonyId.includes(":") || fields.length !== 4) return null;
+  const [placementOrder, structureType, yValue, xValue] = fields;
+  const order = canonicalInteger(placementOrder);
+  const x = canonicalInteger(xValue);
+  const y = canonicalInteger(yValue);
+  if (
+    order === null ||
+    structureType === undefined ||
+    structureType.length === 0 ||
+    structureType.length > 64 ||
+    x === null ||
+    x >= 50 ||
+    y === null ||
+    y >= 50
+  )
+    return null;
+  return { structureType, x, y };
+}
+
+function canonicalInteger(value: string | undefined): number | null {
+  if (value === undefined || !/^(0|[1-9]\d*)$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function targetKey(roomName: string, structureType: string, y: number, x: number): string {
+  return `${roomName}:${structureType}:${String(y)}:${String(x)}`;
+}
+
+function compareSiteReceipts(
+  left: ConstructionSiteAttemptReceipt,
+  right: ConstructionSiteAttemptReceipt,
+): number {
+  return (
+    left.proposalId.localeCompare(right.proposalId) ||
+    left.code.localeCompare(right.code) ||
+    left.observedAt - right.observedAt ||
+    left.attempt - right.attempt
+  );
 }

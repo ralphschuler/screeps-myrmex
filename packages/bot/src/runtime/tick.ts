@@ -153,6 +153,7 @@ import {
   planOwnedRoomLayout,
   projectLayoutConvergencePlacements,
   reconcileConstructionSiteExecution,
+  reconcileStaleLayoutSiteReceipt,
   reconcileStructureDestroyExecution,
   reconstructCommittedLayout,
   registerLayoutCompiledCache,
@@ -2139,6 +2140,32 @@ function layoutPlanningSystem(
         }
         const priorRecord = owner.records.find((record) => record.roomName === room.name);
         const staleRecord = owner.staleRecords.find((record) => record.roomName === room.name);
+        const staleSiteSettlement =
+          staleRecord === undefined
+            ? null
+            : reconcileStaleLayoutSiteReceipt({
+                constructionSites: room.constructionSites,
+                observedAt: room.observedAt,
+                owner,
+                roomName: room.name,
+                structures: room.structures ?? [],
+              });
+        if (
+          staleRecord !== undefined &&
+          staleSiteSettlement !== null &&
+          staleSiteSettlement.settled !== null
+        ) {
+          owner = staleSiteSettlement.owner;
+          changed = true;
+          ownerPrecommitRequired = true;
+          planning.push({
+            blocker: "revision-handoff-active",
+            fingerprint: staleRecord.fingerprint,
+            roomName: room.name,
+            status: "degraded",
+          });
+          break;
+        }
         const revisionHandoffBlocker =
           staleRecord === undefined
             ? null
