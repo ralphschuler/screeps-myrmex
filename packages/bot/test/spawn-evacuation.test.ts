@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { projectColonyRclPolicy, type ColonyView } from "../src/colony";
 import { emptyContractExecutionView, emptyContractPlanningView } from "../src/contracts";
 import {
+  clearStaleLayoutSpawnEvacuation,
   emptyLayoutsOwner,
   layoutSpawnEvacuationBudgetIssuer,
   layoutSpawnEvacuationFlowId,
@@ -9,11 +10,14 @@ import {
   persistLayoutCommitment,
   persistLayoutSpawnEvacuation,
   type LayoutRecord,
+  type LayoutsOwnerV25,
 } from "../src/layout";
 import { planLogisticsRuntime } from "../src/logistics/runtime";
 import {
   authorizedLayoutSpawnEvacuationBudgets,
+  completedLayoutSpawnEvacuationRoomNames,
   projectLayoutSpawnEvacuations,
+  projectLayoutSpawnEvacuationSuppressedSinkTargetIds,
 } from "../src/logistics/spawn-evacuation";
 import { ConstructionPlanner } from "../src/maintenance/construction-planner";
 import { authorizeLayoutSpawnEvacuationFlowIds } from "../src/runtime/tick";
@@ -151,6 +155,90 @@ describe("stocked obsolete-spawn evacuation", () => {
           records: [{ ...owner.records[0], spawnEvacuation: malformed }],
         }),
       ).toBeNull();
+  });
+
+  it("clears only one delivered stale spawn term command-free", () => {
+    let owner = persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment);
+    owner = persistLayoutSpawnEvacuation(owner, "W1N1", terms);
+    const current = owner.records[0];
+    if (current === undefined) throw new Error("expected persisted spawn record");
+    const staleOwner: LayoutsOwnerV25 = {
+      ...owner,
+      records: [],
+      staleRecords: [{ ...current, algorithmRevision: "owned-room-layout-v1" }],
+    };
+
+    const settled = clearStaleLayoutSpawnEvacuation(staleOwner, "W1N1");
+
+    expect(settled.revision).toBe(staleOwner.revision + 1);
+    expect(settled.records).toEqual([]);
+    expect(settled.staleRecords[0]?.spawnEvacuation).toBeUndefined();
+    expect(clearStaleLayoutSpawnEvacuation(settled, "W1N1")).toBe(settled);
+  });
+
+  it("projects durable stale suppression and exact command-free completion evidence", () => {
+    const flowId = layoutSpawnEvacuationFlowId("W1N1", terms);
+    if (flowId === null) throw new Error("expected bounded spawn flow id");
+    const delivered = world(0, 300, 12);
+
+    expect(
+      projectLayoutSpawnEvacuationSuppressedSinkTargetIds({
+        records: [record()],
+        snapshot: delivered,
+        tick: 12,
+      }),
+    ).toEqual(["spawn-obsolete"]);
+    expect(
+      completedLayoutSpawnEvacuationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        records: [record()],
+        selectedSpawnIds: new Set(),
+        snapshot: delivered,
+        tick: 12,
+      }),
+    ).toEqual(["W1N1"]);
+    expect(
+      completedLayoutSpawnEvacuationRoomNames({
+        activeFlowIds: new Set([flowId]),
+        activeTargetIds: new Set(),
+        records: [record()],
+        selectedSpawnIds: new Set(),
+        snapshot: delivered,
+        tick: 12,
+      }),
+    ).toEqual([]);
+    for (const selectedSpawnIds of [new Set([terms.sourceId]), new Set([terms.replacementId])])
+      expect(
+        completedLayoutSpawnEvacuationRoomNames({
+          activeFlowIds: new Set(),
+          activeTargetIds: new Set(),
+          records: [record()],
+          selectedSpawnIds,
+          snapshot: delivered,
+          tick: 12,
+        }),
+      ).toEqual([]);
+    expect(
+      completedLayoutSpawnEvacuationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set([terms.replacementId]),
+        records: [record()],
+        selectedSpawnIds: new Set(),
+        snapshot: delivered,
+        tick: 12,
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutSpawnEvacuationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        records: [record()],
+        selectedSpawnIds: new Set(),
+        snapshot: world(0, 301, 12),
+        tick: 12,
+      }),
+    ).toEqual([]);
   });
 
   it("projects one next-tick funded V3 flow with exact reservation and refill suppression", () => {
@@ -519,14 +607,17 @@ describe("stocked obsolete-spawn evacuation", () => {
     const project = (snapshot: WorldSnapshot, tick = 11, records = [record()]) =>
       projectLayoutSpawnEvacuations({ existingBudgets: [], records, snapshot, tick });
 
-    const targetSuppressed = {
+    const endpointsSuppressed = {
       ...empty,
-      demands: { ...empty.demands, suppressedSinkTargetIds: ["spawn-obsolete"] },
+      demands: {
+        ...empty.demands,
+        suppressedSinkTargetIds: ["spawn-obsolete", "spawn-replacement"],
+      },
     };
     expect(project(world(), 10)).toEqual(empty);
     expect(project(world(), 160)).toEqual(empty);
-    expect(project(world(301, 0))).toEqual(targetSuppressed);
-    expect(project(world(300, 1))).toEqual(targetSuppressed);
+    expect(project(world(301, 0))).toEqual(endpointsSuppressed);
+    expect(project(world(300, 1))).toEqual(endpointsSuppressed);
     const inactiveWorld = world();
     const inactiveRoom = inactiveWorld.rooms[0];
     if (inactiveRoom === undefined) throw new Error("expected observed room");
@@ -543,7 +634,28 @@ describe("stocked obsolete-spawn evacuation", () => {
           },
         ],
       }),
-    ).toEqual(targetSuppressed);
+    ).toEqual(endpointsSuppressed);
+    const busyWorld = world();
+    const busyRoom = busyWorld.rooms[0];
+    if (busyRoom === undefined) throw new Error("expected busy fixture room");
+    expect(
+      project({
+        ...busyWorld,
+        rooms: [
+          {
+            ...busyRoom,
+            ownedSpawns: [
+              spawn("spawn-obsolete", 10, 300, true, {
+                creepName: "pending-creep",
+                needTime: 9,
+                remainingTime: 9,
+              }),
+              spawn("spawn-replacement", 11, 0),
+            ],
+          },
+        ],
+      }),
+    ).toEqual(endpointsSuppressed);
     const duplicateWorld = world();
     const duplicateRoom = duplicateWorld.rooms[0];
     if (duplicateRoom === undefined) throw new Error("expected duplicate fixture room");
@@ -557,7 +669,7 @@ describe("stocked obsolete-spawn evacuation", () => {
           },
         ],
       }),
-    ).toEqual(targetSuppressed);
+    ).toEqual(endpointsSuppressed);
     expect(project(world(), 11, Array.from({ length: 65 }, record))).toEqual(empty);
   });
 });

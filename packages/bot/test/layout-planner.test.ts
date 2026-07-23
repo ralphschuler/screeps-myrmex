@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutSpawnEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
@@ -147,6 +148,64 @@ describe("stale tower evacuation continuation", () => {
           replacementId: "tower-replacement",
           targetId: "tower-obsolete",
           targetStructureType: "tower",
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("stale spawn evacuation continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    fingerprint: "stale-layout",
+    roomName: "W1N1",
+    sourceServices: [],
+    spawnEvacuation: {
+      amount: 300,
+      expiresAt: 250,
+      replacementId: "spawn-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "spawn-obsolete",
+      startedAt: 100,
+    },
+    transform: 0,
+  });
+
+  it("admits only the sole otherwise-quiescent stale spawn term", () => {
+    expect(isStaleLayoutSpawnEvacuationContinuation(staleRecord())).toBe(true);
+    expect(
+      isStaleLayoutSpawnEvacuationContinuation({
+        ...staleRecord(),
+        algorithmRevision: "owned-room-layout-v2-source-services",
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutSpawnEvacuationContinuation({
+        ...staleRecord(),
+        towerEvacuation: {
+          amount: 10,
+          expiresAt: 250,
+          replacementId: "tower-replacement",
+          replacementInitialEnergy: 10,
+          sourceId: "tower-obsolete",
+          startedAt: 100,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutSpawnEvacuationContinuation({
+        ...staleRecord(),
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "spawn-replacement",
+          targetId: "spawn-obsolete",
+          targetStructureType: "spawn",
         },
       }),
     ).toBe(false);

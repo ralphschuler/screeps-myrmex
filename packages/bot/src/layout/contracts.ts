@@ -296,8 +296,8 @@ export interface LayoutRecord extends LayoutCommitment {
 }
 
 /**
- * Fully validated older-algorithm evidence. Only one exact otherwise-quiescent extension evacuation
- * may remain a Logistics input; stale geometry and removal stay inert.
+ * Fully validated older-algorithm evidence. Only one exact otherwise-quiescent extension, spawn, or
+ * tower evacuation may remain a Logistics input; stale geometry and removal stay inert.
  */
 export type StaleLayoutRecord = LayoutRecord;
 export type CompletedStaleLayoutEvacuationKind =
