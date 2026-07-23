@@ -38,7 +38,7 @@ interface Commands {
   readonly destroyStructure: ReturnType<typeof vi.fn<() => number>>;
 }
 
-describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -139,15 +139,15 @@ describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
     expect(secondCommands.destroyStructure).not.toHaveBeenCalled();
   });
 
-  it("suppresses every room's layout commands while settling one stale removal", () => {
+  it("suppresses every room's layout commands while settling one stale evacuation pair", () => {
     const firstCommands = commandSpies();
     const secondCommands = commandSpies();
     const memory = {} as Memory;
-    runTick({ game: twoRoomGame(300, firstCommands, secondCommands), memory });
-    runTick({ game: twoRoomGame(301, firstCommands, secondCommands), memory });
-    seedStaleRemovalReceipt(memory, {});
+    runTick({ game: twoRoomGame(100, firstCommands, secondCommands), memory });
+    runTick({ game: twoRoomGame(101, firstCommands, secondCommands), memory });
+    seedStaleRemovalReceipt(memory, {}, "completed-extension-evacuation");
     runTick({
-      game: twoRoomGame(302, firstCommands, secondCommands, { staleRemovalTarget: true }),
+      game: twoRoomGame(102, firstCommands, secondCommands, { staleRemovalTarget: true }),
       memory,
     });
     const priorOwner = layoutsOwner(memory);
@@ -158,10 +158,11 @@ describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
     secondCommands.createConstructionSite.mockClear();
     secondCommands.destroyStructure.mockClear();
 
-    const settlement = runTick({ game: twoRoomGame(303, firstCommands, secondCommands), memory });
+    const settlement = runTick({ game: twoRoomGame(103, firstCommands, secondCommands), memory });
 
     const settledOwner = layoutsOwner(memory);
     expect(settledOwner.revision).toBe(priorOwner.revision + 1);
+    expect(settledOwner.staleRecords[0]?.extensionEvacuation).toBeUndefined();
     expect(settledOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
     expect(settledOwner.records.find(({ roomName }) => roomName === "W2N2")).toEqual(
       priorOtherRoom,
@@ -173,8 +174,14 @@ describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
         status: "degraded",
       }),
     ]);
-    expect(settlement.layout.arbitration?.intents).toEqual([]);
+    expect(settlement.layout.arbitration?.accepted ?? []).toEqual([]);
+    expect(settlement.layout.arbitration?.deferred ?? []).toEqual([]);
+    expect(settlement.layout.arbitration?.intents ?? []).toEqual([]);
+    expect(settlement.layout.arbitration?.rejected ?? []).toEqual([]);
+    expect(settlement.layout.execution).toEqual([]);
+    expect(settlement.layout.migration.proposals).toEqual([]);
     expect(settlement.layout.migration.arbitration?.intents ?? []).toEqual([]);
+    expect(settlement.layout.migration.execution).toEqual([]);
     expect(firstCommands.createConstructionSite).not.toHaveBeenCalled();
     expect(firstCommands.destroyStructure).not.toHaveBeenCalled();
     expect(secondCommands.createConstructionSite).not.toHaveBeenCalled();
@@ -333,12 +340,98 @@ describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
     ).toMatchObject({ code: "TARGET_ABSENT" });
   });
 
+  it("atomically settles one completed stale extension evacuation pair", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleRemovalReceipt(memory, {}, "completed-extension-evacuation");
+    const owner = layoutsOwner(memory);
+    const priorRecord = owner.staleRecords[0];
+    if (priorRecord?.extensionEvacuation === undefined || priorRecord.removalReceipt === undefined)
+      throw new Error("expected completed stale extension evacuation");
+
+    const result = reconcileStaleLayoutRemovalReceipt({
+      blocker: null,
+      observedAt: 102,
+      owner,
+      roomName: ROOM_NAME,
+      structures: [],
+    });
+
+    expect(result.settled).toMatchObject({
+      code: "OK",
+      replacementId: priorRecord.extensionEvacuation.replacementId,
+      targetId: priorRecord.extensionEvacuation.sourceId,
+      targetStructureType: "extension",
+    });
+    expect(result.owner.revision).toBe(owner.revision + 1);
+    expect(result.owner.staleRecords).toHaveLength(1);
+    expect(result.owner.staleRecords[0]).not.toHaveProperty("extensionEvacuation");
+    expect(result.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
+    const {
+      extensionEvacuation: _extensionEvacuation,
+      removalReceipt: _pairedReceipt,
+      ...retained
+    } = priorRecord;
+    void [_extensionEvacuation, _pairedReceipt];
+    expect(result.owner.staleRecords[0]).toEqual(retained);
+
+    const targetAbsentOwner = parseLayoutsOwner({
+      ...owner,
+      staleRecords: [
+        {
+          ...priorRecord,
+          removalReceipt: { ...priorRecord.removalReceipt, code: "TARGET_ABSENT" },
+        },
+      ],
+    });
+    if (targetAbsentOwner === null) throw new Error("expected paired target-absent owner");
+    const targetAbsentResult = reconcileStaleLayoutRemovalReceipt({
+      blocker: null,
+      observedAt: 102,
+      owner: targetAbsentOwner,
+      roomName: ROOM_NAME,
+      structures: [],
+    });
+    expect(targetAbsentResult.settled).toMatchObject({ code: "TARGET_ABSENT" });
+    expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty("extensionEvacuation");
+    expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
+  });
+
   it("settles stale removal command-free before a later revision handoff", async () => {
     const forward = await runStaleRemovalSettlementVariant(false, false);
     const reset = await runStaleRemovalSettlementVariant(false, true);
     const reordered = await runStaleRemovalSettlementVariant(true, false);
 
     expect(forward.pendingOwner.staleRecords[0]?.removalReceipt).toMatchObject({ code: "OK" });
+    expect(forward.settlementOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
+    expect(forward.settlementOwner.records).toEqual([]);
+    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.settlementPlanning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.handoffOwner).toMatchObject({ records: [expect.anything()], staleRecords: [] });
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
+  });
+
+  it("settles a completed stale extension evacuation before a later revision handoff", async () => {
+    const forward = await runStaleRemovalSettlementVariant(false, false, true);
+    const reset = await runStaleRemovalSettlementVariant(false, true, true);
+    const reordered = await runStaleRemovalSettlementVariant(true, false, true);
+
+    expect(forward.pendingOwner.staleRecords[0]?.extensionEvacuation).toBeDefined();
+    expect(forward.pendingOwner.staleRecords[0]?.removalReceipt).toMatchObject({ code: "OK" });
+    expect(forward.settlementOwner.staleRecords[0]?.extensionEvacuation).toBeUndefined();
     expect(forward.settlementOwner.staleRecords[0]?.removalReceipt).toBeUndefined();
     expect(forward.settlementOwner.records).toEqual([]);
     expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
@@ -384,6 +477,41 @@ describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
         withEvacuation: true,
       },
       {
+        name: "wrong paired target",
+        observedAt: 102,
+        receipt: { targetId: "different-extension" },
+        structures: [],
+        withCompletedEvacuation: true,
+      },
+      {
+        name: "wrong paired replacement",
+        observedAt: 102,
+        receipt: { replacementId: "different-extension" },
+        structures: [],
+        withCompletedEvacuation: true,
+      },
+      {
+        name: "wrong paired type",
+        observedAt: 102,
+        receipt: { targetStructureType: "container" },
+        structures: [],
+        withCompletedEvacuation: true,
+      },
+      {
+        name: "receipt predates evacuation",
+        observedAt: 102,
+        receipt: { observedAt: 99 },
+        structures: [],
+        withCompletedEvacuation: true,
+      },
+      {
+        name: "receipt at evacuation expiry",
+        observedAt: 251,
+        receipt: { observedAt: 250 },
+        structures: [],
+        withCompletedEvacuation: true,
+      },
+      {
         name: "unsafe policy",
         blocker: "policy-unavailable",
         observedAt: 102,
@@ -398,7 +526,11 @@ describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
       seedStaleRemovalReceipt(
         memory,
         testCase.receipt,
-        testCase.withEvacuation === true ? "evacuation" : null,
+        testCase.withCompletedEvacuation === true
+          ? "completed-extension-evacuation"
+          : testCase.withEvacuation === true
+            ? "evacuation"
+            : null,
       );
       const owner = layoutsOwner(memory);
       const result = reconcileStaleLayoutRemovalReceipt({
@@ -417,6 +549,11 @@ describe("stale layout revision runtime handoff (#385/#387/#389)", () => {
   it("keeps stale removal receipts blocked by active or unsafe runtime evidence", () => {
     for (const testCase of [
       { active: "evacuation", name: "active evacuation", options: {} },
+      {
+        active: "completed-extension-evacuation-with-site",
+        name: "completed evacuation with another active term",
+        options: {},
+      },
       { active: "container-migration", name: "active migration", options: {} },
       { active: "site-receipt", name: "active site receipt", options: {} },
       { active: "source-handoff", name: "active source handoff", options: {} },
@@ -595,13 +732,21 @@ function runStaleSiteSettlementVariant(reverse: boolean, reset: boolean) {
   };
 }
 
-async function runStaleRemovalSettlementVariant(reverse: boolean, reset: boolean) {
+async function runStaleRemovalSettlementVariant(
+  reverse: boolean,
+  reset: boolean,
+  withCompletedExtensionEvacuation = false,
+) {
   const commands = commandSpies();
   let memory = {} as Memory;
   let executeTick = runTick;
   executeTick({ game: game(100, commands, { reverse }), memory });
   executeTick({ game: game(101, commands, { reverse }), memory });
-  seedStaleRemovalReceipt(memory, {});
+  seedStaleRemovalReceipt(
+    memory,
+    {},
+    withCompletedExtensionEvacuation ? "completed-extension-evacuation" : null,
+  );
   commands.createConstructionSite.mockClear();
   commands.destroyStructure.mockClear();
 
@@ -666,7 +811,14 @@ function runHandoffVariant(reverse: boolean, reset: boolean) {
 function seedStaleRemovalReceipt(
   memory: Memory,
   overrides: Partial<NonNullable<LayoutsOwnerV25["records"][number]["removalReceipt"]>>,
-  active: "container-migration" | "evacuation" | "site-receipt" | "source-handoff" | null = null,
+  active:
+    | "completed-extension-evacuation"
+    | "completed-extension-evacuation-with-site"
+    | "container-migration"
+    | "evacuation"
+    | "site-receipt"
+    | "source-handoff"
+    | null = null,
 ): void {
   seedStaleOwner(memory, active);
   const owner = layoutsOwner(memory);
@@ -749,7 +901,14 @@ function parseSiteIdentity(proposalId: string): {
 
 function seedStaleOwner(
   memory: Memory,
-  active: "container-migration" | "evacuation" | "site-receipt" | "source-handoff" | null,
+  active:
+    | "completed-extension-evacuation"
+    | "completed-extension-evacuation-with-site"
+    | "container-migration"
+    | "evacuation"
+    | "site-receipt"
+    | "source-handoff"
+    | null,
   roomName = ROOM_NAME,
 ): void {
   const owner = layoutsOwner(memory);
@@ -780,6 +939,8 @@ function seedStaleOwner(
     _terminalEvacuation,
     _towerEvacuation,
   ];
+  const completedExtensionEvacuation =
+    active !== null && active.startsWith("completed-extension-evacuation");
   const staleRecord = {
     ...stable,
     algorithmRevision: "owned-room-layout-v1",
@@ -793,19 +954,20 @@ function seedStaleOwner(
           },
         }
       : {}),
-    ...(active === "evacuation"
+    ...(active === "evacuation" || completedExtensionEvacuation
       ? {
           extensionEvacuation: {
             amount: 50,
-            expiresAt: 350,
+            expiresAt: completedExtensionEvacuation ? 250 : 350,
             replacementId: "extension-replacement",
             replacementInitialEnergy: 0,
             sourceId: "extension-obsolete",
-            startedAt: 200,
+            startedAt: completedExtensionEvacuation ? 100 : 200,
           },
         }
       : {}),
-    ...(active === "site-receipt" && _siteReceipts?.[0] !== undefined
+    ...((active === "site-receipt" || active === "completed-extension-evacuation-with-site") &&
+    _siteReceipts?.[0] !== undefined
       ? { siteReceipts: [_siteReceipts[0]] }
       : {}),
     ...(active === "source-handoff" && stable.sourceServices !== undefined
