@@ -28,7 +28,7 @@ interface GameOptions {
   readonly controllerRisk?: boolean;
   readonly reverse?: boolean;
   readonly staleRemovalTarget?: boolean;
-  readonly staleRemovalTargetType?: "extension" | "link" | "spawn" | "tower";
+  readonly staleRemovalTargetType?: "container" | "extension" | "link" | "spawn" | "tower";
   readonly staleSiteEvidence?: StaleSiteEvidence;
   readonly threat?: boolean;
   readonly visible?: boolean;
@@ -40,6 +40,8 @@ interface Commands {
 }
 
 type StaleActiveEvidence =
+  | "completed-container-migration"
+  | "completed-container-migration-with-site"
   | "completed-extension-evacuation"
   | "completed-extension-evacuation-with-site"
   | "completed-link-evacuation"
@@ -54,7 +56,7 @@ type StaleActiveEvidence =
   | "source-handoff"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -155,7 +157,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(secondCommands.destroyStructure).not.toHaveBeenCalled();
   });
 
-  it.each(["extension", "link", "spawn", "tower"] as const)(
+  it.each(["container", "extension", "link", "spawn", "tower"] as const)(
     "suppresses every room's layout commands while settling one stale %s pair",
     (kind) => {
       const firstCommands = commandSpies();
@@ -163,7 +165,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       const memory = {} as Memory;
       runTick({ game: twoRoomGame(100, firstCommands, secondCommands), memory });
       runTick({ game: twoRoomGame(101, firstCommands, secondCommands), memory });
-      seedStaleRemovalReceipt(memory, {}, `completed-${kind}-evacuation`);
+      seedStaleRemovalReceipt(memory, {}, completedStaleEvidence(kind));
       runTick({
         game: twoRoomGame(102, firstCommands, secondCommands, {
           staleRemovalTarget: true,
@@ -363,14 +365,14 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     ).toMatchObject({ code: "TARGET_ABSENT" });
   });
 
-  it.each(["extension", "link", "spawn", "tower"] as const)(
-    "atomically settles one completed stale %s evacuation pair",
+  it.each(["container", "extension", "link", "spawn", "tower"] as const)(
+    "atomically settles one completed stale %s migration pair",
     (kind) => {
       const commands = commandSpies();
       const memory = {} as Memory;
       runTick({ game: game(100, commands), memory });
       runTick({ game: game(101, commands), memory });
-      seedStaleRemovalReceipt(memory, {}, `completed-${kind}-evacuation`);
+      seedStaleRemovalReceipt(memory, {}, completedStaleEvidence(kind));
       const owner = layoutsOwner(memory);
       const priorRecord = owner.staleRecords[0];
       const evacuation = staleEvacuation(priorRecord, kind);
@@ -379,7 +381,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
         evacuation === undefined ||
         priorRecord.removalReceipt === undefined
       )
-        throw new Error(`expected completed stale ${kind} evacuation`);
+        throw new Error(`expected completed stale ${kind} migration`);
 
       const result = reconcileStaleLayoutRemovalReceipt({
         blocker: null,
@@ -388,17 +390,16 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
         roomName: ROOM_NAME,
         structures: [],
       });
-      const evacuationKey = `${kind}Evacuation`;
 
       expect(result.settled).toMatchObject({
         code: "OK",
         replacementId: evacuation.replacementId,
-        targetId: evacuation.sourceId,
+        targetId: "targetId" in evacuation ? evacuation.targetId : evacuation.sourceId,
         targetStructureType: kind,
       });
       expect(result.owner.revision).toBe(owner.revision + 1);
       expect(result.owner.staleRecords).toHaveLength(1);
-      expect(result.owner.staleRecords[0]).not.toHaveProperty(evacuationKey);
+      expect(staleEvacuation(result.owner.staleRecords[0], kind)).toBeUndefined();
       expect(result.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
       expect(result.owner.staleRecords[0]).toEqual(withoutCompletedEvacuation(priorRecord, kind));
 
@@ -420,7 +421,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
         structures: [],
       });
       expect(targetAbsentResult.settled).toMatchObject({ code: "TARGET_ABSENT" });
-      expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty(evacuationKey);
+      expect(staleEvacuation(targetAbsentResult.owner.staleRecords[0], kind)).toBeUndefined();
       expect(targetAbsentResult.owner.staleRecords[0]).not.toHaveProperty("removalReceipt");
 
       const lowerBoundOwner = parseLayoutsOwner({
@@ -512,7 +513,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(reordered).toEqual(forward);
   });
 
-  it.each(["link", "spawn"] as const)(
+  it.each(["container", "link", "spawn"] as const)(
     "settles target-absent %s evidence across runtime variants",
     async (kind) => {
       const forward = await runStaleRemovalSettlementVariant(false, false, kind, "TARGET_ABSENT");
@@ -529,8 +530,8 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     },
   );
 
-  it.each(["extension", "link", "spawn", "tower"] as const)(
-    "settles a completed stale %s evacuation before a later revision handoff",
+  it.each(["container", "extension", "link", "spawn", "tower"] as const)(
+    "settles a completed stale %s migration before a later revision handoff",
     async (kind) => {
       const forward = await runStaleRemovalSettlementVariant(false, false, kind);
       const reset = await runStaleRemovalSettlementVariant(false, true, kind);
@@ -588,6 +589,77 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
         receipt: {},
         structures: [],
         withEvacuation: true,
+      },
+      {
+        name: "container target present",
+        observedAt: 102,
+        receipt: {},
+        structures: ["container-obsolete"],
+        completedEvacuation: "container",
+      },
+      {
+        name: "container same tick",
+        observedAt: 101,
+        receipt: {},
+        structures: [],
+        completedEvacuation: "container",
+      },
+      {
+        name: "container failed",
+        observedAt: 102,
+        receipt: { code: "ERR_BUSY" },
+        structures: [],
+        completedEvacuation: "container",
+      },
+      {
+        name: "incomplete container structure projection",
+        observedAt: 102,
+        receipt: {},
+        structures: undefined,
+        completedEvacuation: "container",
+      },
+      {
+        name: "unsafe container policy",
+        blocker: "policy-unavailable",
+        observedAt: 102,
+        receipt: {},
+        structures: [],
+        completedEvacuation: "container",
+      },
+      {
+        name: "wrong container target",
+        observedAt: 102,
+        receipt: { targetId: "different-container" },
+        structures: [],
+        completedEvacuation: "container",
+      },
+      {
+        name: "wrong container replacement",
+        observedAt: 102,
+        receipt: { replacementId: "different-container" },
+        structures: [],
+        completedEvacuation: "container",
+      },
+      {
+        name: "wrong container type",
+        observedAt: 102,
+        receipt: { targetStructureType: "extension" },
+        structures: [],
+        completedEvacuation: "container",
+      },
+      {
+        name: "container receipt predates migration",
+        observedAt: 102,
+        receipt: { observedAt: 99 },
+        structures: [],
+        completedEvacuation: "container",
+      },
+      {
+        name: "container receipt at migration expiry",
+        observedAt: 251,
+        receipt: { observedAt: 250 },
+        structures: [],
+        completedEvacuation: "container",
       },
       {
         name: "wrong paired target",
@@ -858,7 +930,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
           ? testCase.withEvacuation === true
             ? "evacuation"
             : null
-          : `completed-${completedEvacuation}-evacuation`,
+          : completedStaleEvidence(completedEvacuation),
       );
       const owner = layoutsOwner(memory);
       const result = reconcileStaleLayoutRemovalReceipt({
@@ -877,6 +949,11 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
   it("keeps stale removal receipts blocked by active or unsafe runtime evidence", () => {
     for (const testCase of [
       { active: "evacuation", name: "active evacuation", options: {} },
+      {
+        active: "completed-container-migration-with-site",
+        name: "completed container migration with another active term",
+        options: {},
+      },
       {
         active: "completed-extension-evacuation-with-site",
         name: "completed extension evacuation with another active term",
@@ -1078,7 +1155,7 @@ function runStaleSiteSettlementVariant(reverse: boolean, reset: boolean) {
 async function runStaleRemovalSettlementVariant(
   reverse: boolean,
   reset: boolean,
-  completedEvacuation: "extension" | "link" | "spawn" | "tower" | null = null,
+  completedEvacuation: "container" | "extension" | "link" | "spawn" | "tower" | null = null,
   receiptCode: "OK" | "TARGET_ABSENT" = "OK",
 ) {
   const commands = commandSpies();
@@ -1089,7 +1166,7 @@ async function runStaleRemovalSettlementVariant(
   seedStaleRemovalReceipt(
     memory,
     { code: receiptCode },
-    completedEvacuation === null ? null : `completed-${completedEvacuation}-evacuation`,
+    completedEvacuation === null ? null : completedStaleEvidence(completedEvacuation),
   );
   commands.createConstructionSite.mockClear();
   commands.destroyStructure.mockClear();
@@ -1159,6 +1236,12 @@ function runHandoffVariant(reverse: boolean, reset: boolean) {
   };
 }
 
+function completedStaleEvidence(
+  kind: "container" | "extension" | "link" | "spawn" | "tower",
+): StaleActiveEvidence {
+  return kind === "container" ? "completed-container-migration" : `completed-${kind}-evacuation`;
+}
+
 function seedStaleRemovalReceipt(
   memory: Memory,
   overrides: Partial<NonNullable<LayoutsOwnerV25["records"][number]["removalReceipt"]>>,
@@ -1168,13 +1251,15 @@ function seedStaleRemovalReceipt(
   const owner = layoutsOwner(memory);
   const staleRecord = owner.staleRecords.find((record) => record.roomName === ROOM_NAME);
   if (staleRecord === undefined) throw new Error("expected stale layout record");
-  const structureType = active?.startsWith("completed-link-evacuation")
-    ? ("link" as const)
-    : active?.startsWith("completed-spawn-evacuation")
-      ? ("spawn" as const)
-      : active?.startsWith("completed-tower-evacuation")
-        ? ("tower" as const)
-        : ("extension" as const);
+  const structureType = active?.startsWith("completed-container-migration")
+    ? ("container" as const)
+    : active?.startsWith("completed-link-evacuation")
+      ? ("link" as const)
+      : active?.startsWith("completed-spawn-evacuation")
+        ? ("spawn" as const)
+        : active?.startsWith("completed-tower-evacuation")
+          ? ("tower" as const)
+          : ("extension" as const);
   const removalReceipt = {
     attempt: 1,
     code: "OK" as const,
@@ -1279,6 +1364,8 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
     _terminalEvacuation,
     _towerEvacuation,
   ];
+  const completedContainerMigration =
+    active !== null && active.startsWith("completed-container-migration");
   const completedExtensionEvacuation =
     active !== null && active.startsWith("completed-extension-evacuation");
   const completedLinkEvacuation = active !== null && active.startsWith("completed-link-evacuation");
@@ -1289,12 +1376,12 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
   const staleRecord = {
     ...stable,
     algorithmRevision: "owned-room-layout-v1",
-    ...(active === "container-migration"
+    ...(active === "container-migration" || completedContainerMigration
       ? {
           containerMigration: {
-            expiresAt: 350,
+            expiresAt: completedContainerMigration ? 250 : 350,
             replacementId: "container-replacement",
-            startedAt: 200,
+            startedAt: completedContainerMigration ? 100 : 200,
             targetId: "container-obsolete",
           },
         }
@@ -1348,6 +1435,7 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
         }
       : {}),
     ...((active === "site-receipt" ||
+      active === "completed-container-migration-with-site" ||
       active === "completed-extension-evacuation-with-site" ||
       active === "completed-link-evacuation-with-site" ||
       active === "completed-spawn-evacuation-with-site" ||
@@ -1378,23 +1466,30 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
 
 function staleEvacuation(
   record: LayoutsOwnerV25["staleRecords"][number] | undefined,
-  kind: "extension" | "link" | "spawn" | "tower",
+  kind: "container" | "extension" | "link" | "spawn" | "tower",
 ) {
-  return kind === "extension"
-    ? record?.extensionEvacuation
-    : kind === "link"
-      ? record?.linkEvacuation
-      : kind === "spawn"
-        ? record?.spawnEvacuation
-        : record?.towerEvacuation;
+  return kind === "container"
+    ? record?.containerMigration
+    : kind === "extension"
+      ? record?.extensionEvacuation
+      : kind === "link"
+        ? record?.linkEvacuation
+        : kind === "spawn"
+          ? record?.spawnEvacuation
+          : record?.towerEvacuation;
 }
 
 function withoutCompletedEvacuation(
   record: LayoutsOwnerV25["staleRecords"][number],
-  kind: "extension" | "link" | "spawn" | "tower",
+  kind: "container" | "extension" | "link" | "spawn" | "tower",
 ): LayoutsOwnerV25["staleRecords"][number] {
   const { removalReceipt: _removalReceipt, ...withoutReceipt } = record;
   void _removalReceipt;
+  if (kind === "container") {
+    const { containerMigration: _containerMigration, ...retained } = withoutReceipt;
+    void _containerMigration;
+    return retained;
+  }
   if (kind === "extension") {
     const { extensionEvacuation: _extensionEvacuation, ...retained } = withoutReceipt;
     void _extensionEvacuation;
@@ -1550,13 +1645,15 @@ function game(
   const staleRemovalHits =
     staleRemovalTargetType === "spawn" ? 5_000 : staleRemovalTargetType === "tower" ? 3_000 : 1_000;
   const staleRemovalCapacity =
-    staleRemovalTargetType === "spawn"
-      ? 300
-      : staleRemovalTargetType === "tower"
-        ? 1_000
-        : staleRemovalTargetType === "link"
-          ? 800
-          : 50;
+    staleRemovalTargetType === "container"
+      ? 2_000
+      : staleRemovalTargetType === "spawn"
+        ? 300
+        : staleRemovalTargetType === "tower"
+          ? 1_000
+          : staleRemovalTargetType === "link"
+            ? 800
+            : 50;
   const staleRemovalTarget = options.staleRemovalTarget
     ? ({
         destroy: commands.destroyStructure,
@@ -1565,11 +1662,13 @@ function game(
         id: `${staleRemovalTargetType}-obsolete`,
         isActive: () => true,
         my: true,
-        ...(staleRemovalTargetType === "spawn"
-          ? { name: "ObsoleteSpawn", spawnCreep: () => 0, spawning: null }
-          : staleRemovalTargetType === "link"
-            ? { cooldown: 0, transferEnergy: () => 0 }
-            : {}),
+        ...(staleRemovalTargetType === "container"
+          ? { ticksToDecay: 5_000 }
+          : staleRemovalTargetType === "spawn"
+            ? { name: "ObsoleteSpawn", spawnCreep: () => 0, spawning: null }
+            : staleRemovalTargetType === "link"
+              ? { cooldown: 0, transferEnergy: () => 0 }
+              : {}),
         owner: { username: "Myrmex" },
         pos: pos(40, 40),
         room: { name: roomName },
