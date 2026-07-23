@@ -125,7 +125,9 @@ completed container-migration pair, and issue
 pair, issue [#403](https://github.com/ralphschuler/screeps-myrmex/issues/403) adds the completed
 terminal-evacuation pair, and issue
 [#405](https://github.com/ralphschuler/screeps-myrmex/issues/405) adds the completed storage-
-evacuation pair under its stronger conservation proof. Parent issue
+evacuation pair under its stronger conservation proof. Issue
+[#407](https://github.com/ralphschuler/screeps-myrmex/issues/407) settles one otherwise-quiescent
+failed stale removal receipt only from newer complete exact-target-presence evidence. Parent issue
 [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
 and dismantling.
 
@@ -212,10 +214,13 @@ and dismantling.
    fails closed. Before any revision handoff, one stale terminal-success removal receipt may clear
    only when every other stale term is quiescent, the same colony policy is safe, and a newer
    complete owned-room structure projection omits its exact target ID. A bare storage receipt
-   remains excluded. The settlement precommits only the layouts owner and ends all rooms' new
-   site/removal planning for that tick; failed, present, same-tick, incomplete, active, or unsafe
-   evidence remains inert. One exact completed container migration or extension, lab, tower, spawn,
-   terminal, storage, or reserve-link evacuation may accompany that receipt only when type, target,
+   remains excluded. One otherwise-quiescent failed receipt may instead clear only when the same
+   safe policy and newer complete projection still contains its exact target ID, proving no effect
+   without a retry. The settlement precommits only the layouts owner and ends all rooms' new
+   site/removal planning for that tick; failed receipts paired with active terms, terminal-success
+   target presence, failed-target absence, same-tick, incomplete, active, or unsafe evidence remains
+   inert. One exact completed container migration or extension, lab, tower, spawn, terminal,
+   storage, or reserve-link evacuation may accompany that receipt only when type, target,
    replacement, terminal result, and receipt tick within its fixed interval match; all canonical lab
    stock/destination forms, both scalar/manifest terminal forms, and scalar, manifest, or two-batch
    storage forms share their respective source/replacement/interval terms. Storage additionally
@@ -546,6 +551,14 @@ or at its exclusive expiry, target presence, same-tick/incomplete observation, n
 unsafe policy, another active term, terminal/capacity drift, or incomplete conservation preserves
 the original owner.
 
+The #407 continuation starts with one otherwise-quiescent attempt-three `ERR_BUSY` extension receipt
+and a newer complete safe observation that still contains its exact target ID. The settlement clears
+only that receipt in one owner revision, emits zero site/destroy calls in two rooms, and leaves the
+existing issue #385 handoff to the following tick. All four normalized failure codes settle. Warm,
+real module reset, and reversed-structure variants produce equal owner, planning, and command
+outcomes. Target absence, same-tick/incomplete observation, wrong target, terminal-success result,
+unsafe policy, or another active stale term preserves the original owner.
+
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
 access checks. The handoff tick records zero construction-site calls and `handoff` status; the next
@@ -777,9 +790,11 @@ lint, type, test, documentation, bundle, and package evidence.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
   the operation; #389, #391, #393, #395, #397, #399, #401, #403, and #405 still require newer
-  complete target-absence observation before settlement. #391, #393, #395, #397, #399, #401, #403,
-  and #405 additionally bind that result to the exact extension, tower, spawn, reserve-link,
-  container, lab, terminal, or storage evacuation/migration identity and fixed interval.
+  complete target-absence observation before settlement. Issue #407 instead requires newer complete
+  exact-target presence before one otherwise-quiescent failed receipt can clear. #391, #393, #395,
+  #397, #399, #401, #403, and #405 additionally bind that result to the exact extension, tower,
+  spawn, reserve-link, container, lab, terminal, or storage evacuation/migration identity and fixed
+  interval.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the

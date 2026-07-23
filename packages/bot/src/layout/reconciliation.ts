@@ -58,16 +58,21 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
     record?.towerEvacuation !== undefined;
   const completedEvacuationKind =
     record === undefined ? null : completedStaleLayoutEvacuationKind(record);
+  const targetPresent = input.structures?.some(({ id }) => id === receipt?.targetId) === true;
+  const terminalSuccess = receipt?.code === "OK" || receipt?.code === "TARGET_ABSENT";
+  const observesExpectedOutcome = terminalSuccess
+    ? !targetPresent
+    : !hasPairedEvacuation && targetPresent;
   if (
     input.blocker !== null ||
     receipt === undefined ||
     (hasPairedEvacuation && completedEvacuationKind === null) ||
     input.structures === undefined ||
     input.observedAt <= receipt.observedAt ||
-    (receipt.code !== "OK" && receipt.code !== "TARGET_ABSENT") ||
-    (receipt.targetStructureType === "storage" &&
-      (completedEvacuationKind !== "storage" || input.storageRemovalCompleted !== true)) ||
-    input.structures.some(({ id }) => id === receipt.targetId)
+    !observesExpectedOutcome ||
+    (terminalSuccess &&
+      receipt.targetStructureType === "storage" &&
+      (completedEvacuationKind !== "storage" || input.storageRemovalCompleted !== true))
   )
     return Object.freeze({ owner: input.owner, settled: null });
   return Object.freeze({

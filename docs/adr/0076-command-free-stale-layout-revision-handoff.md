@@ -19,7 +19,8 @@ Issue #389 adds the equivalent observation-only continuation for one terminal-su
 removal receipt. Issues #391, #393, #395, #397, #399, #401, #403, and #405 permit that receipt to
 retain one exact completed extension-, tower-, spawn-, reserve-link-, container-, lab-, terminal-,
 or storage-evacuation/migration term, respectively, until newer observation proves the target
-absent.
+absent. Issue #407 adds the complementary no-effect proof for one otherwise-quiescent failed receipt
+whose exact target remains present in newer complete observation.
 
 ## Decision
 
@@ -60,6 +61,13 @@ absent.
   original resource gain. That settlement atomically removes both bounded terms. Present,
   incomplete, same-tick, unsafe, unrelated-active, mismatched, unpaired storage,
   terminal/conservation drift, or failed evidence remains inert.
+- One otherwise-quiescent stale removal receipt with `ERR_NOT_OWNER`, `ERR_BUSY`,
+  `ERR_INVALID_TARGET`, or `UNEXPECTED` may settle only while the same handoff safety policy holds
+  and a newer complete visible owned-room structure projection still contains its exact target ID.
+  Fresh target presence is no-effect evidence for the recorded attempt; settlement clears only the
+  receipt, emits no command, and leaves the revision handoff to a later tick. Target absence,
+  incomplete or same-tick observation, active evacuation/migration/site/source-service terms, or
+  unsafe policy preserves the receipt. Failed receipts paired with another active term remain inert.
 - The existing bounded `LayoutPlanner` must derive one complete current commitment with source and
   access proof. Failure or unsafe evidence preserves the stale record and emits no command.
 - A successful handoff atomically replaces only that room's stale record through the existing
@@ -71,12 +79,13 @@ absent.
 ## Consequences
 
 A source revision can no longer erase pending irreversible evidence or issue a same-tick command.
-One observed successful site receipt, one terminal-success non-storage removal receipt, and one
-exact completed extension-, tower-, spawn-, reserve-link-, container-, lab-, terminal-, or storage-
-evacuation/migration receipt pair can now converge toward quiescence without reissuing or cancelling
-its command; the separate handoff remains delayed until a later tick. Rooms advance
-deterministically across JSON/global-heap reconstruction and reordered world facts. Other active,
-mismatched, unpaired storage, failed, unsafe, terminal-drifted, or conservation-incomplete records
+One observed successful site receipt, one terminal-success non-storage removal receipt, one exact
+completed extension-, tower-, spawn-, reserve-link-, container-, lab-, terminal-, or storage-
+evacuation/migration receipt pair, and one otherwise-quiescent failed receipt whose target remains
+present can now converge toward quiescence without reissuing or cancelling a command; the separate
+handoff remains delayed until a later tick. Rooms advance deterministically across JSON/global-heap
+reconstruction and reordered world facts. Other active, mismatched, unpaired storage, failed
+receipts paired with active terms, unsafe, terminal-drifted, or conservation-incomplete records
 remain fail-closed until a later explicit policy handles them; this decision does not reinterpret or
 cancel their work.
 
@@ -87,17 +96,18 @@ game resource. No root owner, authority, dependency, cache, executor, command, q
 history is added.
 
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
-settlement or handoff. Unfinished or other migration/evacuation continuation, failed removal-
-receipt and source-service reconciliation, arbitrary geometry algorithms, defensive migration,
-dynamic room routing, autonomous boost-manifest production, creep dismantling, and uninterrupted
-same-structure availability remain outside this decision.
+settlement or handoff. Unfinished or other migration/evacuation continuation, failed receipts paired
+with another active term, source-service reconciliation, arbitrary geometry algorithms, defensive
+migration, dynamic room routing, autonomous boost-manifest production, creep dismantling, and
+uninterrupted same-structure availability remain outside this decision.
 
 ## Mechanics sources
 
 Reviewed 2026-07-22 for #385 and #387. `Structure.destroy` and both indexes were rechecked
-2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, #403, and #405. The relevant pages
-were also checked: `StructureTower` for #393, `StructureSpawn` for #395, `StructureLink` for #397,
-`StructureContainer` for #399, `StructureLab` for #401, and `StructureTerminal` plus `Store` for
+2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, #403, #405, and #407. The relevant
+pages were also checked: `StructureTower` for issue #393, `StructureSpawn` for issue #395,
+`StructureLink` for issue #397, `StructureContainer` for issue #399, `StructureLab` for issue #401,
+and `StructureTerminal` plus `Store` for
 [issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403), and `StructureStorage`,
 `StructureTerminal`, and `Store` for
 [issue #405](https://github.com/ralphschuler/screeps-myrmex/issues/405):
@@ -108,7 +118,9 @@ were also checked: `StructureTower` for #393, `StructureSpawn` for #395, `Struct
   [`ConstructionSite`](https://docs.screeps.com/api/#ConstructionSite) define the irreversible
   owned-structure command, successful site scheduling result, and current site facts. `OK` schedules
   destruction while `ERR_NOT_OWNER` and `ERR_BUSY` are failures; issues #389, #391, #393, #395,
-  #397, #399, #401, #403, and #405 additionally require newer complete target absence. The paired
+  #397, #399, #401, #403, and #405 additionally require newer complete target absence. Issue #407
+  instead requires newer complete exact-target presence before one otherwise-quiescent failed
+  receipt can clear; a normalized adapter failure receives the same observation proof. The paired
   #391, #393, #395, #397, #399, #401, #403, and #405 settlements also require the exact extension,
   tower, spawn, link, container, lab, terminal, or storage target/replacement and a terminal receipt
   produced within its fixed interval. Official
