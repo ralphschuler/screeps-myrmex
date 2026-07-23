@@ -608,6 +608,26 @@ export function persistConstructionSiteReceipt(
     ? freeze({ ...owner, revision: owner.revision + 1, records })
     : owner;
 }
+
+export function persistStaleConstructionSiteReceipts(
+  owner: LayoutsOwnerV25,
+  roomName: string,
+  receipts: readonly ConstructionSiteAttemptReceipt[],
+): LayoutsOwnerV25 {
+  const prior = owner.staleRecords.find((record) => record.roomName === roomName);
+  if (prior === undefined || JSON.stringify(prior.siteReceipts ?? []) === JSON.stringify(receipts))
+    return owner;
+  const staleRecords = owner.staleRecords.map((record) => {
+    if (record.roomName !== roomName) return record;
+    if (receipts.length === 0) {
+      const { siteReceipts: _siteReceipts, ...retained } = record;
+      void _siteReceipts;
+      return retained;
+    }
+    return { ...record, siteReceipts: [...receipts] };
+  });
+  return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
+}
 function validRecord(v: unknown): v is LayoutRecord {
   return validRecordShape(v, true);
 }

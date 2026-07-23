@@ -23,6 +23,7 @@ export {
 } from "./structure-destroy-executor";
 export {
   reconcileConstructionSiteExecution,
+  reconcileStaleLayoutSiteReceipt,
   reconcileStructureDestroyExecution,
 } from "./reconciliation";
 export {
