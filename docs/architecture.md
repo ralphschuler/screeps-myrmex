@@ -228,12 +228,13 @@ safe, terminal-success non-storage removal receipt to settle only from a newer c
 observation in which its exact target ID is absent. Issue
 [#391](https://github.com/ralphschuler/screeps-myrmex/issues/391) admits one exact completed
 extension-evacuation pair under the same absence and safety proof only when receipt type, target,
-replacement, and tick within the fixed evacuation interval match; issue
-[#393](https://github.com/ralphschuler/screeps-myrmex/issues/393) adds the equivalent exact tower
-pair. Both terms clear atomically. Either settlement publishes no new layout site/removal proposal
-in any room and cannot perform the revision handoff until a later tick; every mismatch preserves
-inert evidence. Previously authorized unrelated current-layout Logistics and lease work is not
-cancelled or reclassified. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md)
+replacement, and tick within the fixed evacuation interval match; issues
+[#393](https://github.com/ralphschuler/screeps-myrmex/issues/393) and
+[#395](https://github.com/ralphschuler/screeps-myrmex/issues/395) add the equivalent exact tower and
+spawn pairs. Both terms clear atomically. Either settlement publishes no new layout site/removal
+proposal in any room and cannot perform the revision handoff until a later tick; every mismatch
+preserves inert evidence. Previously authorized unrelated current-layout Logistics and lease work is
+not cancelled or reclassified. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md)
 records the boundary. `StructureRemovalArbiter` alone authorizes removal and
 `StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, spawn,
 storage, terminal, tower, link, and lab result reuses the same fixed receipt.
@@ -2061,14 +2062,15 @@ command authority, queue, or resource budget changes.
 Issue #389 adds the equivalent bounded continuation for one stale removal receipt. Only `OK` or
 `TARGET_ABSENT` on an otherwise-quiescent non-storage record may settle, and only when the same safe
 handoff policy holds and a newer complete visible owned-room structure projection omits the exact
-target ID. Issues #391 and #393 permit one completed extension or tower evacuation, respectively, to
-accompany that receipt only when the receipt type, target and replacement IDs, and receipt tick
-within its fixed interval match the evacuation. Settlement then atomically removes both terms.
-Storage retains its specialized conservation and terminal-continuity proof. Present, same-tick,
-incomplete, unsafe, unrelated-active, mismatched, storage, or failed evidence preserves every byte.
-Settlement precommits the existing layouts owner, suppresses all rooms' new site and removal output
-for that tick, and leaves the separate revision handoff until a later tick. No owner field, schema,
-command authority, queue, scan outside the two-room planning window, or resource budget changes.
+target ID. Issues #391, #393, and #395 permit one completed extension, tower, or spawn evacuation,
+respectively, to accompany that receipt only when the receipt type, target and replacement IDs, and
+receipt tick within its fixed interval match the evacuation. Settlement then atomically removes both
+terms. Storage retains its specialized conservation and terminal-continuity proof. Present,
+same-tick, incomplete, unsafe, unrelated-active, mismatched, storage, or failed evidence preserves
+every byte. Settlement precommits the existing layouts owner, suppresses all rooms' new site and
+removal output for that tick, and leaves the separate revision handoff until a later tick. No owner
+field, schema, command authority, queue, scan outside the two-room planning window, or resource
+budget changes.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2707,8 +2709,8 @@ Required architecture assertions include:
   successful stale construction-site receipt may settle only from newer matching owned-site or
   completed-owned-structure evidence, and one otherwise-quiescent terminal-success non-storage
   removal receipt may settle only from newer complete exact-target absence under the same safe
-  policy; one completed extension or tower evacuation may clear atomically with that receipt only
-  when exact type, target, replacement, and receipt-within-interval evidence match; either
+  policy; one completed extension, spawn, or tower evacuation may clear atomically with that receipt
+  only when exact type, target, replacement, and receipt-within-interval evidence match; either
   settlement is command-free, and only a then-quiescent record under fresh safe visible-colony and
   complete current source/access evidence may enter the separate command-free current-revision
   handoff on a later tick, while unrelated-active, unsafe, blocked, reset, reordered, malformed,

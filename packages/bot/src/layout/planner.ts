@@ -52,7 +52,7 @@ function staleLayoutRevisionBlocker(
     (record.extensionEvacuation !== undefined && completedEvacuationKind !== "extension") ||
     record.labEvacuation !== undefined ||
     record.linkEvacuation !== undefined ||
-    record.spawnEvacuation !== undefined ||
+    (record.spawnEvacuation !== undefined && completedEvacuationKind !== "spawn") ||
     record.storageEvacuation !== undefined ||
     record.terminalEvacuation !== undefined ||
     (record.towerEvacuation !== undefined && completedEvacuationKind !== "tower") ||
