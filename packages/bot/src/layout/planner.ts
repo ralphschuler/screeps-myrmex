@@ -53,7 +53,7 @@ function staleLayoutRevisionBlocker(
     (record.labEvacuation !== undefined && completedEvacuationKind !== "lab") ||
     (record.linkEvacuation !== undefined && completedEvacuationKind !== "link") ||
     (record.spawnEvacuation !== undefined && completedEvacuationKind !== "spawn") ||
-    record.storageEvacuation !== undefined ||
+    (record.storageEvacuation !== undefined && completedEvacuationKind !== "storage") ||
     (record.terminalEvacuation !== undefined && completedEvacuationKind !== "terminal") ||
     (record.towerEvacuation !== undefined && completedEvacuationKind !== "tower") ||
     (!allowRemovalReceipt && record.removalReceipt !== undefined) ||

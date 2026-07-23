@@ -2142,6 +2142,22 @@ function layoutPlanningSystem(
         }
         const priorRecord = owner.records.find((record) => record.roomName === room.name);
         const staleRecord = owner.staleRecords.find((record) => record.roomName === room.name);
+        const terminalWork = currentTerminalWork();
+        const staleStorageRemovalCompleted =
+          staleRecord !== undefined &&
+          isCompletedLayoutStorageRemovalObserved({
+            quiescentTerminalRoomNames: new Set(
+              terminalWork.status === "available" &&
+                terminalWork.rooms.some(
+                  ({ roomName, status }) => roomName === room.name && status === "quiescent",
+                )
+                ? [room.name]
+                : [],
+            ),
+            record: staleRecord,
+            snapshot: context.snapshot,
+            tick: context.tick,
+          });
         const staleRemovalSettlement =
           staleRecord === undefined
             ? null
@@ -2150,6 +2166,7 @@ function layoutPlanningSystem(
                 observedAt: room.observedAt,
                 owner,
                 roomName: room.name,
+                storageRemovalCompleted: staleStorageRemovalCompleted,
                 structures: room.structures,
               });
         const staleRemovalSettled =
@@ -2349,7 +2366,6 @@ function layoutPlanningSystem(
                 sources: room.sources.map(({ pos }) => pos),
                 unlocks: colony.rclPolicy.unlocks,
               });
-        const terminalWork = currentTerminalWork();
         const industryTerminalWork =
           terminalWork.status === "available"
             ? (terminalWork.rooms.find(({ roomName }) => roomName === room.name) ?? null)

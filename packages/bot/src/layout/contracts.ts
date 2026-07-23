@@ -298,7 +298,7 @@ export interface LayoutRecord extends LayoutCommitment {
 /** A fully validated older-algorithm record isolated from every gameplay projection. */
 export type StaleLayoutRecord = LayoutRecord;
 export type CompletedStaleLayoutEvacuationKind =
-  "container" | "extension" | "lab" | "link" | "spawn" | "terminal" | "tower";
+  "container" | "extension" | "lab" | "link" | "spawn" | "storage" | "terminal" | "tower";
 
 export function completedStaleLayoutEvacuationKind(
   record: StaleLayoutRecord,
@@ -307,36 +307,49 @@ export function completedStaleLayoutEvacuationKind(
     {
       evacuation: record.containerMigration,
       kind: "container" as const,
+      replacementId: record.containerMigration?.replacementId,
       targetId: record.containerMigration?.targetId,
     },
     {
       evacuation: record.extensionEvacuation,
       kind: "extension" as const,
+      replacementId: record.extensionEvacuation?.replacementId,
       targetId: record.extensionEvacuation?.sourceId,
     },
     {
       evacuation: record.labEvacuation,
       kind: "lab" as const,
+      replacementId: record.labEvacuation?.replacementId,
       targetId: record.labEvacuation?.sourceId,
     },
     {
       evacuation: record.linkEvacuation,
       kind: "link" as const,
+      replacementId: record.linkEvacuation?.replacementId,
       targetId: record.linkEvacuation?.sourceId,
     },
     {
       evacuation: record.spawnEvacuation,
       kind: "spawn" as const,
+      replacementId: record.spawnEvacuation?.replacementId,
       targetId: record.spawnEvacuation?.sourceId,
+    },
+    {
+      evacuation: record.storageEvacuation,
+      kind: "storage" as const,
+      replacementId: record.storageEvacuation?.terminalId,
+      targetId: record.storageEvacuation?.sourceId,
     },
     {
       evacuation: record.terminalEvacuation,
       kind: "terminal" as const,
+      replacementId: record.terminalEvacuation?.replacementId,
       targetId: record.terminalEvacuation?.sourceId,
     },
     {
       evacuation: record.towerEvacuation,
       kind: "tower" as const,
+      replacementId: record.towerEvacuation?.replacementId,
       targetId: record.towerEvacuation?.sourceId,
     },
   ].filter(({ evacuation }) => evacuation !== undefined);
@@ -348,7 +361,7 @@ export function completedStaleLayoutEvacuationKind(
     (receipt.code === "OK" || receipt.code === "TARGET_ABSENT") &&
     receipt.targetStructureType === completed.kind &&
     receipt.targetId === completed.targetId &&
-    receipt.replacementId === completed.evacuation.replacementId &&
+    receipt.replacementId === completed.replacementId &&
     receipt.observedAt >= completed.evacuation.startedAt &&
     receipt.observedAt < completed.evacuation.expiresAt
     ? completed.kind

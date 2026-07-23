@@ -243,10 +243,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   removal receipt only after a newer complete owned-room observation proves its exact target absent.
   Issue #391 permits one matching completed extension evacuation to settle atomically with that
   receipt when exact target/replacement/type/interval evidence and the same safe newer absence hold;
-  issues #393, #395, #397, #399, #401, and #403 add the equivalent exact completed tower, spawn,
-  reserve-link, container, lab, and terminal pairs under the same gates. Every canonical lab stock/
-  destination form and scalar/manifest terminal form shares its respective source, replacement, and
-  interval identity. Unrelated active, mismatched, storage, failed, unsafe, same-tick, or incomplete
+  issues #393, #395, #397, #399, #401, #403, and #405 add the equivalent exact completed tower,
+  spawn, reserve-link, container, lab, terminal, and storage pairs under the same gates. Every
+  canonical lab stock/destination form, scalar/manifest terminal form, and scalar, manifest, or two-
+  batch storage form shares its respective source, replacement, and interval identity. Storage also
+  requires current retained-terminal/quiescence and complete original-stock conservation evidence.
+  Unrelated active, mismatched, unpaired storage, failed, unsafe, same-tick, incomplete, or drifted
   evidence remains blocked. Uninterrupted same-structure storage/terminal service, broad dynamic
   movement/pathfinding proof, autonomous boost manifest production, defensive or active revision
   migration, and creep dismantling remain issue #99.

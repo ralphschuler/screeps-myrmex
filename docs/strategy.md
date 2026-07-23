@@ -272,17 +272,20 @@ convergence resumes no earlier than the next tick. One exact successful stale co
 receipt may first settle only from a newer owned site or completed owned structure whose canonical
 encoded room, position, type, and stale fingerprint all match. That settlement clears only one
 receipt, emits no command from that evidence, and defers the existing handoff until a later tick.
-One otherwise-quiescent stale non-storage removal receipt may likewise settle only when it records
-`OK` or `TARGET_ABSENT`, the same safe handoff policy holds, and a newer complete owned-room
-observation proves its exact target ID absent. One completed container migration or extension, lab,
-link, spawn, terminal, or tower evacuation may remain paired with that receipt only when exact type,
-target, replacement, and receipt-within-interval evidence match; every canonical lab stock/
-destination form and both scalar/manifest terminal forms use their respective source, replacement,
-and interval identity. Fresh target absence atomically clears both terms. Storage keeps its stronger
-conservation boundary; unrelated active, mismatched, failed, present, incomplete, same-tick, or
-unsafe evidence remains inert. New layout site/removal planning stops globally for either settlement
-tick without cancelling previously authorized unrelated current-layout work.
-[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
+One otherwise-quiescent stale removal receipt may likewise settle only when it records `OK` or
+`TARGET_ABSENT`, the same safe handoff policy holds, and a newer complete owned-room observation
+proves its exact target ID absent. A bare storage receipt remains excluded; one completed container
+migration or extension, lab, link, spawn, terminal, storage, or tower evacuation may remain paired
+with that receipt only when exact type, target, replacement, and receipt-within-interval evidence
+match; every canonical lab stock/destination form, both scalar/manifest terminal forms, and scalar,
+manifest, and two-batch storage forms use their respective source, replacement, and interval
+identity. Storage additionally requires current exact retained-terminal activity and Industry
+quiescence plus complete original- resource conservation. Fresh target absence atomically clears
+both terms. Unrelated active, mismatched, failed, present, incomplete, same-tick, unsafe, unpaired
+storage, terminal drift, or conservation failure remains inert. New layout site/removal planning
+stops globally for either settlement tick without cancelling previously authorized unrelated
+current-layout work. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this
+revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery

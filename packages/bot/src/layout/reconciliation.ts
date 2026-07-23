@@ -42,6 +42,7 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
   readonly observedAt: number;
   readonly owner: LayoutsOwnerV25;
   readonly roomName: string;
+  readonly storageRemovalCompleted?: boolean;
   readonly structures: readonly Pick<StructureSnapshot, "id">[] | undefined;
 }): StaleLayoutRemovalReceiptReconciliationResult {
   const record = input.owner.staleRecords.find(({ roomName }) => roomName === input.roomName);
@@ -52,6 +53,7 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
     record?.labEvacuation !== undefined ||
     record?.linkEvacuation !== undefined ||
     record?.spawnEvacuation !== undefined ||
+    record?.storageEvacuation !== undefined ||
     record?.terminalEvacuation !== undefined ||
     record?.towerEvacuation !== undefined;
   const completedEvacuationKind =
@@ -63,7 +65,8 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
     input.structures === undefined ||
     input.observedAt <= receipt.observedAt ||
     (receipt.code !== "OK" && receipt.code !== "TARGET_ABSENT") ||
-    receipt.targetStructureType === "storage" ||
+    (receipt.targetStructureType === "storage" &&
+      (completedEvacuationKind !== "storage" || input.storageRemovalCompleted !== true)) ||
     input.structures.some(({ id }) => id === receipt.targetId)
   )
     return Object.freeze({ owner: input.owner, settled: null });
