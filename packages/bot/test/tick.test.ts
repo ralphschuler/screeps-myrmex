@@ -184,6 +184,66 @@ describe("tick lifecycle", () => {
     expect(orphanedSpawnEvacuationTransition("suspended")).toBe("failed");
   });
 
+  it("allows only the authorized tower evacuation flow through suppressed stale endpoints", () => {
+    const exactFlowId = "layout-tower-evacuation:W1N1:tower-obsolete:tower-replacement";
+    const execution = {
+      status: "ready",
+      leases: [
+        {
+          actorId: "exact-hauler",
+          execution: {
+            action: "transfer",
+            completion: "flow-complete",
+            counterpartId: "tower-obsolete",
+            flowId: exactFlowId,
+            recommendedCarry: 1,
+            recommendedMove: 1,
+            reservedAmount: 500,
+            resourceType: "energy",
+            stage: "deliver",
+            version: 3,
+          },
+          targetId: "tower-replacement",
+        },
+        {
+          actorId: "conflicting-refill",
+          execution: {
+            action: "transfer",
+            completion: "flow-complete",
+            counterpartId: "storage",
+            flowId: "ordinary-tower-refill",
+            recommendedCarry: 1,
+            recommendedMove: 1,
+            reservedAmount: 100,
+            resourceType: "energy",
+            stage: "deliver",
+            version: 3,
+          },
+          targetId: "tower-replacement",
+        },
+        {
+          actorId: "safe-worker",
+          execution: {
+            action: "harvest",
+            completion: "continuous",
+            counterpartId: null,
+            resourceType: null,
+            version: 1,
+          },
+          targetId: "source-safe",
+        },
+      ],
+    } as unknown as ContractExecutionView;
+
+    const filtered = withoutSuppressedLeaseTargets(
+      execution,
+      new Set(["tower-obsolete", "tower-replacement"]),
+      new Set([exactFlowId]),
+    );
+
+    expect(filtered.leases.map(({ actorId }) => actorId)).toEqual(["exact-hauler", "safe-worker"]);
+  });
+
   it("fails spawn-removal claim evidence closed unless the broker completed planning", () => {
     const planned = {
       status: "planned",

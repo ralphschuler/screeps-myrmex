@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutTowerEvacuationContinuation,
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
   projectLayoutConvergencePlacements,
@@ -89,6 +90,64 @@ describe("stale extension evacuation continuation", () => {
             service: { issuerSequence: 2, kind: "source-container", sourceId: "source-a" },
           },
         ],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("stale tower evacuation continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    fingerprint: "stale-layout",
+    roomName: "W1N1",
+    sourceServices: [],
+    towerEvacuation: {
+      amount: 500,
+      expiresAt: 250,
+      replacementId: "tower-replacement",
+      replacementInitialEnergy: 10,
+      sourceId: "tower-obsolete",
+      startedAt: 100,
+    },
+    transform: 0,
+  });
+
+  it("admits only the sole otherwise-quiescent stale tower term", () => {
+    expect(isStaleLayoutTowerEvacuationContinuation(staleRecord())).toBe(true);
+    expect(
+      isStaleLayoutTowerEvacuationContinuation({
+        ...staleRecord(),
+        algorithmRevision: "owned-room-layout-v2-source-services",
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutTowerEvacuationContinuation({
+        ...staleRecord(),
+        extensionEvacuation: {
+          amount: 50,
+          expiresAt: 250,
+          replacementId: "extension-replacement",
+          replacementInitialEnergy: 0,
+          sourceId: "extension-obsolete",
+          startedAt: 100,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutTowerEvacuationContinuation({
+        ...staleRecord(),
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "tower-replacement",
+          targetId: "tower-obsolete",
+          targetStructureType: "tower",
+        },
       }),
     ).toBe(false);
   });
