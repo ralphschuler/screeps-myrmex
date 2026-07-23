@@ -295,7 +295,10 @@ export interface LayoutRecord extends LayoutCommitment {
   readonly siteReceipts?: readonly ConstructionSiteAttemptReceipt[];
 }
 
-/** A fully validated older-algorithm record isolated from every gameplay projection. */
+/**
+ * Fully validated older-algorithm evidence. Only one exact otherwise-quiescent extension evacuation
+ * may remain a Logistics input; stale geometry and removal stay inert.
+ */
 export type StaleLayoutRecord = LayoutRecord;
 export type CompletedStaleLayoutEvacuationKind =
   "container" | "extension" | "lab" | "link" | "spawn" | "storage" | "terminal" | "tower";
@@ -1169,7 +1172,7 @@ export interface LayoutsOwnerV25 {
   readonly revision: number;
   /** Current-algorithm records consumed by runtime gameplay projections. */
   readonly records: readonly LayoutRecord[];
-  /** Older-algorithm records retained only until a safe command-free handoff. */
+  /** Older-algorithm records retained until bounded settlement and safe command-free handoff. */
   readonly staleRecords: readonly StaleLayoutRecord[];
 }
 

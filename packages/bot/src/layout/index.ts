@@ -6,6 +6,8 @@ export {
   projectLayoutConvergencePlacements,
   reconstructCommittedLayout,
   selectLayoutPlanningWindow,
+  isStaleLayoutExtensionEvacuationContinuation,
+  staleLayoutExtensionEvacuationSettlementBlocker,
   staleLayoutRemovalSettlementBlocker,
   staleLayoutRevisionHandoffBlocker,
 } from "./planner";
@@ -29,6 +31,7 @@ export {
   reconcileStructureDestroyExecution,
 } from "./reconciliation";
 export {
+  clearStaleLayoutExtensionEvacuation,
   emptyLayoutsOwner,
   parseLayoutsOwner,
   persistLayoutCommitment,

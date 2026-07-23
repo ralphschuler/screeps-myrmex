@@ -8,6 +8,7 @@ import {
 import { assignLabCluster, fingerprintLabLayout } from "../src/industry";
 import {
   layoutExtensionEvacuationBudgetIssuer,
+  layoutExtensionEvacuationFlowId,
   layoutLabEvacuationBudgetIssuer,
   layoutLabEvacuationFlowIds,
   layoutLinkEvacuationBudgetIssuer,
@@ -16,7 +17,10 @@ import {
   type LayoutRecord,
 } from "../src/layout";
 import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
-import { projectLayoutExtensionEvacuations } from "../src/logistics/extension-evacuation";
+import {
+  completedLayoutExtensionEvacuationRoomNames,
+  projectLayoutExtensionEvacuations,
+} from "../src/logistics/extension-evacuation";
 import {
   completeExecutableLayoutLabEvacuationFlowIds,
   projectLayoutLabEvacuations,
@@ -479,6 +483,79 @@ describe("logistics runtime adapter", () => {
     });
     expect(result.budgets.some(({ issuer }) => issuer === budgetIssuer)).toBe(false);
 
+    const driftedWorld = {
+      ...evacuationWorld,
+      rooms: [
+        {
+          ...room,
+          ownedExtensions: [
+            extension("extension-obsolete", 11, 40),
+            extension("extension-replacement", 12, 1),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const drifted = projectLayoutExtensionEvacuations({
+      existingBudgets: [],
+      records: [
+        {
+          algorithmRevision: "owned-room-layout-v2-source-services",
+          anchor: position(25, 25),
+          blockers: [],
+          committedAt: 1,
+          extensionEvacuation: evacuationTerms,
+          fingerprint: "layout-a",
+          roomName: "W1N1",
+          transform: 0,
+        },
+      ],
+      snapshot: driftedWorld,
+      tick: 10,
+    });
+    expect(drifted.budgets).toEqual([]);
+    expect(drifted.demands.edges).toEqual([]);
+    expect(drifted.demands.suppressedSinkTargetIds).toEqual([
+      "extension-obsolete",
+      "extension-replacement",
+    ]);
+
+    const threatenedWorld = {
+      ...evacuationWorld,
+      rooms: [
+        {
+          ...room,
+          hostileCreeps: [
+            {
+              id: "hostile-a",
+            } as unknown as WorldSnapshot["rooms"][number]["hostileCreeps"][number],
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const threatened = projectLayoutExtensionEvacuations({
+      existingBudgets: [],
+      records: [
+        {
+          algorithmRevision: "owned-room-layout-v2-source-services",
+          anchor: position(25, 25),
+          blockers: [],
+          committedAt: 1,
+          extensionEvacuation: evacuationTerms,
+          fingerprint: "layout-a",
+          roomName: "W1N1",
+          transform: 0,
+        },
+      ],
+      snapshot: threatenedWorld,
+      tick: 10,
+    });
+    expect(threatened.budgets).toEqual([]);
+    expect(threatened.demands.edges).toEqual([]);
+    expect(threatened.demands.suppressedSinkTargetIds).toEqual([
+      "extension-obsolete",
+      "extension-replacement",
+    ]);
+
     const emptiedWorld = {
       ...evacuationWorld,
       rooms: [
@@ -522,6 +599,148 @@ describe("logistics runtime adapter", () => {
     expect(emptiedResult.graph.nodes).toContainEqual(
       expect.objectContaining({ id: "store:extension-replacement:sink:energy" }),
     );
+
+    const deliveredWorld = {
+      ...evacuationWorld,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          ownedExtensions: [
+            extension("extension-obsolete", 11, 0),
+            extension("extension-replacement", 12, 40),
+          ],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const deliveredRoom = deliveredWorld.rooms[0];
+    if (deliveredRoom === undefined) throw new Error("delivered extension room missing");
+    const staleRecord = {
+      algorithmRevision: "owned-room-layout-v1",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      extensionEvacuation: evacuationTerms,
+      fingerprint: "layout-stale",
+      roomName: "W1N1",
+      transform: 0,
+    } as const;
+    const completion = (
+      overrides: {
+        readonly activeFlowIds?: ReadonlySet<string>;
+        readonly activeTargetIds?: ReadonlySet<string>;
+        readonly snapshot?: WorldSnapshot;
+        readonly tick?: number;
+      } = {},
+    ) =>
+      completedLayoutExtensionEvacuationRoomNames({
+        activeFlowIds: overrides.activeFlowIds ?? new Set(),
+        activeTargetIds: overrides.activeTargetIds ?? new Set(),
+        records: [staleRecord],
+        snapshot: overrides.snapshot ?? deliveredWorld,
+        tick: overrides.tick ?? 11,
+      });
+
+    expect(completion()).toEqual(["W1N1"]);
+    expect(
+      completedLayoutExtensionEvacuationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        records: [staleRecord],
+        snapshot: {
+          ...deliveredWorld,
+          rooms: [
+            {
+              ...deliveredRoom,
+              ownedExtensions: [...deliveredRoom.ownedExtensions].reverse(),
+            },
+          ],
+        },
+        tick: 11,
+      }),
+    ).toEqual(["W1N1"]);
+    expect(
+      completion({
+        activeFlowIds: new Set([layoutExtensionEvacuationFlowId("W1N1", evacuationTerms)]),
+      }),
+    ).toEqual([]);
+    expect(completion({ activeTargetIds: new Set(["extension-obsolete"]) })).toEqual([]);
+    expect(completion({ activeTargetIds: new Set(["extension-replacement"]) })).toEqual([]);
+    expect(completion({ tick: evacuationTerms.expiresAt })).toEqual([]);
+    expect(
+      completion({
+        snapshot: {
+          ...deliveredWorld,
+          rooms: [
+            {
+              ...deliveredRoom,
+              ownedExtensions: [
+                extension("extension-obsolete", 11, 1),
+                extension("extension-replacement", 12, 40),
+              ],
+            },
+          ],
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      completion({
+        snapshot: {
+          ...deliveredWorld,
+          rooms: [
+            {
+              ...deliveredRoom,
+              ownedExtensions: [
+                extension("extension-obsolete", 11, 0),
+                extension("extension-replacement", 12, 39),
+              ],
+            },
+          ],
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      completion({
+        snapshot: {
+          ...deliveredWorld,
+          rooms: [
+            {
+              ...deliveredRoom,
+              ownedExtensions: [
+                extension("extension-obsolete", 11, 0),
+                extension("extension-replacement", 12, 41),
+              ],
+            },
+          ],
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutExtensionEvacuationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        records: Array.from({ length: 65 }, () => staleRecord),
+        snapshot: deliveredWorld,
+        tick: 11,
+      }),
+    ).toEqual([]);
+    expect(
+      completion({
+        snapshot: {
+          ...deliveredWorld,
+          rooms: [
+            {
+              ...deliveredRoom,
+              hostileCreeps: [
+                {
+                  id: "hostile-a",
+                } as unknown as WorldSnapshot["rooms"][number]["hostileCreeps"][number],
+              ],
+            },
+          ],
+        },
+      }),
+    ).toEqual([]);
   });
 
   it("routes authorized energy and mineral obsolete-lab evacuation through the sole logistics graph", () => {

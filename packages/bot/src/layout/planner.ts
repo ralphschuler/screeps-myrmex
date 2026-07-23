@@ -43,6 +43,35 @@ export function staleLayoutRemovalSettlementBlocker(input: {
   return staleLayoutRevisionBlocker(input, true);
 }
 
+/** Exact stale shape whose existing extension evacuation may continue without authorizing removal. */
+export function isStaleLayoutExtensionEvacuationContinuation(record: StaleLayoutRecord): boolean {
+  return (
+    record.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
+    record.extensionEvacuation !== undefined &&
+    record.containerMigration === undefined &&
+    record.labEvacuation === undefined &&
+    record.linkEvacuation === undefined &&
+    record.spawnEvacuation === undefined &&
+    record.storageEvacuation === undefined &&
+    record.terminalEvacuation === undefined &&
+    record.towerEvacuation === undefined &&
+    record.removalReceipt === undefined &&
+    (record.siteReceipts?.length ?? 0) === 0 &&
+    record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) !== true
+  );
+}
+
+/** Reuses the safe handoff policy after logically removing one exactly delivered extension term. */
+export function staleLayoutExtensionEvacuationSettlementBlocker(input: {
+  readonly colony: ColonyView;
+  readonly record: StaleLayoutRecord;
+}): LayoutBlocker | null {
+  if (!isStaleLayoutExtensionEvacuationContinuation(input.record)) return "revision-handoff-active";
+  const { extensionEvacuation: _extensionEvacuation, ...settled } = input.record;
+  void _extensionEvacuation;
+  return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
+}
+
 function staleLayoutRevisionBlocker(
   input: {
     readonly colony: ColonyView;

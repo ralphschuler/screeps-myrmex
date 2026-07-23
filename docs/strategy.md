@@ -302,8 +302,13 @@ mining-contract staging wait for the final spawn-settled colony view and require
 reservation matching every service's colony, harvesting/filling category, issuer, and sequence. The
 accepted handoff cannot create a stale-layout suspension or new contract and therefore preserves the
 exact contract and lease; unavailable, duplicate, terminal-only, mismatched, unsafe, or changed-plan
-evidence remains inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records
-this revision boundary.
+evidence remains inert. One otherwise-quiescent unfinished extension evacuation is the sole active-
+work exception: its original deadline and exact source/replacement/amount/baseline identity may
+continue through the existing funded V3 Logistics path. Fresh source emptiness, exact replacement
+gain, complete flow/endpoint retirement, and unchanged safe policy clear only that term in a
+command-free tick; current-layout handoff remains a separate following tick. Every other unfinished
+stale migration stays inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md)
+records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
