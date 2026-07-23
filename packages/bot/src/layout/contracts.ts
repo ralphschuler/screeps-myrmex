@@ -297,13 +297,14 @@ export interface LayoutRecord extends LayoutCommitment {
 
 /** A fully validated older-algorithm record isolated from every gameplay projection. */
 export type StaleLayoutRecord = LayoutRecord;
-export type CompletedStaleLayoutEvacuationKind = "extension" | "spawn" | "tower";
+export type CompletedStaleLayoutEvacuationKind = "extension" | "link" | "spawn" | "tower";
 
 export function completedStaleLayoutEvacuationKind(
   record: StaleLayoutRecord,
 ): CompletedStaleLayoutEvacuationKind | null {
   const evacuations = [
     { evacuation: record.extensionEvacuation, kind: "extension" as const },
+    { evacuation: record.linkEvacuation, kind: "link" as const },
     { evacuation: record.spawnEvacuation, kind: "spawn" as const },
     { evacuation: record.towerEvacuation, kind: "tower" as const },
   ].filter(({ evacuation }) => evacuation !== undefined);
