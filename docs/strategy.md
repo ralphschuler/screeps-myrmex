@@ -280,12 +280,14 @@ with that receipt only when exact type, target, replacement, and receipt-within-
 match; every canonical lab stock/destination form, both scalar/manifest terminal forms, and scalar,
 manifest, and two-batch storage forms use their respective source, replacement, and interval
 identity. Storage additionally requires current exact retained-terminal activity and Industry
-quiescence plus complete original- resource conservation. Fresh target absence atomically clears
-both terms. Unrelated active, mismatched, failed, present, incomplete, same-tick, unsafe, unpaired
-storage, terminal drift, or conservation failure remains inert. New layout site/removal planning
-stops globally for either settlement tick without cancelling previously authorized unrelated
-current-layout work. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this
-revision boundary.
+quiescence plus complete original-resource conservation. Fresh target absence atomically clears both
+terms. One otherwise-quiescent failed receipt may instead clear only when the same safe policy and a
+newer complete owned-room observation prove its exact target still present. That no-effect proof
+issues no retry; failed receipts paired with another active term remain inert. Unrelated active,
+mismatched, incomplete, same-tick, unsafe, unpaired storage, terminal drift, or conservation failure
+also remains inert. New layout site/removal planning stops globally for any settlement tick without
+cancelling previously authorized unrelated current-layout work.
+[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
