@@ -113,8 +113,11 @@ Issue [#387](https://github.com/ralphschuler/screeps-myrmex/issues/387) reconcil
 observed successful site receipt in a separate command-free tick before that handoff can become
 eligible. Issue [#389](https://github.com/ralphschuler/screeps-myrmex/issues/389) adds the
 equivalent fresh-absence settlement for one otherwise-quiescent terminal-success non-storage removal
-receipt. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
-other structure migration and dismantling.
+receipt. Issue [#391](https://github.com/ralphschuler/screeps-myrmex/issues/391) permits one exact
+completed extension-evacuation term to clear atomically with its matching receipt under the same
+safe newer-absence proof. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -498,6 +501,15 @@ owner, planning, and command outcomes. Direct reconciliation also admits `TARGET
 same-tick, incomplete, storage, failed, active-evacuation, and unsafe-policy evidence preserves the
 original owner.
 
+The #391 continuation repeats that sequence with one exact persisted extension evacuation whose
+source/replacement identities match the terminal-success extension receipt and whose receipt tick
+lies within the fixed 150-tick interval. Newer target absence atomically removes both terms in one
+owner revision, emits zero site/destroy calls in two rooms, and leaves the #385 handoff to the next
+tick. Warm, real module reset, and reversed-structure variants produce equal owner, planning, and
+command outcomes. Target/replacement/type mismatch, receipt before the evacuation, target presence,
+same-tick/incomplete observation, nonterminal result, unsafe policy, or another active term
+preserves the original owner.
+
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
 access checks. The handoff tick records zero construction-site calls and `handoff` status; the next
@@ -728,7 +740,9 @@ lint, type, test, documentation, bundle, and package evidence.
   codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
-  the operation; #389 still requires newer complete target-absence observation before settlement.
+  the operation; #389 and #391 still require newer complete target-absence observation before
+  settlement. #391 additionally binds that result to the exact extension evacuation identities and
+  fixed interval.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the

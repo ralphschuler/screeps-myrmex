@@ -298,6 +298,21 @@ export interface LayoutRecord extends LayoutCommitment {
 /** A fully validated older-algorithm record isolated from every gameplay projection. */
 export type StaleLayoutRecord = LayoutRecord;
 
+export function hasCompletedExtensionEvacuationReceipt(record: StaleLayoutRecord): boolean {
+  const evacuation = record.extensionEvacuation;
+  const receipt = record.removalReceipt;
+  return (
+    evacuation !== undefined &&
+    receipt !== undefined &&
+    (receipt.code === "OK" || receipt.code === "TARGET_ABSENT") &&
+    receipt.targetStructureType === "extension" &&
+    receipt.targetId === evacuation.sourceId &&
+    receipt.replacementId === evacuation.replacementId &&
+    receipt.observedAt >= evacuation.startedAt &&
+    receipt.observedAt < evacuation.expiresAt
+  );
+}
+
 export function layoutContainerMigrationFlowId(
   roomName: string,
   migration: Pick<LayoutContainerMigration, "replacementId" | "targetId">,

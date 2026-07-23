@@ -9,6 +9,7 @@ import {
 import { compileOwnedRoomLayoutV1 } from "./layout-v1";
 import { selectSourceServices } from "./source-services";
 import {
+  hasCompletedExtensionEvacuationReceipt,
   LAYOUT_ALGORITHM_REVISION,
   MAX_LAYOUT_CANDIDATES,
   MAX_LAYOUT_FLOOD_CELLS,
@@ -42,10 +43,12 @@ function staleLayoutRevisionBlocker(
   allowRemovalReceipt: boolean,
 ): LayoutBlocker | null {
   const { colony, record } = input;
+  const matchingCompletedExtensionEvacuation =
+    allowRemovalReceipt && hasCompletedExtensionEvacuationReceipt(record);
   if (
     record.algorithmRevision === LAYOUT_ALGORITHM_REVISION ||
     record.containerMigration !== undefined ||
-    record.extensionEvacuation !== undefined ||
+    (record.extensionEvacuation !== undefined && !matchingCompletedExtensionEvacuation) ||
     record.labEvacuation !== undefined ||
     record.linkEvacuation !== undefined ||
     record.spawnEvacuation !== undefined ||

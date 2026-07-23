@@ -1,4 +1,5 @@
 import type { ConstructionSiteSnapshot, StructureSnapshot } from "../world/snapshot";
+import { hasCompletedExtensionEvacuationReceipt } from "./contracts";
 import type {
   ConstructionSiteExecutionResult,
   ConstructionSiteAttemptReceipt,
@@ -9,6 +10,7 @@ import type {
 } from "./contracts";
 import { deriveConstructionSiteAttemptReceipt } from "./construction-site-arbiter";
 import {
+  clearStaleLayoutExtensionEvacuationReceipt,
   clearStaleLayoutRemovalReceipt,
   persistConstructionSiteReceipt,
   persistLayoutRemovalReceipt,
@@ -44,9 +46,14 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
 }): StaleLayoutRemovalReceiptReconciliationResult {
   const record = input.owner.staleRecords.find(({ roomName }) => roomName === input.roomName);
   const receipt = record?.removalReceipt;
+  const evacuation = record?.extensionEvacuation;
+  const matchingCompletedExtensionEvacuation =
+    evacuation === undefined ||
+    (record !== undefined && hasCompletedExtensionEvacuationReceipt(record));
   if (
     input.blocker !== null ||
     receipt === undefined ||
+    !matchingCompletedExtensionEvacuation ||
     input.structures === undefined ||
     input.observedAt <= receipt.observedAt ||
     (receipt.code !== "OK" && receipt.code !== "TARGET_ABSENT") ||
@@ -55,7 +62,10 @@ export function reconcileStaleLayoutRemovalReceipt(input: {
   )
     return Object.freeze({ owner: input.owner, settled: null });
   return Object.freeze({
-    owner: clearStaleLayoutRemovalReceipt(input.owner, input.roomName),
+    owner:
+      evacuation === undefined
+        ? clearStaleLayoutRemovalReceipt(input.owner, input.roomName)
+        : clearStaleLayoutExtensionEvacuationReceipt(input.owner, input.roomName),
     settled: receipt,
   });
 }

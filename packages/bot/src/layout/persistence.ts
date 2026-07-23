@@ -643,6 +643,25 @@ export function clearStaleLayoutRemovalReceipt(
   });
   return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
 }
+
+export function clearStaleLayoutExtensionEvacuationReceipt(
+  owner: LayoutsOwnerV25,
+  roomName: string,
+): LayoutsOwnerV25 {
+  const prior = owner.staleRecords.find((record) => record.roomName === roomName);
+  if (prior?.extensionEvacuation === undefined || prior.removalReceipt === undefined) return owner;
+  const staleRecords = owner.staleRecords.map((record) => {
+    if (record.roomName !== roomName) return record;
+    const {
+      extensionEvacuation: _extensionEvacuation,
+      removalReceipt: _removalReceipt,
+      ...retained
+    } = record;
+    void [_extensionEvacuation, _removalReceipt];
+    return retained;
+  });
+  return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
+}
 function validRecord(v: unknown): v is LayoutRecord {
   return validRecordShape(v, true);
 }
