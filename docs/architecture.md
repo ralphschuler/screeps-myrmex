@@ -216,10 +216,11 @@ original gain conserved. The terminal remains an ordinary local source/sink whil
 site/growth-contract/build path reconstructs the committed 30,000-energy storage; stale, unknown,
 present, or drifted evidence preserves suppression. No owner field, schema, authority, or command
 path changes. Issue [#385](https://github.com/ralphschuler/screeps-myrmex/issues/385) advances
-layouts V25 by isolating fully validated older-algorithm records from every gameplay projection.
-Only a quiescent record in one currently safe visible colony may atomically become one complete
-current source/access-safe commitment, and that handoff tick publishes no command-bearing layout,
-maintenance, site, migration, or evacuation output. Issue
+layouts V25 by isolating fully validated older-algorithm records from gameplay. Issue #413's sole
+exception lets one otherwise-quiescent extension evacuation finish through its exact existing flow;
+it cannot authorize stale geometry or removal. Only a quiescent record in one currently safe visible
+colony may atomically become one complete current source/access-safe commitment, and that handoff
+tick publishes no command-bearing layout, maintenance, site, migration, or evacuation output. Issue
 [#387](https://github.com/ralphschuler/screeps-myrmex/issues/387) permits one exact `OK` site
 receipt to leave that active set only after a newer owned site or completed owned structure matches
 its canonical encoded room, position, type, and stale fingerprint. Issue
@@ -251,7 +252,11 @@ the existing two-room window, the current-revision plan must preserve every sour
 effective sequence before colony budgeting. Only then may the sole StaticMiningPlanner use that
 exact stale set to renew existing budgets and contracts, so the handoff retains those contracts and
 leases without a stale-layout suspension. Previously authorized unrelated current-layout Logistics
-and lease work is not cancelled or reclassified.
+and lease work is not cancelled or reclassified. Issue #413 permits one otherwise-quiescent stale
+extension evacuation to continue through the same bounded funded Logistics/V3 path. Fresh exact
+empty-source, baseline-plus-amount replacement energy, retired flow/endpoints, and unchanged safe
+policy clear only that term command-free; the revision handoff remains a later tick. Every other
+unfinished stale migration remains inert.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
@@ -715,6 +720,15 @@ written directly. Command results remain in the private tick draft even if `spaw
 its CPU budget and its publication is discarded, so mandatory-tail `spawn.settle` still records an
 API call that already happened; an intent with no result is treated as not scheduled. If settlement
 or colony staging is not staged, downstream contracts receive no invented active authorization.
+
+One exact otherwise-quiescent stale extension evacuation remains an input to the ordinary
+extension-evacuation projection even though every other stale-layout gameplay projection is inert.
+It retains the original fixed deadline and aggregate 64-record/64-flow bounds. Layout planning may
+clear only that term from fresh exact delivered stock plus complete current V3 flow/endpoint
+retirement under the existing safe handoff policy; that command-free settlement suppresses new
+layout output globally and cannot perform the revision handoff until a later tick. Unexpired-term
+source refill suppression, plus replacement suppression while source energy remains, applies to both
+ordinary Logistics and SurvivalFlow independently of optional-work policy admission.
 
 `contracts.reconcile` runs only when the effective `phase1.contracts` gate is enabled and the
 current colony result can supply a bounded authorization view. A disabled or prerequisite-blocked
@@ -1655,11 +1669,12 @@ manifest alternative, V20 adds `storage` to the fixed removal-receipt discrimina
 optional fixed-shape single-resource storage evacuation, V22 adds its bounded two-to-eight-row
 manifest alternative, V23 adds the exact settled-batch cursor for one 3,001–6,000-unit
 single-resource continuation, V24 permits that cursor on a canonical two-to-eight-resource manifest
-under the same total, and V25 isolates validated stale-algorithm records in a separate inert
-collection until one command-free safe handoff. Degraded, unknown, lost, stale, denied, or
-CPU-skipped work preserves prior commitments and authorizes no command. Every observed owned layout
-site enters the existing funded survival-growth build flow, while controller risk, recovery,
-maintenance, and protected reserves retain precedence.
+under the same total, and V25 isolates validated stale-algorithm records in a separate collection
+until one command-free safe handoff. Only #413's exact unfinished extension evacuation may remain a
+funded Logistics input until its separate command-free settlement. Degraded, unknown, lost, stale,
+denied, or CPU-skipped work preserves prior commitments and authorizes no command. Every observed
+owned layout site enters the existing funded survival-growth build flow, while controller risk,
+recovery, maintenance, and protected reserves retain precedence.
 
 Issue #308 supersedes #284's temporary-road convergence path after current engine verification.
 `diffOwnedRoomLayout` admits a planned primary structure over existing roads/ramparts and admits a
@@ -2764,8 +2779,11 @@ Required architecture assertions include:
   every exact baseline-plus-amount storage gain, and retired exact flows/endpoints; expiry restores
   ordinary terminal service but remains removal-blocking; the narrow `terminal → storage` continuity
   form cannot weaken same-type replacement checks for another structure kind;
-- a validated older-algorithm layout record is isolated from every gameplay projection; one exact
-  successful stale construction-site receipt may settle only from newer matching owned-site or
+- a validated older-algorithm layout record is isolated from gameplay except for one otherwise-
+  quiescent exact unfinished extension evacuation continuing through the existing funded V3 path;
+  that term clears only from fresh source-empty, replacement-gain, retired flow/endpoints, and safe
+  policy evidence in a command-free tick before a later revision handoff; one exact successful stale
+  construction-site receipt may settle only from newer matching owned-site or
   completed-owned-structure evidence, and one otherwise-quiescent terminal-success removal receipt
   may settle only from newer complete exact-target absence under the same safe policy; a bare
   storage receipt remains excluded, while one completed container migration or extension, lab, link,
@@ -2774,20 +2792,23 @@ Required architecture assertions include:
   mixed, storage-destination, and terminal-destination forms, scalar and manifest terminal forms,
   and scalar, manifest, and two-batch storage forms share their respective identity contracts;
   storage additionally requires current exact retained-terminal/quiescence and complete
-  original-resource conservation evidence; one otherwise-quiescent failed receipt may clear only
-  from newer complete exact-target presence under the same safe policy, without retry, either alone
-  or atomically with its sole exact type/target/replacement/interval-matched evacuation term; every
-  settlement is command-free, and only a then-quiescent record under fresh safe visible-colony and
-  complete current source/access evidence may enter the separate command-free current-revision
-  handoff on a later tick; an explicit source-service coordinate additionally requires exactly one
-  current ContractLedger planning record with matching derived ID, sequence, source, owner, budget,
-  continuous V2 harvest terms, work position, and canonical full request signature, plus a current
-  plan in the existing two-room window that preserves the complete source/position/effective-
-  sequence set before colony budgeting; only that accepted exact stale set may enter the sole
-  static-mining budget/contract projection, preserving its contract and lease without a stale-layout
-  suspension, while unrelated-active, unsafe, blocked, reset, reordered, malformed,
-  evacuation-bearing records without one sole exact match, foreign, unpaired storage, conservation
-  drift, or other ambiguous evidence remains bounded and fail-closed;
+  original-resource conservation evidence; one otherwise-quiescent unfinished extension evacuation
+  may continue only through its exact existing funded V3 flow and clear command-free from fresh
+  source-empty, replacement-gain, and retired flow/endpoint evidence before the later revision
+  handoff; one otherwise-quiescent failed receipt may clear only from newer complete exact-target
+  presence under the same safe policy, without retry, either alone or atomically with its sole exact
+  type/target/replacement/interval-matched evacuation term; every settlement is command-free, and
+  only a then-quiescent record under fresh safe visible-colony and complete current source/access
+  evidence may enter the separate command-free current-revision handoff on a later tick; an explicit
+  source-service coordinate additionally requires exactly one current ContractLedger planning record
+  with matching derived ID, sequence, source, owner, budget, continuous V2 harvest terms, work
+  position, and canonical full request signature, plus a current plan in the existing two-room
+  window that preserves the complete source/position/effective-sequence set before colony budgeting;
+  only that accepted exact stale set may enter the sole static-mining budget/contract projection,
+  preserving its contract and lease without a stale-layout suspension, while unrelated-active,
+  unsafe, blocked, reset, reordered, malformed, evacuation-bearing records without one sole exact
+  match, foreign, unpaired storage, conservation drift, or other ambiguous evidence remains bounded
+  and fail-closed;
 - obsolete-storage removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact
   empty 1,000,000-unit external storage, one exact active 300,000-unit same-room terminal, an
   effective Logistics gate with one exact current healthy room row, no current/projected Logistics

@@ -24,14 +24,16 @@ whose exact target remains present in newer complete observation. Issue #409 ext
 one failed receipt carrying its sole exact evacuation/migration term. Issue #411 addresses the
 separate otherwise-quiescent case where an explicit source-service issuance already has one durable
 matching ContractLedger record but the stale-layout isolation would otherwise suspend it and block
-the revision forever.
+the revision forever. Issue #413 adds one bounded unfinished-work continuation: an otherwise-
+quiescent stale extension evacuation may finish through its already-defined Logistics path before
+the revision handoff.
 
 ## Decision
 
 - Layouts owner-local schema V25 separates `records` from `staleRecords`. `records` contains only
-  the current algorithm and remains the sole input to gameplay, Logistics, mining, industry, health,
-  site, and removal projections. `staleRecords` contains fully validated older-algorithm V24-shaped
-  evidence and is inert.
+  the current algorithm and remains the sole input to layout, mining, industry, health, site, and
+  removal projections. `staleRecords` contains fully validated older-algorithm V24-shaped evidence
+  and is inert except for issue #413's one exact extension-evacuation Logistics continuation.
 - V1-V24 migration places a structurally valid older-algorithm record in `staleRecords` instead of
   dropping it. Current and stale records share the existing 64-room aggregate cap and one room may
   occur in only one collection. Malformed, duplicate, over-cap, misplaced, or current-algorithm
@@ -79,6 +81,23 @@ the revision forever.
   evidence. Target absence, incomplete or same-tick observation, unsafe policy, an evacuation-
   bearing record without one sole exact match, site receipts, or source-service issuance preserves
   the record.
+- Issue #413 permits one otherwise-quiescent stale extension evacuation to remain an input to the
+  existing extension-evacuation projection while all other stale records remain inert. The exact
+  unexpired source/replacement/amount/baseline identity must still resolve to two current active
+  owned extensions in a fresh safe owned-room observation. The existing `optional-growth` budget,
+  LogisticsPlanner, V3 contract, lease agent, action arbiter, and creep executor retain every
+  resource and command authority. Durable suppression blocks ordinary Logistics and SurvivalFlow
+  refill of the source, plus replacement refill while source energy is positive, even when threat,
+  controller risk, reserve policy, or CPU admission blocks continuation work.
+- That stale extension term clears only after a later fresh observation proves an exact empty source
+  and exactly baseline-plus-amount replacement energy, while no current V3 planning record names its
+  flow, source, or replacement. The same visible-colony, progression, threat, controller-risk,
+  workforce, reserve, and quiescence policy used by the revision handoff must pass. Settlement
+  removes only the evacuation term through the existing layouts-owner precommit and globally emits
+  no new site, removal, migration, evacuation, dismantle, or destroy output. The ordinary #385
+  revision handoff remains a separate later tick. Another evacuation/migration, site/removal
+  receipt, explicit source-service sequence, malformed/refilled/consumed/drifted Store evidence,
+  active work, expiry, unknown vision, or unsafe policy preserves the stale term.
 - Issue #411 classifies a stale record containing an explicit source-service coordinate as
   reconciled only when the current bounded ContractLedger planning view is ready and contains
   exactly one active record for every stale service. Each derived contract ID, effective issuer
@@ -120,36 +139,41 @@ its sole exact evacuation/migration term—can now converge toward quiescence wi
 cancelling its command; the separate handoff remains delayed until a later tick. One exact settled
 source-service issuance can instead cross that handoff directly without losing its contract or
 lease, regressing its monotonic coordinate, or coupling revision migration to source optimization.
-Rooms advance deterministically across JSON/global-heap reconstruction and reordered world facts.
-Other active, evacuation-bearing records without one sole exact match, unpaired storage, unsafe,
+One exact unfinished extension evacuation can continue under its original fixed deadline and then
+settle command-free before the separate handoff, without reopening stale removal authority. Rooms
+advance deterministically across JSON/global-heap reconstruction and reordered world facts. Other
+active, evacuation-bearing records without one sole exact match, unpaired storage, unsafe,
 terminal-drifted, or conservation-incomplete records remain fail-closed until a later explicit
 policy handles them; this decision does not reinterpret or cancel their work.
 
 Persistent cost is one empty `staleRecords` array in normal owner state and at most one fully
 bounded record per already-capped room during handoff. Planning retains the existing two-room
-window, 256 anchors, eight transforms, and 2,500 flood cells per candidate. Source-service
-reconciliation compares at most eight services in each admitted room with the existing capped
-256-record planning view; only a pending explicit record adds one read-only no-write ColonyDirector
-policy session over the existing bounded snapshot. The accepted handoff moves that room's already-
-bounded layout plan before budgeting and then invokes the sole StaticMiningPlanner once. It stores
-no new bytes and performs no new game observation or path search. The transition spends no game
-resource. No root owner, authority, dependency, cache, executor, command, queue, or unbounded
-history is added.
+window, 256 anchors, eight transforms, and 2,500 flood cells per candidate. The extension
+continuation adds no record beyond the existing aggregate 64-room/64-flow bounds and scans each
+already-bounded stale record, current extension pair, and current V3 planning view once. Source-
+service reconciliation compares at most eight services in each admitted room with the existing
+capped 256-record planning view; only a pending explicit source-service or extension-continuation
+record adds one read-only no-write ColonyDirector policy session over the existing bounded snapshot.
+The accepted handoff moves that room's already-bounded layout plan before budgeting and then invokes
+the sole StaticMiningPlanner once. It stores no new bytes and performs no new game observation or
+path search. The transition spends no game resource. No root owner, authority, dependency, cache,
+executor, command, queue, or unbounded history is added.
 
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
-settlement or handoff. Unfinished migration/evacuation continuation, mismatched or multiple failed
-pairs, unmatched or terminal source-service recovery, arbitrary geometry algorithms, defensive
-migration, dynamic room routing, autonomous boost-manifest production, creep dismantling, and
-uninterrupted same-structure availability remain outside this decision.
+settlement or handoff. Unfinished non-extension migration/evacuation continuation, mismatched or
+multiple failed pairs, unmatched or terminal source-service recovery, arbitrary geometry algorithms,
+defensive migration, dynamic room routing, autonomous boost-manifest production, creep dismantling,
+and uninterrupted same-structure availability remain outside this decision.
 
 ## Mechanics sources
 
 Reviewed 2026-07-22 for #385 and #387. `Structure.destroy` and both indexes were rechecked
 2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, #403, #405, #407, and #409.
 `Source`, `Creep.harvest`, `StructureContainer`, and both indexes were rechecked 2026-07-23 for
-issue #411. The relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn`
-for issue #395, `StructureLink` for issue #397, `StructureContainer` for issue #399, `StructureLab`
-for issue #401, and `StructureTerminal` plus `Store` for
+issue #411. `StructureExtension`, `Store`, `Creep.withdraw`, `Creep.transfer`, and both indexes were
+rechecked 2026-07-23 for issue #413. The relevant pages were also checked: `StructureTower` for
+issue #393, `StructureSpawn` for issue #395, `StructureLink` for issue #397, `StructureContainer`
+for issue #399, `StructureLab` for issue #401, and `StructureTerminal` plus `Store` for
 [issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403), and `StructureStorage`,
 `StructureTerminal`, and `Store` for
 [issue #405](https://github.com/ralphschuler/screeps-myrmex/issues/405):
@@ -193,6 +217,13 @@ for issue #401, and `StructureTerminal` plus `Store` for
   capacity and activity plus resource-specific Store conservation before clearing completed storage
   evidence. Settlement consumes newer observation only; neither settlement nor handoff reaches a
   command boundary.
+- Official [`StructureExtension`](https://docs.screeps.com/api/#StructureExtension),
+  [`Store`](https://docs.screeps.com/api/#Store),
+  [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw), and
+  [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define the RCL3 50-energy
+  extension capacity, current Store evidence, adjacent acquisition, and adjacent delivery reused by
+  issue #413. The continuation changes only which already-validated layouts record enters the sole
+  Logistics projection; it does not add a resource or command authority.
 - Official [`Source`](https://docs.screeps.com/api/#Source),
   [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest), and
   [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) retain the source,

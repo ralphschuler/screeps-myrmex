@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  layoutExtensionEvacuationBudgetIssuer,
+  layoutExtensionEvacuationFlowId,
   parseLayoutsOwner,
   reconcileStaleLayoutRemovalReceipt,
   reconcileStaleLayoutSiteReceipt,
@@ -37,6 +39,10 @@ interface GameOptions {
   readonly reverse?: boolean;
   readonly roomEnergyAvailable?: number;
   readonly roomEnergyCapacityAvailable?: number;
+  readonly staleExtensionEvacuation?: {
+    readonly replacementEnergy: number;
+    readonly sourceEnergy: number;
+  };
   readonly staleRemovalTarget?: boolean;
   readonly staleRemovalTargetType?: CompletedStaleEvacuationKind;
   readonly staleSiteEvidence?: StaleSiteEvidence;
@@ -254,7 +260,7 @@ type StaleActiveEvidence =
   | "source-handoff"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -287,6 +293,174 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     });
     expect(reset).toEqual(forward);
     expect(reordered).toEqual(forward);
+  });
+
+  it("continues one stale extension evacuation through the existing funded logistics path", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleOwner(memory, "evacuation");
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const pending = runTick({
+      game: game(202, commands, {
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 800,
+        staleExtensionEvacuation: { replacementEnergy: 0, sourceEnergy: 50 },
+      }),
+      memory,
+    });
+    const record = layoutsOwner(memory).staleRecords[0];
+    const evacuation = record?.extensionEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale extension evacuation");
+    const budgetIssuer = layoutExtensionEvacuationBudgetIssuer(ROOM_NAME, evacuation);
+    const flowId = layoutExtensionEvacuationFlowId(ROOM_NAME, evacuation);
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+            readonly state?: string;
+          }[];
+        }
+      | undefined;
+
+    expect(pending.kernel.faults).toEqual([]);
+    expect(pending.colony.reservations).toContainEqual(
+      expect.objectContaining({
+        category: "optional-growth",
+        colonyId: ROOM_NAME,
+        issuer: budgetIssuer,
+        status: "active",
+      }),
+    );
+    expect(contracts?.active?.some(({ execution }) => execution?.flowId === flowId)).toBe(true);
+    expect(pending.layout.planning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(layoutsOwner(memory).records).toEqual([]);
+    expect(layoutsOwner(memory).staleRecords[0]?.extensionEvacuation).toEqual(evacuation);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
+  it("settles delivered stale extension stock command-free before a later revision handoff", async () => {
+    const forward = await runCompletedStaleExtensionEvacuationVariant(false, false);
+    const reset = await runCompletedStaleExtensionEvacuationVariant(false, true);
+    const reordered = await runCompletedStaleExtensionEvacuationVariant(true, false);
+
+    expect(forward.settlementPlanning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(forward.settlementOwner.records).toEqual([]);
+    expect(forward.settlementOwner.staleRecords).toHaveLength(1);
+    expect(forward.settlementOwner.staleRecords[0]?.extensionEvacuation).toBeUndefined();
+    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.handoffOwner).toMatchObject({
+      records: [
+        expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+      ],
+      staleRecords: [],
+    });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
+  });
+
+  it.each([
+    { name: "threat", options: { threat: true } },
+    { name: "controller risk", options: { controllerRisk: true } },
+  ] as const)("preserves delivered stale extension stock under $name", ({ options }) => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleOwner(memory, "evacuation");
+    const before = layoutsOwner(memory);
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const blocked = runTick({
+      game: game(202, commands, {
+        ...options,
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 800,
+        staleExtensionEvacuation: { replacementEnergy: 50, sourceEnergy: 0 },
+      }),
+      memory,
+    });
+
+    expect(layoutsOwner(memory)).toEqual(before);
+    expect(blocked.layout.planning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "threat", options: { threat: true } },
+    { name: "controller risk", options: { controllerRisk: true } },
+  ] as const)("does not continue pending stale extension work under $name", ({ options }) => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleOwner(memory, "evacuation");
+    const evacuation = layoutsOwner(memory).staleRecords[0]?.extensionEvacuation;
+    if (evacuation === undefined) throw new Error("expected stale extension evacuation");
+    const budgetIssuer = layoutExtensionEvacuationBudgetIssuer(ROOM_NAME, evacuation);
+    const flowId = layoutExtensionEvacuationFlowId(ROOM_NAME, evacuation);
+    if (budgetIssuer === null) throw new Error("evacuation identity overflowed");
+
+    const blocked = runTick({
+      game: game(202, commands, {
+        ...options,
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 800,
+        staleExtensionEvacuation: { replacementEnergy: 10, sourceEnergy: 40 },
+      }),
+      memory,
+    });
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly counterpartId?: string; readonly flowId?: string };
+            readonly targetId?: string;
+          }[];
+        }
+      | undefined;
+
+    expect(blocked.colony.reservations).not.toContainEqual(
+      expect.objectContaining({ issuer: budgetIssuer, status: "active" }),
+    );
+    expect(contracts?.active?.some(({ execution }) => execution?.flowId === flowId)).not.toBe(true);
+    expect(
+      contracts?.active?.some(
+        ({ execution, targetId }) =>
+          targetId === evacuation.sourceId ||
+          targetId === evacuation.replacementId ||
+          execution?.counterpartId === evacuation.sourceId ||
+          execution?.counterpartId === evacuation.replacementId,
+      ),
+    ).not.toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.extensionEvacuation).toEqual(evacuation);
   });
 
   it("reconciles one settled stale source-service issuance without interrupting mining", async () => {
@@ -3195,6 +3369,60 @@ function twoRoomGame(
   };
 }
 
+async function runCompletedStaleExtensionEvacuationVariant(reverse: boolean, reset: boolean) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  executeTick({ game: game(100, commands, { reverse }), memory });
+  executeTick({ game: game(101, commands, { reverse }), memory });
+  seedStaleOwner(memory, "evacuation");
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const settlement = executeTick({
+    game: game(202, commands, {
+      reverse,
+      roomEnergyAvailable: 350,
+      roomEnergyCapacityAvailable: 800,
+      staleExtensionEvacuation: { replacementEnergy: 50, sourceEnergy: 0 },
+    }),
+    memory,
+  });
+  const settlementOwner = layoutsOwner(memory);
+  const settlementCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+  };
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const handoff = executeTick({
+    game: game(203, commands, {
+      reverse,
+      roomEnergyAvailable: 350,
+      roomEnergyCapacityAvailable: 800,
+      staleExtensionEvacuation: { replacementEnergy: 50, sourceEnergy: 0 },
+    }),
+    memory,
+  });
+  return {
+    handoffCommands: {
+      create: commands.createConstructionSite.mock.calls.length,
+      destroy: commands.destroyStructure.mock.calls.length,
+    },
+    handoffOwner: layoutsOwner(memory),
+    handoffPlanning: handoff.layout.planning,
+    settlementCommands,
+    settlementOwner,
+    settlementPlanning: settlement.layout.planning,
+  };
+}
+
 function game(
   time: number,
   commands: Commands,
@@ -3394,6 +3622,38 @@ function game(
           structureType: "terminal",
         } as unknown as StructureTerminal)
       : null;
+  const staleExtensionEvacuation = options.staleExtensionEvacuation;
+  const evacuationExtension = (id: string, x: number, energy: number) =>
+    ({
+      destroy: commands.destroyStructure,
+      hits: 1_000,
+      hitsMax: 1_000,
+      id,
+      isActive: () => true,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: pos(x, 40),
+      room: { name: roomName },
+      store: {
+        energy,
+        getCapacity: () => 50,
+        getFreeCapacity: () => 50 - energy,
+        getUsedCapacity: () => energy,
+      },
+      structureType: "extension",
+    }) as unknown as StructureExtension;
+  const staleEvacuationSource =
+    staleExtensionEvacuation === undefined
+      ? null
+      : evacuationExtension("extension-obsolete", 40, staleExtensionEvacuation.sourceEnergy);
+  const staleEvacuationReplacement =
+    staleExtensionEvacuation === undefined
+      ? null
+      : evacuationExtension(
+          "extension-replacement",
+          41,
+          staleExtensionEvacuation.replacementEnergy,
+        );
   const staleRemovalTarget = options.staleRemovalTarget
     ? ({
         destroy: commands.destroyStructure,
@@ -3436,12 +3696,16 @@ function game(
         spawn,
         ...(completedStructure === null ? [] : [completedStructure]),
         ...(storageTerminal === null ? [] : [storageTerminal]),
+        ...(staleEvacuationSource === null ? [] : [staleEvacuationSource]),
+        ...(staleEvacuationReplacement === null ? [] : [staleEvacuationReplacement]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
       ].reverse()
     : [
         spawn,
         ...(completedStructure === null ? [] : [completedStructure]),
         ...(storageTerminal === null ? [] : [storageTerminal]),
+        ...(staleEvacuationSource === null ? [] : [staleEvacuationSource]),
+        ...(staleEvacuationReplacement === null ? [] : [staleEvacuationReplacement]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
       ];
   const ownedCreeps =
@@ -3483,7 +3747,11 @@ function game(
               ? spawn
               : id === source.id
                 ? source
-                : null,
+                : id === staleEvacuationSource?.id
+                  ? staleEvacuationSource
+                  : id === staleEvacuationReplacement?.id
+                    ? staleEvacuationReplacement
+                    : null,
     rooms: { [roomName]: room },
     shard: { name: "shard3" },
     time,

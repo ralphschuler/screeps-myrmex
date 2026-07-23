@@ -132,9 +132,12 @@ failed stale removal receipt only from newer complete exact-target-presence evid
 receipt with its sole exact evacuation/migration term. Issue
 [#411](https://github.com/ralphschuler/screeps-myrmex/issues/411) reconciles one otherwise-quiescent
 explicit stale source-service issuance against its exact current mining contract before the direct
-command-free revision handoff. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+command-free revision handoff. Issue
+[#413](https://github.com/ralphschuler/screeps-myrmex/issues/413) permits one otherwise-quiescent
+unfinished stale extension evacuation to continue through its existing funded Logistics/V3 path,
+then clears only that term command-free after fresh exact delivery and complete work retirement.
+Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
+structure migration and dismantling.
 
 ## Runtime order
 
@@ -245,7 +248,16 @@ and dismantling.
    category, issuer, and effective sequence. Blocked or unattempted handoffs receive no continuity
    budget. No stale-layout suspension or new contract is produced for an accepted handoff, which
    retains the exact matching contract and lease; mismatch, unavailable or terminal-only evidence,
-   source or room loss, changed source planning, and unsuccessful handoff remain fail-closed.
+   source or room loss, changed source planning, and unsuccessful handoff remain fail-closed. One
+   otherwise-quiescent stale extension evacuation remains the sole active stale gameplay projection.
+   The existing `optional-growth` budget and Logistics/V3 contract path move its exact energy under
+   the original deadline while source refill is suppressed and replacement refill remains suppressed
+   during acquisition. A later fresh observation may clear only that term when the source is empty,
+   replacement energy is exactly baseline plus amount, no current V3 planning record names the flow
+   or either endpoint, and the same safe handoff policy still passes. This settlement precommits
+   only layouts, emits no layout command in any room, and leaves the revision handoff to a later
+   tick. Another active stale term, source-service sequence, unsafe policy, malformed, refilled,
+   consumed, or drifted Store evidence, active work, expiry, or missing vision remains fail-closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -510,6 +522,17 @@ hashes, no destroy command, 0.1 modeled CPU per tick, a 663-byte maximum layouts
 bounds. The existing #377 row separately retains exact production funding, ContractLedger, lease,
 action-arbitration, and live `Creep.build` proof for the generic owned-site execution path;
 scenario-kit does not claim to emulate that runtime command chain.
+
+Issue #413's production-runtime evidence starts from an otherwise-quiescent V25 stale record with
+one 50-energy extension evacuation. The normal colony budget and Logistics planner publish its exact
+`optional-growth` issuer and V3 flow while the stale owner remains isolated from every other
+gameplay projection. Fresh source-empty and 50-energy replacement evidence clears only that term
+after no current contract names its flow or endpoints; the settlement and following #385 handoff
+each issue zero layout commands. Warm, module-reset, and reversed-structure variants produce
+byte-equivalent owner, planning, and command outcomes. Focused projection controls reject active
+flow, source, or replacement endpoints, refill, underdelivery, threat, expiry, and aggregate
+over-cap input. Existing V3 withdraw/transfer executor tests retain command-result and retry
+coverage; #413 adds no command path or persistent field.
 
 The #377 production row seeds #365's exact layout fingerprint and first committed coordinate before
 any build action, then runs the production `runTick` graph. `SurvivalGrowthPlanner` publishes the

@@ -1,12 +1,98 @@
 import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
+  isStaleLayoutExtensionEvacuationContinuation,
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
   projectLayoutConvergencePlacements,
   selectLayoutPlanningWindow,
   type LayoutPlanningInput,
+  type StaleLayoutRecord,
 } from "../src/layout";
+
+describe("stale extension evacuation continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    extensionEvacuation: {
+      amount: 50,
+      expiresAt: 250,
+      replacementId: "extension-replacement",
+      replacementInitialEnergy: 0,
+      sourceId: "extension-obsolete",
+      startedAt: 100,
+    },
+    fingerprint: "stale-layout",
+    roomName: "W1N1",
+    sourceServices: [
+      {
+        adoption: "exact",
+        layer: "primary",
+        minimumRcl: 2,
+        pos: { roomName: "W1N1", x: 11, y: 11 },
+        service: { kind: "source-container", sourceId: "source-a" },
+        structureType: "container",
+      },
+    ],
+    transform: 0,
+  });
+
+  it("admits only the sole otherwise-quiescent stale extension term", () => {
+    const sourceService = staleRecord().sourceServices?.[0];
+    if (sourceService === undefined) throw new Error("stale source service fixture missing");
+    expect(isStaleLayoutExtensionEvacuationContinuation(staleRecord())).toBe(true);
+    expect(
+      isStaleLayoutExtensionEvacuationContinuation({
+        ...staleRecord(),
+        algorithmRevision: "owned-room-layout-v2-source-services",
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutExtensionEvacuationContinuation({
+        ...staleRecord(),
+        siteReceipts: [
+          {
+            attempt: 1,
+            code: "OK",
+            layoutFingerprint: "stale-layout",
+            nextEligibleTick: 101,
+            observationFingerprint: "observation-a",
+            observedAt: 100,
+            policyFingerprint: "policy-a",
+            proposalId: "site-a",
+            roomName: "W1N1",
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutExtensionEvacuationContinuation({
+        ...staleRecord(),
+        towerEvacuation: {
+          amount: 10,
+          expiresAt: 250,
+          replacementId: "tower-replacement",
+          replacementInitialEnergy: 10,
+          sourceId: "tower-obsolete",
+          startedAt: 100,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutExtensionEvacuationContinuation({
+        ...staleRecord(),
+        sourceServices: [
+          {
+            ...sourceService,
+            service: { issuerSequence: 2, kind: "source-container", sourceId: "source-a" },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("owned-room-layout-v1", () => {
   it("produces byte-equivalent complete placements across reordered facts and heap reconstruction", () => {
