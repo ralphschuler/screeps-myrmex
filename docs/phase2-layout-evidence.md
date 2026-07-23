@@ -118,8 +118,10 @@ completed extension-evacuation term to clear atomically with its matching receip
 safe newer-absence proof. Issue [#393](https://github.com/ralphschuler/screeps-myrmex/issues/393)
 adds the equivalent exact completed tower pair, and issue
 [#395](https://github.com/ralphschuler/screeps-myrmex/issues/395) adds the exact completed spawn
-pair. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
-structure migration and dismantling.
+pair, and issue [#397](https://github.com/ralphschuler/screeps-myrmex/issues/397) adds the
+equivalent reserve-link pair. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -206,9 +208,9 @@ structure migration and dismantling.
    newer complete owned-room structure projection omits its exact target ID. The settlement
    precommits only the layouts owner and ends all rooms' new site/removal planning for that tick;
    storage, failed, present, same-tick, incomplete, active, or unsafe evidence remains inert. One
-   exact completed extension, tower, or spawn evacuation may accompany that receipt only when type,
-   target, replacement, terminal result, and receipt tick within its fixed interval match; newer
-   target absence then clears both terms atomically.
+   exact completed extension, tower, spawn, or reserve-link evacuation may accompany that receipt
+   only when type, target, replacement, terminal result, and receipt tick within its fixed interval
+   match; newer target absence then clears both terms atomically.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -511,12 +513,14 @@ source/replacement identities match the terminal-success extension receipt and w
 lies within the fixed 150-tick interval. Issue #393 composes the equivalent exact persisted tower
 pair without changing the owner schema or original tower operational-readiness gates. Issue #395
 composes the exact persisted spawn pair without changing owner schema, SpawnBroker, or the original
-spawn service/slot readiness gates. Newer target absence atomically removes any one pair in one
-owner revision, emits zero site/destroy calls in two rooms, and leaves the #385 handoff to the next
-tick. Warm, real module reset, and reversed-structure variants produce equal owner, planning, and
-command outcomes. Both `OK` and `TARGET_ABSENT` settle. Target/replacement/type mismatch, receipt
-before the evacuation or at its exclusive expiry, target presence, same-tick/incomplete observation,
-nonterminal result, unsafe policy, or another active term preserves the original owner.
+spawn service/slot readiness gates. Issue #397 composes the equivalent persisted reserve-link pair
+without changing owner schema, LinkArbiter, or the original link-role/cooldown/transfer-readiness
+gates. Newer target absence atomically removes any one pair in one owner revision, emits zero
+site/destroy calls in two rooms, and leaves the #385 handoff to the next tick. Warm, real module
+reset, and reversed-structure variants produce equal owner, planning, and command outcomes. Both
+`OK` and `TARGET_ABSENT` settle. Target/replacement/type mismatch, receipt before the evacuation or
+at its exclusive expiry, target presence, same-tick/incomplete observation, nonterminal result,
+unsafe policy, or another active term preserves the original owner.
 
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
@@ -748,9 +752,9 @@ lint, type, test, documentation, bundle, and package evidence.
   codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
-  the operation; #389, #391, #393, and #395 still require newer complete target-absence observation
-  before settlement. #391, #393, and #395 additionally bind that result to the exact extension,
-  tower, or spawn evacuation identities and fixed interval.
+  the operation; #389, #391, #393, #395, and #397 still require newer complete target-absence
+  observation before settlement. #391, #393, #395, and #397 additionally bind that result to the
+  exact extension, tower, spawn, or reserve-link evacuation identities and fixed interval.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the

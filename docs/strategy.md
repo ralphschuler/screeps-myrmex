@@ -274,10 +274,10 @@ encoded room, position, type, and stale fingerprint all match. That settlement c
 receipt, emits no command from that evidence, and defers the existing handoff until a later tick.
 One otherwise-quiescent stale non-storage removal receipt may likewise settle only when it records
 `OK` or `TARGET_ABSENT`, the same safe handoff policy holds, and a newer complete owned-room
-observation proves its exact target ID absent. One completed extension, spawn, or tower evacuation
-may remain paired with that receipt only when exact type, target, replacement, and receipt-within-
-interval evidence match; fresh target absence atomically clears both terms. Storage keeps its
-stronger conservation boundary; unrelated active, mismatched, failed, present, incomplete,
+observation proves its exact target ID absent. One completed extension, link, spawn, or tower
+evacuation may remain paired with that receipt only when exact type, target, replacement, and
+receipt-within-interval evidence match; fresh target absence atomically clears both terms. Storage
+keeps its stronger conservation boundary; unrelated active, mismatched, failed, present, incomplete,
 same-tick, or unsafe evidence remains inert. New layout site/removal planning stops globally for
 either settlement tick without cancelling previously authorized unrelated current-layout work.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
