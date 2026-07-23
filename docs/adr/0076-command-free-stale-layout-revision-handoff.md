@@ -28,24 +28,27 @@ the revision forever. Issue #413 adds one bounded unfinished-work continuation: 
 quiescent stale extension evacuation may finish through its already-defined Logistics path before
 the revision handoff. Issue #415 adds the equivalent continuation for one tower evacuation while
 preserving its exact operational-replacement energy floor. Issue #417 adds the spawn equivalent
-while preserving current SpawnBroker and exact active-idle endpoint evidence.
+while preserving current SpawnBroker and exact active-idle endpoint evidence. Issue #419 adds the
+reserve-link equivalent only for safely reconstructible source-defined V1 geometry under current
+productive-role, reserve-role, Store, cooldown, and native-transfer-exclusion evidence.
 
 ## Decision
 
 - Layouts owner-local schema V25 separates `records` from `staleRecords`. `records` contains only
   the current algorithm and remains the sole input to layout, mining, industry, health, site, and
   removal projections. `staleRecords` contains fully validated older-algorithm V24-shaped evidence
-  and is inert except for issues #413, #415, and #417's exact extension-, tower-, or spawn-
-  evacuation Logistics continuation.
+  and is inert except for issues #413, #415, #417, and #419's exact extension-, tower-, spawn-, or
+  reserve-link-evacuation Logistics continuation.
 - V1-V24 migration places a structurally valid older-algorithm record in `staleRecords` instead of
   dropping it. Current and stale records share the existing 64-room aggregate cap and one room may
   occur in only one collection. Malformed, duplicate, over-cap, misplaced, or current-algorithm
   stale evidence rejects the owner.
 - One stale room may hand off only from visible current owned-room observation while the colony is
   developing or mature, unthreatened, free of controller risk, supplied by legal workforce, within
-  RCL2-RCL8 policy, progression-authorized, and above its protected spawn reserve. Issue #411's
-  exact source-service case may also use the existing developing-RCL8 infrastructure-recovery
-  authorization when bounded domain health is blocked solely behind stale infrastructure.
+  RCL2-RCL8 policy, progression-authorized, and above its protected spawn reserve. A safe quiescent
+  RCL8 record may also use the existing bounded infrastructure-recovery authorization when direct
+  domain health is blocked solely behind stale infrastructure. Issue #411 additionally requires
+  exact source-service contract reconciliation before that handoff can preserve mining.
 - The stale record must be quiescent: no evacuation, container migration, construction-site receipt,
   removal receipt, or unreconciled source-service issuance coordinate may remain. Before this gate,
   one `OK` construction-site receipt may settle only when its canonical `site-v1` identity binds the
@@ -119,6 +122,29 @@ while preserving current SpawnBroker and exact active-idle endpoint evidence.
   the spawn term, emits no layout command globally, and leaves the revision handoff to a later tick.
   Busy, selected, inactive, malformed, refilled, consumed, drifted, expired, unknown, unsafe, or
   active-work evidence preserves the record.
+- Issue #419 permits one otherwise-quiescent stale reserve-link evacuation to remain an input to the
+  existing creep-logistics projection. Only the known source-defined `owned-room-layout-v1` link
+  positions may be reconstructed, and only as read-only role-safety evidence. Unknown stale
+  revisions remain inert. Fresh RCL8 observation must prove six owned active links, five exact old
+  positions, one missing reserve anchor, one external reserve source, one exact reserve replacement,
+  every persisted source-service identity unique and adjacent to its fresh exact source, every
+  source/hub/controller role intact, distinct exact 800-capacity energy Stores, and zero cooldown.
+  `LayoutPlanner` exposes no stale placements to site, health, migration, native link, or removal
+  planning.
+- Both persisted endpoints remain suppressed from ordinary Logistics and native link proposals
+  throughout the valid 150-tick term, even when optional work, role authorization, or funding is
+  denied. Only current safe policy plus exact role authorization may publish the existing
+  `optional-growth` budget and V3 creep flow. Final lease admission additionally requires the
+  current graph flow and an active reservation; safety, role, Store, cooldown, or funding drift
+  removes an existing stale lease in the same tick. Expiry restores ordinary link service while
+  retaining removal- and handoff-blocking evidence.
+- That stale link term clears only after fresh exact source emptiness, replacement energy equal to
+  baseline plus amount, zero cooldown, unchanged productive/reserve roles, complete flow/source/
+  replacement endpoint retirement, and exclusion from native transfer. Settlement removes only the
+  link term, precommits the existing layouts owner, emits no layout or link command globally, and
+  leaves the source-defined revision handoff to a later tick. Refill, consumption, unknown revision,
+  role/layout drift, active native or creep work, malformed/duplicate Stores, expiry, missing
+  vision, or unsafe policy preserves the record.
 - Issue #415 permits the equivalent sole stale tower evacuation to remain an input to the existing
   tower-evacuation projection. Its exact unexpired source/replacement/amount/baseline identity must
   resolve to two current active owned towers; the replacement baseline remains at least the official
@@ -176,31 +202,34 @@ its sole exact evacuation/migration term—can now converge toward quiescence wi
 cancelling its command; the separate handoff remains delayed until a later tick. One exact settled
 source-service issuance can instead cross that handoff directly without losing its contract or
 lease, regressing its monotonic coordinate, or coupling revision migration to source optimization.
-One exact unfinished extension, spawn, or tower evacuation can continue under its original fixed
-deadline and then settle command-free before the separate handoff, without reopening stale removal
-authority, bypassing SpawnBroker, or weakening the tower replacement's action-energy floor. Rooms
-advance deterministically across JSON/global-heap reconstruction and reordered world facts. Other
-active, evacuation-bearing records without one sole exact match, unpaired storage, unsafe,
-terminal-drifted, or conservation-incomplete records remain fail-closed until a later explicit
-policy handles them; this decision does not reinterpret or cancel their work.
+One exact unfinished extension, reserve-link, spawn, or tower evacuation can continue under its
+original fixed deadline and then settle command-free before the separate handoff, without reopening
+stale removal authority, bypassing SpawnBroker, using native link transfer, or weakening the tower
+replacement's action-energy floor. Rooms advance deterministically across JSON/global-heap
+reconstruction and reordered world facts. Other active, evacuation-bearing records without one sole
+exact match, unpaired storage, unsafe, terminal-drifted, or conservation-incomplete records remain
+fail-closed until a later explicit policy handles them; this decision does not reinterpret or cancel
+their work.
 
 Persistent cost is one empty `staleRecords` array in normal owner state and at most one fully
 bounded record per already-capped room during handoff. Planning retains the existing two-room
-window, 256 anchors, eight transforms, and 2,500 flood cells per candidate. The extension, spawn,
-and tower continuations add no record beyond the existing aggregate 64-room/64-flow bounds and each
-scans the already-bounded stale records, one current structure pair, and the current V3 planning
-view once. Spawn continuation additionally reads the already-bounded current broker result once.
-Source-service reconciliation compares at most eight services in each admitted room with the
-existing capped 256-record planning view; only a pending explicit source-service, extension-,
-spawn-, or tower-continuation record adds one read-only no-write ColonyDirector policy session over
-the existing bounded snapshot. The accepted handoff moves that room's already-bounded layout plan
-before budgeting and then invokes the sole StaticMiningPlanner once. It stores no new bytes and
-performs no new game observation or path search. The transition spends no game resource. No root
-owner, authority, dependency, cache, executor, command, queue, or unbounded history is added.
+window, 256 anchors, eight transforms, and 2,500 flood cells per candidate. The extension, reserve-
+link, spawn, and tower continuations add no record beyond the existing aggregate 64-room/64-flow
+bounds and each scans the already-bounded stale records, one current structure pair, and the current
+V3 planning view once. Spawn continuation additionally reads the already-bounded current broker
+result once. Reserve-link continuation reconstructs exactly six known V1 link coordinates and runs
+the existing six-link role classifier; unknown revisions authorize nothing. Source-service
+reconciliation compares at most eight services in each admitted room with the existing capped
+256-record planning view; only a pending explicit source-service, extension-, reserve-link-, spawn-,
+or tower-continuation record adds one read-only no-write ColonyDirector policy session over the
+existing bounded snapshot. The accepted handoff moves that room's already-bounded layout plan before
+budgeting and then invokes the sole StaticMiningPlanner once. It stores no new bytes and performs no
+new game observation or path search. The transition spends no game resource. No root owner,
+authority, dependency, cache, executor, command, queue, or unbounded history is added.
 
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
 settlement or handoff. Unfinished migration/evacuation continuation for every structure other than
-extension, spawn, or tower, mismatched or multiple failed pairs, unmatched or terminal
+extension, reserve link, spawn, or tower, mismatched or multiple failed pairs, unmatched or terminal
 source-service recovery, arbitrary geometry algorithms, defensive migration, dynamic room routing,
 autonomous boost-manifest production, creep dismantling, and uninterrupted same-structure
 availability remain outside this decision.
@@ -214,11 +243,13 @@ issue #411. `StructureExtension`, `Store`, `Creep.withdraw`, `Creep.transfer`, a
 rechecked 2026-07-23 for issue #413. `StructureTower`, `Store`, `Creep.withdraw`, `Creep.transfer`,
 `Control`, and both indexes were rechecked 2026-07-23 for issue #415. `StructureSpawn`, `Store`,
 `Creep.withdraw`, `Creep.transfer`, the game loop, and both indexes were rechecked 2026-07-23 for
-issue #417. The relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn`
-for issue #395, `StructureLink` for issue `#397`, `StructureContainer` for issue #399,
-`StructureLab` for issue #401, and `StructureTerminal` plus `Store` for
-[issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403), and `StructureStorage`,
-`StructureTerminal`, and `Store` for
+issue #417. `StructureLink`, `StructureLink.transferEnergy`, `Store`, `Creep.withdraw`,
+`Creep.transfer`, the game loop, and both indexes were rechecked 2026-07-23 for issue #419. The
+relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn` for issue #395,
+`StructureLink` for issue `#397`, `StructureContainer` for issue #399, and `StructureLab` for
+[issue #401](https://github.com/ralphschuler/screeps-myrmex/issues/401); `StructureTerminal` plus
+`Store` were reviewed for [issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403),
+and `StructureStorage`, `StructureTerminal`, and `Store` for
 [issue #405](https://github.com/ralphschuler/screeps-myrmex/issues/405):
 
 - Official [Screeps documentation](https://docs.screeps.com/),
@@ -274,7 +305,12 @@ for issue #395, `StructureLink` for issue `#397`, `StructureContainer` for issue
   300-energy endpoint capacity and creep-production service. The same Store and creep-resource
   contracts plus the official [game loop](https://docs.screeps.com/game-loop.html) require fresh
   tick evidence before stock conservation and broker exclusion can authorize continuation or
-  settlement.
+  settlement. Official [`StructureLink`](https://docs.screeps.com/api/#StructureLink) defines issue
+  #419's RCL8 allowance of six, exact 800-energy capacity, and sender cooldown. Official
+  [`StructureLink.transferEnergy`](https://docs.screeps.com/api/#StructureLink.transferEnergy)
+  retains its 3% loss and native command semantics; both migration endpoints remain excluded, so
+  only the same adjacent creep `withdraw`/`transfer` contracts move stock. Fresh next-tick role,
+  Store, cooldown, and work-retirement evidence gates command-free settlement.
 - Official [`Source`](https://docs.screeps.com/api/#Source),
   [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest), and
   [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) retain the source,

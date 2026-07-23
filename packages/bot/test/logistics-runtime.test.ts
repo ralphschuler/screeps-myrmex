@@ -26,7 +26,12 @@ import {
   completeExecutableLayoutLabEvacuationFlowIds,
   projectLayoutLabEvacuations,
 } from "../src/logistics/lab-evacuation";
-import { projectLayoutLinkEvacuations } from "../src/logistics/link-evacuation";
+import {
+  authorizeLayoutLinkEvacuationFlowIds,
+  completedLayoutLinkEvacuationRoomNames,
+  projectLayoutLinkEvacuations,
+  projectLayoutLinkEvacuationSuppressedSinkTargetIds,
+} from "../src/logistics/link-evacuation";
 import {
   currentlyExecutableLogisticsFlowIds,
   executableLogisticsView,
@@ -1844,6 +1849,13 @@ describe("logistics runtime adapter", () => {
       transform: 0,
     } as const satisfies LayoutRecord;
     expect(
+      projectLayoutLinkEvacuationSuppressedSinkTargetIds({
+        records: [record],
+        snapshot: evacuationWorld,
+        tick: 10,
+      }),
+    ).toEqual(["link-reserve-external", "link-reserve-exact"]);
+    expect(
       projectLayoutLinkEvacuations({
         authorizedFlowIds: new Set(),
         existingBudgets: [],
@@ -1853,7 +1865,12 @@ describe("logistics runtime adapter", () => {
       }),
     ).toEqual({
       budgets: [],
-      demands: { edges: [], endpoints: [], nodes: [], suppressedSinkTargetIds: [] },
+      demands: {
+        edges: [],
+        endpoints: [],
+        nodes: [],
+        suppressedSinkTargetIds: ["link-reserve-external", "link-reserve-exact"],
+      },
     });
     const evacuation = projectLayoutLinkEvacuations({
       authorizedFlowIds: new Set([flowId]),
@@ -1877,6 +1894,12 @@ describe("logistics runtime adapter", () => {
     expect(evacuation.budgets).toEqual([
       expect.objectContaining({ category: "optional-growth", issuer: budgetIssuer }),
     ]);
+    expect(
+      authorizeLayoutLinkEvacuationFlowIds(evacuation, new Set([flowId]), new Set([budgetIssuer])),
+    ).toEqual(new Set([flowId]));
+    expect(authorizeLayoutLinkEvacuationFlowIds(evacuation, new Set([flowId]), new Set())).toEqual(
+      new Set(),
+    );
     expect(evacuation.demands.nodes).toHaveLength(2);
     expect(evacuation.demands.endpoints).toHaveLength(2);
     expect(result.graph.nodes).not.toContainEqual(
@@ -1908,6 +1931,64 @@ describe("logistics runtime adapter", () => {
       tick: 10,
     });
     expect(JSON.stringify(reset)).toBe(JSON.stringify(evacuation));
+
+    const completedWorld = {
+      ...evacuationWorld,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          ownedLinks: [link("link-reserve-exact", 12, 300), link("link-reserve-external", 11, 0)],
+        },
+      ],
+    } satisfies WorldSnapshot;
+    const completionInput = {
+      activeFlowIds: new Set<string>(),
+      activeTargetIds: new Set<string>(),
+      authorizedFlowIds: new Set([flowId]),
+      nativeTransferExcludedLinkIds: new Set([terms.sourceId, terms.replacementId]),
+      records: [record],
+      snapshot: completedWorld,
+      tick: 11,
+    } as const;
+    expect(completedLayoutLinkEvacuationRoomNames(completionInput)).toEqual(["W1N1"]);
+    expect(
+      completedLayoutLinkEvacuationRoomNames({
+        ...completionInput,
+        activeFlowIds: new Set([flowId]),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutLinkEvacuationRoomNames({
+        ...completionInput,
+        authorizedFlowIds: new Set(),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutLinkEvacuationRoomNames({
+        ...completionInput,
+        nativeTransferExcludedLinkIds: new Set([terms.sourceId]),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutLinkEvacuationRoomNames({
+        ...completionInput,
+        snapshot: {
+          ...completedWorld,
+          rooms: [
+            {
+              ...room,
+              observedAt: 11,
+              ownedLinks: [
+                link("link-reserve-exact", 12, 300),
+                { ...link("link-reserve-external", 11, 0), cooldown: 1 },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toEqual([]);
+
     expect(
       projectLayoutLinkEvacuations({
         authorizedFlowIds: new Set([flowId]),

@@ -110,10 +110,28 @@ export function validateReserveLinkEvacuationContinuity(input: {
     )
       continue;
     const sourceIds = new Set(room.sources.map(({ id }) => id));
+    const sourceServicePositions = new Set(
+      layout.evidence.sourceServices.map(
+        ({ pos }) => `${pos.roomName}:${String(pos.x)}:${String(pos.y)}`,
+      ),
+    );
     if (
       new Set(layout.evidence.sourceServices.map(({ sourceId }) => sourceId)).size !==
         layout.evidence.sourceServices.length ||
-      layout.evidence.sourceServices.some(({ sourceId }) => !sourceIds.has(sourceId))
+      sourceServicePositions.size !== layout.evidence.sourceServices.length ||
+      layout.evidence.sourceServices.some(({ pos, sourceId }) => {
+        const source = room.sources.find(({ id }) => id === sourceId);
+        return (
+          source === undefined ||
+          pos.roomName !== room.name ||
+          pos.x <= 0 ||
+          pos.x >= 49 ||
+          pos.y <= 0 ||
+          pos.y >= 49 ||
+          Math.max(Math.abs(pos.x - source.pos.x), Math.abs(pos.y - source.pos.y)) !== 1 ||
+          !sourceIds.has(sourceId)
+        );
+      })
     )
       continue;
     const anchors = deriveLinkRoleAnchors(layout.evidence);

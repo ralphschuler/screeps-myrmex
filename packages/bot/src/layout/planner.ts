@@ -14,6 +14,7 @@ import { compileOwnedRoomLayoutV1 } from "./layout-v1";
 import { selectSourceServices } from "./source-services";
 import {
   LAYOUT_ALGORITHM_REVISION,
+  LAYOUT_V1_ALGORITHM_REVISION,
   matchedStaleLayoutEvacuationKind,
   MAX_LAYOUT_CANDIDATES,
   MAX_LAYOUT_FLOOD_CELLS,
@@ -69,6 +70,38 @@ export function staleLayoutExtensionEvacuationSettlementBlocker(input: {
   if (!isStaleLayoutExtensionEvacuationContinuation(input.record)) return "revision-handoff-active";
   const { extensionEvacuation: _extensionEvacuation, ...settled } = input.record;
   void _extensionEvacuation;
+  return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
+}
+
+/**
+ * Exact known stale shape whose existing reserve-link evacuation may continue without authorizing
+ * stale geometry, native transfer, or removal.
+ */
+export function isStaleLayoutLinkEvacuationContinuation(record: StaleLayoutRecord): boolean {
+  return (
+    record.algorithmRevision === LAYOUT_V1_ALGORITHM_REVISION &&
+    record.linkEvacuation !== undefined &&
+    record.containerMigration === undefined &&
+    record.extensionEvacuation === undefined &&
+    record.labEvacuation === undefined &&
+    record.spawnEvacuation === undefined &&
+    record.storageEvacuation === undefined &&
+    record.terminalEvacuation === undefined &&
+    record.towerEvacuation === undefined &&
+    record.removalReceipt === undefined &&
+    (record.siteReceipts?.length ?? 0) === 0 &&
+    record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) !== true
+  );
+}
+
+/** Reuses the safe handoff policy after logically removing one exactly delivered link term. */
+export function staleLayoutLinkEvacuationSettlementBlocker(input: {
+  readonly colony: ColonyView;
+  readonly record: StaleLayoutRecord;
+}): LayoutBlocker | null {
+  if (!isStaleLayoutLinkEvacuationContinuation(input.record)) return "revision-handoff-active";
+  const { linkEvacuation: _linkEvacuation, ...settled } = input.record;
+  void _linkEvacuation;
   return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
 }
 
@@ -166,8 +199,7 @@ function staleLayoutRevisionBlocker(
     colony.legalWorkforce !== true ||
     colony.rclPolicy.level === null ||
     colony.rclPolicy.unlocks === null ||
-    (!colony.rclPolicy.progression.authorized &&
-      !(input.sourceServicesReconciled === true && isInfrastructureRecoveryAuthorized(colony))) ||
+    (!colony.rclPolicy.progression.authorized && !isInfrastructureRecoveryAuthorized(colony)) ||
     colony.rclPolicy.protectedSpawnReserve.state !== "restored"
   )
     return "policy-unavailable";
@@ -278,6 +310,28 @@ export function planOwnedRoomLayout(input: LayoutPlanningInput): LayoutPlanningR
     Math.min(anchors.length, MAX_LAYOUT_CANDIDATES),
     transforms,
     flood,
+  );
+}
+
+/**
+ * Reconstructs only known V1 link positions for stale reserve-role safety checks. The result cannot
+ * authorize stale construction, migration priority, native transfer, or removal.
+ */
+export function reconstructStaleLayoutLinkPlacements(input: {
+  readonly commitment: LayoutCommitment;
+  readonly roomName: string;
+  readonly unlocks: ColonyRclUnlockAllowances;
+}): readonly PositionSnapshot[] | null {
+  if (input.commitment.algorithmRevision !== LAYOUT_V1_ALGORITHM_REVISION) return null;
+  return freeze(
+    transformCells(
+      input.roomName,
+      input.commitment.anchor,
+      input.commitment.transform,
+      compileOwnedRoomLayoutV1(input.unlocks),
+    )
+      .filter(({ structureType }) => structureType === "link")
+      .map(({ pos }) => ({ ...pos })),
   );
 }
 
