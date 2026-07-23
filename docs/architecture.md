@@ -244,8 +244,14 @@ its exact target ID, proving no effect without issuing a retry. Issue #409 permi
 effect receipt to clear atomically with its sole exact evacuation/migration term when structure
 kind, target, replacement, and receipt-within-interval evidence match. Any settlement publishes no
 new layout site/removal proposal in any room and cannot perform the revision handoff until a later
-tick; every mismatch preserves inert evidence. Previously authorized unrelated current-layout
-Logistics and lease work is not cancelled or reclassified.
+tick; every mismatch preserves inert evidence. Issue #411 permits one otherwise-quiescent explicit
+source-service issuance only when the bounded ContractLedger planning view contains exactly one
+matching active record, including the canonical full request signature, for every stale service. In
+the existing two-room window, the current-revision plan must preserve every source, position, and
+effective sequence before colony budgeting. Only then may the sole StaticMiningPlanner use that
+exact stale set to renew existing budgets and contracts, so the handoff retains those contracts and
+leases without a stale-layout suspension. Previously authorized unrelated current-layout Logistics
+and lease work is not cancelled or reclassified.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
@@ -532,7 +538,9 @@ observed as a completed creep.
 Execution writes its result to a private tick draft before the kernel evaluates post-run CPU. Thus
 an irreversible `OK` is still available if `spawn.execute` is marked failed for budget overrun.
 `spawn.settle` validates the complete result set, applies exact ledger consumption/release, stages
-the sole `colonies` transaction, and publishes the settled colony and spawn views.
+the sole `colonies` transaction, and publishes the settled colony and spawn views. It also provides
+the final settled reservation view to the static-mining contract producer before that producer
+stages requests/transitions for Reconcile; this adds no command or second contract owner.
 
 ### 6.6 Reconcile
 
@@ -692,8 +700,14 @@ explicit selected-source handoff, `layout.handoff-reconcile` stages the complete
 its root commit; the following tick's contract reconciliation consumes that durable coordinate. The
 same precommit stages one observation-settled stale site or terminal-success non-storage removal
 receipt before ending command-free layout planning for that tick; no separate reconciliation or
-owner exists. It is a continuation of the same layout owner, not a second planner or state
-authority. Later outcomes replace their own foundation markers without adding another loop.
+owner exists. An otherwise-quiescent stale revision may carry settled source-service coordinates
+only when its exact bounded ContractLedger planning records match and the new plan preserves the
+complete issuance set. The bounded layout handoff plan completes before colony budgeting; only its
+accepted exact stale set may enter the sole StaticMiningPlanner projection to renew already-matching
+work. If admission, policy, current planning, room/source evidence, or tuple pinning fails, the
+stale set never enters that projection. It is a continuation of the same layout owner, not a second
+planner or state authority. Later outcomes replace their own foundation markers without adding
+another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -2098,9 +2112,24 @@ replacement, and tick within the fixed interval match. Fresh exact-target presen
 clears both terms; the recorded attempt already proves that the old authority reached its removal
 boundary, and the retained structure makes a new inventory-conservation inference unnecessary.
 Target absence, same-tick or incomplete observation, unsafe policy, an evacuation-bearing record
-without one sole exact match, site work, or source-service issuance remains inert. No owner field,
-schema, command authority, queue, scan outside the two-room planning window, or resource budget
-changes.
+without one sole exact match, site work, or source-service issuance remains inert. Issue
+[#411](https://github.com/ralphschuler/screeps-myrmex/issues/411) handles only the separate
+otherwise-quiescent source-service case. Every explicit stale sequence must match exactly one
+current `mining/{room}/{source}` planning record by derived contract ID, sequence, source, owner,
+budget binding, continuous V2 harvest terms, work position, and canonical full request signature.
+Within the existing two-room window and normal CPU mode, the current-revision plan must retain the
+complete `(source, position, effective sequence)` set before colony budgeting, so layout revision
+cannot also move mining. The standard progression policy applies, with the existing bounded
+infrastructure-recovery authorization admitted for a developing RCL8 room whose health is blocked
+behind stale infrastructure. Only an accepted handoff may pass that exact stale set to the sole
+StaticMiningPlanner to renew already-matching work; no `static-layout-unavailable` transition is
+produced. Persistence and mining-contract staging wait for the final spawn-settled colony view and
+require exactly one active reservation per service with matching colony, harvesting/filling
+category, issuer, and effective sequence. The candidate layout owner remains unchanged and non-
+precommittable until settlement and mining staging succeed; either rollback rejects it. An admitted
+handoff therefore preserves the matching contract and lease. Missing, duplicate, terminal-only,
+unavailable, mismatched, unsafe, or changed-plan evidence remains inert. No owner field, schema,
+command authority, queue, scan outside the two-room planning window, or resource budget changes.
 
 Issue #46 PR A advances the clean-room algorithm to `owned-room-layout-v2-source-services` without
 activating mining execution. `WorldObserver` carries each detached Source ID on its source position,
@@ -2750,7 +2779,13 @@ Required architecture assertions include:
   or atomically with its sole exact type/target/replacement/interval-matched evacuation term; every
   settlement is command-free, and only a then-quiescent record under fresh safe visible-colony and
   complete current source/access evidence may enter the separate command-free current-revision
-  handoff on a later tick, while unrelated-active, unsafe, blocked, reset, reordered, malformed,
+  handoff on a later tick; an explicit source-service coordinate additionally requires exactly one
+  current ContractLedger planning record with matching derived ID, sequence, source, owner, budget,
+  continuous V2 harvest terms, work position, and canonical full request signature, plus a current
+  plan in the existing two-room window that preserves the complete source/position/effective-
+  sequence set before colony budgeting; only that accepted exact stale set may enter the sole
+  static-mining budget/contract projection, preserving its contract and lease without a stale-layout
+  suspension, while unrelated-active, unsafe, blocked, reset, reordered, malformed,
   evacuation-bearing records without one sole exact match, foreign, unpaired storage, conservation
   drift, or other ambiguous evidence remains bounded and fail-closed;
 - obsolete-storage removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact

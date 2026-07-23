@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { minerCapability, planStaticMining } from "../src/economy";
-import { contractIdFor, type ContractPlanningView } from "../src/contracts";
+import {
+  minerCapability,
+  planStaticMining,
+  reconcileStaleSourceServiceContracts,
+} from "../src/economy";
+import { contractIdFor, requestSignature, type ContractPlanningView } from "../src/contracts";
 import type { LayoutPlacement } from "../src/layout";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
@@ -135,6 +139,7 @@ describe("StaticMiningPlanner", () => {
           issuer: predecessorRequest.issuer,
           issuerSequence: 1,
           owner: predecessorRequest.owner,
+          requestSignature: requestSignature(predecessorRequest),
           state: "active",
           targetId: "a",
         },
@@ -162,6 +167,322 @@ describe("StaticMiningPlanner", () => {
       issuerSequence: 2,
       execution: { version: 2, workPosition: pos(12, 10) },
     });
+  });
+
+  it.each(["proposed", "funded", "assigned", "active", "suspended"] as const)(
+    "matches one settled stale source-service issuance in %s state",
+    (state) => {
+      const placement = service("a", 11, "exact", 2);
+      const issuer = "mining/W1N1/a";
+      const contractId = contractIdFor(issuer, "a", 2);
+      const planning: ContractPlanningView = {
+        status: "ready",
+        contracts: [
+          {
+            budgetBinding: { category: "harvesting-filling", issuer },
+            contractId,
+            execution: {
+              action: "harvest",
+              completion: "continuous",
+              counterpartId: null,
+              resourceType: null,
+              version: 2,
+              workPosition: placement.pos,
+            },
+            issuer,
+            issuerSequence: 2,
+            owner: { id: "W1N1", kind: "colony" },
+            requestSignature: canonicalRequestSignature(placement),
+            state,
+            targetId: "a",
+          },
+        ],
+      };
+
+      const result = reconcileStaleSourceServiceContracts({
+        energyCapacityAvailable: 800,
+        planning,
+        roomName: "W1N1",
+        sources: sourceSnapshots("a"),
+        sourceServices: [placement],
+      });
+
+      expect(result).toEqual({ matchedContractIds: [contractId], status: "matched" });
+      expect(
+        reconcileStaleSourceServiceContracts({
+          energyCapacityAvailable: 800,
+          planning: JSON.parse(JSON.stringify(planning)) as ContractPlanningView,
+          roomName: "W1N1",
+          sources: sourceSnapshots("a"),
+          sourceServices: [JSON.parse(JSON.stringify(placement)) as LayoutPlacement],
+        }),
+      ).toEqual(result);
+    },
+  );
+
+  it("requires the complete stale service set after any explicit issuance", () => {
+    const services = [service("a", 11, "exact", 2), service("b", 19, "exact")];
+    const record = (placement: LayoutPlacement): ContractPlanningView["contracts"][number] => {
+      const sourceId = placement.service?.sourceId;
+      if (sourceId === undefined) throw new Error("expected source service");
+      const issuerSequence = placement.service?.issuerSequence ?? 1;
+      const issuer = `mining/W1N1/${sourceId}`;
+      return {
+        budgetBinding: { category: "harvesting-filling", issuer },
+        contractId: contractIdFor(issuer, sourceId, issuerSequence),
+        execution: {
+          action: "harvest",
+          completion: "continuous",
+          counterpartId: null,
+          resourceType: null,
+          version: 2,
+          workPosition: placement.pos,
+        },
+        issuer,
+        issuerSequence,
+        owner: { id: "W1N1", kind: "colony" },
+        requestSignature: canonicalRequestSignature(placement),
+        state: "active",
+        targetId: sourceId,
+      };
+    };
+    const contracts = services.map(record);
+    const input = {
+      energyCapacityAvailable: 800,
+      roomName: "W1N1",
+      sources: sourceSnapshots("a", "b"),
+      sourceServices: services,
+    } as const;
+
+    expect(
+      reconcileStaleSourceServiceContracts({
+        ...input,
+        planning: { contracts: contracts.slice(0, 1), status: "ready" },
+      }),
+    ).toEqual({ matchedContractIds: [], status: "blocked" });
+    expect(
+      reconcileStaleSourceServiceContracts({
+        ...input,
+        planning: { contracts: [...contracts].reverse(), status: "ready" },
+        sources: [...input.sources].reverse(),
+      }),
+    ).toEqual({
+      matchedContractIds: contracts.map(({ contractId }) => contractId).sort(),
+      status: "matched",
+    });
+  });
+
+  it.each([
+    {
+      name: "unavailable planning",
+      update: (planning: ContractPlanningView) => ({ ...planning, status: "unavailable" as const }),
+    },
+    {
+      name: "duplicate issuer",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: [
+          ...planning.contracts,
+          ...(planning.contracts[0] ? [planning.contracts[0]] : []),
+        ],
+      }),
+    },
+    {
+      name: "wrong contract ID",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          contractId: "different-contract",
+        })),
+      }),
+    },
+    {
+      name: "wrong sequence",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({ ...contract, issuerSequence: 1 })),
+      }),
+    },
+    {
+      name: "wrong source target",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({ ...contract, targetId: "b" })),
+      }),
+    },
+    {
+      name: "wrong budget binding",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          budgetBinding: { category: "optional-growth", issuer: contract.issuer },
+        })),
+      }),
+    },
+    {
+      name: "wrong execution action",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          execution: {
+            ...contract.execution,
+            action: "build",
+          } as ContractPlanningView["contracts"][number]["execution"],
+        })),
+      }),
+    },
+    {
+      name: "wrong execution resource",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          execution: {
+            ...contract.execution,
+            resourceType: "energy",
+          } as ContractPlanningView["contracts"][number]["execution"],
+        })),
+      }),
+    },
+    {
+      name: "wrong execution version",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          execution: {
+            action: "build" as const,
+            completion: "continuous" as const,
+            counterpartId: null,
+            resourceType: null,
+            version: 1 as const,
+          },
+        })),
+      }),
+    },
+    {
+      name: "wrong full request signature",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          requestSignature: `${contract.requestSignature ?? "missing"}:changed`,
+        })),
+      }),
+    },
+    {
+      name: "wrong owner",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          owner: { id: "W2N2", kind: "colony" as const },
+        })),
+      }),
+    },
+    {
+      name: "wrong work position",
+      update: (planning: ContractPlanningView) => ({
+        ...planning,
+        contracts: planning.contracts.map((contract) => ({
+          ...contract,
+          execution: {
+            action: "harvest" as const,
+            completion: "continuous" as const,
+            counterpartId: null,
+            resourceType: null,
+            version: 2 as const,
+            workPosition: pos(12, 10),
+          },
+        })),
+      }),
+    },
+  ])("blocks stale source-service reconciliation with $name", ({ update }) => {
+    const placement = service("a", 11, "exact", 2);
+    const issuer = "mining/W1N1/a";
+    const planning: ContractPlanningView = {
+      status: "ready",
+      contracts: [
+        {
+          budgetBinding: { category: "harvesting-filling", issuer },
+          contractId: contractIdFor(issuer, "a", 2),
+          execution: {
+            action: "harvest",
+            completion: "continuous",
+            counterpartId: null,
+            resourceType: null,
+            version: 2,
+            workPosition: placement.pos,
+          },
+          issuer,
+          issuerSequence: 2,
+          owner: { id: "W1N1", kind: "colony" },
+          requestSignature: canonicalRequestSignature(placement),
+          state: "active",
+          targetId: "a",
+        },
+      ],
+    };
+
+    expect(
+      reconcileStaleSourceServiceContracts({
+        energyCapacityAvailable: 800,
+        planning: update(planning),
+        roomName: "W1N1",
+        sources: sourceSnapshots("a"),
+        sourceServices: [placement],
+      }),
+    ).toEqual({ matchedContractIds: [], status: "blocked" });
+  });
+
+  it("blocks an explicit stale issuance whose source is no longer visible", () => {
+    const placement = service("a", 11, "exact", 2);
+    const issuer = "mining/W1N1/a";
+    expect(
+      reconcileStaleSourceServiceContracts({
+        energyCapacityAvailable: 800,
+        planning: {
+          status: "ready",
+          contracts: [
+            {
+              budgetBinding: { category: "harvesting-filling", issuer },
+              contractId: contractIdFor(issuer, "a", 2),
+              execution: {
+                action: "harvest",
+                completion: "continuous",
+                counterpartId: null,
+                resourceType: null,
+                version: 2,
+                workPosition: placement.pos,
+              },
+              issuer,
+              issuerSequence: 2,
+              owner: { id: "W1N1", kind: "colony" },
+              state: "active",
+              targetId: "a",
+            },
+          ],
+        },
+        roomName: "W1N1",
+        sources: [],
+        sourceServices: [placement],
+      }),
+    ).toEqual({ matchedContractIds: [], status: "blocked" });
+  });
+
+  it("does not require reconciliation without an explicit stale issuance", () => {
+    expect(
+      reconcileStaleSourceServiceContracts({
+        energyCapacityAvailable: 800,
+        planning: { contracts: [], status: "unavailable" },
+        roomName: "W1N1",
+        sources: sourceSnapshots("a"),
+        sourceServices: [service("a", 11, "exact")],
+      }),
+    ).toEqual({ matchedContractIds: [], status: "not-required" });
   });
 
   it("suspends an existing static contract only for visible room or layout loss", () => {
@@ -239,6 +560,25 @@ describe("StaticMiningPlanner", () => {
   });
 });
 
+function canonicalRequestSignature(placement: LayoutPlacement): string {
+  const sourceId = placement.service?.sourceId;
+  if (sourceId === undefined) throw new Error("expected source service");
+  const request = planStaticMining({
+    layouts: new Map([["W1N1", [placement]]]),
+    snapshot: world(),
+    tick: 10,
+  }).requests.find(({ issuerKey }) => issuerKey === sourceId);
+  if (request === undefined) throw new Error(`expected static request for ${sourceId}`);
+  return requestSignature(request);
+}
+
+function sourceSnapshots(...sourceIds: readonly string[]) {
+  const room = world().rooms[0];
+  if (room === undefined) throw new Error("expected room");
+  const selected = new Set(sourceIds);
+  return room.sources.filter(({ id }) => selected.has(id));
+}
+
 function staticPlanning(): ContractPlanningView {
   return {
     status: "ready",
@@ -257,6 +597,7 @@ function staticPlanning(): ContractPlanningView {
         issuer: "mining/W1N1/a",
         issuerSequence: 1,
         owner: { id: "W1N1", kind: "colony" },
+        requestSignature: canonicalRequestSignature(service("a", 11)),
         state: "active",
         targetId: "a",
       },

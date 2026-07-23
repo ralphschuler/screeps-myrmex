@@ -257,6 +257,7 @@ export class ContractLedger {
             issuer: record.issuer,
             issuerSequence: record.issuerSequence,
             owner: { ...record.owner },
+            requestSignature: record.requestSignature,
             repairRetry: repairRetryEvidence(record),
             state: record.state,
             targetId: record.targetId,

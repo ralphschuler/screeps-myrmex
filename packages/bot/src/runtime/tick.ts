@@ -10,6 +10,7 @@ import {
   emptyStaticMiningPlan,
   planStaticMining,
   planSurvivalFlow,
+  reconcileStaleSourceServiceContracts,
   renewSurvivalFlowBudgets,
   type StaticMiningPlan,
   type SurvivalFlowCandidate,
@@ -67,6 +68,7 @@ import {
   type ColonyDomainHealthDomain,
   type ColonyPlanningResult,
   type ColonyRclUnlockAllowances,
+  type ColonyView,
   type ColonySpawnCommandSettlement,
 } from "../colony";
 import {
@@ -499,6 +501,7 @@ interface LayoutTickDraft {
   receiptsWritten: number;
   reconciledEarly: boolean;
   ownerPrecommitRequired: boolean;
+  sourceServiceHandoff: LayoutSourceServiceHandoffPlan | null;
   status: LayoutRuntimeResult["status"];
   linkEvidence: readonly LinkRoomLayoutEvidence[];
   maintenanceLayouts: readonly {
@@ -551,6 +554,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     receiptsWritten: 0,
     reconciledEarly: false,
     ownerPrecommitRequired: false,
+    sourceServiceHandoff: null,
     status: "not-run",
     linkEvidence: Object.freeze([]),
     maintenanceLayouts: Object.freeze([]),
@@ -786,6 +790,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     colonyDirectorSystem(
       input,
       spawnDraft,
+      layoutDraft,
       industryDraft,
       (
         economy,
@@ -951,76 +956,6 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         leaseAgentPlan = planned;
       },
     ),
-    {
-      descriptor: {
-        id: "mining.contracts",
-        phase: "plan",
-        criticality: "economic",
-        cadence: 1,
-        estimate: 0.5,
-        admitInRecovery: false,
-        mandatoryTail: false,
-      },
-      run: ({ context }) => {
-        if (!isFeatureEnabled(context.config, "phase2.mining")) {
-          return staged(() => undefined);
-        }
-        const funded = new Set(
-          context.colony.reservations
-            .filter(
-              ({ category, status }) => category === "harvesting-filling" && status === "active",
-            )
-            .map(({ colonyId, issuer }) => `${colonyId}\u0000${issuer}`),
-        );
-        const scope = input.contractChannel.openProducer("mining.contracts");
-        for (const request of staticMiningPlan.requests) {
-          if (funded.has(`${request.owner.id}\u0000${request.budgetBinding.issuer}`)) {
-            scope.producer.submit(request);
-          }
-        }
-        for (const replacement of staticMiningPlan.replacements) {
-          const successor = replacement.successor;
-          if (!funded.has(`${successor.owner.id}\u0000${successor.budgetBinding.issuer}`)) continue;
-          scope.producer.replace(replacement);
-          scope.producer.transition({
-            contractId: contractIdFor(
-              successor.issuer,
-              successor.issuerKey,
-              successor.issuerSequence,
-            ),
-            reason: "static-mining-successor-funded",
-            tick: context.tick,
-            to: "funded",
-          });
-        }
-        for (const contract of context.contractPlanning.contracts) {
-          if (
-            contract.issuer.startsWith("mining/") &&
-            (contract.state === "proposed" || contract.state === "suspended") &&
-            funded.has(`${contract.owner.id}\u0000${contract.budgetBinding.issuer}`)
-          ) {
-            scope.producer.transition({
-              contractId: contract.contractId,
-              reason: "static-mining-funded",
-              tick: context.tick,
-              to: "funded",
-            });
-          }
-        }
-        for (const transition of staticMiningPlan.transitions) {
-          scope.producer.transition(transition);
-        }
-        const stagedRequests = scope.stage();
-        return staged(
-          () => {
-            stagedRequests.commit();
-          },
-          () => {
-            stagedRequests.discard();
-          },
-        );
-      },
-    },
     {
       descriptor: {
         id: "logistics.contracts",
@@ -1604,7 +1539,16 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
       },
     },
-    spawnSettleSystem(input, spawnDraft),
+    spawnSettleSystem(
+      input,
+      spawnDraft,
+      layoutDraft,
+      () => staticMiningPlan,
+      (plan, cpuUsed) => {
+        staticMiningPlan = plan;
+        staticMiningCpuUsed += cpuUsed;
+      },
+    ),
     {
       descriptor: {
         id: "industry.reconcile",
@@ -1934,6 +1878,63 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   ]);
 }
 
+function stageStaticMiningContracts(
+  input: CompositionInput,
+  context: TickContext,
+  plan: StaticMiningPlan,
+) {
+  if (!isFeatureEnabled(context.config, "phase2.mining"))
+    return { commit: () => undefined, discard: () => undefined };
+  const funded = new Map(
+    context.colony.reservations
+      .filter(({ category, status }) => category === "harvesting-filling" && status === "active")
+      .map(
+        ({ colonyId, issuer, request }) =>
+          [`${colonyId}\u0000${issuer}`, request.revision] as const,
+      ),
+  );
+  const scope = input.contractChannel.openProducer("mining.contracts");
+  for (const request of plan.requests) {
+    if (
+      funded.get(`${request.owner.id}\u0000${request.budgetBinding.issuer}`) ===
+      request.issuerSequence
+    )
+      scope.producer.submit(request);
+  }
+  for (const replacement of plan.replacements) {
+    const successor = replacement.successor;
+    if (
+      funded.get(`${successor.owner.id}\u0000${successor.budgetBinding.issuer}`) !==
+      successor.issuerSequence
+    )
+      continue;
+    scope.producer.replace(replacement);
+    scope.producer.transition({
+      contractId: contractIdFor(successor.issuer, successor.issuerKey, successor.issuerSequence),
+      reason: "static-mining-successor-funded",
+      tick: context.tick,
+      to: "funded",
+    });
+  }
+  for (const contract of context.contractPlanning.contracts) {
+    if (
+      contract.issuer.startsWith("mining/") &&
+      (contract.state === "proposed" || contract.state === "suspended") &&
+      funded.get(`${contract.owner.id}\u0000${contract.budgetBinding.issuer}`) ===
+        contract.issuerSequence
+    ) {
+      scope.producer.transition({
+        contractId: contract.contractId,
+        reason: "static-mining-funded",
+        tick: context.tick,
+        to: "funded",
+      });
+    }
+  }
+  for (const transition of plan.transitions) scope.producer.transition(transition);
+  return scope.stage();
+}
+
 function maintenanceTelemetryInput(
   context: TickContext,
   budget: MaintenanceBudgetProjection,
@@ -2033,6 +2034,129 @@ export function isLayoutLogisticsEvidenceReady(input: {
   );
 }
 
+interface LayoutSourceServiceHandoffPlan {
+  readonly owner: LayoutsOwnerV25;
+  readonly placements: readonly LayoutPlacement[];
+  readonly planning: LayoutRuntimePlanRecord;
+  readonly roomName: string;
+}
+
+function hasExactSourceServiceContinuityFunding(
+  handoff: LayoutSourceServiceHandoffPlan,
+  reservations: ColonyPlanningResult["reservations"],
+): boolean {
+  const budgets = handoff.placements.flatMap((placement) => {
+    const sourceId = placement.service?.sourceId;
+    return sourceId === undefined
+      ? []
+      : [
+          {
+            issuer: `mining/${handoff.roomName}/${sourceId}`,
+            revision: placement.service?.issuerSequence ?? 1,
+          },
+        ];
+  });
+  return (
+    budgets.length > 0 &&
+    budgets.every(({ issuer, revision }) => {
+      const matches = reservations.filter((reservation) => reservation.issuer === issuer);
+      const reservation = matches[0];
+      return (
+        matches.length === 1 &&
+        reservation?.category === "harvesting-filling" &&
+        reservation.colonyId === handoff.roomName &&
+        reservation.request.revision === revision &&
+        reservation.status === "active"
+      );
+    })
+  );
+}
+
+function planLayoutSourceServiceHandoff(
+  input: CompositionInput,
+  context: TickContext,
+  colonies: readonly ColonyView[],
+): LayoutSourceServiceHandoffPlan | null {
+  if (
+    input.manager === null ||
+    !isFeatureEnabled(context.config, "phase2.layout") ||
+    !isFeatureEnabled(context.config, "phase2.mining")
+  )
+    return null;
+  const owner = resolveLayoutsOwner(input.manager.ownerView("layouts"));
+  const eligibleColonies = [...colonies]
+    .filter(({ state, visibility }) => state !== "lost" && visibility === "visible")
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const planningColonies = [...selectLayoutPlanningWindow(eligibleColonies, context.tick)].sort(
+    (left, right) =>
+      Number(owner.staleRecords.some(({ roomName }) => roomName === right.roomName)) -
+        Number(owner.staleRecords.some(({ roomName }) => roomName === left.roomName)) ||
+      left.id.localeCompare(right.id),
+  );
+  for (const colony of planningColonies) {
+    const room = context.snapshot.rooms.find(({ name }) => name === colony.roomName);
+    const staleRecord = owner.staleRecords.find(({ roomName }) => roomName === colony.roomName);
+    if (
+      room?.controller?.ownership !== "owned" ||
+      room.terrain === undefined ||
+      room.exits === undefined ||
+      staleRecord === undefined ||
+      owner.records.some(({ roomName }) => roomName === room.name) ||
+      staleRecord.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) !==
+        true
+    )
+      continue;
+    const sourceServiceReconciliation = reconcileStaleSourceServiceContracts({
+      energyCapacityAvailable: room.energyCapacityAvailable,
+      planning: context.contractPlanning,
+      roomName: room.name,
+      sources: room.sources,
+      sourceServices: staleRecord.sourceServices ?? [],
+    });
+    if (
+      sourceServiceReconciliation.status !== "matched" ||
+      staleLayoutRevisionHandoffBlocker({
+        colony,
+        record: staleRecord,
+        sourceServicesReconciled: true,
+      }) !== null
+    )
+      continue;
+    const result = planOwnedRoomLayout({
+      constructionSites: room.constructionSites,
+      controller: room.controller.pos,
+      exits: room.exits,
+      mineral: room.mineral ?? null,
+      policy: colony.rclPolicy,
+      priorCommitment: null,
+      priorSourceServices: staleRecord.sourceServices ?? [],
+      roomName: room.name,
+      sourceServiceHandoffAuthorized: false,
+      sources: room.sources.map(({ pos }) => pos),
+      structures: room.structures ?? [],
+      terrain: room.terrain,
+      tick: context.tick,
+    });
+    if (result.status !== "complete") continue;
+    const sourceServices = result.placements.filter(
+      (placement) => placement.service?.kind === "source-container",
+    );
+    if (!sameSourceServiceIssuances(staleRecord.sourceServices ?? [], sourceServices)) continue;
+    return Object.freeze({
+      owner: persistLayoutCommitment(owner, room.name, result.commitment, result.placements),
+      placements: Object.freeze(sourceServices),
+      planning: Object.freeze({
+        blocker: null,
+        fingerprint: result.commitment.fingerprint,
+        roomName: room.name,
+        status: "handoff",
+      }),
+      roomName: room.name,
+    });
+  }
+  return null;
+}
+
 function layoutPlanningSystem(
   input: CompositionInput,
   draft: LayoutTickDraft,
@@ -2058,6 +2182,10 @@ function layoutPlanningSystem(
         });
       }
       if (input.manager === null) return staged(() => undefined);
+      if (draft.sourceServiceHandoff !== null)
+        return staged(() => {
+          input.runtime.publishLayout(layoutRuntimeResult(draft, 0));
+        });
       const rawOwner = input.manager.ownerView("layouts");
       const initialOwner = resolveLayoutsOwner(rawOwner);
       const logistics = currentLogistics();
@@ -2200,10 +2328,16 @@ function layoutPlanningSystem(
           });
           break;
         }
+        // Explicit source-service handoffs run only in the earlier bounded preflight. If that
+        // optional planner was skipped or rejected the evidence, ordinary layout planning leaves it inert.
         const revisionHandoffBlocker =
           staleRecord === undefined
             ? null
-            : staleLayoutRevisionHandoffBlocker({ colony, record: staleRecord });
+            : staleLayoutRevisionHandoffBlocker({
+                colony,
+                record: staleRecord,
+                sourceServicesReconciled: false,
+              });
         if (revisionHandoffBlocker !== null) {
           planning.push({
             blocker: revisionHandoffBlocker,
@@ -2961,6 +3095,7 @@ function withoutDurableReporterState(telemetry: TickTelemetry): TickTelemetry {
 function colonyDirectorSystem(
   input: CompositionInput,
   spawnDraft: SpawnTickDraft,
+  layoutDraft: LayoutTickDraft,
   industryDraft: IndustryTickDraft,
   publishCandidates: (
     economy: readonly SurvivalFlowCandidate[],
@@ -2999,10 +3134,33 @@ function colonyDirectorSystem(
     run: ({ context, mode, budget }) => {
       input.onPhase?.("plan");
       resetSpawnDraft(spawnDraft);
+      let sourceServiceHandoff: LayoutSourceServiceHandoffPlan | null = null;
       const plannedEconomyCandidates = isFeatureEnabled(context.config, "phase1.economy")
         ? planSurvivalFlow(context.snapshot, context.contractExecution, context.contractPlanning)
         : Object.freeze([]);
       const owner = input.manager?.ownerView("colonies") ?? null;
+      const handoffPlanningAdmitted =
+        mode === "normal" &&
+        hasExplicitStaleSourceService(input.manager) &&
+        input.game.cpu.getUsed() + 1.5 <= budget.hardCeiling;
+      if (handoffPlanningAdmitted) {
+        const handoffPolicy = colonyDirector.begin({
+          tick: context.tick,
+          snapshot: context.snapshot,
+          config: context.config,
+          owner,
+          cpuMode: mode,
+          cpuBudget: budget,
+          requests: Object.freeze([]),
+          population: bindPopulationReservations(input.contractPopulation, owner),
+          domainHealth: Object.freeze([]),
+        });
+        sourceServiceHandoff = planLayoutSourceServiceHandoff(
+          input,
+          context,
+          handoffPolicy.result.colonies,
+        );
+      }
       let economyCandidates = renewSurvivalFlowBudgets(
         plannedEconomyCandidates,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
@@ -3034,7 +3192,18 @@ function colonyDirectorSystem(
       if (isFeatureEnabled(context.config, "phase2.mining")) {
         const startedAt = input.game.cpu.getUsed();
         miningPlan = planStaticMining({
-          layouts: staticMiningLayouts(input.manager),
+          layouts: staticMiningLayouts(
+            input.manager,
+            context.snapshot,
+            sourceServiceHandoff === null
+              ? Object.freeze([])
+              : Object.freeze([
+                  {
+                    placements: sourceServiceHandoff.placements,
+                    roomName: sourceServiceHandoff.roomName,
+                  },
+                ]),
+          ),
           planning: context.contractPlanning,
           snapshot: context.snapshot,
           tick: context.tick,
@@ -3578,6 +3747,21 @@ function colonyDirectorSystem(
               population: bindPopulationReservations(input.contractPopulation, owner),
               domainHealth,
             });
+      if (
+        sourceServiceHandoff !== null &&
+        !hasExactSourceServiceContinuityFunding(sourceServiceHandoff, session.result.reservations)
+      ) {
+        sourceServiceHandoff = null;
+        const startedAt = input.game.cpu.getUsed();
+        miningPlan = planStaticMining({
+          layouts: staticMiningLayouts(input.manager, context.snapshot, Object.freeze([])),
+          planning: context.contractPlanning,
+          snapshot: context.snapshot,
+          tick: context.tick,
+        });
+        const elapsed = input.game.cpu.getUsed() - startedAt;
+        if (Number.isFinite(elapsed) && elapsed > 0) miningCpuUsed += elapsed;
+      }
       const activeSpawnEvacuationBudgetIssuers = new Set(
         session.result.reservations.flatMap(({ category, issuer, status }) =>
           category === "optional-growth" && status === "active" ? [issuer] : [],
@@ -3688,6 +3872,18 @@ function colonyDirectorSystem(
 
       return staged(
         () => {
+          if (sourceServiceHandoff !== null) {
+            layoutDraft.changed = false;
+            layoutDraft.owner =
+              input.manager === null
+                ? null
+                : resolveLayoutsOwner(input.manager.ownerView("layouts"));
+            layoutDraft.ownerPrecommitRequired = false;
+            layoutDraft.planning = Object.freeze([sourceServiceHandoff.planning]);
+            layoutDraft.sourceServiceHandoff = sourceServiceHandoff;
+            layoutDraft.status = "planned";
+            input.runtime.publishLayout(layoutRuntimeResult(layoutDraft, 0));
+          }
           input.runtime.publishColony(planningView);
           input.runtime.publishSpawn(spawnView);
         },
@@ -3852,13 +4048,71 @@ function activeLayoutLinkEvacuationIds(manager: MemoryManager | null): ReadonlyS
   );
 }
 
-function staticMiningLayouts(manager: MemoryManager | null) {
+function hasExplicitStaleSourceService(manager: MemoryManager | null): boolean {
+  if (manager === null) return false;
+  return (
+    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
+      ({ sourceServices }) =>
+        sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true,
+    ) === true
+  );
+}
+
+function sameSourceServiceIssuances(
+  left: readonly LayoutPlacement[],
+  right: readonly LayoutPlacement[],
+): boolean {
+  const coordinates = (placements: readonly LayoutPlacement[]) =>
+    placements
+      .flatMap((placement) =>
+        placement.service?.kind === "source-container"
+          ? [
+              {
+                issuerSequence: placement.service.issuerSequence ?? 1,
+                roomName: placement.pos.roomName,
+                sourceId: placement.service.sourceId,
+                x: placement.pos.x,
+                y: placement.pos.y,
+              },
+            ]
+          : [],
+      )
+      .sort(
+        (first, second) =>
+          first.sourceId.localeCompare(second.sourceId) ||
+          first.roomName.localeCompare(second.roomName) ||
+          first.y - second.y ||
+          first.x - second.x ||
+          first.issuerSequence - second.issuerSequence,
+      );
+  return JSON.stringify(coordinates(left)) === JSON.stringify(coordinates(right));
+}
+
+function staticMiningLayouts(
+  manager: MemoryManager | null,
+  snapshot: WorldSnapshot,
+  continuityLayouts: readonly {
+    readonly placements: readonly LayoutPlacement[];
+    readonly roomName: string;
+  }[],
+) {
   if (manager === null) return new Map<string, readonly LayoutPlacement[]>();
   const owner = parseLayoutsOwner(manager.ownerView("layouts"));
   if (owner === null) return new Map<string, readonly LayoutPlacement[]>();
-  return new Map(
+  const layouts = new Map(
     owner.records.map(({ roomName }) => [roomName, freshSourceServicePlacements(owner, roomName)]),
   );
+  const visibleOwnedRoomNames = new Set(
+    snapshot.rooms
+      .filter(({ controller }) => controller?.ownership === "owned")
+      .map(({ name }) => name),
+  );
+  for (const continuity of continuityLayouts) {
+    if (!visibleOwnedRoomNames.has(continuity.roomName) || layouts.has(continuity.roomName))
+      continue;
+    layouts.set(continuity.roomName, continuity.placements);
+  }
+  return layouts;
 }
 
 export function projectPinnedLabHandoffLayout(input: {
@@ -4487,9 +4741,39 @@ function defenseSafetySystem(input: CompositionInput): TickSystem<TickContext> {
   };
 }
 
+function rejectSourceServiceHandoffDraft(
+  input: CompositionInput,
+  draft: LayoutTickDraft,
+  handoff: LayoutSourceServiceHandoffPlan,
+): void {
+  const owner =
+    input.manager === null ? null : resolveLayoutsOwner(input.manager.ownerView("layouts"));
+  const staleRecord = owner?.staleRecords.find(({ roomName }) => roomName === handoff.roomName);
+  draft.changed = false;
+  draft.owner = owner;
+  draft.ownerPrecommitRequired = false;
+  draft.planning = Object.freeze(
+    staleRecord === undefined
+      ? []
+      : [
+          {
+            blocker: "revision-handoff-active" as const,
+            fingerprint: staleRecord.fingerprint,
+            roomName: handoff.roomName,
+            status: "degraded" as const,
+          },
+        ],
+  );
+  draft.sourceServiceHandoff = null;
+  draft.status = owner === null ? "not-run" : "planned";
+}
+
 function spawnSettleSystem(
   input: CompositionInput,
   spawnDraft: SpawnTickDraft,
+  layoutDraft: LayoutTickDraft,
+  currentStaticMiningPlan: () => StaticMiningPlan,
+  onSourceServiceHandoffRejected: (plan: StaticMiningPlan, cpuUsed: number) => void,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -4503,6 +4787,24 @@ function spawnSettleSystem(
     },
     run: ({ context }) => {
       const settled = settleSpawnDraft(spawnDraft, context.tick);
+      const handoff = layoutDraft.sourceServiceHandoff;
+      if (
+        handoff !== null &&
+        (settled === null || !hasExactSourceServiceContinuityFunding(handoff, settled.reservations))
+      ) {
+        rejectSourceServiceHandoffDraft(input, layoutDraft, handoff);
+        const startedAt = input.game.cpu.getUsed();
+        const plan = planStaticMining({
+          layouts: staticMiningLayouts(input.manager, context.snapshot, Object.freeze([])),
+          planning: context.contractPlanning,
+          snapshot: context.snapshot,
+          tick: context.tick,
+        });
+        const elapsed = input.game.cpu.getUsed() - startedAt;
+        onSourceServiceHandoffRejected(plan, Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0);
+      }
+      const acceptedHandoff = layoutDraft.sourceServiceHandoff;
+      const stagedMining = stageStaticMiningContracts(input, context, currentStaticMiningPlan());
       return staged(
         () => {
           if (settled?.replacementOwner !== null && settled?.replacementOwner !== undefined) {
@@ -4520,12 +4822,22 @@ function spawnSettleSystem(
           if (settled !== null) {
             input.runtime.publishColony(colonyPlanningView(settled));
           }
+          stagedMining.commit();
+          if (acceptedHandoff !== null) {
+            layoutDraft.changed = true;
+            layoutDraft.owner = acceptedHandoff.owner;
+            layoutDraft.ownerPrecommitRequired = true;
+          }
           input.runtime.publishSpawn(
             spawnRuntimeResult(spawnDraft.status, spawnDraft.broker, spawnDraft.execution ?? []),
           );
         },
         () => {
           input.manager?.discard("colonies");
+          stagedMining.discard();
+          const pendingHandoff = layoutDraft.sourceServiceHandoff;
+          if (pendingHandoff !== null)
+            rejectSourceServiceHandoffDraft(input, layoutDraft, pendingHandoff);
           spawnDraft.settlementStaged = false;
           input.runtime.clearColony();
           input.runtime.clearSpawn();

@@ -1,6 +1,7 @@
 import type { BudgetRequest } from "../colony";
 import {
   contractIdFor,
+  requestSignature,
   type CapabilityVector,
   type ContractPlanningView,
   type ContractReplacementRequest,
@@ -36,6 +37,101 @@ export interface StaticMiningPlan {
   readonly replacements: readonly ContractReplacementRequest[];
   readonly requests: readonly WorkContractRequest[];
   readonly transitions: readonly ContractTransitionRequest[];
+}
+
+export interface StaleSourceServiceContractReconciliation {
+  readonly matchedContractIds: readonly string[];
+  readonly status: "blocked" | "matched" | "not-required";
+}
+
+export function reconcileStaleSourceServiceContracts(input: {
+  readonly energyCapacityAvailable: number;
+  readonly planning: ContractPlanningView;
+  readonly roomName: string;
+  readonly sources: readonly { readonly id: string; readonly pos: PositionSnapshot }[];
+  readonly sourceServices: readonly LayoutPlacement[];
+}): StaleSourceServiceContractReconciliation {
+  const services = input.sourceServices
+    .filter((placement) => placement.service?.kind === "source-container")
+    .sort((left, right) =>
+      (left.service?.sourceId ?? "").localeCompare(right.service?.sourceId ?? ""),
+    );
+  if (services.every(({ service }) => service?.issuerSequence === undefined))
+    return freeze({ matchedContractIds: [], status: "not-required" });
+  const sources = new Map(input.sources.map((source) => [source.id, source]));
+  const explicitSourceIds = new Set<string>();
+  if (
+    input.planning.status !== "ready" ||
+    input.sources.length !== sources.size ||
+    services.length !== input.sourceServices.length ||
+    services.length > 8
+  )
+    return freeze({ matchedContractIds: [], status: "blocked" });
+  const matchedContractIds: string[] = [];
+  for (const placement of services) {
+    const service = placement.service;
+    if (service?.kind !== "source-container")
+      return freeze({ matchedContractIds: [], status: "blocked" });
+    const issuerSequence = service.issuerSequence ?? 1;
+    const { sourceId } = service;
+    const source = sources.get(sourceId);
+    if (
+      !Number.isSafeInteger(issuerSequence) ||
+      issuerSequence < 1 ||
+      placement.pos.roomName !== input.roomName ||
+      source === undefined ||
+      explicitSourceIds.has(sourceId)
+    )
+      return freeze({ matchedContractIds: [], status: "blocked" });
+    explicitSourceIds.add(sourceId);
+    const issuer = `mining/${input.roomName}/${sourceId}`;
+    const expectedRequestSignature = requestSignature(
+      contract(
+        issuer,
+        input.roomName,
+        sourceId,
+        source.pos,
+        placement.pos,
+        minerCapability(input.energyCapacityAvailable),
+        issuerSequence,
+      ),
+    );
+    const contracts = input.planning.contracts.filter((candidate) => candidate.issuer === issuer);
+    const matchingContract = contracts[0];
+    if (
+      contracts.length !== 1 ||
+      matchingContract === undefined ||
+      matchingContract.contractId !== contractIdFor(issuer, sourceId, issuerSequence) ||
+      matchingContract.issuerSequence !== issuerSequence ||
+      matchingContract.targetId !== sourceId ||
+      matchingContract.owner.kind !== "colony" ||
+      matchingContract.owner.id !== input.roomName ||
+      matchingContract.budgetBinding.category !== "harvesting-filling" ||
+      matchingContract.budgetBinding.issuer !== issuer ||
+      matchingContract.requestSignature !== expectedRequestSignature ||
+      !matchesStaleStaticMiningExecution(matchingContract.execution, placement.pos)
+    )
+      return freeze({ matchedContractIds: [], status: "blocked" });
+    matchedContractIds.push(matchingContract.contractId);
+  }
+  return freeze({ matchedContractIds: matchedContractIds.sort(), status: "matched" });
+}
+
+function matchesStaleStaticMiningExecution(
+  execution: ContractPlanningView["contracts"][number]["execution"],
+  workPosition: PositionSnapshot,
+): boolean {
+  const untrustedTerms: { readonly action: unknown; readonly resourceType: unknown } = execution;
+  return (
+    execution.version === 2 &&
+    untrustedTerms.action === "harvest" &&
+    execution.completion === "continuous" &&
+    execution.counterpartId === null &&
+    untrustedTerms.resourceType === null &&
+    execution.workPosition.roomName === workPosition.roomName &&
+    execution.workPosition.x === workPosition.x &&
+    execution.workPosition.y === workPosition.y
+  );
 }
 
 export function emptyStaticMiningPlan(): StaticMiningPlan {
@@ -227,6 +323,8 @@ function sameStaticMiningTerms(
   existing: ContractPlanningView["contracts"][number],
   desired: WorkContractRequest,
 ): boolean {
+  if (existing.requestSignature !== undefined)
+    return existing.requestSignature === requestSignature(desired);
   const desiredExecution = desired.execution;
   const existingExecution = existing.execution;
   return (
