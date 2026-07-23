@@ -115,7 +115,8 @@ eligible. Issue [#389](https://github.com/ralphschuler/screeps-myrmex/issues/389
 equivalent fresh-absence settlement for one otherwise-quiescent terminal-success non-storage removal
 receipt. Issue [#391](https://github.com/ralphschuler/screeps-myrmex/issues/391) permits one exact
 completed extension-evacuation term to clear atomically with its matching receipt under the same
-safe newer-absence proof. Parent issue
+safe newer-absence proof. Issue [#393](https://github.com/ralphschuler/screeps-myrmex/issues/393)
+adds the equivalent exact completed tower pair. Parent issue
 [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
 and dismantling.
 
@@ -503,12 +504,14 @@ original owner.
 
 The #391 continuation repeats that sequence with one exact persisted extension evacuation whose
 source/replacement identities match the terminal-success extension receipt and whose receipt tick
-lies within the fixed 150-tick interval. Newer target absence atomically removes both terms in one
-owner revision, emits zero site/destroy calls in two rooms, and leaves the #385 handoff to the next
-tick. Warm, real module reset, and reversed-structure variants produce equal owner, planning, and
-command outcomes. Target/replacement/type mismatch, receipt before the evacuation, target presence,
-same-tick/incomplete observation, nonterminal result, unsafe policy, or another active term
-preserves the original owner.
+lies within the fixed 150-tick interval. Issue #393 composes the equivalent exact persisted tower
+pair without changing the owner schema or original tower operational-readiness gates. Newer target
+absence atomically removes either pair in one owner revision, emits zero site/destroy calls in two
+rooms, and leaves the #385 handoff to the next tick. Warm, real module reset, and reversed-structure
+variants produce equal owner, planning, and command outcomes. Both `OK` and `TARGET_ABSENT` settle.
+Target/replacement/type mismatch, receipt before the evacuation or at its exclusive expiry, target
+presence, same-tick/incomplete observation, nonterminal result, unsafe policy, or another active
+term preserves the original owner.
 
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
@@ -740,9 +743,9 @@ lint, type, test, documentation, bundle, and package evidence.
   codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
   removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
-  the operation; #389 and #391 still require newer complete target-absence observation before
-  settlement. #391 additionally binds that result to the exact extension evacuation identities and
-  fixed interval.
+  the operation; #389, #391, and #393 still require newer complete target-absence observation before
+  settlement. #391 and #393 additionally bind that result to the exact extension or tower evacuation
+  identities and fixed interval.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the
