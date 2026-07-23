@@ -43,7 +43,7 @@ describe("static mining runtime activation", () => {
       ],
     });
     expect(first.kernel.systems).toContainEqual(
-      expect.objectContaining({ systemId: "mining.contracts", status: "completed" }),
+      expect.objectContaining({ systemId: "spawn.settle", status: "completed" }),
     );
     expect(first.kernel.faults).toEqual([]);
     expect(firstMiningContracts).toHaveLength(2);

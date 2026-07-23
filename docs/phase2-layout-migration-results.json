@@ -216,8 +216,8 @@
     },
     "directProgressMutation": false,
     "finalGameplayPersistentHash": "fnv1a64-utf16:e5bb7a6328e23747",
-    "maximumModeledCpuPerTick": 0.129,
-    "maximumPersistentBytes": 13495,
+    "maximumModeledCpuPerTick": 0.125,
+    "maximumPersistentBytes": 13391,
     "semanticBytesIdentical": true,
     "semanticHashes": {
       "reordered": "fnv1a64-utf16:de8d75befdca010b",

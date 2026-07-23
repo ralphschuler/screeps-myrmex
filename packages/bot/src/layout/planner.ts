@@ -1,4 +1,8 @@
-import type { ColonyRclUnlockAllowances, ColonyView } from "../colony";
+import {
+  isInfrastructureRecoveryAuthorized,
+  type ColonyRclUnlockAllowances,
+  type ColonyView,
+} from "../colony";
 import type { PositionSnapshot, StructureSnapshot } from "../world/snapshot";
 import {
   isFutureLayoutAccessWalkable,
@@ -27,6 +31,7 @@ import {
 export function staleLayoutRevisionHandoffBlocker(input: {
   readonly colony: ColonyView;
   readonly record: StaleLayoutRecord;
+  readonly sourceServicesReconciled?: boolean;
 }): LayoutBlocker | null {
   return staleLayoutRevisionBlocker(input, false);
 }
@@ -39,7 +44,11 @@ export function staleLayoutRemovalSettlementBlocker(input: {
 }
 
 function staleLayoutRevisionBlocker(
-  input: { readonly colony: ColonyView; readonly record: StaleLayoutRecord },
+  input: {
+    readonly colony: ColonyView;
+    readonly record: StaleLayoutRecord;
+    readonly sourceServicesReconciled?: boolean;
+  },
   allowRemovalReceipt: boolean,
 ): LayoutBlocker | null {
   const { colony, record } = input;
@@ -58,7 +67,8 @@ function staleLayoutRevisionBlocker(
     (record.towerEvacuation !== undefined && pairedEvacuationKind !== "tower") ||
     (!allowRemovalReceipt && record.removalReceipt !== undefined) ||
     (record.siteReceipts?.length ?? 0) > 0 ||
-    record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true
+    (record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true &&
+      input.sourceServicesReconciled !== true)
   )
     return "revision-handoff-active";
   if (
@@ -69,7 +79,8 @@ function staleLayoutRevisionBlocker(
     colony.legalWorkforce !== true ||
     colony.rclPolicy.level === null ||
     colony.rclPolicy.unlocks === null ||
-    !colony.rclPolicy.progression.authorized ||
+    (!colony.rclPolicy.progression.authorized &&
+      !(input.sourceServicesReconciled === true && isInfrastructureRecoveryAuthorized(colony))) ||
     colony.rclPolicy.protectedSpawnReserve.state !== "restored"
   )
     return "policy-unavailable";

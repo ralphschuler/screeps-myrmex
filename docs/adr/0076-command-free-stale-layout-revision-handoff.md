@@ -21,7 +21,10 @@ retain one exact completed extension-, tower-, spawn-, reserve-link-, container-
 or storage-evacuation/migration term, respectively, until newer observation proves the target
 absent. Issue #407 adds the complementary no-effect proof for one otherwise-quiescent failed receipt
 whose exact target remains present in newer complete observation. Issue #409 extends that proof to
-one failed receipt carrying its sole exact evacuation/migration term.
+one failed receipt carrying its sole exact evacuation/migration term. Issue #411 addresses the
+separate otherwise-quiescent case where an explicit source-service issuance already has one durable
+matching ContractLedger record but the stale-layout isolation would otherwise suspend it and block
+the revision forever.
 
 ## Decision
 
@@ -35,9 +38,11 @@ one failed receipt carrying its sole exact evacuation/migration term.
   stale evidence rejects the owner.
 - One stale room may hand off only from visible current owned-room observation while the colony is
   developing or mature, unthreatened, free of controller risk, supplied by legal workforce, within
-  RCL2-RCL8 policy, progression-authorized, and above its protected spawn reserve.
+  RCL2-RCL8 policy, progression-authorized, and above its protected spawn reserve. Issue #411's
+  exact source-service case may also use the existing developing-RCL8 infrastructure-recovery
+  authorization when bounded domain health is blocked solely behind stale infrastructure.
 - The stale record must be quiescent: no evacuation, container migration, construction-site receipt,
-  removal receipt, or in-progress source-service issuance coordinate may remain. Before this gate,
+  removal receipt, or unreconciled source-service issuance coordinate may remain. Before this gate,
   one `OK` construction-site receipt may settle only when its canonical `site-v1` identity binds the
   stale fingerprint and exact room/position/type, a newer observation contains the matching owned
   site or completed owned structure, and deterministic receipt ordering selects it. The settlement
@@ -74,6 +79,29 @@ one failed receipt carrying its sole exact evacuation/migration term.
   evidence. Target absence, incomplete or same-tick observation, unsafe policy, an evacuation-
   bearing record without one sole exact match, site receipts, or source-service issuance preserves
   the record.
+- Issue #411 classifies a stale record containing an explicit source-service coordinate as
+  reconciled only when the current bounded ContractLedger planning view is ready and contains
+  exactly one active record for every stale service. Each derived contract ID, effective issuer
+  sequence, source target, colony owner, harvesting/filling binding, continuous V2 harvest terms,
+  work position, and canonical full request signature must match. Proposed, funded, assigned,
+  active, and suspended records qualify because stale-layout isolation may itself have suspended the
+  still-durable work; terminal-only, missing, duplicate, unavailable, or mismatched evidence does
+  not. Every referenced source remains visible.
+- During that revision tick, source-service optimization is disabled. The complete newly planned
+  `(source ID, room, position, effective issuer sequence)` set must equal the stale set before
+  `persistLayoutCommitment` may replace the record. This bounded handoff plan runs within the
+  existing two-room window before colony budgeting and only in normal CPU admission. Only its
+  accepted exact stale set may enter the sole StaticMiningPlanner to renew already-matching budgets
+  and contracts. A blocked, failed, or unattempted handoff receives no continuity budget. An
+  accepted handoff cannot create a new stale contract, and no `static-layout-unavailable` transition
+  is produced. Persistence and mining-contract staging additionally wait for the final spawn-settled
+  colony view and require exactly one active reservation per service with matching colony,
+  harvesting/filling category, issuer, and effective sequence. Until settlement and mining staging
+  succeed, the candidate layout owner remains unchanged and non-precommittable; mismatch or any
+  settlement/staging rollback rejects the draft. An accepted handoff therefore retains the exact
+  matching contracts and leases. Room loss, source loss, unsuccessful handoff, and unmatched
+  evidence remain authoritative. The following tick resubmits the same contract identity as
+  duplicate active; it does not create a replacement or terminal outcome.
 - The existing bounded `LayoutPlanner` must derive one complete current commitment with source and
   access proof. Failure or unsafe evidence preserves the stale record and emits no command.
 - A successful handoff atomically replaces only that room's stale record through the existing
@@ -89,31 +117,39 @@ One observed successful site receipt, one terminal-success non-storage removal r
 completed extension-, tower-, spawn-, reserve-link-, container-, lab-, terminal-, or storage-
 evacuation/migration receipt pair, and one otherwise-quiescent failed receipt—alone or paired with
 its sole exact evacuation/migration term—can now converge toward quiescence without reissuing or
-cancelling its command; the separate handoff remains delayed until a later tick. Rooms advance
-deterministically across JSON/global-heap reconstruction and reordered world facts. Other active,
-evacuation-bearing records without one sole exact match, unpaired storage, unsafe, terminal-drifted,
-or conservation-incomplete records remain fail-closed until a later explicit policy handles them;
-this decision does not reinterpret or cancel their work.
+cancelling its command; the separate handoff remains delayed until a later tick. One exact settled
+source-service issuance can instead cross that handoff directly without losing its contract or
+lease, regressing its monotonic coordinate, or coupling revision migration to source optimization.
+Rooms advance deterministically across JSON/global-heap reconstruction and reordered world facts.
+Other active, evacuation-bearing records without one sole exact match, unpaired storage, unsafe,
+terminal-drifted, or conservation-incomplete records remain fail-closed until a later explicit
+policy handles them; this decision does not reinterpret or cancel their work.
 
 Persistent cost is one empty `staleRecords` array in normal owner state and at most one fully
 bounded record per already-capped room during handoff. Planning retains the existing two-room
-window, 256 anchors, eight transforms, and 2,500 flood cells per candidate. The transition spends no
-game resource. No root owner, authority, dependency, cache, executor, command, queue, or unbounded
+window, 256 anchors, eight transforms, and 2,500 flood cells per candidate. Source-service
+reconciliation compares at most eight services in each admitted room with the existing capped
+256-record planning view; only a pending explicit record adds one read-only no-write ColonyDirector
+policy session over the existing bounded snapshot. The accepted handoff moves that room's already-
+bounded layout plan before budgeting and then invokes the sole StaticMiningPlanner once. It stores
+no new bytes and performs no new game observation or path search. The transition spends no game
+resource. No root owner, authority, dependency, cache, executor, command, queue, or unbounded
 history is added.
 
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
 settlement or handoff. Unfinished migration/evacuation continuation, mismatched or multiple failed
-pairs, source-service reconciliation, arbitrary geometry algorithms, defensive migration, dynamic
-room routing, autonomous boost-manifest production, creep dismantling, and uninterrupted same-
-structure availability remain outside this decision.
+pairs, unmatched or terminal source-service recovery, arbitrary geometry algorithms, defensive
+migration, dynamic room routing, autonomous boost-manifest production, creep dismantling, and
+uninterrupted same-structure availability remain outside this decision.
 
 ## Mechanics sources
 
 Reviewed 2026-07-22 for #385 and #387. `Structure.destroy` and both indexes were rechecked
-2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, #403, #405, #407, and #409. The
-relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn` for issue #395,
-`StructureLink` for issue #397, `StructureContainer` for issue #399, `StructureLab` for issue #401,
-and `StructureTerminal` plus `Store` for
+2026-07-23 for issues #389, #391, #393, #395, #397, #399, #401, #403, #405, #407, and #409.
+`Source`, `Creep.harvest`, `StructureContainer`, and both indexes were rechecked 2026-07-23 for
+issue #411. The relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn`
+for issue #395, `StructureLink` for issue #397, `StructureContainer` for issue #399, `StructureLab`
+for issue #401, and `StructureTerminal` plus `Store` for
 [issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403), and `StructureStorage`,
 `StructureTerminal`, and `Store` for
 [issue #405](https://github.com/ralphschuler/screeps-myrmex/issues/405):
@@ -157,6 +193,12 @@ and `StructureTerminal` plus `Store` for
   capacity and activity plus resource-specific Store conservation before clearing completed storage
   evidence. Settlement consumes newer observation only; neither settlement nor handoff reaches a
   command boundary.
+- Official [`Source`](https://docs.screeps.com/api/#Source),
+  [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest), and
+  [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) retain the source,
+  adjacent harvest, walkable 2,000-unit container, and same-tile dropped-resource mechanics behind
+  the preserved static-mining work position. Issue #411 changes only repository reconciliation; it
+  issues no game command and does not reinterpret those mechanics.
 - Screeps Wiki [index](https://wiki.screepspl.us/Main_Page/),
   [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/),
   [`StructureLink`](https://wiki.screepspl.us/StructureLink/),

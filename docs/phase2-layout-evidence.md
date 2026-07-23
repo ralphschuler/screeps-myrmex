@@ -129,7 +129,10 @@ evacuation pair under its stronger conservation proof. Issue
 [#407](https://github.com/ralphschuler/screeps-myrmex/issues/407) settles one otherwise-quiescent
 failed stale removal receipt only from newer complete exact-target-presence evidence. Issue
 [#409](https://github.com/ralphschuler/screeps-myrmex/issues/409) atomically settles that no-effect
-receipt with its sole exact evacuation/migration term. Parent issue
+receipt with its sole exact evacuation/migration term. Issue
+[#411](https://github.com/ralphschuler/screeps-myrmex/issues/411) reconciles one otherwise-quiescent
+explicit stale source-service issuance against its exact current mining contract before the direct
+command-free revision handoff. Parent issue
 [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
 and dismantling.
 
@@ -229,7 +232,20 @@ and dismantling.
    forms, both scalar/manifest terminal forms, and scalar, manifest, or two-batch storage forms
    share their respective source/replacement/interval terms. Storage additionally reuses its fresh
    exact active/ quiescent retained-terminal and complete original-resource conservation proof.
-   Newer target absence then clears both terms atomically.
+   Newer target absence then clears both terms atomically. An otherwise-quiescent explicit
+   source-service coordinate may instead cross the revision directly only when exactly one current
+   ContractLedger planning record matches its derived ID, sequence, source, colony owner,
+   harvesting/filling binding, continuous V2 harvest terms, work position, and canonical full
+   request signature. Under normal CPU admission, the bounded current-revision plan must preserve
+   the complete source/position/effective-sequence set in the existing two-room window before colony
+   budgeting. Normal progression or the existing developing-RCL8 infrastructure-recovery policy must
+   authorize it. Only that accepted exact stale set may enter StaticMiningPlanner to renew
+   already-matching work; persistence and mining-contract staging wait for the final spawn-settled
+   view and require one active reservation per service with matching colony, harvesting/filling
+   category, issuer, and effective sequence. Blocked or unattempted handoffs receive no continuity
+   budget. No stale-layout suspension or new contract is produced for an accepted handoff, which
+   retains the exact matching contract and lease; mismatch, unavailable or terminal-only evidence,
+   source or room loss, changed source planning, and unsuccessful handoff remain fail-closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -413,6 +429,8 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 ## Fixed bounds
 
 - two planned rooms per tick;
+- at most eight explicit stale source services per admitted room compared with the existing capped
+  256-record ContractLedger planning view; the result is tick-local and adds no persistent bytes;
 - eight constant-time legal-work-position checks per observed source before candidate search;
 - 256 anchors, eight transforms, and 2,500 flood cells per canonical candidate geometry; compatible
   external spawn relocation permits at most one second 2,500-cell flood over adopted geometry;
@@ -573,6 +591,23 @@ receipt before start or at expiry, target absence, same-tick/incomplete observat
 site/source-service activity, or unsafe policy preserves both terms. No fresh stock-conservation
 claim is needed: the recorded removal attempt proves that the old evacuation reached its command
 boundary, while current target presence proves no removal effect.
+
+The #411 outcome starts with one inert older-algorithm record carrying an explicit sequence-2 source
+service and one exact current continuous V2 mining contract and lease. The handoff produces zero
+site/destroy calls, moves only the room into current records, preserves source, work position,
+sequence, full request signature, contract ID, lease actor, and nonterminal continuity, emits no
+replacement or terminal outcome, and completes the tuple-pinned handoff plan before using the exact
+stale service to retain its active budget. A policy-blocked exact match receives no continuity
+budget. The following tick submits the same identity as `duplicate-active`. Warm, JSON plus real
+module reset, and reordered structure and creep facts produce equal owner, contract, planning, and
+command outcomes. Pure two-source reconciliation also proves detached source/contract order
+independence and rejects unavailable, duplicate, ID, sequence, source, owner, binding, action,
+resource, version, work-position, and full-signature mismatch; the runtime policy negative proves no
+blocked-handoff continuity budget or command. A later-revision active-reservation negative proves
+that colony, category, issuer, and sequence must all match in the final view: it persists no layout,
+stages no duplicate submission, and suspends the stale contract. A mature RCL8 runtime row proves
+that existing bounded infrastructure recovery admits the same exact reservation-backed handoff.
+Existing active-term and access controls stay unchanged.
 
 The #385 production-runtime outcome migrates one V24 older-algorithm record into the V25 inert
 collection, then replaces it only after the current room passes colony, policy, source-service, and
@@ -818,9 +853,12 @@ lint, type, test, documentation, bundle, and package evidence.
   busy spawn slot.
 - Official [`StructureExtension`](https://docs.screeps.com/api/#StructureExtension) defines spawn
   energy storage, the 3,000 build-energy cost, and RCL extension counts/capacities.
-- Official [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) defines the
-  walkable 2,000-capacity, 5,000-build-cost structure, five-room allowance, and same-tile drop
-  collection.
+- Official [`Source`](https://docs.screeps.com/api/#Source),
+  [`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest), and
+  [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) define the source,
+  adjacent harvest, walkable 2,000-capacity/5,000-build-cost container, five-room allowance, and
+  same-tile drop collection. Issue #411 changes only repository reconciliation and keeps the exact
+  static-mining work position; it adds no command.
 - Official [`StructureTower`](https://docs.screeps.com/api/#StructureTower) defines the 1/2/3/6
   RCL3/5/7/8 allowances, 1,000 energy capacity, and 10-energy attack/heal/repair action cost.
 - Official [`StructureLab`](https://docs.screeps.com/api/#StructureLab) defines the 3/6/10 RCL6/7/8

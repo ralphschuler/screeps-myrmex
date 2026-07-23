@@ -8,6 +8,8 @@ import {
   type LayoutStorageEvacuation,
   type LayoutTerminalEvacuation,
 } from "../src/layout";
+import { reservationIdFor, type BudgetRequest } from "../src/colony";
+import { contractIdFor, requestSignature, type WorkContractRequest } from "../src/contracts";
 import type { RuntimeGame } from "../src/runtime/context";
 import { runTick } from "../src/runtime/tick";
 import { PLAIN_ROOM_TERRAIN } from "./support/room-terrain-fixture";
@@ -42,6 +44,7 @@ interface GameOptions {
   readonly storageTerminalCapacity?: number;
   readonly unavailableIndustryTerminalWork?: boolean;
   readonly storageTerminalResources?: readonly (readonly [string, number])[];
+  readonly staticMiner?: boolean;
   readonly threat?: boolean;
   readonly visible?: boolean;
 }
@@ -284,6 +287,140 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     });
     expect(reset).toEqual(forward);
     expect(reordered).toEqual(forward);
+  });
+
+  it("reconciles one settled stale source-service issuance without interrupting mining", async () => {
+    const forward = await runSettledStaleSourceServiceVariant(false, false);
+    const reset = await runSettledStaleSourceServiceVariant(false, true);
+    const reordered = await runSettledStaleSourceServiceVariant(true, false);
+
+    expect(forward.kernelFaults).toEqual([]);
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.sourceServices).toHaveLength(1);
+    expect(forward.sourceServices?.[0]).toMatchObject({
+      pos: { roomName: ROOM_NAME },
+      service: { issuerSequence: 2, kind: "source-container", sourceId: `source-${ROOM_NAME}` },
+    });
+    expect(forward.handoffMiningReservations).toHaveLength(1);
+    expect(forward.handoffMiningReservations[0]).toMatchObject({
+      category: "harvesting-filling",
+      colonyId: ROOM_NAME,
+      issuer: `mining/${ROOM_NAME}/source-${ROOM_NAME}`,
+      request: { revision: 2 },
+      status: "active",
+    });
+    expect(forward.handoffMiningTransitions).toEqual([
+      { accepted: true, contractId: forward.contractId, from: "assigned", to: "active" },
+    ]);
+    expect(forward.activeMining).toHaveLength(1);
+    expect(forward.activeMining[0]).toMatchObject({
+      id: forward.contractId,
+      issuerSequence: 2,
+    });
+    expect(["assigned", "active"]).toContain(forward.activeMining[0]?.state);
+    expect(forward.activeMining[0]?.lease?.actorId).toBe(forward.expectedActorId);
+    expect(forward.miningOutcomes).toEqual([]);
+    expect(forward.handoffReplacements).toEqual([]);
+    expect(forward.followingReplacements).toEqual([]);
+    expect(forward.followingSubmissions).toEqual([
+      expect.objectContaining({
+        accepted: true,
+        contractId: forward.contractId,
+        outcome: "duplicate-active",
+      }),
+    ]);
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
+  });
+
+  it("admits exact stale mining through bounded RCL8 infrastructure recovery", async () => {
+    const mature = await runSettledStaleSourceServiceVariant(false, false, 8);
+
+    expect(mature.kernelFaults).toEqual([]);
+    expect(mature.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(mature.handoffMiningReservations).toHaveLength(1);
+    expect(mature.handoffMiningReservations[0]).toMatchObject({
+      category: "harvesting-filling",
+      colonyId: ROOM_NAME,
+      request: { revision: 2 },
+      status: "active",
+    });
+    expect(mature.activeMining).toHaveLength(1);
+    expect(mature.miningOutcomes).toEqual([]);
+  });
+
+  it("does not renew exact stale mining when policy blocks the handoff", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands, { staticMiner: true }), memory });
+    runTick({ game: game(101, commands, { staticMiner: true }), memory });
+    runTick({ game: game(102, commands, { staticMiner: true }), memory });
+    const { contractId } = seedSettledStaleSourceService(memory);
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const blocked = runTick({
+      game: game(103, commands, { staticMiner: true, threat: true }),
+      memory,
+    });
+    const contracts = memory.myrmex?.contracts as
+      { active?: Array<{ id?: string; state?: string }> } | undefined;
+
+    expect(blocked.layout.planning).toEqual([
+      expect.objectContaining({ blocker: "revision-handoff-active", roomName: ROOM_NAME }),
+    ]);
+    expect(
+      blocked.colony.reservations.filter(({ issuer }) => issuer.startsWith("mining/")),
+    ).toEqual([expect.objectContaining({ status: "released" })]);
+    expect(contracts?.active?.find(({ id }) => id === contractId)?.state).toBe("suspended");
+    expect(layoutsOwner(memory).records).toEqual([]);
+    expect(layoutsOwner(memory).staleRecords).toHaveLength(1);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
+  it("rejects a handoff funded only by a later mining reservation revision", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands, { staticMiner: true }), memory });
+    runTick({ game: game(101, commands, { staticMiner: true }), memory });
+    runTick({ game: game(102, commands, { staticMiner: true }), memory });
+    const { contractId } = seedSettledStaleSourceService(memory);
+    advanceMiningReservation(memory, 3);
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const rejected = runTick({ game: game(103, commands, { staticMiner: true }), memory });
+
+    expect(rejected.kernel.faults).toEqual([]);
+    expect(rejected.layout.planning).toEqual([
+      expect.objectContaining({ blocker: "revision-handoff-active", roomName: ROOM_NAME }),
+    ]);
+    const miningReservations = rejected.colony.reservations.filter(({ issuer }) =>
+      issuer.startsWith("mining/"),
+    );
+    expect(miningReservations).toHaveLength(1);
+    expect(miningReservations[0]).toMatchObject({
+      category: "harvesting-filling",
+      colonyId: ROOM_NAME,
+      request: { revision: 3 },
+      status: "active",
+    });
+    expect(
+      rejected.contracts?.submissions.filter((submission) => submission.contractId === contractId),
+    ).toEqual([]);
+    const contracts = memory.myrmex?.contracts as
+      { active?: Array<{ id?: string; state?: string }> } | undefined;
+    expect(contracts?.active?.find(({ id }) => id === contractId)?.state).toBe("suspended");
+    expect(layoutsOwner(memory).records).toEqual([]);
+    expect(layoutsOwner(memory).staleRecords).toHaveLength(1);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
   });
 
   it("suppresses every room's layout commands while admitting only one stale handoff", () => {
@@ -2223,6 +2360,87 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
   });
 });
 
+async function runSettledStaleSourceServiceVariant(
+  reverse: boolean,
+  reset: boolean,
+  controllerLevel = 3,
+) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  const roomOptions = {
+    controllerLevel,
+    reverse,
+    roomEnergyAvailable: controllerLevel === 8 ? 12_900 : 800,
+    roomEnergyCapacityAvailable: controllerLevel === 8 ? 12_900 : 800,
+    staticMiner: true,
+  } as const;
+  executeTick({ game: game(100, commands, roomOptions), memory });
+  executeTick({ game: game(101, commands, roomOptions), memory });
+  executeTick({ game: game(102, commands, roomOptions), memory });
+  const { contractId, expectedActorId } = seedSettledStaleSourceService(memory);
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const handoff = executeTick({
+    game: game(103, commands, roomOptions),
+    memory,
+  });
+  const handoffCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+  };
+  const sourceServices = layoutsOwner(memory).records.find(
+    ({ roomName }) => roomName === ROOM_NAME,
+  )?.sourceServices;
+  const contractOwner = memory.myrmex?.contracts as
+    | {
+        active?: Array<{
+          id?: string;
+          issuer?: string;
+          issuerSequence?: number;
+          lease?: { actorId?: string };
+          state?: string;
+        }>;
+        outcomes?: Array<{ id?: string; issuer?: string }>;
+      }
+    | undefined;
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+  const following = executeTick({
+    game: game(104, commands, roomOptions),
+    memory,
+  });
+  const issuer = `mining/${ROOM_NAME}/source-${ROOM_NAME}`;
+
+  return {
+    activeMining: (contractOwner?.active ?? []).filter((contract) => contract.issuer === issuer),
+    contractId,
+    expectedActorId,
+    followingReplacements: following.contracts?.replacements ?? [],
+    followingSubmissions: (following.contracts?.submissions ?? []).filter(
+      (submission) => submission.contractId === contractId,
+    ),
+    handoffCommands,
+    handoffMiningReservations: handoff.colony.reservations.filter(({ issuer }) =>
+      issuer.startsWith("mining/"),
+    ),
+    handoffPlanning: handoff.layout.planning,
+    handoffReplacements: handoff.contracts?.replacements ?? [],
+    handoffMiningTransitions: (handoff.contracts?.transitions ?? []).filter(
+      (transition) => transition.contractId === contractId,
+    ),
+    kernelFaults: handoff.kernel.faults,
+    miningOutcomes: (contractOwner?.outcomes ?? []).filter((outcome) => outcome.issuer === issuer),
+    sourceServices,
+  };
+}
+
 function runStaleSiteSettlementVariant(reverse: boolean, reset: boolean) {
   const commands = commandSpies();
   let memory = {} as Memory;
@@ -2770,6 +2988,117 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
   } as unknown as NonNullable<Memory["myrmex"]>;
 }
 
+function seedSettledStaleSourceService(memory: Memory): {
+  readonly contractId: string;
+  readonly expectedActorId: string;
+} {
+  seedStaleOwner(memory, "source-handoff");
+  const issuer = `mining/${ROOM_NAME}/source-${ROOM_NAME}`;
+  const contracts = memory.myrmex?.contracts as
+    | {
+        active?: Array<{
+          history: Array<{ from: string | null; reason: string; tick: number; to: string }>;
+          id: string;
+          issuer: string;
+          issuerSequence: number;
+          lease: null | { actorId: string };
+          requestSignature: string;
+          revision: number;
+          state: string;
+        }>;
+        issuerFrontiers?: Array<{ issuer: string; retiredThrough: number }>;
+      }
+    | undefined;
+  const predecessor = contracts?.active?.find((contract) => contract.issuer === issuer);
+  if (
+    predecessor === undefined ||
+    contracts?.active === undefined ||
+    predecessor.state !== "funded"
+  )
+    throw new Error("expected funded static-mining predecessor");
+  const successorRequest = {
+    ...(JSON.parse(predecessor.requestSignature) as WorkContractRequest),
+    issuerSequence: 2,
+  };
+  const successorId = contractIdFor(issuer, `source-${ROOM_NAME}`, 2);
+  const expectedActorId = `static-miner-${ROOM_NAME}`;
+  const active = contracts.active.map((contract) =>
+    contract === predecessor
+      ? {
+          ...contract,
+          history: [
+            ...contract.history,
+            {
+              from: "funded",
+              reason: "test-exact-static-mining-assignment",
+              tick: 102,
+              to: "assigned",
+            },
+          ],
+          id: successorId,
+          issuerSequence: 2,
+          lease: {
+            actorId: expectedActorId,
+            actorName: expectedActorId,
+            assignedAt: 102,
+            assignmentCost: 0,
+            expiresAt: 112,
+            travelTicks: 0,
+          },
+          requestSignature: requestSignature(successorRequest),
+          revision: contract.revision + 1,
+          state: "assigned",
+        }
+      : contract.lease?.actorId === expectedActorId &&
+          (contract.state === "assigned" || contract.state === "active")
+        ? {
+            ...contract,
+            history: [
+              ...contract.history,
+              {
+                from: contract.state,
+                reason: "test-release-static-mining-actor",
+                tick: 102,
+                to: "suspended",
+              },
+            ],
+            lease: null,
+            revision: contract.revision + 1,
+            state: "suspended",
+          }
+        : contract,
+  );
+  const issuerFrontiers = [
+    ...(contracts.issuerFrontiers ?? []).filter((frontier) => frontier.issuer !== issuer),
+    { issuer, retiredThrough: 1 },
+  ].sort((left, right) => left.issuer.localeCompare(right.issuer));
+  memory.myrmex = {
+    ...memory.myrmex,
+    contracts: { ...(memory.myrmex?.contracts as object), active, issuerFrontiers },
+  } as NonNullable<Memory["myrmex"]>;
+  return { contractId: successorId, expectedActorId };
+}
+
+function advanceMiningReservation(memory: Memory, revision: number): void {
+  const colonies = memory.myrmex?.colonies as
+    | {
+        ledger?: Array<{
+          issuer: string;
+          request: BudgetRequest;
+          reservationId: string;
+          revision: number;
+        }>;
+      }
+    | undefined;
+  const issuer = `mining/${ROOM_NAME}/source-${ROOM_NAME}`;
+  const reservation = colonies?.ledger?.find((entry) => entry.issuer === issuer);
+  if (reservation === undefined) throw new Error("expected static-mining reservation");
+  const request = { ...reservation.request, revision };
+  reservation.request = request;
+  reservation.reservationId = reservationIdFor(request);
+  reservation.revision = revision;
+}
+
 function staleEvacuation(
   record: LayoutsOwnerV25["staleRecords"][number] | undefined,
   kind: CompletedStaleEvacuationKind,
@@ -2903,6 +3232,45 @@ function game(
     store: { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 },
     ticksToLive: 1_000,
   } as unknown as Creep;
+  const staticMiner = options.staticMiner
+    ? ({
+        body: [
+          ...Array.from({ length: 5 }, () => ({ hits: 100, type: "work" })),
+          ...Array.from({ length: 3 }, () => ({ hits: 100, type: "move" })),
+          { hits: 100, type: "carry" },
+        ],
+        fatigue: 0,
+        harvest: () => 0,
+        hits: 900,
+        hitsMax: 900,
+        id: `static-miner-${roomName}`,
+        my: true,
+        name: `static-miner-${roomName}`,
+        owner: { username: "Myrmex" },
+        pos: pos(11, 11),
+        room: { name: roomName },
+        spawning: false,
+        store: { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 },
+        ticksToLive: 1_000,
+      } as unknown as Creep)
+    : null;
+  const supportWorker = options.staticMiner
+    ? ({
+        body: ["work", "carry", "move"].map((type) => ({ hits: 100, type })),
+        fatigue: 0,
+        hits: 300,
+        hitsMax: 300,
+        id: `support-worker-${roomName}`,
+        my: true,
+        name: `support-worker-${roomName}`,
+        owner: { username: "Myrmex" },
+        pos: pos(25, 24),
+        room: { name: roomName },
+        spawning: false,
+        store: { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 },
+        ticksToLive: 1_000,
+      } as unknown as Creep)
+    : null;
   const spawn = {
     hits: 5_000,
     hitsMax: 5_000,
@@ -3076,7 +3444,11 @@ function game(
         ...(storageTerminal === null ? [] : [storageTerminal]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
       ];
-  const creeps = options.threat ? [worker, hostile] : [worker];
+  const ownedCreeps =
+    staticMiner === null || supportWorker === null
+      ? [worker]
+      : [worker, supportWorker, staticMiner];
+  const creeps = options.threat ? [...ownedCreeps, hostile] : ownedCreeps;
   const room = {
     controller,
     createConstructionSite: commands.createConstructionSite,
@@ -3099,9 +3471,19 @@ function game(
   } as unknown as Room;
   return {
     cpu: { bucket: 9_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
-    creeps: { [worker.name]: worker },
+    creeps: Object.fromEntries(ownedCreeps.map((creep) => [creep.name, creep])),
     getObjectById: (id) =>
-      id === worker.id ? worker : id === spawn.id ? spawn : id === source.id ? source : null,
+      id === worker.id
+        ? worker
+        : id === supportWorker?.id
+          ? supportWorker
+          : id === staticMiner?.id
+            ? staticMiner
+            : id === spawn.id
+              ? spawn
+              : id === source.id
+                ? source
+                : null,
     rooms: { [roomName]: room },
     shard: { name: "shard3" },
     time,

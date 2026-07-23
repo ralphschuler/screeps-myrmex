@@ -325,6 +325,8 @@ export interface ContractPlanningRecord {
   /** Present for current ContractLedger records; optional only for legacy detached fixtures. */
   readonly issuerSequence?: number;
   readonly owner: ContractOwnerScope;
+  /** Canonical full request identity; optional only for legacy detached fixtures. */
+  readonly requestSignature?: string;
   /** Retry evidence derived by ContractLedger from bounded durable transition history. */
   readonly repairRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
   readonly state: ActiveWorkContractState;

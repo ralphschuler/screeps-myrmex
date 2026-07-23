@@ -290,8 +290,20 @@ handoff reached its command boundary, while retained-target presence proves no r
 Unrelated active, evacuation-bearing records without one sole exact match, incomplete, same-tick,
 unsafe, unpaired storage, terminal drift, or conservation failure remains inert. New layout
 site/removal planning stops globally for any settlement tick without cancelling previously
-authorized unrelated current-layout work.
-[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
+authorized unrelated current-layout work. One otherwise-quiescent explicit source-service issuance
+may cross the revision only when exactly one current ContractLedger planning record matches its
+mining identity, sequence, source, owner, funding binding, continuous harvest terms, work position,
+and canonical full request signature. In the existing two-room window, the new layout must retain
+the complete source/position/effective-sequence set before colony budgeting, so revision cannot also
+optimize mining. Normal progression or the existing developing-RCL8 infrastructure-recovery policy
+must authorize it. Only the accepted exact stale set enters the sole StaticMiningPlanner to renew
+already-matching work; blocked or unattempted handoffs receive no continuity budget. Persistence and
+mining-contract staging wait for the final spawn-settled colony view and require an active
+reservation matching every service's colony, harvesting/filling category, issuer, and sequence. The
+accepted handoff cannot create a stale-layout suspension or new contract and therefore preserves the
+exact contract and lease; unavailable, duplicate, terminal-only, mismatched, unsafe, or changed-plan
+evidence remains inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records
+this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
