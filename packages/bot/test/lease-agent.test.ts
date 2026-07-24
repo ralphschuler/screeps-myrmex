@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   dispositionTransitions,
-  planLeaseAgents,
+  planLeaseAgents as planLeaseAgentsWithRecovery,
   reconcileLeaseAgentActions,
   repairRetryTransitions,
+  type LeaseAgentPlanInput,
 } from "../src/agents";
+import { DEFAULT_SURVIVAL_POLICY } from "../src/config/defaults";
 import type { ContractPlanningView, LeasedWorkExecution } from "../src/contracts";
-import type { LocalPathPlanningService, MovementRuntimeResult } from "../src/movement";
+import {
+  EMPTY_MOVEMENT_PROGRESS_VIEW,
+  type LocalPathPlanningService,
+  type MovementRuntimeResult,
+} from "../src/movement";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
@@ -14,6 +20,14 @@ const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
 const paths: LocalPathPlanningService = {
   plan: () => ({ cost: 2, directions: [3], source: "search", status: "ready" }),
 };
+
+function planLeaseAgents(input: Omit<LeaseAgentPlanInput, "movementPolicy" | "progress">) {
+  return planLeaseAgentsWithRecovery({
+    ...input,
+    movementPolicy: DEFAULT_SURVIVAL_POLICY.movement,
+    progress: EMPTY_MOVEMENT_PROGRESS_VIEW,
+  });
+}
 
 describe("lease agents", () => {
   it("deterministically turns one leased out-of-range harvest into one correlated movement intent", () => {

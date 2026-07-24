@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { planLeaseAgents } from "../src/agents";
+import { DEFAULT_SURVIVAL_POLICY } from "../src/config/defaults";
 import {
   emptyContractExecutionView,
   emptyContractPlanningView,
   type ContractExecutionView,
 } from "../src/contracts";
 import { assignLabCluster, fingerprintLabLayout } from "../src/industry";
+import { EMPTY_MOVEMENT_PROGRESS_VIEW } from "../src/movement";
 import {
   layoutExtensionEvacuationBudgetIssuer,
   layoutExtensionEvacuationFlowId,
@@ -3328,7 +3330,9 @@ describe("logistics runtime adapter", () => {
     const acquire = planLeaseAgents({
       availablePathCpu: 1,
       execution: execution("acquire", 40),
+      movementPolicy: DEFAULT_SURVIVAL_POLICY.movement,
       paths: { plan: () => ({ status: "unavailable" }) } as never,
+      progress: EMPTY_MOVEMENT_PROGRESS_VIEW,
       snapshot: world(0),
       tick: 10,
     });
@@ -3337,7 +3341,9 @@ describe("logistics runtime adapter", () => {
     const deliver = planLeaseAgents({
       availablePathCpu: 1,
       execution: execution("deliver", 50),
+      movementPolicy: DEFAULT_SURVIVAL_POLICY.movement,
       paths: { plan: () => ({ status: "unavailable" }) } as never,
+      progress: EMPTY_MOVEMENT_PROGRESS_VIEW,
       snapshot: world(30),
       tick: 10,
     });

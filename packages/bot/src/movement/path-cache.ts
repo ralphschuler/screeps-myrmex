@@ -33,6 +33,8 @@ export interface LocalPathSearch {
 }
 
 export interface LocalPathSearchInput {
+  /** Canonical tick-local blockers overlaid after the reusable static matrix is reconstructed. */
+  readonly blockedPositions: readonly PositionSnapshot[];
   readonly goal: PositionSnapshot;
   readonly maxCost: number;
   readonly maxOps: number;
@@ -50,6 +52,10 @@ export interface LocalPathSearchOutput {
 export interface LocalPathPlanRequest {
   /** CPU remaining in the system's CpuScheduler admission budget. */
   readonly availableCpu: number;
+  /** Tick-local occupancy/reservations. These never enter a reusable cache value or key. */
+  readonly blockedPositions?: readonly PositionSnapshot[];
+  /** Force one bounded cold search even when no dynamic blocker remains visible. */
+  readonly bypassCache?: boolean;
   readonly buildStaticMatrix: () => StaticTraversalMatrix;
   readonly estimatedSearchCpu: number;
   readonly goal: PositionSnapshot;
@@ -75,6 +81,9 @@ export type LocalPathPlanResult =
 export interface LocalPathPlanningRequest {
   /** The CpuScheduler admission budget of the currently running planning system. */
   readonly availableCpu: number;
+  /** Tick-local occupancy/reservations. These never enter a reusable cache value or key. */
+  readonly blockedPositions?: readonly PositionSnapshot[];
+  readonly bypassCache?: boolean;
   readonly goal: PositionSnapshot;
   readonly origin: PositionSnapshot;
   readonly range: number;
@@ -86,7 +95,8 @@ export interface LocalPathPlanningService {
   plan(request: LocalPathPlanningRequest): LocalPathPlanResult;
 }
 
-const LOCAL_PATH_SEARCH_CPU_ESTIMATE = 0.5;
+export const LOCAL_PATH_SEARCH_CPU_ESTIMATE = 0.5;
+export const MAX_DYNAMIC_MOVEMENT_BLOCKERS = 128;
 
 /**
  * Canonical data-only service for plan systems. It extracts an observed static traversal projection
@@ -116,6 +126,8 @@ export class SnapshotLocalPathPlanningService implements LocalPathPlanningServic
       return Object.freeze({ reason: "invalid", status: "no-path" });
     return this.planner.plan({
       availableCpu: request.availableCpu,
+      blockedPositions: request.blockedPositions ?? [],
+      bypassCache: request.bypassCache ?? false,
       buildStaticMatrix: () => ({
         roomName: room.name,
         revision: traversal.revision,
@@ -146,21 +158,29 @@ export class LocalPathPlanner {
   public plan(request: LocalPathPlanRequest): LocalPathPlanResult {
     if (!isValidRequest(request)) return Object.freeze({ reason: "invalid", status: "no-path" });
     try {
+      const blockedPositions = canonicalBlockedPositions(
+        request.blockedPositions ?? [],
+        request.origin,
+      );
+      if (blockedPositions === null) return Object.freeze({ reason: "invalid", status: "no-path" });
+      const bypassCache = request.bypassCache === true || blockedPositions.length > 0;
       const pathKey = [
         request.origin.roomName,
         `${request.staticMatrixRevision}:${positionKey(request.origin)}:${positionKey(request.goal)}:${String(request.range)}:${String(this.policy.maximumSearchOperations)}:${String(this.policy.maximumPathCost)}`,
       ] as const;
-      const cached = this.cache.localPaths.get(pathKey, {
-        dependencies: { staticMatrixRevision: request.staticMatrixRevision },
-        tick: request.tick,
-      });
-      if (cached.hit && isValidLocalPath(cached.value, request.origin.roomName))
-        return Object.freeze({
-          cost: cached.value.cost,
-          directions: Object.freeze([...cached.value.directions]) as readonly DirectionConstant[],
-          source: "cache",
-          status: "ready",
+      if (!bypassCache) {
+        const cached = this.cache.localPaths.get(pathKey, {
+          dependencies: { staticMatrixRevision: request.staticMatrixRevision },
+          tick: request.tick,
         });
+        if (cached.hit && isValidLocalPath(cached.value, request.origin.roomName))
+          return Object.freeze({
+            cost: cached.value.cost,
+            directions: Object.freeze([...cached.value.directions]) as readonly DirectionConstant[],
+            source: "cache",
+            status: "ready",
+          });
+      }
       if (request.estimatedSearchCpu > request.availableCpu)
         return Object.freeze({ reason: "cpu-budget", status: "deferred" });
 
@@ -177,6 +197,7 @@ export class LocalPathPlanner {
         return Object.freeze({ reason: "invalid", status: "no-path" });
 
       const result = this.search.search({
+        blockedPositions,
         goal: request.goal,
         maxCost: this.policy.maximumPathCost,
         maxOps: this.policy.maximumSearchOperations,
@@ -200,10 +221,11 @@ export class LocalPathPlanner {
         directions,
         roomName: request.origin.roomName,
       });
-      this.cache.localPaths.set(pathKey, path, {
-        dependencies: { staticMatrixRevision: request.staticMatrixRevision },
-        tick: request.tick,
-      });
+      if (!bypassCache)
+        this.cache.localPaths.set(pathKey, path, {
+          dependencies: { staticMatrixRevision: request.staticMatrixRevision },
+          tick: request.tick,
+        });
       return Object.freeze({ cost: result.cost, directions, source: "search", status: "ready" });
     } catch {
       return Object.freeze({ reason: "adapter-fault", status: "no-path" });
@@ -262,7 +284,8 @@ function isValidRequest(request: LocalPathPlanRequest): boolean {
     request.estimatedSearchCpu >= 0 &&
     Number.isSafeInteger(request.tick) &&
     request.tick >= 0 &&
-    request.staticMatrixRevision.length > 0
+    request.staticMatrixRevision.length > 0 &&
+    (request.bypassCache === undefined || typeof request.bypassCache === "boolean")
   );
 }
 
@@ -275,6 +298,24 @@ function isFinitePosition(position: PositionSnapshot): boolean {
     position.x <= 49 &&
     position.y >= 0 &&
     position.y <= 49
+  );
+}
+
+function canonicalBlockedPositions(
+  positions: readonly PositionSnapshot[],
+  origin: PositionSnapshot,
+): readonly PositionSnapshot[] | null {
+  if (positions.length > MAX_DYNAMIC_MOVEMENT_BLOCKERS) return null;
+  const canonical = new Map<string, PositionSnapshot>();
+  for (const position of positions) {
+    if (!isFinitePosition(position) || position.roomName !== origin.roomName) return null;
+    if (position.x === origin.x && position.y === origin.y) continue;
+    canonical.set(positionKey(position), position);
+  }
+  return Object.freeze(
+    [...canonical.values()]
+      .sort((left, right) => left.y - right.y || left.x - right.x)
+      .map((position) => Object.freeze({ ...position })),
   );
 }
 
