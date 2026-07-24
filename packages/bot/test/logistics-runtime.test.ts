@@ -18,6 +18,7 @@ import {
   type LayoutRecord,
 } from "../src/layout";
 import {
+  completeExecutableLayoutContainerMigrationFlowIds,
   completedLayoutContainerMigrationRoomNames,
   projectLayoutContainerMigrations,
   projectLayoutContainerMigrationSuppression,
@@ -2856,6 +2857,20 @@ describe("logistics runtime adapter", () => {
     ]);
 
     const flowIds = projection.edges.map(({ id }) => id);
+    expect([
+      ...completeExecutableLayoutContainerMigrationFlowIds({
+        executableFlowIds: new Set(flowIds),
+        projectedFlowIds: new Set(flowIds),
+        records: [record],
+      }),
+    ]).toEqual(flowIds);
+    expect(
+      completeExecutableLayoutContainerMigrationFlowIds({
+        executableFlowIds: new Set([flowIds[0] ?? ""]),
+        projectedFlowIds: new Set(flowIds),
+        records: [record],
+      }),
+    ).toEqual(new Set());
     const completionSnapshot = (
       targetResources: readonly { readonly amount: number; readonly resourceType: string }[],
       replacementResources: readonly { readonly amount: number; readonly resourceType: string }[],

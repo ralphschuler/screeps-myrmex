@@ -65,8 +65,7 @@ export function isStaleLayoutContainerMigrationContinuation(record: StaleLayoutR
     !(manifest.length === 1 && manifestTerm?.[0] === "energy");
   return (
     record.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
-    (legacyEnergy ||
-      (boundedManifest && (migration.sourceId === undefined || manifest.length === 1))) &&
+    (legacyEnergy || boundedManifest) &&
     record.extensionEvacuation === undefined &&
     record.labEvacuation === undefined &&
     record.linkEvacuation === undefined &&

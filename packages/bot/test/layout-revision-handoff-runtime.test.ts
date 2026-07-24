@@ -302,6 +302,7 @@ type StaleActiveEvidence =
   | "energy-container-migration"
   | "source-energy-container-migration"
   | "source-non-energy-container-migration"
+  | "source-mixed-container-migration"
   | "mixed-container-migration"
   | "non-energy-container-migration"
   | "evacuation"
@@ -312,7 +313,7 @@ type StaleActiveEvidence =
   | "tower-evacuation"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425/#427/#429)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425/#427/#429/#431)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -512,6 +513,78 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(commands.destroyStructure).not.toHaveBeenCalled();
   });
 
+  it("continues one stale mixed-resource source-container migration atomically", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleOwner(memory, "source-mixed-container-migration");
+    const sourceServices = layoutsOwner(memory).staleRecords[0]?.sourceServices;
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const pending = runTick({
+      game: game(202, commands, {
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 800,
+        sourcePosition: { x: 40, y: 39 },
+        staleContainerMigration: {
+          replacementResources: [
+            ["U", 10],
+            ["energy", 20],
+          ],
+          sourceResources: [
+            ["U", 50],
+            ["energy", 50],
+          ],
+        },
+      }),
+      memory,
+    });
+    const migration = layoutsOwner(memory).staleRecords[0]?.containerMigration;
+    if (migration === undefined) throw new Error("expected stale mixed source-container migration");
+    const resourceTypes = ["U", "energy"] as const;
+    const flowIds = resourceTypes.map((resourceType) =>
+      layoutContainerMigrationResourceFlowId(ROOM_NAME, migration, resourceType),
+    );
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string; readonly resourceType?: string };
+          }[];
+        }
+      | undefined;
+
+    expect(pending.kernel.faults).toEqual([]);
+    for (const resourceType of resourceTypes)
+      expect(pending.colony.reservations).toContainEqual(
+        expect.objectContaining({
+          category: "optional-growth",
+          colonyId: ROOM_NAME,
+          issuer: layoutContainerMigrationResourceBudgetIssuer(ROOM_NAME, migration, resourceType),
+          status: "active",
+        }),
+      );
+    expect(
+      flowIds.every((flowId, index) =>
+        contracts?.active?.some(
+          ({ execution }) =>
+            execution?.flowId === flowId && execution.resourceType === resourceTypes[index],
+        ),
+      ),
+    ).toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.sourceServices).toEqual(sourceServices);
+    expect(pending.layout.planning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
   it("continues one stale singleton non-energy container migration through funded logistics", () => {
     const commands = commandSpies();
     const memory = {} as Memory;
@@ -646,12 +719,13 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(commands.destroyStructure).not.toHaveBeenCalled();
   });
 
-  it("keeps the remaining mixed row funded after partial delivery, reset, and reorder", async () => {
+  it("keeps the remaining source-container row funded after partial delivery and reset", async () => {
     const commands = commandSpies();
     let memory = {} as Memory;
     runTick({ game: game(100, commands), memory });
     runTick({ game: game(101, commands), memory });
-    seedStaleOwner(memory, "mixed-container-migration");
+    seedStaleOwner(memory, "source-mixed-container-migration");
+    const sourceServices = layoutsOwner(memory).staleRecords[0]?.sourceServices;
     memory = JSON.parse(JSON.stringify(memory)) as Memory;
     vi.resetModules();
     const executeTick = (await import("../src/runtime/tick")).runTick;
@@ -663,6 +737,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
         reverse: true,
         roomEnergyAvailable: 350,
         roomEnergyCapacityAvailable: 800,
+        sourcePosition: { x: 40, y: 39 },
         staleContainerMigration: {
           replacementResources: [
             ["energy", 20],
@@ -696,6 +771,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       contracts?.active?.some(({ execution }) => execution?.flowId === deliveredFlowId),
     ).not.toBe(true);
     expect(layoutsOwner(memory).staleRecords[0]?.containerMigration).toEqual(migration);
+    expect(layoutsOwner(memory).staleRecords[0]?.sourceServices).toEqual(sourceServices);
     expect(partial.layout.planning).toEqual([
       expect.objectContaining({
         blocker: "revision-handoff-active",
@@ -844,6 +920,37 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(forward.settlementOwner.records).toEqual([]);
     expect(forward.settlementOwner.staleRecords).toHaveLength(1);
     expect(forward.settlementOwner.staleRecords[0]?.containerMigration).toBeUndefined();
+    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.handoffOwner).toMatchObject({
+      records: [
+        expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+      ],
+      staleRecords: [],
+    });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
+  });
+
+  it("settles delivered stale mixed source-container stock before later handoff", async () => {
+    const forward = await runCompletedStaleMixedContainerMigrationVariant(false, false, true);
+    const reset = await runCompletedStaleMixedContainerMigrationVariant(false, true, true);
+    const reordered = await runCompletedStaleMixedContainerMigrationVariant(true, false, true);
+
+    expect(forward.settlementPlanning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(forward.settlementOwner.records).toEqual([]);
+    expect(forward.settlementOwner.staleRecords).toHaveLength(1);
+    expect(forward.settlementOwner.staleRecords[0]?.containerMigration).toBeUndefined();
+    expect(forward.settlementOwner.staleRecords[0]?.sourceServices).toEqual(forward.sourceServices);
     expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
     expect(forward.handoffOwner).toMatchObject({
       records: [
@@ -4364,7 +4471,8 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
     active !== null && active.startsWith("completed-tower-evacuation");
   const sourceContainerMigration =
     active === "source-energy-container-migration" ||
-    active === "source-non-energy-container-migration";
+    active === "source-non-energy-container-migration" ||
+    active === "source-mixed-container-migration";
   const staleRecord = {
     ...stable,
     algorithmRevision: "owned-room-layout-v1",
@@ -4428,7 +4536,8 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
                   targetId: "container-obsolete",
                 },
               }
-            : active === "mixed-container-migration"
+            : active === "source-mixed-container-migration" ||
+                active === "mixed-container-migration"
               ? {
                   containerMigration: {
                     expiresAt: 350,
@@ -4437,6 +4546,9 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
                       ["U", 50, 10],
                       ["energy", 50, 20],
                     ],
+                    ...(active === "source-mixed-container-migration"
+                      ? { sourceId: `source-${roomName}` }
+                      : {}),
                     startedAt: 200,
                     targetId: "container-obsolete",
                   },
@@ -4962,13 +5074,21 @@ async function runCompletedStaleNonEnergyContainerMigrationVariant(
   };
 }
 
-async function runCompletedStaleMixedContainerMigrationVariant(reverse: boolean, reset: boolean) {
+async function runCompletedStaleMixedContainerMigrationVariant(
+  reverse: boolean,
+  reset: boolean,
+  sourceSpecific = false,
+) {
   const commands = commandSpies();
   let memory = {} as Memory;
   let executeTick = runTick;
   executeTick({ game: game(100, commands, { reverse }), memory });
   executeTick({ game: game(101, commands, { reverse }), memory });
-  seedStaleOwner(memory, "mixed-container-migration");
+  seedStaleOwner(
+    memory,
+    sourceSpecific ? "source-mixed-container-migration" : "mixed-container-migration",
+  );
+  const sourceServices = layoutsOwner(memory).staleRecords[0]?.sourceServices;
   if (reset) {
     memory = JSON.parse(JSON.stringify(memory)) as Memory;
     vi.resetModules();
@@ -4981,16 +5101,18 @@ async function runCompletedStaleMixedContainerMigrationVariant(reverse: boolean,
     ["U", 60],
     ["energy", 70],
   ] as const;
+  const options = {
+    reverse,
+    roomEnergyAvailable: 350,
+    roomEnergyCapacityAvailable: 800,
+    ...(sourceSpecific ? { sourcePosition: { x: 40, y: 39 } } : {}),
+    staleContainerMigration: {
+      replacementResources: deliveredResources,
+      sourceResources: [],
+    },
+  } as const;
   const settlement = executeTick({
-    game: game(202, commands, {
-      reverse,
-      roomEnergyAvailable: 350,
-      roomEnergyCapacityAvailable: 800,
-      staleContainerMigration: {
-        replacementResources: deliveredResources,
-        sourceResources: [],
-      },
-    }),
+    game: game(202, commands, options),
     memory,
   });
   const settlementOwner = layoutsOwner(memory);
@@ -5002,15 +5124,7 @@ async function runCompletedStaleMixedContainerMigrationVariant(reverse: boolean,
   commands.destroyStructure.mockClear();
 
   const handoff = executeTick({
-    game: game(203, commands, {
-      reverse,
-      roomEnergyAvailable: 350,
-      roomEnergyCapacityAvailable: 800,
-      staleContainerMigration: {
-        replacementResources: deliveredResources,
-        sourceResources: [],
-      },
-    }),
+    game: game(203, commands, options),
     memory,
   });
   return {
@@ -5023,6 +5137,7 @@ async function runCompletedStaleMixedContainerMigrationVariant(reverse: boolean,
     settlementCommands,
     settlementOwner,
     settlementPlanning: settlement.layout.planning,
+    sourceServices,
   };
 }
 

@@ -154,10 +154,11 @@ replacement capacity, exact all-row settlement, and no partial publication. Issu
 [#427](https://github.com/ralphschuler/screeps-myrmex/issues/427) admits one source-specific legacy
 energy form only under fresh exact source adjacency to both target and different selected-service
 replacement. Issue [#429](https://github.com/ralphschuler/screeps-myrmex/issues/429) admits the
-mutually exclusive singleton non-energy manifest under the same evidence while multi-row source-
-specific manifests remain inert. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+mutually exclusive singleton non-energy manifest under the same evidence. Issue
+[#431](https://github.com/ralphschuler/screeps-myrmex/issues/431) composes that source/service proof
+with one canonical two-to-eight-row manifest and complete current-row funding before lease
+execution. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration and dismantling.
 
 ## Runtime order
 
@@ -669,9 +670,23 @@ exact selected-service replacement. Exact target emptiness, 60 replacement `U`, 
 complete resource-flow and endpoint retirement clear only `containerMigration` command-free;
 source-service identity, sequence, and work position remain unchanged, and handoff waits for the
 next eligible tick. Warm, module-reset, and reversed-fact variants produce byte-equivalent owner,
-planning, and zero-command outcomes. Focused controls keep one-row energy and multi-row
-source-specific manifests inert and reject source/service drift through the unchanged completion
-boundary. No schema, authority, mining plan, executor, command, or persistent field is added.
+planning, and zero-command outcomes. Focused controls keep one-row energy source-specific manifests
+inert and reject source/service drift through the unchanged completion boundary. No schema,
+authority, mining plan, executor, command, or persistent field is added.
+
+Issue #431's production-runtime evidence composes #425's canonical 50-unit `U` and 50-unit energy
+rows with #429's exact source identity, adjacent redundant target, and different persisted exact
+selected-service replacement. Both distinct resource-qualified Logistics/V3 flows and
+`optional-growth` budgets remain required; the current row set enters lease execution only as a
+complete funded group, while an already delivered row may retire and leave its remaining row
+executable. Durable target source/refill and replacement-refill suppression remains independent of
+optional admission. Exact empty target, 60 `U`, 70 energy, active funding for every applicable row,
+and complete flow/endpoint retirement clear only `containerMigration` command-free. The persisted
+source-service bytes remain unchanged and the revision handoff waits until a later tick. Warm,
+module-reset, and reversed-fact variants produce byte-equivalent owner, planning, and zero-command
+outcomes. Focused controls retain canonical manifest, 2,000-unit aggregate Store, source/service
+adjacency, no-prefix, partial-funding, drift, unsafe-policy, and exact-delivery failure boundaries.
+No schema, authority, mining plan, executor, command, or persistent field is added.
 
 Issue #415's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
 500-energy tower evacuation and an exact active replacement retaining the 10-energy action floor.

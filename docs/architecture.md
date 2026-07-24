@@ -271,11 +271,12 @@ one canonical two-to-eight-row source-unspecific manifest under those same bound
 resource-qualified funded flows and one aggregate replacement-capacity reservation. Issue #427
 admits one source-specific legacy energy form only while fresh observation retains exact source-to-
 target and source-to-selected-service adjacency at a different persisted exact replacement. The
-mutually exclusive one-row non-energy manifest is admitted by issue #429 under that same
-source/service evidence; multi-row source-specific manifests remain inert. Fresh exact empty-source,
-every baseline-plus-amount replacement gain, retired flow/endpoints, active funding, and unchanged
-safe policy clear only the applicable term command-free; the revision handoff remains a later tick.
-Every other unfinished stale migration remains inert.
+`#429` outcome admits the mutually exclusive singleton non-energy manifest under that same
+source/service evidence; issue #431 admits its canonical two-to-eight-row composition and requires
+every currently executable row to retain active funding before any row may enter lease execution.
+Fresh exact target emptiness, every baseline-plus-amount replacement gain, retired flow/endpoints,
+active funding, and unchanged safe policy clear only the applicable term command-free; the revision
+handoff remains a later tick. Every other unfinished stale migration remains inert.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
@@ -743,28 +744,28 @@ or colony staging is not staged, downstream contracts receive no invented active
 One exact otherwise-quiescent stale legacy energy-only or bounded resource-manifest container
 migration, extension, reserve-link, spawn, or tower evacuation remains an input to its ordinary
 projection even though every other stale-layout gameplay projection is inert. It retains the
-original fixed deadline and aggregate 64-record/64-flow bounds. A manifest has no source-service
-identity and contains one non-energy row or two through eight canonical rows with no legacy energy
-fields. One legacy energy form may instead carry an exact source identity only when the target stays
-adjacent to that source and a different persisted exact selected service remains at the replacement.
-A tower replacement also retains at least one 10-energy action. Spawn additionally requires a
-completed current SpawnBroker plan selecting neither exact active idle endpoint. Reserve-link
-continuation accepts only known V1 link positions reconstructed as read-only role evidence and
-requires each unique stale source service to remain adjacent to its fresh exact source, current RCL8
-source/hub/controller continuity, external/exact reserve classification, exact zero-cooldown
-800-capacity energy Stores, and exclusion from native link proposals. Layout planning may clear only
-that term from fresh exact delivered stock plus complete current V3 flow/endpoint retirement under
-the existing safe handoff policy; that command-free settlement suppresses new layout output globally
-and cannot perform the revision handoff until a later tick. Unexpired-term source refill suppression
-applies to ordinary Logistics and SurvivalFlow regardless of optional work policy admission.
-Container target source/refill and replacement refill stay suppressed throughout its unexpired term.
-Extension and spawn replacement refill remain suppressed while source energy remains; malformed
-spawn evidence suppresses both endpoints. During an unexpired tower or reserve-link attempt, both
-source and replacement refill remain suppressed so in-flight delivery cannot compete. Spawn, link,
-or tower expiry restores ordinary service but preserves removal- and handoff-blocking evidence.
-Existing stale leases additionally require the current safe policy, exact projected flow, active
-budget reservation, and, for spawn work, current broker exclusion before execution; link work also
-requires current role, Store, cooldown, and native-exclusion evidence.
+original fixed deadline and aggregate 64-record/64-flow bounds. A manifest contains one non-energy
+row or two through eight canonical rows with no legacy energy fields. It or one legacy energy form
+may carry an exact source identity only when the target stays adjacent to that source and a
+different persisted exact selected service remains at the replacement. A tower replacement also
+retains at least one 10-energy action. Spawn additionally requires a completed current SpawnBroker
+plan selecting neither exact active idle endpoint. Reserve-link continuation accepts only known V1
+link positions reconstructed as read-only role evidence and requires each unique stale source
+service to remain adjacent to its fresh exact source, current RCL8 source/hub/controller continuity,
+external/exact reserve classification, exact zero-cooldown 800-capacity energy Stores, and exclusion
+from native link proposals. Layout planning may clear only that term from fresh exact delivered
+stock plus complete current V3 flow/endpoint retirement under the existing safe handoff policy; that
+command-free settlement suppresses new layout output globally and cannot perform the revision
+handoff until a later tick. Unexpired-term source refill suppression applies to ordinary Logistics
+and SurvivalFlow regardless of optional work policy admission. Container target source/refill and
+replacement refill stay suppressed throughout its unexpired term. Extension and spawn replacement
+refill remain suppressed while source energy remains; malformed spawn evidence suppresses both
+endpoints. During an unexpired tower or reserve-link attempt, both source and replacement refill
+remain suppressed so in-flight delivery cannot compete. Spawn, link, or tower expiry restores
+ordinary service but preserves removal- and handoff-blocking evidence. Existing stale leases
+additionally require the current safe policy, exact projected flow, active budget reservation, and,
+for spawn work, current broker exclusion before execution; link work also requires current role,
+Store, cooldown, and native-exclusion evidence.
 
 `contracts.reconcile` runs only when the effective `phase1.contracts` gate is enabled and the
 current colony result can supply a bounded authorization view. A disabled or prerequisite-blocked
@@ -1555,8 +1556,9 @@ row source-unspecific manifest to reuse every distinct resource-qualified flow u
 replacement-capacity reservation. Issue #427 permits one source-specific legacy energy record only
 while current exact source-to-target and source-to-selected-service adjacency at the different
 persisted exact replacement remains unchanged. Issue #429 permits the mutually exclusive singleton
-non-energy manifest under the same exact source/service evidence; multi-row source-specific
-manifests remain inert. Completion revalidates that evidence before clearing either admitted form.
+non-energy manifest under the same exact source/service evidence; issue #431 admits its canonical
+two-to-eight-row composition. Every currently executable row forms one complete funding group before
+lease execution, and completion revalidates the source/service evidence before clearing the term.
 All forms require current safe policy and active funding, keep target source/refill plus replacement
 refill suppressed independently of optional admission, and clear only from fresh exact delivery of
 every row plus complete work retirement before a later revision handoff.
@@ -1717,7 +1719,7 @@ optional fixed-shape single-resource storage evacuation, V22 adds its bounded tw
 manifest alternative, V23 adds the exact settled-batch cursor for one 3,001–6,000-unit
 single-resource continuation, V24 permits that cursor on a canonical two-to-eight-resource manifest
 under the same total, and V25 isolates validated stale-algorithm records in a separate collection
-until one command-free safe handoff. Only #413/#415/#417/#419/#421/#423/#425/#427/#429's exact
+until one command-free safe handoff. Only #413/#415/#417/#419/#421/#423/#425/#427/#429/#431's exact
 unfinished extension, tower, spawn, reserve-link evacuation, or admitted legacy energy-only/bounded
 resource-manifest container migration may remain a funded Logistics input until its separate
 command-free settlement. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior
@@ -2831,9 +2833,9 @@ Required architecture assertions include:
 - a validated older-algorithm layout record is isolated from gameplay except for one otherwise-
   quiescent exact unfinished legacy energy-only or bounded resource-manifest container migration,
   extension, reserve-link, spawn, or tower evacuation continuing through the existing funded V3
-  path; a manifest has no source identity and contains one non-energy row or two through eight
-  canonical rows with no legacy fields, while one legacy energy form may carry one exact source only
-  with fresh target adjacency and a different exact selected replacement service; all require exact
+  path; a manifest contains one non-energy row or two through eight canonical rows with no legacy
+  fields, while either that manifest or one legacy energy form may carry one exact source only with
+  fresh target adjacency and a different exact selected replacement service; all require exact
   2,000-capacity Stores, every row retains distinct active funding under one aggregate
   replacement-capacity reservation, and a tower continuation retains at least 10 replacement energy,
   spawn continuation requires current broker-unselected active idle exact endpoints, reserve-link
