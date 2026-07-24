@@ -6,6 +6,7 @@ import {
 } from "../src/contracts";
 import {
   LAYOUT_ALGORITHM_REVISION,
+  clearStaleLayoutTerminalEvacuation,
   emptyLayoutsOwner,
   layoutTerminalEvacuationBudgetIssuer,
   layoutTerminalEvacuationFlowId,
@@ -14,11 +15,14 @@ import {
   persistLayoutCommitment,
   persistLayoutTerminalEvacuation,
   type LayoutRecord,
+  type LayoutsOwnerV25,
 } from "../src/layout";
 import { aggregateStoreCapacityReservationKey } from "../src/logistics/planner";
 import { planLogisticsRuntime } from "../src/logistics/runtime";
 import {
+  completedLayoutTerminalEvacuationRoomNames,
   completeExecutableLayoutTerminalEvacuationFlowIds,
+  projectLayoutTerminalEvacuationSuppression,
   projectLayoutTerminalEvacuations,
 } from "../src/logistics/terminal-evacuation";
 import {
@@ -564,6 +568,76 @@ describe("stocked obsolete-terminal evacuation", () => {
     expect(partial.demands.edges).toHaveLength(1);
     expect(partial.demands.suppressedSinkTargetIds).toEqual([sourceId]);
     expect(partial.demands.suppressedSourceTargetIds).toEqual([sourceId]);
+  });
+
+  it("retains stale suppression independently of optional flow admission", () => {
+    const suppressed = projectLayoutTerminalEvacuationSuppression({
+      records: [record()],
+      tick: 11,
+    });
+    expect(suppressed).toEqual({
+      suppressedSinkTargetIds: [sourceId],
+      suppressedSourceTargetIds: [sourceId],
+    });
+    expect(
+      projectLayoutTerminalEvacuationSuppression({
+        records: [record()],
+        tick: terms.expiresAt,
+      }),
+    ).toEqual({ suppressedSinkTargetIds: [], suppressedSourceTargetIds: [] });
+  });
+
+  it("recognizes exact quiescent delivery only after every flow and endpoint retires", () => {
+    const delivered = world(0, terms.replacementInitialAmount + terms.amount, 12);
+    const completionInput = {
+      activeFlowIds: new Set<string>(),
+      activeTargetIds: new Set<string>(),
+      quiescentTerminalRoomNames: new Set([roomName]),
+      records: [record()],
+      snapshot: delivered,
+      tick: 12,
+    };
+    expect(completedLayoutTerminalEvacuationRoomNames(completionInput)).toEqual([roomName]);
+    expect(
+      completedLayoutTerminalEvacuationRoomNames({
+        ...completionInput,
+        activeFlowIds: new Set(layoutTerminalEvacuationFlowIds(roomName, terms) ?? []),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutTerminalEvacuationRoomNames({
+        ...completionInput,
+        activeTargetIds: new Set([replacementId]),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutTerminalEvacuationRoomNames({
+        ...completionInput,
+        quiescentTerminalRoomNames: new Set(),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutTerminalEvacuationRoomNames({
+        ...completionInput,
+        snapshot: world(0, terms.replacementInitialAmount + terms.amount + 1, 12),
+      }),
+    ).toEqual([]);
+  });
+
+  it("clears only one delivered stale terminal term", () => {
+    const staleRecord = { ...record(), algorithmRevision: "owned-room-layout-v1" };
+    const owner = {
+      ...emptyLayoutsOwner(),
+      revision: 7,
+      staleRecords: [staleRecord],
+    } as LayoutsOwnerV25;
+    const cleared = clearStaleLayoutTerminalEvacuation(owner, roomName);
+    expect(cleared.revision).toBe(8);
+    expect(cleared.staleRecords[0]).toEqual(
+      expect.objectContaining({ algorithmRevision: "owned-room-layout-v1", roomName }),
+    );
+    expect(cleared.staleRecords[0]?.terminalEvacuation).toBeUndefined();
+    expect(clearStaleLayoutTerminalEvacuation(cleared, roomName)).toBe(cleared);
   });
 
   it("retains terminal suppression when an oversized optional demand batch is dropped", () => {

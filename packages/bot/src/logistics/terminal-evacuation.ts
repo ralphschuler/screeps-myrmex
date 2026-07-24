@@ -22,10 +22,103 @@ export interface LayoutTerminalEvacuationProjection {
   readonly demands: LogisticsResourceDemandProjection;
 }
 
+export interface LayoutTerminalEvacuationSuppression {
+  readonly suppressedSinkTargetIds: readonly string[];
+  readonly suppressedSourceTargetIds: readonly string[];
+}
+
 interface ResourceTerm {
   readonly amount: number;
   readonly replacementInitialAmount: number;
   readonly resourceType: string;
+}
+
+/** Durable source suppression for persisted terms, independent of optional-work admission. */
+export function projectLayoutTerminalEvacuationSuppression(input: {
+  readonly records: readonly LayoutRecord[];
+  readonly tick: number;
+}): LayoutTerminalEvacuationSuppression {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return emptySuppression();
+  const suppressed = new Set<string>();
+  for (const record of [...input.records].sort((a, b) => compare(a.roomName, b.roomName))) {
+    const evacuation = record.terminalEvacuation;
+    if (
+      evacuation === undefined ||
+      evacuation.expiresAt - evacuation.startedAt !== LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS ||
+      input.tick <= evacuation.startedAt ||
+      input.tick >= evacuation.expiresAt ||
+      terminalEvacuationTerms(evacuation) === null
+    )
+      continue;
+    suppressed.add(evacuation.sourceId);
+  }
+  const ids = Object.freeze([...suppressed].sort(compare));
+  return Object.freeze({ suppressedSinkTargetIds: ids, suppressedSourceTargetIds: ids });
+}
+
+/** Fresh exact completion after every resource flow and physical endpoint has retired. */
+export function completedLayoutTerminalEvacuationRoomNames(input: {
+  readonly activeFlowIds: ReadonlySet<string>;
+  readonly activeTargetIds: ReadonlySet<string>;
+  readonly quiescentTerminalRoomNames: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): readonly string[] {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return Object.freeze([]);
+  const completed: string[] = [];
+  for (const record of [...input.records].sort((a, b) => compare(a.roomName, b.roomName))) {
+    const evacuation = record.terminalEvacuation;
+    if (
+      evacuation === undefined ||
+      evacuation.expiresAt - evacuation.startedAt !== LAYOUT_TERMINAL_EVACUATION_TIMEOUT_TICKS ||
+      input.tick <= evacuation.startedAt ||
+      input.tick >= evacuation.expiresAt ||
+      !input.quiescentTerminalRoomNames.has(record.roomName)
+    )
+      continue;
+    const terms = terminalEvacuationTerms(evacuation);
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (
+      terms === null ||
+      room?.controller?.ownership !== "owned" ||
+      room.observedAt !== input.tick ||
+      room.hostileCreeps.length > 0
+    )
+      continue;
+    const terminals = room.ownedTerminals ?? [];
+    const storages = room.ownedStorages ?? [];
+    const source = terminals.length === 1 ? terminals[0] : undefined;
+    const replacement = storages.length === 1 ? storages[0] : undefined;
+    if (
+      source?.id !== evacuation.sourceId ||
+      !source.active ||
+      source.cooldown !== 0 ||
+      replacement?.id !== evacuation.replacementId ||
+      !replacement.active
+    )
+      continue;
+    const sourceStore = exactInventoryStore(source, MAX_LAYOUT_TERMINAL_CAPACITY);
+    const replacementStore = exactInventoryStore(replacement, MAX_LAYOUT_STORAGE_CAPACITY);
+    const flowIds = layoutTerminalEvacuationFlowIds(record.roomName, evacuation);
+    if (
+      sourceStore === null ||
+      replacementStore === null ||
+      sourceStore.resources.size !== 0 ||
+      flowIds === null ||
+      flowIds.length !== terms.length ||
+      flowIds.some((flowId) => input.activeFlowIds.has(flowId)) ||
+      input.activeTargetIds.has(source.id) ||
+      input.activeTargetIds.has(replacement.id) ||
+      terms.some(
+        ({ amount, replacementInitialAmount, resourceType }) =>
+          (replacementStore.resources.get(resourceType) ?? 0) !== replacementInitialAmount + amount,
+      )
+    )
+      continue;
+    completed.push(record.roomName);
+  }
+  return Object.freeze(completed);
 }
 
 /** Projects one layout-owned terminal stock handoff into the sole logistics graph. */
@@ -375,10 +468,13 @@ function renewedRevision(
     : Math.max(proposed, prior.revision + 1);
 }
 
-function suppressionOnlyProjection(input: {
-  readonly suppressedSinkTargetIds: readonly string[];
-  readonly suppressedSourceTargetIds: readonly string[];
-}): LayoutTerminalEvacuationProjection {
+function emptySuppression(): LayoutTerminalEvacuationSuppression {
+  return Object.freeze({ suppressedSinkTargetIds: [], suppressedSourceTargetIds: [] });
+}
+
+function suppressionOnlyProjection(
+  input: LayoutTerminalEvacuationSuppression,
+): LayoutTerminalEvacuationProjection {
   return freeze({
     budgets: [],
     demands: {
