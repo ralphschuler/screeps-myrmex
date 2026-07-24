@@ -7,10 +7,12 @@ export {
   reconstructCommittedLayout,
   reconstructStaleLayoutLinkPlacements,
   selectLayoutPlanningWindow,
+  isStaleLayoutContainerMigrationContinuation,
   isStaleLayoutExtensionEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
+  staleLayoutContainerMigrationSettlementBlocker,
   staleLayoutExtensionEvacuationSettlementBlocker,
   staleLayoutLinkEvacuationSettlementBlocker,
   staleLayoutRemovalSettlementBlocker,
@@ -38,6 +40,7 @@ export {
   reconcileStructureDestroyExecution,
 } from "./reconciliation";
 export {
+  clearStaleLayoutContainerMigration,
   clearStaleLayoutExtensionEvacuation,
   clearStaleLayoutLinkEvacuation,
   clearStaleLayoutSpawnEvacuation,

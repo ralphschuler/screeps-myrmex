@@ -302,23 +302,26 @@ mining-contract staging wait for the final spawn-settled colony view and require
 reservation matching every service's colony, harvesting/filling category, issuer, and sequence. The
 accepted handoff cannot create a stale-layout suspension or new contract and therefore preserves the
 exact contract and lease; unavailable, duplicate, terminal-only, mismatched, unsafe, or changed-plan
-evidence remains inert. One otherwise-quiescent unfinished extension, reserve-link, spawn, or tower
-evacuation is the sole active-work exception: its original deadline and exact source/replacement/
-amount/baseline identity may continue through the existing funded V3 Logistics path. Tower
-continuation also preserves the operational replacement's 10-energy action floor. Spawn continuation
-additionally requires exact active idle 300-capacity endpoints and a completed current SpawnBroker
-plan selecting neither; source refill stays suppressed, while replacement refill returns only after
-exact source emptiness. Reserve-link continuation accepts only known source-defined V1 geometry and
-fresh RCL8 proof that each unique stale service remains adjacent to its exact source, all productive
-roles remain intact, one external reserve source and one exact reserve replacement exist, and zero-
+evidence remains inert. One otherwise-quiescent unfinished legacy energy-only general-container
+migration or extension, reserve-link, spawn, or tower evacuation is the sole active-work exception:
+its original deadline and exact source/replacement/amount/baseline identity may continue through the
+existing funded V3 Logistics path. The container form has no manifest or source-service identity,
+requires two exact non-foreign 2,000-capacity general-purpose Stores, and suppresses its target
+source and both refill endpoints even when optional continuation is denied. Tower continuation also
+preserves the operational replacement's 10-energy action floor. Spawn continuation additionally
+requires exact active idle 300-capacity endpoints and a completed current SpawnBroker plan selecting
+neither; source refill stays suppressed, while replacement refill returns only after exact source
+emptiness. Reserve-link continuation accepts only known source-defined V1 geometry and fresh RCL8
+proof that each unique stale service remains adjacent to its exact source, all productive roles
+remain intact, one external reserve source and one exact reserve replacement exist, and zero-
 cooldown exact 800-capacity energy Stores exclude both endpoints from native transfers. Durable
 endpoint suppression survives denied optional work; creep Logistics is the only resource path. Fresh
-source emptiness, exact replacement gain, complete flow/endpoint retirement, and unchanged safe
-policy clear only that term in a command-free tick; current-layout handoff remains a separate
-following tick. A safe quiescent RCL8 record may use the existing bounded infrastructure-recovery
-authorization for that command-free source-defined handoff. Every other unfinished stale migration
-stays inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this
-revision boundary.
+source emptiness, exact replacement gain, complete flow/endpoint retirement, active funding, and
+unchanged safe policy clear only that term in a command-free tick; current-layout handoff remains a
+separate following tick. A safe quiescent RCL8 record may use the existing bounded
+infrastructure-recovery authorization for that command-free source-defined handoff. Every other
+unfinished stale migration stays inert.
+[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
