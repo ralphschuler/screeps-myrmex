@@ -150,9 +150,11 @@ active funding, exact delivery, and command-free settlement before the later han
 singleton non-energy manifest through its resource-qualified flow under the same limits. Issue
 [#425](https://github.com/ralphschuler/screeps-myrmex/issues/425) extends that continuation to one
 canonical two-to-eight-row source-unspecific manifest with distinct funded flows, shared aggregate
-replacement capacity, exact all-row settlement, and no partial publication. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+replacement capacity, exact all-row settlement, and no partial publication. Issue
+[#427](https://github.com/ralphschuler/screeps-myrmex/issues/427) admits one source-specific legacy
+energy form only under fresh exact source adjacency and different selected-service replacement
+continuity. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration and dismantling.
 
 ## Runtime order
 
@@ -264,31 +266,32 @@ and dismantling.
    budget. No stale-layout suspension or new contract is produced for an accepted handoff, which
    retains the exact matching contract and lease; mismatch, unavailable or terminal-only evidence,
    source or room loss, changed source planning, and unsuccessful handoff remain fail-closed. One
-   otherwise-quiescent stale legacy energy-only or bounded resource-manifest general-container
-   migration, extension, reserve-link, spawn, or tower evacuation remains the sole active stale
-   gameplay projection. The existing `optional-growth` budget and Logistics/V3 contract path move
-   its exact stock under the original deadline while source refill is suppressed. Every container
-   form has no source identity; a manifest has one non-energy row or two through eight canonical
-   rows and no legacy fields. All forms require two exact non-foreign 2,000-capacity general-purpose
-   Stores and suppress the target source/refill plus replacement refill even when optional work is
-   denied. Extension and spawn replacement refill remain suppressed during acquisition; malformed
-   spawn evidence keeps both exact endpoints suppressed. Spawn work additionally requires active
-   idle 300-capacity exact endpoints and a completed current SpawnBroker plan selecting neither.
-   During an unexpired tower attempt, both source and replacement refill remain suppressed,
-   including while cargo is in flight. A reserve-link term additionally requires safely
-   reconstructible source-defined V1 link positions, complete current RCL8 source/hub/controller
-   roles, one external reserve source, one exact reserve replacement, exact 800-capacity energy
-   Stores, zero cooldown, and exclusion from native link proposals. Its endpoints remain suppressed
-   even when optional work or funding is denied; an existing lease requires the current
-   role-authorized flow and active reservation. Spawn, link, or tower expiry restores ordinary
-   service but keeps removal and revision handoff blocked. Tower continuation also retains at least
-   the exact 10-energy action floor. A later fresh observation may clear only that term when the
-   source is empty, replacement stock for the exact resource is baseline plus amount, no current V3
-   planning record names the flow or either endpoint, active funding and the same safe handoff
-   policy still pass. This settlement precommits only layouts, emits no layout command in any room,
-   and leaves the revision handoff to a later tick. Another active stale term, source-service
-   sequence, unsafe policy, malformed, refilled, consumed, or drifted Store evidence, active work,
-   expiry, or missing vision remains fail-closed.
+   otherwise-quiescent stale legacy energy-only or bounded resource-manifest container migration,
+   extension, reserve-link, spawn, or tower evacuation remains the sole active stale gameplay
+   projection. The existing `optional-growth` budget and Logistics/V3 contract path move its exact
+   stock under the original deadline while source refill is suppressed. A manifest has no source
+   identity and contains one non-energy row or two through eight canonical rows with no legacy
+   fields. One legacy energy form may carry one exact source identity only while the target remains
+   adjacent and a different persisted exact selected service occupies the replacement. All forms
+   require two exact non-foreign 2,000-capacity general-purpose Stores and suppress the target
+   source/refill plus replacement refill even when optional work is denied. Extension and spawn
+   replacement refill remain suppressed during acquisition; malformed spawn evidence keeps both
+   exact endpoints suppressed. Spawn work additionally requires active idle 300-capacity exact
+   endpoints and a completed current SpawnBroker plan selecting neither. During an unexpired tower
+   attempt, both source and replacement refill remain suppressed, including while cargo is in
+   flight. A reserve-link term additionally requires safely reconstructible source-defined V1 link
+   positions, complete current RCL8 source/hub/controller roles, one external reserve source, one
+   exact reserve replacement, exact 800-capacity energy Stores, zero cooldown, and exclusion from
+   native link proposals. Its endpoints remain suppressed even when optional work or funding is
+   denied; an existing lease requires the current role-authorized flow and active reservation.
+   Spawn, link, or tower expiry restores ordinary service but keeps removal and revision handoff
+   blocked. Tower continuation also retains at least the exact 10-energy action floor. A later fresh
+   observation may clear only that term when the source is empty, replacement stock for the exact
+   resource is baseline plus amount, no current V3 planning record names the flow or either
+   endpoint, active funding and the same safe handoff policy still pass. This settlement precommits
+   only layouts, emits no layout command in any room, and leaves the revision handoff to a later
+   tick. Another active stale term, source-service sequence, unsafe policy, malformed, refilled,
+   consumed, or drifted Store evidence, active work, expiry, or missing vision remains fail-closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -639,6 +642,20 @@ that unsafe policy removes their existing stale lease before another withdraw/tr
 projection controls retain canonical order, distinct flows, shared aggregate capacity, durable
 suppression, 64-flow no-prefix overflow, malformed Store rejection, and exact V3 command ownership.
 No schema, authority, executor, command, or persistent field is added.
+
+Issue #427's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
+50-energy legacy migration carrying its exact source identity, an adjacent redundant target, and a
+different persisted exact selected source-service replacement with a 10-energy baseline. The
+existing `optional-growth` budget, Logistics/V3 contract, allocator, lease agent, action arbiter,
+and creep executors remain the only resource path. Projection and completion both revalidate source
+adjacency and the selected replacement position. Fresh target emptiness, exact 60 replacement
+energy, active funding, and complete flow/endpoint retirement clear only `containerMigration`
+command-free; source-service identity, sequence, and work position remain unchanged, and the
+revision handoff follows on a later tick. Warm, module-reset, and reversed-fact variants produce
+byte-equivalent owner, planning, and zero-layout-command outcomes. Focused controls reject a source-
+specific manifest, source/service drift, wrong replacement, malformed Stores, active work, unsafe
+policy, expiry, missing funding, and non-exact delivery. No schema, authority, mining plan,
+executor, command, or persistent field is added.
 
 Issue #415's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
 500-energy tower evacuation and an exact active replacement retaining the 10-energy action floor.

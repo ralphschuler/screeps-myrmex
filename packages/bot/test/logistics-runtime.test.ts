@@ -2464,6 +2464,64 @@ describe("logistics runtime adapter", () => {
         tick: 11,
       }),
     ).toEqual(["W1N1"]);
+
+    const sourceSpecificRecord: LayoutRecord = {
+      ...record,
+      containerMigration: { ...migration, sourceId: "source-a" },
+      sourceServices: [
+        {
+          adoption: "exact",
+          layer: "primary",
+          minimumRcl: 2,
+          pos: position(13, 12),
+          service: { kind: "source-container", sourceId: "source-a" },
+          structureType: "container",
+        },
+      ],
+    };
+    const sourceSpecificWorld = (serviceX: number, sourceX = 11) => ({
+      ...delivered,
+      rooms: [
+        {
+          ...deliveredRoom,
+          sources: [
+            {
+              energy: 3_000,
+              energyCapacity: 3_000,
+              id: "source-a",
+              pos: position(sourceX, 12),
+              ticksToRegeneration: 300,
+            },
+          ],
+          storedStructures: deliveredRoom.storedStructures.map((structure) =>
+            structure.id === migration.replacementId
+              ? { ...structure, pos: position(serviceX, 12) }
+              : structure,
+          ),
+        },
+      ],
+    });
+    expect(
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set([flowId]),
+        records: [sourceSpecificRecord],
+        snapshot: sourceSpecificWorld(13),
+        tick: 11,
+      }),
+    ).toEqual(["W1N1"]);
+    for (const drifted of [sourceSpecificWorld(14), sourceSpecificWorld(13, 10)])
+      expect(
+        completedLayoutContainerMigrationRoomNames({
+          activeFlowIds: new Set(),
+          activeTargetIds: new Set(),
+          authorizedFlowIds: new Set([flowId]),
+          records: [sourceSpecificRecord],
+          snapshot: drifted,
+          tick: 11,
+        }),
+      ).toEqual([]);
   });
 
   it("exactly settles one singleton non-energy container migration", () => {

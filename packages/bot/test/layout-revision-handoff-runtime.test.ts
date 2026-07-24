@@ -300,6 +300,7 @@ type StaleActiveEvidence =
   | "completed-tower-evacuation-with-site"
   | "container-migration"
   | "energy-container-migration"
+  | "source-energy-container-migration"
   | "mixed-container-migration"
   | "non-energy-container-migration"
   | "evacuation"
@@ -310,7 +311,7 @@ type StaleActiveEvidence =
   | "tower-evacuation"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425/#427)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -393,6 +394,58 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     ]);
     expect(layoutsOwner(memory).records).toEqual([]);
     expect(layoutsOwner(memory).staleRecords[0]?.containerMigration).toEqual(migration);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+  });
+
+  it("continues one stale source-container energy migration through funded logistics", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    runTick({ game: game(100, commands), memory });
+    runTick({ game: game(101, commands), memory });
+    seedStaleOwner(memory, "source-energy-container-migration");
+    const sourceServices = layoutsOwner(memory).staleRecords[0]?.sourceServices;
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+
+    const pending = runTick({
+      game: game(202, commands, {
+        roomEnergyAvailable: 350,
+        roomEnergyCapacityAvailable: 800,
+        sourcePosition: { x: 39, y: 40 },
+        staleContainerMigration: { replacementEnergy: 10, sourceEnergy: 50 },
+      }),
+      memory,
+    });
+    const migration = layoutsOwner(memory).staleRecords[0]?.containerMigration;
+    if (migration === undefined) throw new Error("expected stale source-container migration");
+    const flowId = layoutContainerMigrationFlowId(ROOM_NAME, migration);
+    const contracts = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+          }[];
+        }
+      | undefined;
+
+    expect(pending.kernel.faults).toEqual([]);
+    expect(pending.colony.reservations).toContainEqual(
+      expect.objectContaining({
+        category: "optional-growth",
+        colonyId: ROOM_NAME,
+        issuer: layoutContainerMigrationBudgetIssuer(ROOM_NAME, migration),
+        status: "active",
+      }),
+    );
+    expect(contracts?.active?.some(({ execution }) => execution?.flowId === flowId)).toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.sourceServices).toEqual(sourceServices);
+    expect(pending.layout.planning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
     expect(commands.createConstructionSite).not.toHaveBeenCalled();
     expect(commands.destroyStructure).not.toHaveBeenCalled();
   });
@@ -607,6 +660,37 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(forward.settlementOwner.records).toEqual([]);
     expect(forward.settlementOwner.staleRecords).toHaveLength(1);
     expect(forward.settlementOwner.staleRecords[0]?.containerMigration).toBeUndefined();
+    expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+    expect(forward.handoffOwner).toMatchObject({
+      records: [
+        expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+      ],
+      staleRecords: [],
+    });
+    expect(forward.handoffPlanning).toEqual([
+      expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+    ]);
+    expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+    expect(reset).toEqual(forward);
+    expect(reordered).toEqual(forward);
+  });
+
+  it("settles delivered stale source-container energy command-free before later handoff", async () => {
+    const forward = await runCompletedStaleSourceContainerMigrationVariant(false, false);
+    const reset = await runCompletedStaleSourceContainerMigrationVariant(false, true);
+    const reordered = await runCompletedStaleSourceContainerMigrationVariant(true, false);
+
+    expect(forward.settlementPlanning).toEqual([
+      expect.objectContaining({
+        blocker: "revision-handoff-active",
+        roomName: ROOM_NAME,
+        status: "degraded",
+      }),
+    ]);
+    expect(forward.settlementOwner.records).toEqual([]);
+    expect(forward.settlementOwner.staleRecords).toHaveLength(1);
+    expect(forward.settlementOwner.staleRecords[0]?.containerMigration).toBeUndefined();
+    expect(forward.settlementOwner.staleRecords[0]?.sourceServices).toEqual(forward.sourceServices);
     expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
     expect(forward.handoffOwner).toMatchObject({
       records: [
@@ -4122,6 +4206,23 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
   const staleRecord = {
     ...stable,
     algorithmRevision: "owned-room-layout-v1",
+    ...(active === "source-energy-container-migration"
+      ? {
+          sourceServices: [
+            {
+              adoption: "exact" as const,
+              layer: "primary" as const,
+              minimumRcl: 2,
+              pos: { roomName, x: 41, y: 40 },
+              service: {
+                kind: "source-container" as const,
+                sourceId: `source-${roomName}`,
+              },
+              structureType: "container" as const,
+            },
+          ],
+        }
+      : {}),
     ...(active === "container-migration" || completedContainerMigration
       ? {
           containerMigration: {
@@ -4142,30 +4243,42 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
               targetId: "container-obsolete",
             },
           }
-        : active === "mixed-container-migration"
+        : active === "source-energy-container-migration"
           ? {
               containerMigration: {
+                energyAmount: 50,
                 expiresAt: 350,
                 replacementId: "container-replacement",
-                resourceManifest: [
-                  ["U", 50, 10],
-                  ["energy", 50, 20],
-                ],
+                replacementInitialEnergy: 10,
+                sourceId: `source-${roomName}`,
                 startedAt: 200,
                 targetId: "container-obsolete",
               },
             }
-          : active === "non-energy-container-migration"
+          : active === "mixed-container-migration"
             ? {
                 containerMigration: {
                   expiresAt: 350,
                   replacementId: "container-replacement",
-                  resourceManifest: [["U", 50, 10]],
+                  resourceManifest: [
+                    ["U", 50, 10],
+                    ["energy", 50, 20],
+                  ],
                   startedAt: 200,
                   targetId: "container-obsolete",
                 },
               }
-            : {}),
+            : active === "non-energy-container-migration"
+              ? {
+                  containerMigration: {
+                    expiresAt: 350,
+                    replacementId: "container-replacement",
+                    resourceManifest: [["U", 50, 10]],
+                    startedAt: 200,
+                    targetId: "container-obsolete",
+                  },
+                }
+              : {}),
     ...(active === "evacuation" || completedExtensionEvacuation
       ? {
           extensionEvacuation: {
@@ -4548,6 +4661,53 @@ async function runCompletedStaleContainerMigrationVariant(reverse: boolean, rese
     settlementCommands,
     settlementOwner,
     settlementPlanning: settlement.layout.planning,
+  };
+}
+
+async function runCompletedStaleSourceContainerMigrationVariant(reverse: boolean, reset: boolean) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  executeTick({ game: game(100, commands, { reverse }), memory });
+  executeTick({ game: game(101, commands, { reverse }), memory });
+  seedStaleOwner(memory, "source-energy-container-migration");
+  const sourceServices = layoutsOwner(memory).staleRecords[0]?.sourceServices;
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const options = {
+    reverse,
+    roomEnergyAvailable: 350,
+    roomEnergyCapacityAvailable: 800,
+    sourcePosition: { x: 39, y: 40 },
+    staleContainerMigration: { replacementEnergy: 60, sourceEnergy: 0 },
+  } as const;
+  const settlement = executeTick({ game: game(202, commands, options), memory });
+  const settlementOwner = layoutsOwner(memory);
+  const settlementCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+  };
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const handoff = executeTick({ game: game(203, commands, options), memory });
+  return {
+    handoffCommands: {
+      create: commands.createConstructionSite.mock.calls.length,
+      destroy: commands.destroyStructure.mock.calls.length,
+    },
+    handoffOwner: layoutsOwner(memory),
+    handoffPlanning: handoff.layout.planning,
+    settlementCommands,
+    settlementOwner,
+    settlementPlanning: settlement.layout.planning,
+    sourceServices,
   };
 }
 

@@ -270,14 +270,15 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   the mutually exclusive singleton non-energy manifest under those same bounds. Issue #425 extends
   that resource-qualified path to one canonical two-to-eight-row source-unspecific manifest: every
   row retains a distinct funded flow/budget identity, all rows share aggregate replacement capacity,
-  and over-cap admission publishes no prefix. One-row energy and source-specific manifests remain
-  inert. Fresh exact empty-source, every baseline-plus-amount replacement gain, complete flow/
-  endpoint retirement, and unchanged safe policy clear only the applicable term command-free; the
-  ordinary revision handoff remains a later tick. Unrelated active, mismatched, multiple-pair,
-  unpaired storage, unsafe, same-tick, incomplete, terminal-only, or drifted evidence remains
-  blocked. Uninterrupted same-structure storage/terminal service, broad dynamic movement/pathfinding
-  proof, autonomous boost manifest production, defensive or active revision migration, and creep
-  dismantling remain issue #99.
+  and over-cap admission publishes no prefix. Issue #427 admits one source-specific legacy energy
+  form only with fresh exact source adjacency and a different persisted exact selected
+  source-service replacement; source-specific manifests remain inert. Fresh exact empty-source,
+  every exact replacement gain, complete flow and endpoint retirement, and unchanged safe policy
+  clear only the applicable term command-free; the ordinary revision handoff remains a later tick.
+  Unrelated active, mismatched, multiple-pair, unpaired storage, unsafe, same-tick, incomplete,
+  terminal-only, or drifted evidence remains blocked. Uninterrupted same-structure storage/terminal
+  service, broad dynamic movement/pathfinding proof, autonomous boost manifest production, defensive
+  or active revision migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

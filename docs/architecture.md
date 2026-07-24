@@ -268,14 +268,16 @@ source identity, two exact non-foreign 2,000-capacity Stores, durable source/ref
 the existing funded Logistics/V3 path. Issue #423 adds the mutually exclusive singleton non-energy
 manifest form under the same Stores, suppression, funding, and command boundaries. Issue #425 adds
 one canonical two-to-eight-row source-unspecific manifest under those same boundaries, with distinct
-resource-qualified funded flows and one aggregate replacement-capacity reservation. One-row energy
-and source-specific manifests remain inert. Fresh exact empty-source, every baseline-plus-amount
-replacement gain, retired flow/endpoints, active funding, and unchanged safe policy clear only the
-applicable term command-free; the revision handoff remains a later tick. Every other unfinished
-stale migration remains inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md)
-records the boundary. `StructureRemovalArbiter` alone authorizes removal and
-`StructureDestroyExecutor` alone calls `Structure.destroy`. Every extension, container, spawn,
-storage, terminal, tower, link, and lab result reuses the same fixed receipt.
+resource-qualified funded flows and one aggregate replacement-capacity reservation. Issue #427
+admits one source-specific legacy energy form only while fresh observation retains exact source
+adjacency and a different persisted exact selected source-service replacement; source-specific
+manifests remain inert. Fresh exact empty-source, every baseline-plus-amount replacement gain,
+retired flow/endpoints, active funding, and unchanged safe policy clear only the applicable term
+command-free; the revision handoff remains a later tick. Every other unfinished stale migration
+remains inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the
+boundary. `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone
+calls `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and
+lab result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -736,29 +738,31 @@ its CPU budget and its publication is discarded, so mandatory-tail `spawn.settle
 API call that already happened; an intent with no result is treated as not scheduled. If settlement
 or colony staging is not staged, downstream contracts receive no invented active authorization.
 
-One exact otherwise-quiescent stale legacy energy-only or bounded resource-manifest general-
-container migration, extension, reserve-link, spawn, or tower evacuation remains an input to its
-ordinary projection even though every other stale-layout gameplay projection is inert. It retains
-the original fixed deadline and aggregate 64-record/64-flow bounds; every container form has no
-source-service identity, a manifest has one non-energy row or two through eight canonical rows with
-no legacy energy fields, and a tower replacement also retains at least one 10-energy action. Spawn
-additionally requires a completed current SpawnBroker plan selecting neither exact active idle
-endpoint. Reserve-link continuation accepts only known V1 link positions reconstructed as read-only
-role evidence and requires each unique stale source service to remain adjacent to its fresh exact
-source, current RCL8 source/hub/controller continuity, external/exact reserve classification, exact
-zero-cooldown 800-capacity energy Stores, and exclusion from native link proposals. Layout planning
-may clear only that term from fresh exact delivered stock plus complete current V3 flow/endpoint
-retirement under the existing safe handoff policy; that command-free settlement suppresses new
-layout output globally and cannot perform the revision handoff until a later tick. Unexpired-term
-source refill suppression applies to ordinary Logistics and SurvivalFlow independently of optional-
-work policy admission. Container target source/refill and replacement refill stay suppressed
-throughout its unexpired term. Extension and spawn replacement refill remain suppressed while source
-energy remains; malformed spawn evidence suppresses both endpoints. During an unexpired tower or
-reserve-link attempt, both source and replacement refill remain suppressed so in-flight delivery
-cannot compete. Spawn, link, or tower expiry restores ordinary service but preserves removal- and
-handoff-blocking evidence. Existing stale leases additionally require the current safe policy, exact
-projected flow, active budget reservation, and, for spawn work, current broker exclusion before
-execution; link work also requires current role, Store, cooldown, and native-exclusion evidence.
+One exact otherwise-quiescent stale legacy energy-only or bounded resource-manifest container
+migration, extension, reserve-link, spawn, or tower evacuation remains an input to its ordinary
+projection even though every other stale-layout gameplay projection is inert. It retains the
+original fixed deadline and aggregate 64-record/64-flow bounds. A manifest has no source-service
+identity and contains one non-energy row or two through eight canonical rows with no legacy energy
+fields. One legacy energy form may instead carry an exact source identity only when the target stays
+adjacent to that source and a different persisted exact selected service remains at the replacement.
+A tower replacement also retains at least one 10-energy action. Spawn additionally requires a
+completed current SpawnBroker plan selecting neither exact active idle endpoint. Reserve-link
+continuation accepts only known V1 link positions reconstructed as read-only role evidence and
+requires each unique stale source service to remain adjacent to its fresh exact source, current RCL8
+source/hub/controller continuity, external/exact reserve classification, exact zero-cooldown
+800-capacity energy Stores, and exclusion from native link proposals. Layout planning may clear only
+that term from fresh exact delivered stock plus complete current V3 flow/endpoint retirement under
+the existing safe handoff policy; that command-free settlement suppresses new layout output globally
+and cannot perform the revision handoff until a later tick. Unexpired-term source refill suppression
+applies to ordinary Logistics and SurvivalFlow regardless of optional work policy admission.
+Container target source/refill and replacement refill stay suppressed throughout its unexpired term.
+Extension and spawn replacement refill remain suppressed while source energy remains; malformed
+spawn evidence suppresses both endpoints. During an unexpired tower or reserve-link attempt, both
+source and replacement refill remain suppressed so in-flight delivery cannot compete. Spawn, link,
+or tower expiry restores ordinary service but preserves removal- and handoff-blocking evidence.
+Existing stale leases additionally require the current safe policy, exact projected flow, active
+budget reservation, and, for spawn work, current broker exclusion before execution; link work also
+requires current role, Store, cooldown, and native-exclusion evidence.
 
 `contracts.reconcile` runs only when the effective `phase1.contracts` gate is enabled and the
 current colony result can supply a bounded authorization view. A disabled or prerequisite-blocked
@@ -1546,10 +1550,12 @@ and endpoint evidence. Issue #421 permits one otherwise-quiescent stale legacy e
 record to reuse this exact flow. Issue #423 permits the mutually exclusive one-row non-energy
 general record to reuse its resource-qualified flow. Issue #425 permits one canonical two-to-eight-
 row source-unspecific manifest to reuse every distinct resource-qualified flow under one aggregate
-replacement-capacity reservation. All forms require current safe policy and active funding, keep
-target source/refill plus replacement refill suppressed independently of optional admission, and
-clear only from fresh exact delivery of every row plus complete work retirement before a later
-revision handoff.
+replacement-capacity reservation. Issue #427 permits one source-specific legacy energy record only
+while current exact source adjacency and the different persisted exact selected replacement service
+remain unchanged; completion revalidates the same evidence before clearing it. All forms require
+current safe policy and active funding, keep target source/refill plus replacement refill suppressed
+independently of optional admission, and clear only from fresh exact delivery of every row plus
+complete work retirement before a later revision handoff.
 
 Reserve-link stock migration uses the same authority only after the canonical link-role boundary
 revalidates every productive anchor plus the exact external/reserve-replacement relation from
@@ -1707,11 +1713,11 @@ optional fixed-shape single-resource storage evacuation, V22 adds its bounded tw
 manifest alternative, V23 adds the exact settled-batch cursor for one 3,001–6,000-unit
 single-resource continuation, V24 permits that cursor on a canonical two-to-eight-resource manifest
 under the same total, and V25 isolates validated stale-algorithm records in a separate collection
-until one command-free safe handoff. Only #413/#415/#417/#419/#421/#423/#425's exact unfinished
-extension, tower, spawn, reserve-link evacuation, or legacy energy-only/bounded resource-manifest
-general-container migration may remain a funded Logistics input until its separate command-free
-settlement. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior commitments
-and authorizes no command. Every observed owned layout site enters the existing funded
+until one command-free safe handoff. Only #413/#415/#417/#419/#421/#423/#425/#427's exact unfinished
+extension, tower, spawn, reserve-link evacuation, or admitted legacy energy-only/bounded
+resource-manifest container migration may remain a funded Logistics input until its separate
+command-free settlement. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior
+commitments and authorizes no command. Every observed owned layout site enters the existing funded
 survival-growth build flow, while controller risk, recovery, maintenance, and protected reserves
 retain precedence.
 
@@ -2819,32 +2825,34 @@ Required architecture assertions include:
   ordinary terminal service but remains removal-blocking; the narrow `terminal → storage` continuity
   form cannot weaken same-type replacement checks for another structure kind;
 - a validated older-algorithm layout record is isolated from gameplay except for one otherwise-
-  quiescent exact unfinished legacy energy-only or bounded resource-manifest general-container
-  migration, extension, reserve-link, spawn, or tower evacuation continuing through the existing
-  funded V3 path; every container form has no source identity, a manifest has one non-energy row or
-  two through eight canonical rows and no legacy fields, all require exact 2,000-capacity Stores,
-  every row retains distinct active funding under one aggregate replacement-capacity reservation,
-  and a tower continuation retains at least 10 replacement energy, spawn continuation requires
-  current broker-unselected active idle exact endpoints, reserve-link continuation requires known V1
-  role geometry plus fresh exact RCL8 productive/reserve-role, zero-cooldown 800-capacity Store,
-  active-funding, and native-transfer-exclusion evidence, and every applicable term clears only from
-  fresh source-empty, exact replacement gain, retired flow/endpoints, active funding, and safe
-  policy evidence in a command-free tick before a later revision handoff; one exact successful stale
-  construction-site receipt may settle only from newer matching owned-site or
-  completed-owned-structure evidence, and one otherwise-quiescent terminal-success removal receipt
-  may settle only from newer complete exact-target absence under the same safe policy; a bare
-  storage receipt remains excluded, while one completed container migration or extension, lab, link,
-  spawn, terminal, storage, or tower evacuation may clear atomically with that receipt only when
-  exact type, target, replacement, and receipt-within-interval evidence match; lab energy, mineral,
-  mixed, storage-destination, and terminal-destination forms, scalar and manifest terminal forms,
-  and scalar, manifest, and two-batch storage forms share their respective identity contracts;
-  storage additionally requires current exact retained-terminal/quiescence and complete
-  original-resource conservation evidence; one otherwise-quiescent unfinished legacy energy-only or
-  bounded resource-manifest container migration, extension, reserve-link, spawn, or tower evacuation
-  may continue only through its exact existing funded V3 flow set and clear command-free from fresh
-  source-empty, every replacement gain, and retired flow/endpoint evidence before the later revision
-  handoff; one otherwise-quiescent failed receipt may clear only from newer complete exact-target
-  presence under the same safe policy, without retry, either alone or atomically with its sole exact
+  quiescent exact unfinished legacy energy-only or bounded resource-manifest container migration,
+  extension, reserve-link, spawn, or tower evacuation continuing through the existing funded V3
+  path; a manifest has no source identity and contains one non-energy row or two through eight
+  canonical rows with no legacy fields, while one legacy energy form may carry one exact source only
+  with fresh target adjacency and a different exact selected replacement service; all require exact
+  2,000-capacity Stores, every row retains distinct active funding under one aggregate
+  replacement-capacity reservation, and a tower continuation retains at least 10 replacement energy,
+  spawn continuation requires current broker-unselected active idle exact endpoints, reserve-link
+  continuation requires known V1 role geometry plus fresh exact RCL8 productive/reserve-role,
+  zero-cooldown 800-capacity Store, active-funding, and native-transfer-exclusion evidence, and
+  every applicable term clears only from fresh source-empty, exact replacement gain, retired
+  flow/endpoints, active funding, and safe policy evidence in a command-free tick before a later
+  revision handoff; one exact successful stale construction-site receipt may settle only from newer
+  matching owned-site or completed-owned-structure evidence, and one otherwise-quiescent
+  terminal-success removal receipt may settle only from newer complete exact-target absence under
+  the same safe policy; a bare storage receipt remains excluded, while one completed container
+  migration or extension, lab, link, spawn, terminal, storage, or tower evacuation may clear
+  atomically with that receipt only when exact type, target, replacement, and
+  receipt-within-interval evidence match; lab energy, mineral, mixed, storage-destination, and
+  terminal-destination forms, scalar and manifest terminal forms, and scalar, manifest, and
+  two-batch storage forms share their respective identity contracts; storage additionally requires
+  current exact retained-terminal/quiescence and complete original-resource conservation evidence;
+  one otherwise-quiescent unfinished legacy energy-only or bounded resource-manifest container
+  migration, extension, reserve-link, spawn, or tower evacuation may continue only through its exact
+  existing funded V3 flow set and clear command-free from fresh source-empty, every replacement
+  gain, and retired flow/endpoint evidence before the later revision handoff; one
+  otherwise-quiescent failed receipt may clear only from newer complete exact-target presence under
+  the same safe policy, without retry, either alone or atomically with its sole exact
   type/target/replacement/interval-matched evacuation term; every settlement is command-free, and
   only a then-quiescent record under fresh safe visible-colony and complete current source/access
   evidence may enter the separate command-free current-revision handoff on a later tick; an explicit
@@ -2905,7 +2913,7 @@ Required architecture assertions include:
   mixed external target may remain under active reaction or explicit funded boost work only when
   Industry durably rebinds the same role IDs and commitment progress to the nine retained labs
   before any command or migration; each stocked path additionally requires its existing exact funded
-  evacuation, every applicable destination gain, retired flow/ endpoints, unchanged destination
+  evacuation, every applicable destination gain, retired flows and endpoints, unchanged destination
   evidence, and no pending attempt before removal;
 - redundant source-container removal requires a different exact committed service for the same
   source, an empty unshared target, unchanged static-mining identity/work position, current safety,
