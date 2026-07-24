@@ -44,15 +44,24 @@ export function staleLayoutRemovalSettlementBlocker(input: {
   return staleLayoutRevisionBlocker(input, true);
 }
 
-/** Exact stale shape whose legacy energy-only container migration may continue without removal. */
+/** Exact stale shape whose singleton general-container migration may continue without removal. */
 export function isStaleLayoutContainerMigrationContinuation(record: StaleLayoutRecord): boolean {
   const migration = record.containerMigration;
+  if (migration === undefined) return false;
+  const legacyEnergy =
+    migration.resourceManifest === undefined &&
+    migration.energyAmount !== undefined &&
+    migration.replacementInitialEnergy !== undefined;
+  const manifestTerm = migration.resourceManifest?.[0];
+  const singletonNonEnergy =
+    migration.energyAmount === undefined &&
+    migration.replacementInitialEnergy === undefined &&
+    migration.resourceManifest?.length === 1 &&
+    manifestTerm !== undefined &&
+    manifestTerm[0] !== "energy";
   return (
     record.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
-    migration !== undefined &&
-    migration.energyAmount !== undefined &&
-    migration.replacementInitialEnergy !== undefined &&
-    migration.resourceManifest === undefined &&
+    (legacyEnergy || singletonNonEnergy) &&
     migration.sourceId === undefined &&
     record.extensionEvacuation === undefined &&
     record.labEvacuation === undefined &&
