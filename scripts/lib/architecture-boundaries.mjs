@@ -342,6 +342,9 @@ function inspectSource(contents, path) {
         if (commandMethodCall.methods.has("launchNuke")) {
           rules.add("nuke-launch-before-operations-forbidden");
         }
+        if (commandMethodCall.methods.has("dismantle")) {
+          rules.add("creep-dismantle-before-funded-policy-forbidden");
+        }
         if (commandMethodCall.methods.has("move")) {
           addUnlessAllowed(
             "move-command-outside-movement-executor",

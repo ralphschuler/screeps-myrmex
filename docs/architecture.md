@@ -329,6 +329,9 @@ lab result reuses the same fixed receipt.
     energy, spawn-time, and abstract-CPU reservation authority.
 21. `SpawnBroker` is the sole spawn-slot/body/name arbiter, and `SpawnExecutor` is the sole caller
     of `StructureSpawn.spawnCreep`. Neither owns a persistent queue or resource ledger.
+22. Phase 2 owned-layout removal uses only `StructureRemovalArbiter` and `StructureDestroyExecutor`.
+    `Creep.dismantle` is source-forbidden until a later explicit funded policy proves positive
+    full-cost value and retains the same replacement, access, reserve, threat, and rollback gates.
 
 Adding a second authority for any item above is an architecture defect, even if the duplicate is
 described as temporary.
@@ -1688,8 +1691,11 @@ policy-driven repair targets with the current snapshot. `ConstructionSiteArbiter
 and per-room construction-site budget and prioritizes accepted site intents.
 
 Emergency ramparts may be requested by defense, but they still pass through the construction-site
-authority. Dismantling any owned structure requires a typed intent with owner policy, replacement
-precondition, and rollback consequence.
+authority. Current owned migration requires a typed direct-destroy intent with owner policy,
+replacement precondition, and rollback consequence. `Creep.dismantle` is not an available action:
+its unboosted 50-hit `WORK` action returns at most 0.25 energy per part before integer flooring,
+occupies the creep's primary action, and delays committed geometry. Architecture enforcement rejects
+every direct or aliased call until a later funded policy demonstrates a positive full-cost outcome.
 
 PR A of issue #45 activates `LayoutPlanner` as a pure authority behind `phase2.layout`, dependent on
 `phase2.colony`. `WorldObserver` remains the sole live-room reader and normalizes the 2,500 terrain
@@ -2031,7 +2037,9 @@ mixed composition; and
 reaction continuation; and
 [ADR 0065](adr/0065-boost-handoff-idle-terminal-lab-mixed-stock-evacuation.md) records the
 equivalent explicit-boost continuation. Autonomous boost manifest production, defensive migration,
-general multi-step migration, and creep dismantling remain issue #99 and fail closed.
+and general multi-step migration remain issue #99 and fail closed. Issue #439 separately makes the
+current owned-removal method explicit: only the existing direct-destroy authority is available, and
+`Creep.dismantle` remains source-forbidden until a later positive funded policy exists.
 
 Issue #355 restores source-defined primary spawn geometry only when current allowance is at least
 two. At full allowance, `ConstructionPlanner` may remove one active idle empty external spawn only
@@ -2819,6 +2827,7 @@ Required architecture assertions include:
 - direct or aliased `spawnCreep` calls occur only in `SpawnExecutor`;
 - direct or aliased `observeRoom` calls occur only in `ObserverExecutor`;
 - direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
+- every direct or aliased `dismantle` call is rejected before a later explicit funded policy exists;
 - the sole observed traversal projection and layout access share one rampart rule: private foreign
   ramparts block production local paths, owned/public ramparts remain walkable, and an effective
   passability change changes the cache revision without persistent invalidation state;
