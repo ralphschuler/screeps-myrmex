@@ -116,7 +116,8 @@ export function completedLayoutContainerMigrationRoomNames(input: {
       replacement === undefined ||
       target.id === replacement.id ||
       !currentContainer(target) ||
-      !currentContainer(replacement)
+      !currentContainer(replacement) ||
+      !currentSourceMigration(record, migration, room, target, replacement)
     )
       continue;
     const targetResources = exactResources(target);

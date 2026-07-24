@@ -46,7 +46,7 @@ export function staleLayoutRemovalSettlementBlocker(input: {
   return staleLayoutRevisionBlocker(input, true);
 }
 
-/** Exact stale shape whose bounded general-container migration may continue without removal. */
+/** Exact stale shape whose bounded container migration may continue without removal. */
 export function isStaleLayoutContainerMigrationContinuation(record: StaleLayoutRecord): boolean {
   const migration = record.containerMigration;
   if (!validContainerMigration(migration)) return false;
@@ -65,8 +65,7 @@ export function isStaleLayoutContainerMigrationContinuation(record: StaleLayoutR
     !(manifest.length === 1 && manifestTerm?.[0] === "energy");
   return (
     record.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
-    (legacyEnergy || boundedManifest) &&
-    migration.sourceId === undefined &&
+    (legacyEnergy || (boundedManifest && migration.sourceId === undefined)) &&
     record.extensionEvacuation === undefined &&
     record.labEvacuation === undefined &&
     record.linkEvacuation === undefined &&
