@@ -264,6 +264,107 @@ export function projectLayoutStorageEvacuations(input: {
   return freeze({ budgets, demands: { edges, endpoints, nodes, ...suppression } });
 }
 
+export interface LayoutStorageEvacuationSettlement {
+  readonly evacuation: LayoutStorageEvacuation | null;
+  readonly roomName: string;
+}
+
+/** Projects command-free cursor/final settlement from exact fresh stock and retired work. */
+export function projectLayoutStorageEvacuationSettlements(input: {
+  readonly activeFlowIds: ReadonlySet<string>;
+  readonly activeTargetIds: ReadonlySet<string>;
+  readonly quiescentTerminalRoomNames: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): readonly LayoutStorageEvacuationSettlement[] {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return Object.freeze([]);
+  const settlements: LayoutStorageEvacuationSettlement[] = [];
+  for (const record of [...input.records].sort((a, b) => compare(a.roomName, b.roomName))) {
+    const evacuation = record.storageEvacuation;
+    if (
+      evacuation === undefined ||
+      !validEvacuationCommon(evacuation) ||
+      input.tick <= evacuation.startedAt ||
+      input.tick >= evacuation.expiresAt ||
+      !input.quiescentTerminalRoomNames.has(record.roomName)
+    )
+      continue;
+    const terms = storageEvacuationTerms(evacuation);
+    const currentBatch = layoutStorageEvacuationCurrentBatchResources(evacuation);
+    const flowIds = layoutStorageEvacuationFlowIds(record.roomName, evacuation);
+    if (
+      terms === null ||
+      flowIds === null ||
+      flowIds.length !== currentBatch.length ||
+      flowIds.some((flowId) => input.activeFlowIds.has(flowId)) ||
+      input.activeTargetIds.has(evacuation.sourceId) ||
+      input.activeTargetIds.has(evacuation.terminalId)
+    )
+      continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (
+      room?.controller?.ownership !== "owned" ||
+      room.observedAt !== input.tick ||
+      room.hostileCreeps.length > 0
+    )
+      continue;
+    const source = (room.ownedStorages ?? []).length === 1 ? room.ownedStorages?.[0] : undefined;
+    const terminal =
+      (room.ownedTerminals ?? []).length === 1 ? room.ownedTerminals?.[0] : undefined;
+    if (
+      source?.id !== evacuation.sourceId ||
+      !source.active ||
+      terminal?.id !== evacuation.terminalId ||
+      !terminal.active
+    )
+      continue;
+    const sourceStore = exactInventoryStore(source, MAX_LAYOUT_STORAGE_CAPACITY);
+    const terminalStore = exactInventoryStore(terminal, MAX_LAYOUT_TERMINAL_CAPACITY);
+    if (sourceStore === null || terminalStore === null) continue;
+    const resourceTypes = new Set(terms.map(({ resourceType }) => resourceType));
+    if ([...sourceStore.resources.keys()].some((resourceType) => !resourceTypes.has(resourceType)))
+      continue;
+    const conservationValid = terms.every(
+      ({ resourceType, totalAmount, totalTerminalInitialAmount }) => {
+        const sourceAmount = sourceStore.resources.get(resourceType) ?? 0;
+        const delivered =
+          (terminalStore.resources.get(resourceType) ?? 0) - totalTerminalInitialAmount;
+        return (
+          delivered >= 0 &&
+          delivered <= totalAmount &&
+          sourceAmount >= 0 &&
+          sourceAmount + delivered === totalAmount
+        );
+      },
+    );
+    if (!conservationValid) continue;
+    if ("settledAmount" in evacuation && evacuation.settledAmount === 0) {
+      const firstBatchComplete = terms.every(
+        ({ amount, resourceType, totalAmount, totalTerminalInitialAmount }) =>
+          (sourceStore.resources.get(resourceType) ?? 0) === totalAmount - amount &&
+          (terminalStore.resources.get(resourceType) ?? 0) === totalTerminalInitialAmount + amount,
+      );
+      if (!firstBatchComplete) continue;
+      settlements.push({
+        evacuation: { ...evacuation, settledAmount: MAX_LAYOUT_STORAGE_EVACUATION_AMOUNT },
+        roomName: record.roomName,
+      });
+      continue;
+    }
+    if (
+      sourceStore.resources.size === 0 &&
+      terms.every(
+        ({ resourceType, totalAmount, totalTerminalInitialAmount }) =>
+          (terminalStore.resources.get(resourceType) ?? 0) ===
+          totalTerminalInitialAmount + totalAmount,
+      )
+    )
+      settlements.push({ evacuation: null, roomName: record.roomName });
+  }
+  return freeze(settlements);
+}
+
 export function isCompletedLayoutStorageRemovalObserved(input: {
   readonly quiescentTerminalRoomNames: ReadonlySet<string>;
   readonly record: LayoutRecord;

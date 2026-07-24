@@ -154,6 +154,41 @@ export function staleLayoutLabEvacuationSettlementBlocker(input: {
   return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
 }
 
+/** Persisted stale storage term retained for durable send/endpoint suppression. */
+export function isPersistedStaleLayoutStorageEvacuation(record: StaleLayoutRecord): boolean {
+  return (
+    record.algorithmRevision !== LAYOUT_ALGORITHM_REVISION && record.storageEvacuation !== undefined
+  );
+}
+
+/** Exact stale shape whose existing storage evacuation may continue without removal. */
+export function isStaleLayoutStorageEvacuationContinuation(record: StaleLayoutRecord): boolean {
+  return (
+    isPersistedStaleLayoutStorageEvacuation(record) &&
+    record.containerMigration === undefined &&
+    record.extensionEvacuation === undefined &&
+    record.labEvacuation === undefined &&
+    record.linkEvacuation === undefined &&
+    record.spawnEvacuation === undefined &&
+    record.terminalEvacuation === undefined &&
+    record.towerEvacuation === undefined &&
+    record.removalReceipt === undefined &&
+    (record.siteReceipts?.length ?? 0) === 0 &&
+    record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) !== true
+  );
+}
+
+/** Reuses the safe handoff policy after advancing or removing one exact stale storage term. */
+export function staleLayoutStorageEvacuationSettlementBlocker(input: {
+  readonly colony: ColonyView;
+  readonly record: StaleLayoutRecord;
+}): LayoutBlocker | null {
+  if (!isStaleLayoutStorageEvacuationContinuation(input.record)) return "revision-handoff-active";
+  const { storageEvacuation: _storageEvacuation, ...settled } = input.record;
+  void _storageEvacuation;
+  return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
+}
+
 /** Persisted stale terminal term retained for durable send/endpoint suppression. */
 export function isPersistedStaleLayoutTerminalEvacuation(record: StaleLayoutRecord): boolean {
   return (
