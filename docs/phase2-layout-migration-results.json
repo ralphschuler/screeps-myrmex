@@ -1,11 +1,11 @@
 {
-  "schemaVersion": 3,
-  "evidenceIssues": [365, 377, 383],
+  "schemaVersion": 4,
+  "evidenceIssues": [365, 377, 383, 441],
   "issue": 365,
   "status": "complete",
   "scenario": {
-    "id": "phase2-layout-extension-migration-v1",
-    "seed": "phase2-layout-extension-migration-seed-v1",
+    "id": "phase2-layout-extension-migration-v2",
+    "seed": "phase2-layout-extension-migration-seed-v2",
     "ticks": 70,
     "variants": {
       "warm": {
@@ -13,7 +13,7 @@
         "reverseObservation": false
       },
       "reset": {
-        "resetTicks": [50015],
+        "resetTicks": [50015, 50033],
         "reverseObservation": false
       },
       "reordered": {
@@ -70,29 +70,29 @@
       {
         "kind": "destroy-structure",
         "structureType": "extension",
-        "tick": 50031,
+        "tick": 50035,
         "x": 30,
         "y": 30
       },
       {
         "kind": "create-site",
         "structureType": "extension",
-        "tick": 50032,
+        "tick": 50036,
         "x": 19,
         "y": 20
       }
     ],
     "milestones": {
-      "destroyCommandAt": 50031,
-      "destroyDisappearanceObservedAt": 50032,
+      "destroyCommandAt": 50035,
+      "destroyDisappearanceObservedAt": 50036,
       "firstBuildCompletedAt": 50030,
       "firstCompletedReplacementObservedAt": 50031,
       "firstSiteCommandAt": 50000,
       "firstSiteObservedAt": 50001,
-      "secondBuildCompletedAt": 50062,
-      "secondCompletedReplacementObservedAt": 50063,
-      "secondSiteCommandAt": 50032,
-      "secondSiteObservedAt": 50033
+      "secondBuildCompletedAt": 50066,
+      "secondCompletedReplacementObservedAt": 50067,
+      "secondSiteCommandAt": 50036,
+      "secondSiteObservedAt": 50037
     },
     "deferredEffects": {
       "firstSiteObservedNextTick": true,
@@ -106,6 +106,18 @@
       "exactExtensions": 10,
       "removalProposals": 0,
       "siteProposals": 0
+    },
+    "threatInterruption": {
+      "authorizationCount": 0,
+      "blockers": ["threat"],
+      "blockedTicks": [50031, 50032, 50033, 50034],
+      "bothStructuresPresent": true,
+      "destroyCallCount": 0,
+      "removalIntentCount": 0,
+      "removalProposalCount": 0,
+      "removalReceiptCount": 0,
+      "resetDuringThreatAt": 50033,
+      "resumedAt": 50035
     }
   },
   "budgets": {
@@ -288,14 +300,14 @@
   "equivalence": {
     "semanticBytesIdentical": true,
     "outcomeHashes": {
-      "warm": "fnv1a64-utf16:9b168981cd5f7a29",
-      "reset": "fnv1a64-utf16:9b168981cd5f7a29",
-      "reordered": "fnv1a64-utf16:9b168981cd5f7a29"
+      "warm": "fnv1a64-utf16:03ca7b6b86ef67c7",
+      "reset": "fnv1a64-utf16:03ca7b6b86ef67c7",
+      "reordered": "fnv1a64-utf16:03ca7b6b86ef67c7"
     },
     "semanticHashes": {
-      "warm": "fnv1a64-utf16:5401faa924f0fd35",
-      "reset": "fnv1a64-utf16:5401faa924f0fd35",
-      "reordered": "fnv1a64-utf16:5401faa924f0fd35"
+      "warm": "fnv1a64-utf16:8efc2329d95a9fde",
+      "reset": "fnv1a64-utf16:8efc2329d95a9fde",
+      "reordered": "fnv1a64-utf16:8efc2329d95a9fde"
     }
   }
 }

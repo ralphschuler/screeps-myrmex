@@ -38,9 +38,18 @@ const EXTENSION_BUILD_ENERGY = 3_000;
 const MAXIMUM_BUILD_ENERGY_PER_TICK = 100;
 const OBSOLETE_ID = "extension-obsolete";
 const POLICY_FINGERPRINT = "phase2-layout-rcl3-policy-v1";
-const SCENARIO_ID = "phase2-layout-extension-migration-v1";
-const SCENARIO_SEED = "phase2-layout-extension-migration-seed-v1";
+const SCENARIO_ID = "phase2-layout-extension-migration-v2";
+const SCENARIO_SEED = "phase2-layout-extension-migration-seed-v2";
 const RESET_TICK = FIRST_TICK + 15;
+const THREAT_START_TICK = FIRST_TICK + 31;
+const THREAT_END_TICK = FIRST_TICK + 35;
+const THREAT_RESET_TICK = FIRST_TICK + 33;
+const THREAT_TICKS = Object.freeze(
+  Array.from(
+    { length: THREAT_END_TICK - THREAT_START_TICK },
+    (_, offset) => THREAT_START_TICK + offset,
+  ),
+);
 
 const SPAWN = Object.freeze({ id: "spawn-1", name: "Spawn1", pos: pos(5, 25) });
 const CONTROLLER = Object.freeze({ id: "controller-1", pos: pos(25, 25) });
@@ -52,7 +61,7 @@ const SOURCES = Object.freeze([
 const VARIANTS = Object.freeze({
   warm: Object.freeze({ resetTicks: Object.freeze([] as number[]), reverseObservation: false }),
   reset: Object.freeze({
-    resetTicks: Object.freeze([RESET_TICK]),
+    resetTicks: Object.freeze([RESET_TICK, THREAT_RESET_TICK]),
     reverseObservation: false,
   }),
   reordered: Object.freeze({
@@ -113,6 +122,7 @@ interface LayoutWorld {
 }
 
 interface LayoutInput {
+  readonly activeThreat: boolean;
   readonly reverseObservation: boolean;
 }
 
@@ -120,9 +130,17 @@ interface LayoutOutcome {
   readonly accessWitnessPreserved: boolean;
   readonly activeExtensions: number;
   readonly activeSites: number;
+  readonly activeThreat: boolean;
   readonly buildEnergy: number;
   readonly commands: readonly CommandRecord[];
+  readonly destroyCalls: number;
+  readonly firstReplacementPresent: boolean;
+  readonly migrationAuthorized: boolean;
+  readonly migrationBlockers: readonly string[];
+  readonly obsoletePresent: boolean;
+  readonly removalIntents: number;
   readonly removalProposals: number;
+  readonly removalReceiptPresent: boolean;
   readonly siteProposals: number;
   readonly tick: number;
 }
@@ -133,29 +151,33 @@ interface LayoutHeap {
   readonly siteExecutor: ConstructionSiteExecutor;
 }
 
-const POLICY = projectColonyRclPolicy({
-  activeThreat: false,
-  controllerLevel: 3,
-  controllerRisk: false,
-  cpuMode: "normal",
-  energyAvailable: 800,
-  energyCapacityAvailable: 800,
-  protectedSpawnEnergy: 300,
-  rcl8Health: null,
-  state: "developing",
-  visibility: "visible",
-});
+function policy(activeThreat: boolean) {
+  return projectColonyRclPolicy({
+    activeThreat,
+    controllerLevel: 3,
+    controllerRisk: false,
+    cpuMode: "normal",
+    energyAvailable: 800,
+    energyCapacityAvailable: 800,
+    protectedSpawnEnergy: 300,
+    rcl8Health: null,
+    state: "developing",
+    visibility: "visible",
+  });
+}
 
-const COLONY = {
-  activeThreat: false,
-  controllerRisk: false,
-  id: ROOM,
-  legalWorkforce: true,
-  rclPolicy: POLICY,
-  roomName: ROOM,
-  state: "developing",
-  visibility: "visible",
-} as ColonyView;
+function colony(activeThreat: boolean, rclPolicy: ColonyView["rclPolicy"]): ColonyView {
+  return {
+    activeThreat,
+    controllerRisk: false,
+    id: ROOM,
+    legalWorkforce: true,
+    rclPolicy,
+    roomName: ROOM,
+    state: "developing",
+    visibility: "visible",
+  } as ColonyView;
+}
 
 const PLACEMENTS: readonly LayoutPlacement[] = Object.freeze([
   {
@@ -199,8 +221,8 @@ export async function collectPhase2LayoutMigrationEvidence() {
   const storageRebuildContinuity = collectPhase2StorageRebuildContinuityEvidence();
 
   return Object.freeze({
-    schemaVersion: 3,
-    evidenceIssues: Object.freeze([365, 377, 383]),
+    schemaVersion: 4,
+    evidenceIssues: Object.freeze([365, 377, 383, 441]),
     issue: 365,
     status: "complete",
     scenario: {
@@ -216,6 +238,7 @@ export async function collectPhase2LayoutMigrationEvidence() {
       },
       commands: final.commands,
       milestones,
+      threatInterruption: summarizeThreatInterruption(reset),
       deferredEffects: {
         firstSiteObservedNextTick:
           milestones.firstSiteObservedAt === milestones.firstSiteCommandAt + 1,
@@ -278,7 +301,10 @@ function layoutMigrationScenario(
       const gameTime = FIRST_TICK + offset;
       return {
         gameTime,
-        input: { reverseObservation: variant.reverseObservation },
+        input: {
+          activeThreat: THREAT_TICKS.includes(gameTime),
+          reverseObservation: variant.reverseObservation,
+        },
         cpuBudget: CPU_PER_TICK,
         resetHeap: variant.resetTicks.includes(gameTime),
       };
@@ -304,7 +330,8 @@ function step(
   world: LayoutWorld,
 ): { readonly nextWorld: LayoutWorld; readonly outcome: LayoutOutcome; readonly cpuUsed: number } {
   const milestones = observeMilestones(world, gameTime);
-  const room = roomSnapshot(world, gameTime, input.reverseObservation);
+  const room = roomSnapshot(world, gameTime, input.reverseObservation, input.activeThreat);
+  const currentPolicy = policy(input.activeThreat);
   const observationFingerprint = `phase2-layout-observation:${String(gameTime)}`;
   const structures = room.structures ?? [];
   const diff = diffOwnedRoomLayout({
@@ -314,7 +341,7 @@ function step(
     constructionSites: room.constructionSites,
     observationFingerprint,
     placements: PLACEMENTS,
-    policy: POLICY,
+    policy: currentPolicy,
     policyEnabled: true,
     policyFingerprint: POLICY_FINGERPRINT,
     roomName: ROOM,
@@ -342,7 +369,7 @@ function step(
   let owner = reconcileConstructionSiteExecution(world.owner, siteExecution, gameTime).owner;
 
   const migration = heap.constructionPlanner.planMigration({
-    colony: COLONY,
+    colony: colony(input.activeThreat, currentPolicy),
     commitment: COMMITMENT,
     globalOwnedSiteCount: world.sites.length,
     observationFingerprint,
@@ -359,7 +386,7 @@ function step(
   });
   const liveRoom = { controller: { my: true }, name: ROOM } as unknown as Room;
   const destroyExecution = heap.destroyExecutor.execute(removalArbitration.intents, {
-    hasCurrentHostiles: () => false,
+    hasCurrentHostiles: () => input.activeThreat,
     isCurrentCommitment: (_roomName, fingerprint) => fingerprint === COMMITMENT.fingerprint,
     resolveRoom: () => liveRoom,
     resolveStructure: (id) => {
@@ -451,9 +478,18 @@ function step(
       accessWitnessPreserved: nextWorld.accessWitnessPreserved,
       activeExtensions: world.extensions.length,
       activeSites: world.sites.length,
+      activeThreat: input.activeThreat,
       buildEnergy,
       commands,
+      destroyCalls: destroyExecution.filter(({ called }) => called).length,
+      firstReplacementPresent: world.extensions.some(({ x, y }) => x === 18 && y === 20),
+      migrationAuthorized: migration.authorization !== null,
+      migrationBlockers: migration.blockers.map(({ reason }) => reason),
+      obsoletePresent: world.extensions.some(({ id }) => id === OBSOLETE_ID),
+      removalIntents: removalArbitration.intents.length,
       removalProposals: migration.proposals.length,
+      removalReceiptPresent:
+        (owner.records.find(({ roomName }) => roomName === ROOM)?.removalReceipt ?? null) !== null,
       siteProposals: diff.proposals.length,
       tick: gameTime,
     },
@@ -497,7 +533,7 @@ function initialWorld(): LayoutWorld {
   };
 }
 
-function roomSnapshot(world: LayoutWorld, tick: number, reverse: boolean) {
+function roomSnapshot(world: LayoutWorld, tick: number, reverse: boolean, activeThreat: boolean) {
   const extensions = reverse ? [...world.extensions].reverse() : world.extensions;
   const sites = reverse ? [...world.sites].reverse() : world.sites;
   const sources = reverse ? [...SOURCES].reverse() : SOURCES;
@@ -549,7 +585,7 @@ function roomSnapshot(world: LayoutWorld, tick: number, reverse: boolean) {
     },
     energyAvailable: 800,
     energyCapacityAvailable: 800,
-    hostileCreeps: [],
+    hostileCreeps: activeThreat ? [{ id: "hostile-1" }] : [],
     name: ROOM,
     observedAt: tick,
     ownedCreeps: [],
@@ -687,10 +723,12 @@ function verifyScenario(
   }
   if (
     result.transcript.ticks.some(
-      ({ input }) => input.reverseObservation !== variant.reverseObservation,
+      ({ gameTime, input }) =>
+        input.reverseObservation !== variant.reverseObservation ||
+        input.activeThreat !== THREAT_TICKS.includes(gameTime),
     )
   ) {
-    throw new Error(`${variantName} variant observation order drifted`);
+    throw new Error(`${variantName} variant threat or observation order drifted`);
   }
   if (kinds !== "create-site,destroy-structure,create-site") {
     throw new Error(`unexpected layout command order: ${kinds}`);
@@ -708,13 +746,36 @@ function verifyScenario(
     throw new Error("layout did not converge without proposals");
   }
   const milestones = requiredMilestones(world.milestones);
+  const threatOutcomes = result.outcomes.filter(({ activeThreat }) => activeThreat);
+  if (
+    canonicalSerialize(threatOutcomes.map(({ tick }) => tick)) !==
+      canonicalSerialize(THREAT_TICKS) ||
+    threatOutcomes.some(
+      (outcome) =>
+        canonicalSerialize(outcome.migrationBlockers) !== canonicalSerialize(["threat"]) ||
+        outcome.migrationAuthorized ||
+        outcome.removalProposals !== 0 ||
+        outcome.removalIntents !== 0 ||
+        outcome.destroyCalls !== 0 ||
+        outcome.removalReceiptPresent ||
+        !outcome.firstReplacementPresent ||
+        !outcome.obsoletePresent,
+    )
+  ) {
+    throw new Error("temporary threat did not pause migration without side effects");
+  }
+  const resumed = result.outcomes.find(({ tick }) => tick === THREAT_END_TICK);
+  if (resumed?.activeThreat !== false || resumed.destroyCalls !== 1) {
+    throw new Error("migration did not resume once after threat clearance");
+  }
   if (variantName === "reset") {
     if (
-      variant.resetTicks.length !== 1 ||
+      variant.resetTicks.length !== 2 ||
       RESET_TICK <= milestones.firstSiteObservedAt ||
-      RESET_TICK > milestones.firstBuildCompletedAt
+      RESET_TICK > milestones.firstBuildCompletedAt ||
+      !variant.resetTicks.includes(THREAT_RESET_TICK)
     ) {
-      throw new Error("reset did not occur exactly once during the first build");
+      throw new Error("reset coverage did not include first build and temporary threat");
     }
   }
   if (milestones.destroyCommandAt < milestones.firstCompletedReplacementObservedAt) {
@@ -728,6 +789,35 @@ function verifyScenario(
   }
 }
 
+function summarizeThreatInterruption(
+  result: ScenarioRunResult<LayoutWorld, LayoutInput, LayoutOutcome>,
+) {
+  const blocked = result.outcomes.filter(({ activeThreat }) => activeThreat);
+  return {
+    authorizationCount: blocked.filter(({ migrationAuthorized }) => migrationAuthorized).length,
+    blockers: blocked.every(
+      ({ migrationBlockers }) =>
+        canonicalSerialize(migrationBlockers) === canonicalSerialize(["threat"]),
+    )
+      ? ["threat"]
+      : ["unexpected"],
+    blockedTicks: blocked.map(({ tick }) => tick),
+    bothStructuresPresent: blocked.every(
+      ({ firstReplacementPresent, obsoletePresent }) => firstReplacementPresent && obsoletePresent,
+    ),
+    destroyCallCount: blocked.reduce((total, { destroyCalls }) => total + destroyCalls, 0),
+    removalIntentCount: blocked.reduce((total, { removalIntents }) => total + removalIntents, 0),
+    removalProposalCount: blocked.reduce(
+      (total, { removalProposals }) => total + removalProposals,
+      0,
+    ),
+    removalReceiptCount: blocked.filter(({ removalReceiptPresent }) => removalReceiptPresent)
+      .length,
+    resetDuringThreatAt: THREAT_RESET_TICK,
+    resumedAt: result.finalWorld.milestones.destroyCommandAt,
+  };
+}
+
 function summarize(result: ScenarioRunResult<LayoutWorld, LayoutInput, LayoutOutcome>) {
   return {
     commands: result.finalWorld.commands,
@@ -738,6 +828,10 @@ function summarize(result: ScenarioRunResult<LayoutWorld, LayoutInput, LayoutOut
     maximumEnergyPerTick: result.finalWorld.maximumEnergyPerTick,
     milestones: result.finalWorld.milestones,
     minimumActiveExtensions: result.finalWorld.minimumActiveExtensions,
+    threatInterruption: {
+      ...summarizeThreatInterruption(result),
+      resetDuringThreatAt: null,
+    },
     totalBuildEnergy: result.finalWorld.totalBuildEnergy,
   };
 }

@@ -2039,7 +2039,11 @@ reaction continuation; and
 equivalent explicit-boost continuation. Autonomous boost manifest production, defensive migration,
 and general multi-step migration remain issue #99 and fail closed. Issue #439 separately makes the
 current owned-removal method explicit: only the existing direct-destroy authority is available, and
-`Creep.dismantle` remains source-forbidden until a later positive funded policy exists.
+`Creep.dismantle` remains source-forbidden until a later positive funded policy exists. Issue #441
+composes the existing replacement-first extension path with current room and colony threat evidence:
+planning publishes only the typed `threat` blocker, no removal authority or receipt reaches Execute,
+and the same bounded migration resumes exactly once after threat clears across a heap reset and
+reordered observation. No runtime authority, owner schema, command path, or CPU estimate changes.
 
 Issue #355 restores source-defined primary spawn geometry only when current allowance is at least
 two. At full allowance, `ConstructionPlanner` may remove one active idle empty external spawn only

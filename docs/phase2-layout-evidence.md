@@ -169,9 +169,11 @@ conservation and retired work advance only the existing cursor; exact final term
 and retired work clear only the evacuation, both command-free before later work. Issue
 [#439](https://github.com/ralphschuler/screeps-myrmex/issues/439) makes owned-removal method
 arbitration explicit: Phase 2 keeps the existing direct-destroy path and source-forbids
-`Creep.dismantle` until a later funded policy proves positive full-cost value. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
-migration.
+`Creep.dismantle` until a later funded policy proves positive full-cost value. Issue
+[#441](https://github.com/ralphschuler/screeps-myrmex/issues/441) composes the checked stable
+extension migration with one bounded current-threat pause and reset before exact automatic
+resumption. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration.
 
 ## Runtime order
 
@@ -560,8 +562,9 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 ## Outcome evidence
 
 Issues [#365](https://github.com/ralphschuler/screeps-myrmex/issues/365),
-[#377](https://github.com/ralphschuler/screeps-myrmex/issues/377), and
-[#383](https://github.com/ralphschuler/screeps-myrmex/issues/383) record checked schema-3 results in
+[#377](https://github.com/ralphschuler/screeps-myrmex/issues/377),
+[#383](https://github.com/ralphschuler/screeps-myrmex/issues/383), and
+[#441](https://github.com/ralphschuler/screeps-myrmex/issues/441) record checked schema-4 results in
 [`phase2-layout-migration-results.json`](phase2-layout-migration-results.json). The 70-tick replay
 uses `defineReplayScenario`/`runScenario` and exercises the production layout diff,
 construction-site arbitration/execution/reconciliation, `ConstructionPlanner` migration, and
@@ -888,13 +891,18 @@ handoff tick; ordinary convergence resumes next tick. Persistence tests addition
 duplicate rooms, current-algorithm records in the stale collection, and a 65-record aggregate.
 
 Recorded milestones distinguish the site command and next-tick site observation from the modeled
-3,000th build energy and next-tick completed-replacement observation. The destroy command may run on
-that completed-replacement observation tick because the planner reads the beginning-of-tick
-observation; target disappearance is recorded on the following tick. These deferred effects produce
-exactly `create-site → destroy-structure → create-site`, spend exactly 6,000 modeled extension build
-energy, retain at most one active site and at least nine active extensions, and converge to ten
-exact RCL3 extensions with no remaining proposal. Warm, one-reset-during-first-build, and
-reversed-observation-without-reset outcomes are byte-identical.
+3,000th build energy and next-tick completed-replacement observation. After that first replacement
+becomes visible, ticks 50,031–50,034 publish current room and colony threat evidence. Every one
+returns only the typed `threat` blocker: zero migration authorization, removal proposal/intent,
+destroy call, or removal receipt is produced, and both the exact replacement and obsolete extension
+remain. The reset variant reconstructs the heap at tick 50,033 in addition to its original
+first-build reset. Threat clears at tick 50,035; the existing direct-destroy authority then resumes
+once without Memory or operator repair, and target disappearance is observed on tick 50,036. These
+deferred effects still produce exactly `create-site → destroy-structure → create-site`, spend
+exactly 6,000 modeled extension build energy, retain at most one active site and at least nine
+active extensions, and converge to ten exact RCL3 extensions with no remaining proposal. Warm,
+two-reset, and reversed-observation outcomes are byte-identical at the semantic and outcome
+boundaries.
 
 The #365 access result is deliberately scenario-level. Every tick, a deterministic flood fill on the
 scenario's open interior room grid checks reachability from the one owned spawn to a legal adjacent
@@ -1104,13 +1112,15 @@ lint, type, test, documentation, bundle, and package evidence.
   defines the range-three scheduled command, per-`WORK` build power, energy consumption, and return
   codes exercised by #377.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy) defines the narrow
-  removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. `OK` schedules
-  the operation; #389, #391, #393, #395, #397, #399, #401, #403, and #405 still require newer
-  complete target-absence observation before settlement. Issue #407 instead requires newer complete
-  exact-target presence before one otherwise-quiescent failed receipt can clear. Issue #409 binds
-  that no-effect result to one sole exact evacuation/migration type, target, replacement, and fixed
-  interval before both terms clear atomically. #391, #393, #395, #397, #399, #401, #403, and #405
-  additionally bind their success result to the exact extension, tower, spawn, reserve-link,
+  removal command and its `OK`, `ERR_NOT_OWNER`, and hostile-room `ERR_BUSY` results. Issue #441
+  therefore withholds removal before Execute throughout fresh threat evidence instead of relying on
+  the command error, then permits the ordinary path only after a later threat-free observation. `OK`
+  schedules the operation; #389, #391, #393, #395, #397, #399, #401, #403, and #405 still require
+  newer complete target-absence observation before settlement. Issue #407 instead requires newer
+  complete exact-target presence before one otherwise-quiescent failed receipt can clear. Issue #409
+  binds that no-effect result to one sole exact evacuation/migration type, target, replacement, and
+  fixed interval before both terms clear atomically. #391, #393, #395, #397, #399, #401, #403, and
+  #405 additionally bind their success result to the exact extension, tower, spawn, reserve-link,
   container, lab, terminal, or storage evacuation/migration identity and fixed interval.
 - Official [`Creep.dismantle`](https://docs.screeps.com/api/#Creep.dismantle) defines the adjacent
   constructible-structure command, required `WORK`, 50% repair-energy return, CARRY-or-drop
@@ -1188,7 +1198,9 @@ lint, type, test, documentation, bundle, and package evidence.
   [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define the existing scheduled
   acquire/deliver command boundary used by evacuation. The official
   [game loop](https://docs.screeps.com/game-loop.html) requires later fresh Store observation to
-  prove #421/#423/#425/#435/#437's exact delivery rather than treating `OK` as settlement.
+  prove #421/#423/#425/#435/#437's exact delivery rather than treating `OK` as settlement. Issue
+  #441 likewise changes the beginning-of-tick threat input and observes any scheduled destruction
+  only on the following tick.
 - Official [Control guide](https://docs.screeps.com/control.html) constrains RCL structure access.
 - Screeps engine 4.3.2
   [`checkConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/utils.js#L128-L189),
@@ -1205,7 +1217,8 @@ lint, type, test, documentation, bundle, and package evidence.
   passability, and MYRMEX remains clean-room and source-defined.
 - Screeps Wiki [`StructureSpawn`](https://wiki.screepspl.us/StructureSpawn/) and
   [`Intent`](https://wiki.screepspl.us/Intent/) supply spawn-slot and deferred-command terminology
-  only.
+  only. Wiki [Combat](https://wiki.screepspl.us/Combat/) supplies current hostile-pressure and
+  defense terminology only; MYRMEX's threat gate and removal authority remain source-defined.
 - Screeps Wiki [StructureTower](https://wiki.screepspl.us/StructureTower/) supplies tower placement,
   refill-access, and ten-energy action terminology only.
 - Screeps Wiki [`StructureLab`](https://wiki.screepspl.us/StructureLab/) supplies two-input,
