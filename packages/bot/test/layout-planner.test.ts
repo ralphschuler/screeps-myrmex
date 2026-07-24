@@ -7,6 +7,7 @@ import {
   isStaleLayoutLabEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
+  isStaleLayoutTerminalEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
@@ -385,6 +386,66 @@ describe("stale lab evacuation continuation", () => {
           replacementId: "lab-replacement",
           targetId: "lab-obsolete",
           targetStructureType: "lab",
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("stale terminal evacuation continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    fingerprint: "stale-layout",
+    roomName: "W1N1",
+    sourceServices: [],
+    terminalEvacuation: {
+      amount: 3_000,
+      expiresAt: 250,
+      replacementId: "storage-replacement",
+      replacementInitialAmount: 10_000,
+      resourceType: "energy",
+      sourceId: "terminal-obsolete",
+      startedAt: 100,
+    },
+    transform: 0,
+  });
+
+  it("admits only the sole otherwise-quiescent stale terminal term", () => {
+    expect(isStaleLayoutTerminalEvacuationContinuation(staleRecord())).toBe(true);
+    expect(
+      isStaleLayoutTerminalEvacuationContinuation({
+        ...staleRecord(),
+        algorithmRevision: "owned-room-layout-v2-source-services",
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutTerminalEvacuationContinuation({
+        ...staleRecord(),
+        storageEvacuation: {
+          amount: 3_000,
+          expiresAt: 250,
+          resourceType: "energy",
+          sourceId: "storage-obsolete",
+          startedAt: 100,
+          terminalId: "terminal-retained",
+          terminalInitialAmount: 0,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutTerminalEvacuationContinuation({
+        ...staleRecord(),
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "storage-replacement",
+          targetId: "terminal-obsolete",
+          targetStructureType: "terminal",
         },
       }),
     ).toBe(false);

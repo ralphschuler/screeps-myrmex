@@ -159,9 +159,12 @@ mutually exclusive singleton non-energy manifest under the same evidence. Issue
 with one canonical two-to-eight-row manifest and complete current-row funding before lease
 execution. Issue [#433](https://github.com/ralphschuler/screeps-myrmex/issues/433) admits one exact
 unfinished stale lab evacuation through the existing lab Logistics/V3 path and clears only its
-quiescent exactly delivered term command-free before the later revision handoff. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+quiescent exactly delivered term command-free before the later revision handoff. Issue
+[#435](https://github.com/ralphschuler/screeps-myrmex/issues/435) admits one exact unfinished stale
+scalar or canonical two-to-eight-row terminal evacuation through the existing Industry-quiescent
+funded Logistics/V3 path and clears only its exactly delivered term command-free before the later
+handoff. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration and dismantling.
 
 ## Runtime order
 
@@ -274,18 +277,22 @@ and dismantling.
    retains the exact matching contract and lease; mismatch, unavailable or terminal-only evidence,
    source or room loss, changed source planning, and unsuccessful handoff remain fail-closed. One
    otherwise-quiescent stale legacy energy-only or bounded resource-manifest container migration,
-   extension, lab, reserve-link, spawn, or tower evacuation remains the sole active stale gameplay
-   projection. The existing `optional-growth` budget and Logistics/V3 contract path move its exact
-   stock under the original deadline while source refill is suppressed. A stale lab additionally
-   reuses only known V1 committed positions as narrow assignment evidence; every current
-   quiescence/reaction/boost handoff, storage precedence, terminal no-send, Store, cooldown, atomic
-   mixed-flow, and active-funding gate remains unchanged. Active or pending lab work may retain
-   exact evacuation but cannot clear the term before a quiescent observation. A container manifest
-   has no source identity and contains one non-energy row or two through eight canonical rows with
-   no legacy fields. One legacy energy form may carry one exact source identity only while the
-   target remains adjacent and a different persisted exact selected service occupies the
-   replacement. All forms require two exact non-foreign 2,000-capacity general-purpose Stores and
-   suppress the target source/refill plus replacement refill even when optional work is denied.
+   extension, lab, reserve-link, spawn, terminal, or tower evacuation remains the sole active stale
+   gameplay projection. The existing `optional-growth` budget and Logistics/V3 contract path move
+   its exact stock under the original deadline while source refill is suppressed. A stale lab
+   additionally reuses only known V1 committed positions as narrow assignment evidence; every
+   current quiescence/reaction/boost handoff, storage precedence, terminal no-send, Store, cooldown,
+   atomic mixed-flow, and active-funding gate remains unchanged. Active or pending lab work may
+   retain exact evacuation but cannot clear the term before a quiescent observation. A stale
+   terminal retains the existing scalar or canonical two-to-eight-row manifest, current Industry
+   quiescence, exact zero-cooldown terminal/storage Store facts, complete-row funding, endpoint
+   suppression, and internal-send exclusion. Exact source emptiness, every storage
+   baseline-plus-amount gain, and retired work clear only that term before the separate handoff. A
+   container manifest has no source identity and contains one non-energy row or two through eight
+   canonical rows with no legacy fields. One legacy energy form may carry one exact source identity
+   only while the target remains adjacent and a different persisted exact selected service occupies
+   the replacement. All forms require two exact non-foreign 2,000-capacity general-purpose Stores
+   and suppress the target source/refill plus replacement refill even when optional work is denied.
    Extension and spawn replacement refill remain suppressed during acquisition; malformed spawn
    evidence keeps both exact endpoints suppressed. Spawn work additionally requires active idle
    300-capacity exact endpoints and a completed current SpawnBroker plan selecting neither. During
@@ -712,6 +719,21 @@ retains quiescent and exact reaction/boost handoff admission, mixed-flow atomici
 Store/capacity, over-cap no-prefix, and work-retirement blockers. The exact production bundle
 receipt is refreshed; no schema, authority, executor, command, or persistent field is added.
 
+Issue #435's production-runtime evidence starts from one otherwise-quiescent V25 stale record and
+covers the existing scalar and canonical eight-resource manifest terminal-evacuation forms. Each
+eligible form reuses its exact active zero-cooldown 300,000-capacity source terminal, active
+1,000,000-capacity replacement storage, current Industry quiescence, distinct `optional-growth`
+budgets, and existing Logistics/V3 flow identities. Current manifest rows remain atomic. Endpoint
+and internal-send suppression survives optional denial; unsafe policy removes an existing stale
+lease before another withdraw, transfer, or send. Fresh exact source emptiness, every baseline-plus-
+amount storage gain, and complete flow/endpoint retirement clear only `terminalEvacuation` command-
+free. The existing revision handoff runs on a later tick. Warm, real module-reset, and reversed-
+resource/structure variants produce byte-equivalent owner, planning, and zero-layout/send-command
+outcomes. Focused controls retain the fixed interval, canonical manifest, exact Store/cooldown/
+activity, 3,000-unit aggregate, 64-flow no-prefix, Industry-unavailable, active-work, refill,
+consumption, overgain, missing-funding, and endpoint-retirement failure boundaries. No schema,
+authority, executor, command, or persistent field is added.
+
 Issue #415's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
 500-energy tower evacuation and an exact active replacement retaining the 10-energy action floor.
 The same colony budget and Logistics/V3 path publish the persisted flow; production runtime evidence
@@ -1113,14 +1135,17 @@ lint, type, test, documentation, bundle, and package evidence.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
   RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary. Issue
   #403 consumes only fresh exact target absence and does not reinterpret stock delivery, storage
-  capacity, send suppression, quiescence, endpoint retirement, or replacement continuity.
+  capacity, send suppression, quiescence, endpoint retirement, or replacement continuity. Issue #435
+  reuses those same current terminal facts and scalar/manifest Logistics/V3 identities for
+  unfinished stale work; exact later Store, Industry-quiescence, and work-retirement evidence—not an
+  `OK` result—clears only the evacuation term.
 - Official [`Store`](https://docs.screeps.com/api/#Store) defines resource-specific stock and shared
   general-purpose used/free-capacity checks.
 - Official [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw) and
   [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define the existing scheduled
   acquire/deliver command boundary used by evacuation. The official
   [game loop](https://docs.screeps.com/game-loop.html) requires later fresh Store observation to
-  prove #421/#423/#425's exact delivery rather than treating `OK` as settlement.
+  prove #421/#423/#425/#435's exact delivery rather than treating `OK` as settlement.
 - Official [Control guide](https://docs.screeps.com/control.html) constrains RCL structure access.
 - Screeps engine 4.3.2
   [`checkConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/utils.js#L128-L189),

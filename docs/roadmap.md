@@ -279,7 +279,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   mixed, storage/terminal, and quiescent or exact reaction/boost-handoff Logistics/V3 boundary.
   Known V1 lab geometry is assignment evidence only; durable endpoint/send suppression survives
   optional denial, and exact delivery plus quiescent work retirement clears only the evacuation
-  command-free. Fresh exact empty-source, every exact replacement gain, complete flow and endpoint
+  command-free. Issue #435 admits one exact unfinished stale scalar or canonical two-to-eight-row
+  terminal evacuation through its existing Industry-quiescent funded Logistics/V3 path. Durable
+  endpoint/send suppression survives optional denial; fresh terminal emptiness, every exact storage
+  gain, and complete flow/endpoint retirement clear only that term command-free. Across admitted
+  forms, fresh exact empty-source, every exact replacement gain, complete flow and endpoint
   retirement, and unchanged safe policy clear only the applicable term command-free; the ordinary
   revision handoff remains a later tick. Unrelated active, mismatched, multiple-pair, unpaired
   storage, unsafe, same-tick, incomplete, terminal-only, or drifted evidence remains blocked.

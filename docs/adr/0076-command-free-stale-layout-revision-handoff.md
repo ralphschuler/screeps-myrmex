@@ -41,16 +41,18 @@ Issue #431 composes that source/service proof with one canonical two-to-eight-ro
 requires its complete currently executable row set to retain funding before lease execution. Issue
 \#433 adds the lab equivalent: every existing energy/mineral/mixed and storage/terminal form may
 continue under current quiescent or exact reaction/boost-handoff evidence, but only quiescent exact
-delivery plus retired work may clear the term before the later revision handoff.
+delivery plus retired work may clear the term before the later revision handoff. Issue #435 adds the
+terminal equivalent for the existing scalar and canonical two-to-eight-row manifest forms under
+current Industry quiescence, exact Store conservation, and atomic funded-flow evidence.
 
 ## Decision
 
 - Layouts owner-local schema V25 separates `records` from `staleRecords`. `records` contains only
   the current algorithm and remains the sole input to layout, mining, industry, health, site, and
   removal projections. `staleRecords` contains fully validated older-algorithm V24-shaped evidence
-  and is inert except for issues #413, #415, #417, #419, #421, #423, #425, #427, #429, #431, and
-  #433's exact extension-, lab-, tower-, spawn-, reserve-link-evacuation, or admitted legacy energy-
-  only/bounded resource-manifest container migration Logistics continuation.
+  and is inert except for issues #413, #415, #417, #419, #421, #423, #425, #427, #429, #431, #433,
+  and #435's exact extension-, lab-, tower-, spawn-, terminal-, reserve-link-evacuation, or admitted
+  legacy energy-only/bounded resource-manifest container migration Logistics continuation.
 - V1-V24 migration places a structurally valid older-algorithm record in `staleRecords` instead of
   dropping it. Current and stale records share the existing 64-room aggregate cap and one room may
   occur in only one collection. Malformed, duplicate, over-cap, misplaced, or current-algorithm
@@ -178,6 +180,27 @@ delivery plus retired work may clear the term before the later revision handoff.
   revision handoff to a later tick. Refill, consumption, capacity, role, fingerprint, destination,
   cooldown, active or pending work, expiry, missing vision, unsafe policy, or missing funding
   preserves the record.
+- Issue #435 permits one otherwise-quiescent stale terminal evacuation to remain an input to the
+  existing terminal-evacuation projection. Its exact unexpired scalar or canonical two-to-eight-row
+  manifest must retain the fixed 150-tick interval, at most 3,000 aggregate units, one exact active
+  owned zero-cooldown 300,000-capacity source terminal, one exact active owned 1,000,000-capacity
+  replacement storage, fresh owned-room observation, current Industry terminal quiescence, safe
+  colony policy, exact Store conservation/capacity, complete current-row Logistics admission, and
+  active `optional-growth` funding. The sole LogisticsPlanner, ContractLedger V3, lease agent,
+  action arbiter, and creep executors retain every resource and command authority; manifest rows
+  remain atomic.
+- Source endpoint and internal-terminal-send suppression persist for the valid term even when
+  safety, funding, CPU, or optional admission denies continuation. Existing stale leases remain
+  executable only with the exact current flow set, active reservations, current Industry quiescence,
+  safe colony policy, Store, and identity evidence. Expiry restores ordinary terminal service while
+  retaining handoff-blocking failure evidence.
+- That stale terminal term clears only after newer fresh observation proves the exact source empty,
+  every replacement resource equal to baseline plus committed amount, current Industry quiescence,
+  and complete flow/source/replacement endpoint retirement. Settlement removes only
+  `terminalEvacuation`, precommits the existing layouts owner, emits no layout, terminal-send, or
+  game command globally, and leaves the revision handoff to a later tick. Refill, consumption,
+  overgain, capacity/cooldown/activity/identity drift, partial manifest funding, active work,
+  expiry, missing vision, unsafe policy, or unavailable Industry evidence preserves the record.
 - Issue #417 permits one otherwise-quiescent stale spawn evacuation to remain an input to the
   existing spawn-evacuation projection. Its exact unexpired source/replacement/amount/baseline
   identity must resolve to two current active owned idle spawns with exact 300-capacity energy-only
@@ -277,45 +300,45 @@ cancelling its command; the separate handoff remains delayed until a later tick.
 source-service issuance can instead cross that handoff directly without losing its contract or
 lease, regressing its monotonic coordinate, or coupling revision migration to source optimization.
 One exact unfinished legacy energy-only or bounded resource-manifest container migration, extension,
-lab, reserve-link, spawn, or tower evacuation can continue under its original fixed deadline and
-then settle command-free before the separate handoff. Lab continuation reuses known V1 positions
-only as assignment evidence, preserves every current Industry/Logistics safety gate, and cannot
-settle while reaction, boost, or pending-effect work remains. The source-specific legacy energy,
-singleton non-energy, and two-to-eight-row manifest forms additionally retain exact source adjacency
-to both target and different selected replacement service without renewing or reinterpreting mining
-work. Every current row in a multi-resource continuation passes funding as one group before lease
-execution. No continuation reopens stale removal authority, bypasses SpawnBroker, uses native link
-transfer, or weakens the tower replacement's action-energy floor. Rooms advance deterministically
-across JSON/global-heap reconstruction and reordered world facts. Other active, evacuation-bearing
-records without one sole exact match, unpaired storage, unsafe, terminal-drifted, or
-conservation-incomplete records remain fail-closed until a later explicit policy handles them; this
-decision does not reinterpret or cancel their work.
+lab, reserve-link, spawn, terminal, or tower evacuation can continue under its original fixed
+deadline and then settle command-free before the separate handoff. Lab continuation reuses known V1
+positions only as assignment evidence, preserves every current Industry/Logistics safety gate, and
+cannot settle while reaction, boost, or pending-effect work remains. The source-specific legacy
+energy, singleton non-energy, and two-to-eight-row manifest forms additionally retain exact source
+adjacency to both target and different selected replacement service without renewing or
+reinterpreting mining work. Every current row in a multi-resource continuation passes funding as one
+group before lease execution. No continuation reopens stale removal authority, bypasses SpawnBroker,
+uses native link transfer, or weakens the tower replacement's action-energy floor. Rooms advance
+deterministically across JSON/global-heap reconstruction and reordered world facts. Other active,
+evacuation-bearing records without one sole exact match, unpaired storage, unsafe, terminal-drifted,
+or conservation-incomplete records remain fail-closed until a later explicit policy handles them;
+this decision does not reinterpret or cancel their work.
 
 Persistent cost is one empty `staleRecords` array in normal owner state and at most one fully
 bounded record per already-capped room during handoff. Planning retains the existing two-room
 window, 256 anchors, eight transforms, and 2,500 flood cells per candidate. The container,
-extension, lab, reserve-link, spawn, and tower continuations add no record beyond the existing
-aggregate 64-room/64-flow bounds and each scans the already-bounded stale records and current V3
-planning view once. Lab continuation inspects at most the existing ten observed labs, reconstructs
-exactly ten known V1 coordinates, and reuses the existing bounded Industry migration view. Spawn
-continuation additionally reads the already-bounded current broker result once. Reserve-link
-continuation reconstructs exactly six known V1 link coordinates and runs the existing six-link role
-classifier; unknown revisions authorize nothing. Source-service reconciliation compares at most
-eight services in each admitted room with the existing capped 256-record planning view; only a
-pending explicit source-service, container-, extension-, lab-, reserve-link-, spawn-, or
-tower-continuation record adds one read-only no-write ColonyDirector policy session over the
-existing bounded snapshot. The accepted handoff moves that room's already-bounded layout plan before
-budgeting and then invokes the sole StaticMiningPlanner once. It stores no new bytes and performs no
-new game observation or path search. The transition spends no game resource. No root owner,
-authority, dependency, cache, executor, command, queue, or unbounded history is added.
+extension, lab, reserve-link, spawn, terminal, and tower continuations add no record beyond the
+existing aggregate 64-room/64-flow bounds and each scans the already-bounded stale records and
+current V3 planning view once. Lab continuation inspects at most the existing ten observed labs,
+reconstructs exactly ten known V1 coordinates, and reuses the existing bounded Industry migration
+view. Spawn continuation additionally reads the already-bounded current broker result once.
+Reserve-link continuation reconstructs exactly six known V1 link coordinates and runs the existing
+six-link role classifier; unknown revisions authorize nothing. Source-service reconciliation
+compares at most eight services in each admitted room with the existing capped 256-record planning
+view; only a pending explicit source-service, container-, extension-, lab-, reserve-link-, spawn-,
+terminal-, or tower-continuation record adds one read-only no-write ColonyDirector policy session
+over the existing bounded snapshot. The accepted handoff moves that room's already-bounded layout
+plan before budgeting and then invokes the sole StaticMiningPlanner once. It stores no new bytes and
+performs no new game observation or path search. The transition spends no game resource. No root
+owner, authority, dependency, cache, executor, command, queue, or unbounded history is added.
 
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
 settlement or handoff. Unfinished migration/evacuation continuation for every structure other than
 one admitted legacy energy-only or bounded resource-manifest container, extension, lab, reserve
-link, spawn, or tower, plus one-row energy-manifest migration, mismatched or multiple failed pairs,
-unmatched or terminal source-service recovery, arbitrary geometry algorithms, defensive migration,
-dynamic room routing, autonomous boost-manifest production, creep dismantling, and uninterrupted
-same-structure availability remain outside this decision.
+link, spawn, terminal, or tower, plus one-row energy-manifest migration, mismatched or multiple
+failed pairs, unmatched or terminal source-service recovery, arbitrary geometry algorithms,
+defensive migration, dynamic room routing, autonomous boost-manifest production, creep dismantling,
+and uninterrupted same-structure availability remain outside this decision.
 
 ## Mechanics sources
 
@@ -331,10 +354,12 @@ issue #417. `StructureLink`, `StructureLink.transferEnergy`, `Store`, `Creep.wit
 `StructureContainer`, `Store`, `Creep.withdraw`, `Creep.transfer`, the game loop, and both indexes
 were rechecked 2026-07-23 for issue #421 and 2026-07-24 for issues #423, #425, #427, #429, and #431.
 `StructureLab`, `StructureStorage`, `StructureTerminal`, `Store`, `Creep.withdraw`,
-`Creep.transfer`, the game loop, and both indexes were rechecked 2026-07-24 for issue #433. `Source`
-and `Static Harvesting` were also rechecked for #427/#429/#431's exact selected-service boundary.
-The relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn` for issue
-\#395, `StructureLink` for issue `#397`, `StructureContainer` for issue #399, and `StructureLab` for
+`Creep.transfer`, the game loop, and both indexes were rechecked 2026-07-24 for issue #433.
+`StructureTerminal`, `StructureStorage`, `Store`, `Creep.withdraw`, `Creep.transfer`, the game loop,
+and both indexes were rechecked 2026-07-24 for issue #435. `Source` and `Static Harvesting` were
+also rechecked for #427/#429/#431's exact selected-service boundary. The relevant pages were also
+checked: `StructureTower` for issue #393, `StructureSpawn` for issue \#395, `StructureLink` for
+issue `#397`, `StructureContainer` for issue #399, and `StructureLab` for
 [issue #401](https://github.com/ralphschuler/screeps-myrmex/issues/401); `StructureTerminal` plus
 `Store` were reviewed for [issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403),
 and `StructureStorage`, `StructureTerminal`, and `Store` for
@@ -379,11 +404,13 @@ and `StructureStorage`, `StructureTerminal`, and `Store` for
   [`Store`](https://docs.screeps.com/api/#Store) define the one-per-room RCL6+ terminal,
   300,000-unit shared capacity, resource rows, and cooldown already enforced by terminal migration;
   #403 does not reinterpret stock, delivery, endpoint retirement, Industry quiescence, or storage
-  continuity. Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines
-  the one-per-room 1,000,000-unit general-purpose Store; #405 retains exact current terminal
-  capacity and activity plus resource-specific Store conservation before clearing completed storage
-  evidence. Settlement consumes newer observation only; neither settlement nor handoff reaches a
-  command boundary.
+  continuity. Issue #435 reuses those exact terminal facts, existing scalar/manifest flow
+  identities, adjacent resource-specific creep commands, and later-observation settlement without
+  authorizing stale removal. Official
+  [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one-per-room
+  1,000,000-unit general-purpose Store; #405 retains exact current terminal capacity and activity
+  plus resource-specific Store conservation before clearing completed storage evidence. Settlement
+  consumes newer observation only; neither settlement nor handoff reaches a command boundary.
 - Official [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer),
   [`Store`](https://docs.screeps.com/api/#Store),
   [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw), and
