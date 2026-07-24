@@ -12,6 +12,9 @@ import {
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationBudgetIssuer,
   layoutSpawnEvacuationFlowId,
+  layoutStorageEvacuationBudgetIssuers,
+  layoutStorageEvacuationFlowIds,
+  layoutStorageEvacuationResources,
   layoutTerminalEvacuationBudgetIssuers,
   layoutTerminalEvacuationFlowIds,
   layoutTowerEvacuationBudgetIssuer,
@@ -102,6 +105,10 @@ interface GameOptions {
   readonly staleSpawnEvacuation?: {
     readonly replacementEnergy: number;
     readonly sourceEnergy: number;
+  };
+  readonly staleStorageEvacuation?: {
+    readonly terminalResources: readonly (readonly [string, number])[];
+    readonly sourceResources: readonly (readonly [string, number])[];
   };
   readonly staleTerminalEvacuation?: {
     readonly replacementResources: readonly (readonly [string, number])[];
@@ -341,11 +348,12 @@ type StaleActiveEvidence =
   | "lab-evacuation"
   | "link-evacuation"
   | "spawn-evacuation"
+  | "storage-evacuation"
   | "terminal-evacuation"
   | "tower-evacuation"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425/#427/#429/#431/#433/#435)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425/#427/#429/#431/#433/#435/#437)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -1651,6 +1659,220 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       expect(layoutsOwner(memory).staleRecords[0]?.labEvacuation).toEqual(evacuation);
     },
   );
+
+  it.each(STORAGE_EVACUATION_VARIANTS)(
+    "continues one stale storage $name evacuation through the exact funded current-batch V3 flow set",
+    ({ evacuation }) => {
+      const commands = commandSpies();
+      const memory = {} as Memory;
+      const base = {
+        controllerLevel: 6,
+        roomEnergyAvailable: 2_300,
+        roomEnergyCapacityAvailable: 2_300,
+      } as const;
+      runTick({ game: game(100, commands, base), memory });
+      seedStaleStorageEvacuation(memory, evacuation);
+      commands.createConstructionSite.mockClear();
+      commands.destroyStructure.mockClear();
+      commands.sendTerminal.mockClear();
+
+      const pending = runTick({
+        game: game(201, commands, {
+          ...base,
+          staleStorageEvacuation: storageEvacuationObservation(evacuation, "current"),
+          workerPosition: { x: 40, y: 37 },
+        }),
+        memory,
+      });
+      const flowIds = layoutStorageEvacuationFlowIds(ROOM_NAME, evacuation);
+      const budgetIssuers = layoutStorageEvacuationBudgetIssuers(ROOM_NAME, evacuation);
+      if (flowIds === null || budgetIssuers === null)
+        throw new Error("expected bounded storage evacuation identities");
+      const contracts = memory.myrmex?.contracts as
+        | {
+            readonly active?: readonly {
+              readonly execution?: { readonly flowId?: string };
+            }[];
+          }
+        | undefined;
+
+      expect(pending.kernel.faults).toEqual([]);
+      expect(
+        budgetIssuers.every((issuer) =>
+          pending.colony.reservations.some(
+            (reservation) =>
+              reservation.category === "optional-growth" &&
+              reservation.colonyId === ROOM_NAME &&
+              reservation.issuer === issuer &&
+              reservation.status === "active",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        flowIds.every((flowId) =>
+          contracts?.active?.some(({ execution }) => execution?.flowId === flowId),
+        ),
+      ).toBe(true);
+      expect(pending.layout.planning).toEqual([
+        expect.objectContaining({
+          blocker: "revision-handoff-active",
+          roomName: ROOM_NAME,
+          status: "degraded",
+        }),
+      ]);
+      expect(layoutsOwner(memory).records).toEqual([]);
+      expect(layoutsOwner(memory).staleRecords[0]?.storageEvacuation).toEqual(evacuation);
+      expect(commands.createConstructionSite).not.toHaveBeenCalled();
+      expect(commands.destroyStructure).not.toHaveBeenCalled();
+      expect(commands.sendTerminal).not.toHaveBeenCalled();
+    },
+  );
+
+  it("advances one stale two-batch storage cursor command-free before publishing batch two", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    const evacuation = {
+      ...STORAGE_EVACUATION_VARIANTS[2].evacuation,
+      settledAmount: 0,
+    } as const satisfies LayoutStorageEvacuation;
+    const advanced = { ...evacuation, settledAmount: 3_000 } as const;
+    const base = {
+      controllerLevel: 6,
+      roomEnergyAvailable: 2_300,
+      roomEnergyCapacityAvailable: 2_300,
+    } as const;
+    runTick({ game: game(100, commands, base), memory });
+    seedStaleStorageEvacuation(memory, evacuation);
+    const delivered = {
+      ...base,
+      staleStorageEvacuation: storageEvacuationObservation(evacuation, "first-batch-delivered"),
+    } as const;
+    const firstFlowIds = layoutStorageEvacuationFlowIds(ROOM_NAME, evacuation);
+    const secondFlowIds = layoutStorageEvacuationFlowIds(ROOM_NAME, advanced);
+    if (firstFlowIds === null || secondFlowIds === null)
+      throw new Error("expected bounded storage batch identities");
+    expect(secondFlowIds.some((flowId) => firstFlowIds.includes(flowId))).toBe(false);
+    commands.createConstructionSite.mockClear();
+    commands.destroyStructure.mockClear();
+    commands.sendTerminal.mockClear();
+
+    const cursorTick = 201;
+    const cursor = runTick({ game: game(cursorTick, commands, delivered), memory });
+    expect(cursor.kernel.faults).toEqual([]);
+    expect(layoutsOwner(memory).staleRecords[0]?.storageEvacuation).toEqual(advanced);
+    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(commands.destroyStructure).not.toHaveBeenCalled();
+    expect(commands.sendTerminal).not.toHaveBeenCalled();
+    const contractsAtCursor = memory.myrmex?.contracts as
+      | { readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[] }
+      | undefined;
+    expect(
+      secondFlowIds.some((flowId) =>
+        contractsAtCursor?.active?.some(({ execution }) => execution?.flowId === flowId),
+      ),
+    ).toBe(false);
+
+    runTick({ game: game(cursorTick + 1, commands, delivered), memory });
+    const contractsAfter = memory.myrmex?.contracts as typeof contractsAtCursor;
+    expect(
+      secondFlowIds.every((flowId) =>
+        contractsAfter?.active?.some(({ execution }) => execution?.flowId === flowId),
+      ),
+    ).toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.storageEvacuation).toEqual(advanced);
+  });
+
+  it.each(STORAGE_EVACUATION_VARIANTS)(
+    "settles delivered stale storage $name stock command-free before a later handoff",
+    async ({ evacuation }) => {
+      const forward = await runCompletedStaleStorageEvacuationVariant(evacuation, false, false);
+      const reset = await runCompletedStaleStorageEvacuationVariant(evacuation, false, true);
+      const reordered = await runCompletedStaleStorageEvacuationVariant(evacuation, true, false);
+
+      expect(forward.settlementPlanning).toEqual([
+        expect.objectContaining({
+          blocker: "revision-handoff-active",
+          roomName: ROOM_NAME,
+          status: "degraded",
+        }),
+      ]);
+      expect(forward.settlementOwner.records).toEqual([]);
+      expect(forward.settlementOwner.staleRecords).toHaveLength(1);
+      expect(forward.settlementOwner.staleRecords[0]?.storageEvacuation).toBeUndefined();
+      expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0, send: 0 });
+      expect(forward.handoffOwner).toMatchObject({
+        records: [
+          expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+        ],
+        staleRecords: [],
+      });
+      expect(forward.handoffPlanning).toEqual([
+        expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+      ]);
+      expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0, send: 0 });
+      expect(reset).toEqual(forward);
+      expect(reordered).toEqual(forward);
+    },
+    30_000,
+  );
+
+  it("revokes an existing stale storage lease under unsafe policy while retaining suppression", () => {
+    const commands = commandSpies();
+    const memory = {} as Memory;
+    const evacuation = STORAGE_EVACUATION_VARIANTS[0].evacuation;
+    const base = {
+      controllerLevel: 6,
+      roomEnergyAvailable: 2_300,
+      roomEnergyCapacityAvailable: 2_300,
+      staleStorageEvacuation: storageEvacuationObservation(evacuation, "current"),
+      workerPosition: { x: 40, y: 37 },
+    } as const;
+    runTick({ game: game(100, commands, base), memory });
+    seedStaleStorageEvacuation(memory, evacuation);
+    const flowIds = layoutStorageEvacuationFlowIds(ROOM_NAME, evacuation);
+    if (flowIds === null) throw new Error("expected bounded stale storage identities");
+
+    for (let tick = 201; tick <= 204; tick += 1)
+      runTick({ game: game(tick, commands, base), memory });
+    const contractsBefore = memory.myrmex?.contracts as
+      | {
+          readonly active?: readonly {
+            readonly execution?: { readonly flowId?: string };
+            readonly lease?: unknown;
+            readonly state?: string;
+          }[];
+        }
+      | undefined;
+    expect(
+      contractsBefore?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId !== undefined &&
+          flowIds.includes(execution.flowId) &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).toBe(true);
+    commands.sendTerminal.mockClear();
+    commands.transferEnergy.mockClear();
+    commands.withdrawEnergy.mockClear();
+
+    runTick({ game: game(205, commands, { ...base, threat: true }), memory });
+    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+
+    expect(commands.sendTerminal).not.toHaveBeenCalled();
+    expect(commands.withdrawEnergy).not.toHaveBeenCalled();
+    expect(commands.transferEnergy).not.toHaveBeenCalled();
+    expect(
+      contractsAfter?.active?.some(
+        ({ execution, lease, state }) =>
+          execution?.flowId !== undefined &&
+          flowIds.includes(execution.flowId) &&
+          lease !== null &&
+          (state === "assigned" || state === "active"),
+      ),
+    ).not.toBe(true);
+    expect(layoutsOwner(memory).staleRecords[0]?.storageEvacuation).toEqual(evacuation);
+  });
 
   it.each(TERMINAL_EVACUATION_VARIANTS)(
     "continues one stale terminal $name evacuation through the exact funded V3 flow set",
@@ -4718,6 +4940,47 @@ function seedStaleLabEvacuation(memory: Memory, evacuation: LayoutLabEvacuation)
   } as unknown as NonNullable<Memory["myrmex"]>;
 }
 
+function seedStaleStorageEvacuation(memory: Memory, evacuation: LayoutStorageEvacuation): void {
+  seedStaleOwner(memory, "storage-evacuation");
+  const owner = layoutsOwner(memory);
+  memory.myrmex = {
+    ...memory.myrmex,
+    layouts: {
+      ...owner,
+      staleRecords: owner.staleRecords.map((record) =>
+        record.roomName === ROOM_NAME ? { ...record, storageEvacuation: evacuation } : record,
+      ),
+    },
+  } as unknown as NonNullable<Memory["myrmex"]>;
+}
+
+function storageEvacuationObservation(
+  evacuation: LayoutStorageEvacuation,
+  state: "current" | "delivered" | "first-batch-delivered",
+): NonNullable<GameOptions["staleStorageEvacuation"]> {
+  const resources = layoutStorageEvacuationResources(evacuation);
+  const totalDelivered =
+    state === "delivered"
+      ? resources.reduce((total, [, amount]) => total + amount, 0)
+      : state === "first-batch-delivered"
+        ? 3_000
+        : "settledAmount" in evacuation
+          ? evacuation.settledAmount
+          : 0;
+  let remainingDelivered = totalDelivered;
+  const terminalResources: (readonly [string, number])[] = [];
+  const sourceResources: (readonly [string, number])[] = [];
+  for (const [resourceType, amount, terminalInitialAmount] of resources) {
+    const delivered = Math.min(amount, remainingDelivered);
+    remainingDelivered -= delivered;
+    const terminalAmount = terminalInitialAmount + delivered;
+    const sourceAmount = amount - delivered;
+    if (terminalAmount > 0) terminalResources.push([resourceType, terminalAmount]);
+    if (sourceAmount > 0) sourceResources.push([resourceType, sourceAmount]);
+  }
+  return { sourceResources, terminalResources };
+}
+
 function seedStaleTerminalEvacuation(memory: Memory, evacuation: LayoutTerminalEvacuation): void {
   seedStaleOwner(memory, "terminal-evacuation");
   const owner = layoutsOwner(memory);
@@ -5049,14 +5312,14 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
           },
         }
       : {}),
-    ...(completedStorageEvacuation
+    ...(active === "storage-evacuation" || completedStorageEvacuation
       ? {
           storageEvacuation: {
             amount: 100,
-            expiresAt: 250,
+            expiresAt: completedStorageEvacuation ? 250 : 350,
             resourceType: "energy",
             sourceId: "storage-obsolete",
-            startedAt: 100,
+            startedAt: completedStorageEvacuation ? 100 : 200,
             terminalId: "storage-replacement",
             terminalInitialAmount: 50,
           },
@@ -5857,6 +6120,65 @@ async function runCompletedStaleExtensionEvacuationVariant(reverse: boolean, res
   };
 }
 
+async function runCompletedStaleStorageEvacuationVariant(
+  evacuation: LayoutStorageEvacuation,
+  reverse: boolean,
+  reset: boolean,
+) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  const base = {
+    controllerLevel: 6,
+    roomEnergyAvailable: 2_300,
+    roomEnergyCapacityAvailable: 2_300,
+  } as const;
+  executeTick({ game: game(100, commands, { ...base, reverse }), memory });
+  seedStaleStorageEvacuation(memory, evacuation);
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+  commands.sendTerminal.mockClear();
+  const delivered = {
+    staleStorageEvacuation: storageEvacuationObservation(evacuation, "delivered"),
+  } as const;
+
+  const settlement = executeTick({
+    game: game(201, commands, { ...base, ...delivered, reverse }),
+    memory,
+  });
+  const settlementOwner = layoutsOwner(memory);
+  const settlementCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+    send: commands.sendTerminal.mock.calls.length,
+  };
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+  commands.sendTerminal.mockClear();
+
+  const handoff = executeTick({
+    game: game(202, commands, { ...base, ...delivered, reverse }),
+    memory,
+  });
+  return {
+    handoffCommands: {
+      create: commands.createConstructionSite.mock.calls.length,
+      destroy: commands.destroyStructure.mock.calls.length,
+      send: commands.sendTerminal.mock.calls.length,
+    },
+    handoffOwner: layoutsOwner(memory),
+    handoffPlanning: handoff.layout.planning,
+    settlementCommands,
+    settlementOwner,
+    settlementPlanning: settlement.layout.planning,
+  };
+}
+
 async function runCompletedStaleTerminalEvacuationVariant(
   evacuation: LayoutTerminalEvacuation,
   reverse: boolean,
@@ -6239,6 +6561,7 @@ function game(
       options.staleLabEvacuation === undefined &&
       options.staleLinkEvacuation === undefined &&
       options.staleSpawnEvacuation === undefined &&
+      options.staleStorageEvacuation === undefined &&
       options.staleTerminalEvacuation === undefined &&
       options.staleTowerEvacuation === undefined
         ? pos(25, 25)
@@ -6691,7 +7014,7 @@ function game(
             structureType: destination.structureType,
           } as unknown as StructureStorage | StructureTerminal;
         })();
-  const staleTerminalEvacuation = options.staleTerminalEvacuation;
+  const staleStorageEvacuation = options.staleStorageEvacuation;
   const evacuationInventoryStore = (
     capacity: number,
     inputResources: readonly (readonly [string, number])[],
@@ -6708,6 +7031,41 @@ function game(
           : (resources.find(([type]) => type === resourceType)?.[1] ?? 0),
     };
   };
+  const staleStorageSource =
+    staleStorageEvacuation === undefined
+      ? null
+      : ({
+          destroy: commands.destroyStructure,
+          hits: 10_000,
+          hitsMax: 10_000,
+          id: "storage-obsolete",
+          isActive: () => true,
+          my: true,
+          owner: { username: "Myrmex" },
+          pos: pos(40, 38),
+          room: { name: roomName },
+          store: evacuationInventoryStore(1_000_000, staleStorageEvacuation.sourceResources),
+          structureType: "storage",
+        } as unknown as StructureStorage);
+  const staleStorageTerminal =
+    staleStorageEvacuation === undefined
+      ? null
+      : ({
+          cooldown: 0,
+          destroy: commands.destroyStructure,
+          hits: 3_000,
+          hitsMax: 3_000,
+          id: "storage-replacement",
+          isActive: () => true,
+          my: true,
+          owner: { username: "Myrmex" },
+          pos: pos(41, 38),
+          room: { name: roomName },
+          send: commands.sendTerminal,
+          store: evacuationInventoryStore(300_000, staleStorageEvacuation.terminalResources),
+          structureType: "terminal",
+        } as unknown as StructureTerminal);
+  const staleTerminalEvacuation = options.staleTerminalEvacuation;
   const staleTerminalSource =
     staleTerminalEvacuation === undefined
       ? null
@@ -6845,6 +7203,8 @@ function game(
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
         ...staleLabStructures,
         ...(staleLabDestination === null ? [] : [staleLabDestination]),
+        ...(staleStorageSource === null ? [] : [staleStorageSource]),
+        ...(staleStorageTerminal === null ? [] : [staleStorageTerminal]),
         ...(staleTerminalSource === null ? [] : [staleTerminalSource]),
         ...(staleTerminalReplacement === null ? [] : [staleTerminalReplacement]),
         ...staleLinkStructures,
@@ -6865,6 +7225,8 @@ function game(
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
         ...staleLabStructures,
         ...(staleLabDestination === null ? [] : [staleLabDestination]),
+        ...(staleStorageSource === null ? [] : [staleStorageSource]),
+        ...(staleStorageTerminal === null ? [] : [staleStorageTerminal]),
         ...(staleTerminalSource === null ? [] : [staleTerminalSource]),
         ...(staleTerminalReplacement === null ? [] : [staleTerminalReplacement]),
         ...staleLinkStructures,
@@ -6929,6 +7291,10 @@ function game(
                                   ? staleTowerReplacement
                                   : (staleLabStructures.find((lab) => lab.id === id) ??
                                     (id === staleLabDestination?.id ? staleLabDestination : null) ??
+                                    (id === staleStorageSource?.id ? staleStorageSource : null) ??
+                                    (id === staleStorageTerminal?.id
+                                      ? staleStorageTerminal
+                                      : null) ??
                                     (id === staleTerminalSource?.id ? staleTerminalSource : null) ??
                                     (id === staleTerminalReplacement?.id
                                       ? staleTerminalReplacement

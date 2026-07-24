@@ -31,6 +31,7 @@ import {
   authorizeLayoutStorageEvacuationFlowIds,
   completeExecutableLayoutStorageEvacuationFlowIds,
   projectLayoutStorageEvacuations,
+  projectLayoutStorageEvacuationSettlements,
 } from "../src/logistics/storage-evacuation";
 import {
   isAuthorizedLayoutStorageEvacuationFlowId,
@@ -196,6 +197,140 @@ function project(
 }
 
 describe("bounded stocked-storage evacuation", () => {
+  it("projects exact command-free stale cursor advancement and final settlement", () => {
+    const firstFlowIds = layoutStorageEvacuationFlowIds(roomName, sequentialTerms);
+    if (firstFlowIds === null) throw new Error("expected first storage batch identities");
+    expect(
+      projectLayoutStorageEvacuationSettlements({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        quiescentTerminalRoomNames: new Set([roomName]),
+        records: [record(sequentialTerms)],
+        snapshot: world([["energy", 3_000]], [["energy", 28_000]], 12),
+        tick: 12,
+      }),
+    ).toEqual([
+      {
+        evacuation: { ...sequentialTerms, settledAmount: 3_000 },
+        roomName,
+      },
+    ]);
+
+    const mixedFirstFlowIds = layoutStorageEvacuationFlowIds(roomName, sequentialMixedTerms);
+    if (mixedFirstFlowIds === null) throw new Error("expected mixed first-batch identities");
+    expect(
+      projectLayoutStorageEvacuationSettlements({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        quiescentTerminalRoomNames: new Set([roomName]),
+        records: [record(sequentialMixedTerms)],
+        snapshot: world(
+          [["energy", 3_000]],
+          [
+            ["H", 2_500],
+            ["energy", 26_000],
+          ],
+          12,
+        ),
+        tick: 12,
+      }),
+    ).toEqual([
+      {
+        evacuation: { ...sequentialMixedTerms, settledAmount: 3_000 },
+        roomName,
+      },
+    ]);
+
+    const finalFlowIds = layoutStorageEvacuationFlowIds(roomName, terms);
+    if (finalFlowIds === null) throw new Error("expected final storage identities");
+    expect(
+      projectLayoutStorageEvacuationSettlements({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        quiescentTerminalRoomNames: new Set([roomName]),
+        records: [record(terms)],
+        snapshot: world([], [["energy", 28_000]], 12),
+        tick: 12,
+      }),
+    ).toEqual([{ evacuation: null, roomName }]);
+    for (const blocked of [
+      { activeFlowIds: new Set(finalFlowIds), activeTargetIds: new Set<string>() },
+      { activeFlowIds: new Set<string>(), activeTargetIds: new Set([sourceId]) },
+      { activeFlowIds: new Set<string>(), activeTargetIds: new Set([terminalId]) },
+    ])
+      expect(
+        projectLayoutStorageEvacuationSettlements({
+          ...blocked,
+          quiescentTerminalRoomNames: new Set([roomName]),
+          records: [record(terms)],
+          snapshot: world([], [["energy", 28_000]], 12),
+          tick: 12,
+        }),
+      ).toEqual([]);
+  });
+
+  it("fails stale storage settlement closed on freshness, policy, and conservation drift", () => {
+    const delivered = world([], [["energy", 28_000]], 12);
+    const threatened = {
+      ...delivered,
+      rooms: delivered.rooms.map((room) => ({
+        ...room,
+        hostileCreeps: [
+          {
+            body: {
+              attack: 1,
+              carry: 0,
+              claim: 0,
+              heal: 0,
+              move: 1,
+              rangedAttack: 0,
+              tough: 0,
+              work: 0,
+            },
+            id: "hostile",
+            name: "hostile",
+            owner: "enemy",
+            pos: { roomName, x: 25, y: 25 },
+            spawning: false,
+            store: inventory(50, []),
+            ticksToLive: 100,
+          },
+        ],
+      })),
+    } as unknown as WorldSnapshot;
+    for (const testCase of [
+      { quiescent: new Set<string>(), snapshot: delivered, tick: 12 },
+      { quiescent: new Set([roomName]), snapshot: delivered, tick: 11 },
+      { quiescent: new Set([roomName]), snapshot: threatened, tick: 12 },
+      {
+        quiescent: new Set([roomName]),
+        snapshot: world([["energy", 1]], [["energy", 27_999]], 12),
+        tick: 12,
+      },
+      { quiescent: new Set([roomName]), snapshot: world([], [["energy", 28_001]], 12), tick: 12 },
+      {
+        quiescent: new Set([roomName]),
+        snapshot: world([["H", 1]], [["energy", 28_000]], 12),
+        tick: 12,
+      },
+      {
+        quiescent: new Set([roomName]),
+        snapshot: world([], [["energy", 28_000]], terms.expiresAt),
+        tick: terms.expiresAt,
+      },
+    ])
+      expect(
+        projectLayoutStorageEvacuationSettlements({
+          activeFlowIds: new Set(),
+          activeTargetIds: new Set(),
+          quiescentTerminalRoomNames: testCase.quiescent,
+          records: [record(terms)],
+          snapshot: testCase.snapshot,
+          tick: testCase.tick,
+        }),
+      ).toEqual([]);
+  });
+
   it("restores ordinary terminal logistics on fresh authorized storage disappearance", () => {
     const completedRecord = {
       ...record(),

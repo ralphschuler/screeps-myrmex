@@ -282,7 +282,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   command-free. Issue #435 admits one exact unfinished stale scalar or canonical two-to-eight-row
   terminal evacuation through its existing Industry-quiescent funded Logistics/V3 path. Durable
   endpoint/send suppression survives optional denial; fresh terminal emptiness, every exact storage
-  gain, and complete flow/endpoint retirement clear only that term command-free. Across admitted
+  gain, and complete flow/endpoint retirement clear only that term command-free. Issue #437 adds the
+  inverse exact stale storage continuation for every existing scalar, manifest, and 3,001–6,000-unit
+  two-batch form. Current-batch rows retain atomic funding; exact first-batch conservation and
+  retired work advance only the existing cursor command-free, while final exact terminal
+  conservation and retired work clear only the evacuation before the later handoff. Across admitted
   forms, fresh exact empty-source, every exact replacement gain, complete flow and endpoint
   retirement, and unchanged safe policy clear only the applicable term command-free; the ordinary
   revision handoff remains a later tick. Unrelated active, mismatched, multiple-pair, unpaired

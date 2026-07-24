@@ -163,8 +163,12 @@ quiescent exactly delivered term command-free before the later revision handoff.
 [#435](https://github.com/ralphschuler/screeps-myrmex/issues/435) admits one exact unfinished stale
 scalar or canonical two-to-eight-row terminal evacuation through the existing Industry-quiescent
 funded Logistics/V3 path and clears only its exactly delivered term command-free before the later
-handoff. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
-other structure migration and dismantling.
+handoff. Issue [#437](https://github.com/ralphschuler/screeps-myrmex/issues/437) admits every exact
+existing stale scalar, manifest, and bounded two-batch storage-evacuation form. Exact first-batch
+conservation and retired work advance only the existing cursor; exact final terminal conservation
+and retired work clear only the evacuation, both command-free before later work. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -719,6 +723,21 @@ retains quiescent and exact reaction/boost handoff admission, mixed-flow atomici
 Store/capacity, over-cap no-prefix, and work-retirement blockers. The exact production bundle
 receipt is refreshed; no schema, authority, executor, command, or persistent field is added.
 
+Issue #437's production-runtime evidence starts from one otherwise-quiescent V25 stale record and
+covers all existing scalar, canonical eight-resource manifest, and settled two-batch storage-
+evacuation forms. Each current row reuses its exact active 1,000,000-capacity storage, active
+300,000-capacity terminal, current Industry quiescence, distinct `optional-growth` budget, and sole
+Logistics/V3 identity. Current rows remain atomic; endpoint/send suppression survives optional
+denial, and unsafe policy revokes existing stale leases without clearing the term. Exact first-batch
+source/terminal conservation plus complete work retirement advances only the existing cursor and
+publishes batch two no earlier than the following tick. Exact final source emptiness, every original
+terminal gain, and retired flows/endpoints clear only `storageEvacuation` command-free; revision
+handoff remains later. Warm, real module-reset, and reordered-resource/structure variants produce
+byte-equivalent owner, planning, and zero-layout/send-command outcomes. Focused controls retain the
+150/300-tick intervals, canonical rows, exact Store/activity, 3,000/6,000 aggregate bounds, distinct
+batch identities, no-prefix funding, active-work, refill, consumption, overgain, and endpoint-
+retirement blockers. No schema, authority, executor, command, or persistent field is added.
+
 Issue #435's production-runtime evidence starts from one otherwise-quiescent V25 stale record and
 covers the existing scalar and canonical eight-resource manifest terminal-evacuation forms. Each
 eligible form reuses its exact active zero-cooldown 300,000-capacity source terminal, active
@@ -1131,7 +1150,10 @@ lint, type, test, documentation, bundle, and package evidence.
 - Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one
   RCL4+ owned general-purpose store, its 1,000,000-unit capacity, and its 30,000 build cost. Issue
   #405 consumes only newer exact target absence and retains the existing complete original-resource
-  conservation and retained-terminal continuity proof before stale evidence can clear.
+  conservation and retained-terminal continuity proof before stale evidence can clear. Issue #437
+  reuses that exact storage/terminal boundary and every existing scalar, manifest, and two-batch
+  identity; later exact Store and retired-work evidence advances the cursor or clears only the stale
+  term without authorizing removal.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
   RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary. Issue
   #403 consumes only fresh exact target absence and does not reinterpret stock delivery, storage
@@ -1145,7 +1167,7 @@ lint, type, test, documentation, bundle, and package evidence.
   [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define the existing scheduled
   acquire/deliver command boundary used by evacuation. The official
   [game loop](https://docs.screeps.com/game-loop.html) requires later fresh Store observation to
-  prove #421/#423/#425/#435's exact delivery rather than treating `OK` as settlement.
+  prove #421/#423/#425/#435/#437's exact delivery rather than treating `OK` as settlement.
 - Official [Control guide](https://docs.screeps.com/control.html) constrains RCL structure access.
 - Screeps engine 4.3.2
   [`checkConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/utils.js#L128-L189),

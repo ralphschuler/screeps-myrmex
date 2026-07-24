@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
   isKnownV1StaleLayoutLabEvacuation,
+  isPersistedStaleLayoutStorageEvacuation,
   isStaleLayoutContainerMigrationContinuation,
   isStaleLayoutExtensionEvacuationContinuation,
   isStaleLayoutLabEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
+  isStaleLayoutStorageEvacuationContinuation,
   isStaleLayoutTerminalEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   planOwnedRoomLayout,
@@ -386,6 +388,68 @@ describe("stale lab evacuation continuation", () => {
           replacementId: "lab-replacement",
           targetId: "lab-obsolete",
           targetStructureType: "lab",
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("stale storage evacuation continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    fingerprint: "stale-layout",
+    roomName: "W1N1",
+    sourceServices: [],
+    storageEvacuation: {
+      amount: 4_000,
+      expiresAt: 400,
+      resourceType: "energy",
+      settledAmount: 0,
+      sourceId: "storage-obsolete",
+      startedAt: 100,
+      terminalId: "terminal-retained",
+      terminalInitialAmount: 10_000,
+    },
+    transform: 0,
+  });
+
+  it("retains suppression while admitting only the sole otherwise-quiescent stale storage term", () => {
+    expect(isPersistedStaleLayoutStorageEvacuation(staleRecord())).toBe(true);
+    expect(isStaleLayoutStorageEvacuationContinuation(staleRecord())).toBe(true);
+    const current = {
+      ...staleRecord(),
+      algorithmRevision: "owned-room-layout-v2-source-services",
+    };
+    expect(isPersistedStaleLayoutStorageEvacuation(current)).toBe(false);
+    expect(isStaleLayoutStorageEvacuationContinuation(current)).toBe(false);
+    const sibling = {
+      ...staleRecord(),
+      terminalEvacuation: {
+        amount: 100,
+        expiresAt: 250,
+        replacementId: "storage-retained",
+        replacementInitialAmount: 0,
+        resourceType: "energy",
+        sourceId: "terminal-obsolete",
+        startedAt: 100,
+      },
+    };
+    expect(isPersistedStaleLayoutStorageEvacuation(sibling)).toBe(true);
+    expect(isStaleLayoutStorageEvacuationContinuation(sibling)).toBe(false);
+    expect(
+      isStaleLayoutStorageEvacuationContinuation({
+        ...staleRecord(),
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "terminal-retained",
+          targetId: "storage-obsolete",
+          targetStructureType: "storage",
         },
       }),
     ).toBe(false);

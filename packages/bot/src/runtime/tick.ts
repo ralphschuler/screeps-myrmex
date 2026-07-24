@@ -135,6 +135,7 @@ import {
   clearStaleLayoutLabEvacuation,
   clearStaleLayoutLinkEvacuation,
   clearStaleLayoutSpawnEvacuation,
+  clearStaleLayoutStorageEvacuation,
   clearStaleLayoutTerminalEvacuation,
   clearStaleLayoutTowerEvacuation,
   diffOwnedRoomLayout,
@@ -145,12 +146,14 @@ import {
   isLayoutSpawnEvacuationFlowId,
   isLayoutStorageEvacuationFlowId,
   isKnownV1StaleLayoutLabEvacuation,
+  isPersistedStaleLayoutStorageEvacuation,
   isPersistedStaleLayoutTerminalEvacuation,
   isStaleLayoutContainerMigrationContinuation,
   isStaleLayoutExtensionEvacuationContinuation,
   isStaleLayoutLabEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
+  isStaleLayoutStorageEvacuationContinuation,
   isStaleLayoutTerminalEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   layoutLabEvacuationFlowIds,
@@ -168,6 +171,7 @@ import {
   persistLayoutRemovalReceipt,
   persistLayoutSpawnEvacuation,
   persistLayoutStorageEvacuation,
+  persistStaleLayoutStorageEvacuation,
   persistLayoutTerminalEvacuation,
   persistLayoutTowerEvacuation,
   planOwnedRoomLayout,
@@ -188,6 +192,7 @@ import {
   staleLayoutRemovalSettlementBlocker,
   staleLayoutRevisionHandoffBlocker,
   staleLayoutSpawnEvacuationSettlementBlocker,
+  staleLayoutStorageEvacuationSettlementBlocker,
   staleLayoutTerminalEvacuationSettlementBlocker,
   staleLayoutTowerEvacuationSettlementBlocker,
   type ConstructionSiteArbitrationResult,
@@ -263,6 +268,7 @@ import {
   completeExecutableLayoutStorageEvacuationFlowIds,
   isCompletedLayoutStorageRemovalObserved,
   projectLayoutStorageEvacuations,
+  projectLayoutStorageEvacuationSettlements,
 } from "../logistics/storage-evacuation";
 import {
   completedLayoutTerminalEvacuationRoomNames,
@@ -2353,6 +2359,19 @@ function layoutPlanningSystem(
             )
           : [],
       );
+      const staleStorageEvacuationRecords = initialOwner.staleRecords.filter(
+        isStaleLayoutStorageEvacuationContinuation,
+      );
+      const staleStorageEvacuationSettlements = new Map(
+        projectLayoutStorageEvacuationSettlements({
+          activeFlowIds: activeLogisticsFlowIds,
+          activeTargetIds: activeTerminalLogisticsTargetIds,
+          quiescentTerminalRoomNames,
+          records: staleStorageEvacuationRecords,
+          snapshot: context.snapshot,
+          tick: context.tick,
+        }).map((settlement) => [settlement.roomName, settlement]),
+      );
       const staleLabEvacuationRecords = initialOwner.staleRecords.filter(
         isStaleLayoutLabEvacuationContinuation,
       );
@@ -2531,6 +2550,30 @@ function layoutPlanningSystem(
           staleLayoutLabEvacuationSettlementBlocker({ colony, record: staleRecord }) === null
         ) {
           owner = clearStaleLayoutLabEvacuation(owner, room.name);
+          changed = true;
+          ownerPrecommitRequired = true;
+          planning.push({
+            blocker: "revision-handoff-active",
+            fingerprint: staleRecord.fingerprint,
+            roomName: room.name,
+            status: "degraded",
+          });
+          break;
+        }
+        const staleStorageEvacuationSettlement = staleStorageEvacuationSettlements.get(room.name);
+        if (
+          staleRecord !== undefined &&
+          staleStorageEvacuationSettlement !== undefined &&
+          staleLayoutStorageEvacuationSettlementBlocker({ colony, record: staleRecord }) === null
+        ) {
+          owner =
+            staleStorageEvacuationSettlement.evacuation === null
+              ? clearStaleLayoutStorageEvacuation(owner, room.name)
+              : persistStaleLayoutStorageEvacuation(
+                  owner,
+                  room.name,
+                  staleStorageEvacuationSettlement.evacuation,
+                );
           changed = true;
           ownerPrecommitRequired = true;
           planning.push({
@@ -3504,6 +3547,7 @@ function colonyDirectorSystem(
           hasStaleLayoutLabEvacuationContinuation(staleLayoutsOwner) ||
           hasStaleLayoutLinkEvacuationContinuation(staleLayoutsOwner) ||
           hasStaleLayoutSpawnEvacuationContinuation(staleLayoutsOwner) ||
+          hasStaleLayoutStorageEvacuationContinuation(staleLayoutsOwner) ||
           hasStaleLayoutTerminalEvacuationContinuation(staleLayoutsOwner) ||
           hasStaleLayoutTowerEvacuationContinuation(staleLayoutsOwner)) &&
         input.game.cpu.getUsed() + 1.5 <= budget.hardCeiling;
@@ -3688,6 +3732,11 @@ function colonyDirectorSystem(
             })
           : []),
       ];
+      const persistedStaleStorageEvacuationRecords =
+        persistedLayoutsOwner?.staleRecords.filter(isPersistedStaleLayoutStorageEvacuation) ?? [];
+      const staleStorageEvacuationRecords = persistedStaleStorageEvacuationRecords.filter(
+        isStaleLayoutStorageEvacuationContinuation,
+      );
       const persistedStaleTerminalEvacuationRecords =
         persistedLayoutsOwner?.staleRecords.filter(isPersistedStaleLayoutTerminalEvacuation) ?? [];
       const staleTerminalEvacuationRecords = persistedStaleTerminalEvacuationRecords.filter(
@@ -3697,6 +3746,7 @@ function colonyDirectorSystem(
         [
           ...persistedLayoutRecords,
           ...knownStaleLabEvacuationRecords,
+          ...persistedStaleStorageEvacuationRecords,
           ...persistedStaleTerminalEvacuationRecords,
         ],
         context.tick,
@@ -3736,6 +3786,22 @@ function colonyDirectorSystem(
             )
           : [],
       );
+      const authorizedStaleStorageEvacuationRecords = layoutWorkEnabled
+        ? staleStorageEvacuationRecords.filter((record) => {
+            const colony = staleLayoutPolicyColonies.find(
+              ({ roomName }) => roomName === record.roomName,
+            );
+            return (
+              colony !== undefined &&
+              quiescentTerminalRoomNames.has(record.roomName) &&
+              staleLayoutStorageEvacuationSettlementBlocker({ colony, record }) === null
+            );
+          })
+        : [];
+      const storageEvacuationRecords = [
+        ...layoutRecords,
+        ...authorizedStaleStorageEvacuationRecords,
+      ];
       const authorizedStaleTerminalEvacuationRecords = layoutWorkEnabled
         ? staleTerminalEvacuationRecords.filter((record) => {
             const colony = staleLayoutPolicyColonies.find(
@@ -3885,17 +3951,45 @@ function colonyDirectorSystem(
         economyCandidates,
         suppressedSpawnEvacuationTargets,
       );
-      const layoutStorageEvacuations = projectLayoutStorageEvacuations({
+      const projectedLayoutStorageEvacuations = projectLayoutStorageEvacuations({
         existingBudgets: priorLedger,
-        includeWork: layoutRecords === persistedLayoutRecords,
+        includeWork: layoutWorkEnabled,
         quiescentTerminalRoomNames,
-        records: persistedLayoutRecords,
+        records: storageEvacuationRecords,
         snapshot: context.snapshot,
         tick: context.tick,
       });
+      const layoutStorageEvacuationSuppression = projectLayoutStorageEvacuations({
+        existingBudgets: priorLedger,
+        includeWork: false,
+        quiescentTerminalRoomNames,
+        records: [...persistedLayoutRecords, ...persistedStaleStorageEvacuationRecords],
+        snapshot: context.snapshot,
+        tick: context.tick,
+      });
+      const storageSuppressedSinkTargetIds = [
+        ...new Set([
+          ...(projectedLayoutStorageEvacuations.demands.suppressedSinkTargetIds ?? []),
+          ...(layoutStorageEvacuationSuppression.demands.suppressedSinkTargetIds ?? []),
+        ]),
+      ].sort();
+      const storageSuppressedSourceTargetIds = [
+        ...new Set([
+          ...(projectedLayoutStorageEvacuations.demands.suppressedSourceTargetIds ?? []),
+          ...(layoutStorageEvacuationSuppression.demands.suppressedSourceTargetIds ?? []),
+        ]),
+      ].sort();
+      const layoutStorageEvacuations = Object.freeze({
+        ...projectedLayoutStorageEvacuations,
+        demands: Object.freeze({
+          ...projectedLayoutStorageEvacuations.demands,
+          suppressedSinkTargetIds: Object.freeze(storageSuppressedSinkTargetIds),
+          suppressedSourceTargetIds: Object.freeze(storageSuppressedSourceTargetIds),
+        }),
+      });
       const suppressedStorageEvacuationTargets = new Set([
-        ...(layoutStorageEvacuations.demands.suppressedSinkTargetIds ?? []),
-        ...(layoutStorageEvacuations.demands.suppressedSourceTargetIds ?? []),
+        ...storageSuppressedSinkTargetIds,
+        ...storageSuppressedSourceTargetIds,
       ]);
       economyCandidates = withoutSuppressedSurvivalTransfers(
         economyCandidates,
@@ -4182,7 +4276,7 @@ function colonyDirectorSystem(
                 logistics,
               ),
               projectedFlowIds: projectedStorageEvacuationFlowIds,
-              records: layoutRecords,
+              records: storageEvacuationRecords,
             });
       const projectedTerminalEvacuationFlowIds = new Set(
         layoutTerminalEvacuations.demands.edges.map(({ id }) => id),
@@ -4469,7 +4563,7 @@ function colonyDirectorSystem(
         fundedFlowIds: fundedStorageEvacuationFlowIds,
         logisticsExecutableFlowIds: logisticsExecutableStorageEvacuationFlowIds,
         projectedFlowIds: projectedStorageEvacuationFlowIds,
-        records: layoutRecords,
+        records: storageEvacuationRecords,
       });
       const activeTerminalEvacuationBudgetIssuers = new Set(
         session.result.reservations.flatMap(({ category, issuer, status }) =>
@@ -4641,7 +4735,10 @@ function persistedLayoutStorageEvacuationFlowIds(
   const owner = parseLayoutsOwner(manager.ownerView("layouts"));
   if (owner === null) return new Set();
   return new Set(
-    owner.records.flatMap(({ roomName, storageEvacuation }) => {
+    [
+      ...owner.records,
+      ...owner.staleRecords.filter(isPersistedStaleLayoutStorageEvacuation),
+    ].flatMap(({ roomName, storageEvacuation }) => {
       if (storageEvacuation === undefined) return [];
       return layoutStorageEvacuationFlowIds(roomName, storageEvacuation) ?? [];
     }),
@@ -4692,7 +4789,10 @@ function persistedLayoutStorageEvacuationTargetIds(
   const owner = parseLayoutsOwner(manager.ownerView("layouts"));
   if (owner === null) return new Set();
   return new Set(
-    owner.records.flatMap(({ storageEvacuation }) =>
+    [
+      ...owner.records,
+      ...owner.staleRecords.filter(isPersistedStaleLayoutStorageEvacuation),
+    ].flatMap(({ storageEvacuation }) =>
       storageEvacuation === undefined ||
       tick <= storageEvacuation.startedAt ||
       tick >= storageEvacuation.expiresAt
@@ -4806,6 +4906,10 @@ function hasStaleLayoutLinkEvacuationContinuation(owner: LayoutsOwnerV25 | null)
 
 function hasStaleLayoutSpawnEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
   return owner?.staleRecords.some(isStaleLayoutSpawnEvacuationContinuation) === true;
+}
+
+function hasStaleLayoutStorageEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
+  return owner?.staleRecords.some(isStaleLayoutStorageEvacuationContinuation) === true;
 }
 
 function hasStaleLayoutTerminalEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
