@@ -166,9 +166,12 @@ funded Logistics/V3 path and clears only its exactly delivered term command-free
 handoff. Issue [#437](https://github.com/ralphschuler/screeps-myrmex/issues/437) admits every exact
 existing stale scalar, manifest, and bounded two-batch storage-evacuation form. Exact first-batch
 conservation and retired work advance only the existing cursor; exact final terminal conservation
-and retired work clear only the evacuation, both command-free before later work. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+and retired work clear only the evacuation, both command-free before later work. Issue
+[#439](https://github.com/ralphschuler/screeps-myrmex/issues/439) makes owned-removal method
+arbitration explicit: Phase 2 keeps the existing direct-destroy path and source-forbids
+`Creep.dismantle` until a later funded policy proves positive full-cost value. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
+migration.
 
 ## Runtime order
 
@@ -458,22 +461,24 @@ and dismantling.
    following observation re-enters ordinary site arbitration.
 7. `layout.execute` alone resolves live rooms and targets. `ConstructionSiteExecutor` calls
    `Room.createConstructionSite`; `StructureDestroyExecutor` calls `Structure.destroy` after fresh
-   ownership, threat, commitment, ID, type, room, and position checks. Extension removal also
-   rechecks the target's empty owned Store and exact owned replacement in the room. Container
-   removal rechecks the target's empty Store and exact active same-room semantic-service
-   replacement; room control supplies destruction authority because containers are neutral. Tower
-   removal rechecks an active empty owned target and the exact active owned same-room replacement's
-   minimum 10 energy immediately before the call. Reserve-link removal rechecks both exact owned
-   active same-room link identities, exact 800-capacity energy-only Stores, target emptiness, the
-   intent-bound replacement energy, and zero cooldown immediately before the call. Lab removal
-   rechecks exact 2,000-energy and 3,000-mineral empty capacity, null mineral type, zero cooldown,
-   ownership/activity, and one exact active same-room lab. Spawn removal rechecks an active idle
-   owned target with an exact empty 300-energy Store plus one exact active idle same-room
-   replacement. A stocked intent additionally carries and rechecks the baseline-plus-amount minimum
-   replacement energy immediately before destruction. Storage removal rechecks the exact active
-   empty 1,000,000-unit target Store and one exact active same-room 300,000-unit terminal. Terminal
-   removal rechecks the exact empty 300,000-unit target Store, zero cooldown, and one exact active
-   same-room 1,000,000-unit storage.
+   ownership, threat, commitment, ID, type, room, and position checks. This is the only current
+   owned-removal method. No contract or action may call `Creep.dismantle`; architecture enforcement
+   rejects direct and aliased forms even from executor paths until an explicit funded policy proves
+   positive full-cost value. Extension removal also rechecks the target's empty owned Store and
+   exact owned replacement in the room. Container removal rechecks the target's empty Store and
+   exact active same-room semantic-service replacement; room control supplies destruction authority
+   because containers are neutral. Tower removal rechecks an active empty owned target and the exact
+   active owned same-room replacement's minimum 10 energy immediately before the call. Reserve-link
+   removal rechecks both exact owned active same-room link identities, exact 800-capacity
+   energy-only Stores, target emptiness, the intent-bound replacement energy, and zero cooldown
+   immediately before the call. Lab removal rechecks exact 2,000-energy and 3,000-mineral empty
+   capacity, null mineral type, zero cooldown, ownership/activity, and one exact active same-room
+   lab. Spawn removal rechecks an active idle owned target with an exact empty 300-energy Store plus
+   one exact active idle same-room replacement. A stocked intent additionally carries and rechecks
+   the baseline-plus-amount minimum replacement energy immediately before destruction. Storage
+   removal rechecks the exact active empty 1,000,000-unit target Store and one exact active
+   same-room 300,000-unit terminal. Terminal removal rechecks the exact empty 300,000-unit target
+   Store, zero cooldown, and one exact active same-room 1,000,000-unit storage.
 8. On a selected-service switch only, `layout.handoff-reconcile` reconciles the complete layout
    draft and stages layouts-owner V21 before the root commit. The predecessor remains executable. On
    the following tick, StaticMiningPlanner consumes the durable coordinate; Reconcile atomically
@@ -579,6 +584,12 @@ hashes, no destroy command, 0.1 modeled CPU per tick, a 663-byte maximum layouts
 bounds. The existing #377 row separately retains exact production funding, ContractLedger, lease,
 action-arbitration, and live `Creep.build` proof for the generic owned-site execution path;
 scenario-kit does not claim to emulate that runtime command chain.
+
+Issue #439 retains #365's exact `create-site → destroy-structure → create-site` outcome across warm,
+reset, and reordered variants while making its command choice enforceable. The architecture checker
+rejects direct, computed, destructured, transitive, bound, `call`, and `apply` forms of
+`Creep.dismantle`, including calls placed in an executor. Runtime CPU, persistent Memory, game
+resources, migration receipts, and the existing direct command path are unchanged.
 
 Issue #413's production-runtime evidence starts from an otherwise-quiescent V25 stale record with
 one 50-energy extension evacuation. The normal colony budget and Logistics planner publish its exact
@@ -1101,6 +1112,16 @@ lint, type, test, documentation, bundle, and package evidence.
   interval before both terms clear atomically. #391, #393, #395, #397, #399, #401, #403, and #405
   additionally bind their success result to the exact extension, tower, spawn, reserve-link,
   container, lab, terminal, or storage evacuation/migration identity and fixed interval.
+- Official [`Creep.dismantle`](https://docs.screeps.com/api/#Creep.dismantle) defines the adjacent
+  constructible-structure command, required `WORK`, 50% repair-energy return, CARRY-or-drop
+  behavior, and scheduled/failure codes. Current pinned Screeps
+  [`constants`](https://github.com/screeps/common/blob/2fb779b26eef9b4b0f412584f6bd47c897949766/lib/constants.js#L117-L129)
+  set `DISMANTLE_POWER = 50`, `DISMANTLE_COST = 0.005`, `REPAIR_COST = 0.01`, and
+  `HARVEST_POWER = 2`; the pinned engine
+  [`dismantle` processor](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/creeps/dismantle.js)
+  floors each action's returned energy and places overflow on the ground. Issue #439 therefore keeps
+  current owned migration on direct destroy: dismantling returns at most 0.25 energy per unboosted
+  `WORK` action before flooring, consumes the primary-action slot, and delays committed geometry.
 - Official [`StructureSpawn`](https://docs.screeps.com/api/#StructureSpawn),
   [`StructureSpawn.spawning`](https://docs.screeps.com/api/#StructureSpawn.spawning), and
   [`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep) define the

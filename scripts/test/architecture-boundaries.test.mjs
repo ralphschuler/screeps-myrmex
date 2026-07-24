@@ -665,6 +665,26 @@ describe("runtime architecture boundaries", () => {
     }
   });
 
+  it("rejects every direct or aliased creep dismantle command before funded policy exists", () => {
+    for (const contents of [
+      "creep.dismantle(target);",
+      'creep["dismantle"](target);',
+      "const { dismantle: issue } = creep; issue(target);",
+      "const issue = creep.dismantle; const alias = issue; alias(target);",
+      "let issue; issue = creep.dismantle; issue(target);",
+      "const issue = creep.dismantle.bind(creep); issue(target);",
+      "creep.dismantle.call(creep, target);",
+      "creep.dismantle.apply(creep, [target]);",
+    ]) {
+      expect(
+        findArchitectureViolations([{ path: "movement/executor.ts", contents }]),
+      ).toContainEqual({
+        path: "movement/executor.ts",
+        rule: "creep-dismantle-before-funded-policy-forbidden",
+      });
+    }
+  });
+
   it("rejects direct, destructured, transitive, bound, call, and apply spawnCreep aliases", () => {
     for (const contents of [
       'spawn["spawnCreep"](body, name);',
