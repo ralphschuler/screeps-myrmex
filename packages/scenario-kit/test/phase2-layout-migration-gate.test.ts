@@ -8,7 +8,7 @@ const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 
-describe("Phase 2 stable layout migration evidence (#365/#377/#383)", () => {
+describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -23,7 +23,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383)", () => {
 
     expect(actual).toEqual(checkedEvidence);
     expect(actual).toMatchObject({
-      evidenceIssues: [365, 377, 383],
+      evidenceIssues: [365, 377, 383, 441],
       issue: 365,
       productionBuild: {
         buildEnergy: 100,
@@ -32,16 +32,16 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383)", () => {
         semanticBytesIdentical: true,
         siteObservedAbsentAfterCompletion: true,
       },
-      schemaVersion: 3,
+      schemaVersion: 4,
       status: "complete",
     });
     expect(actual.scenario).toMatchObject({
-      id: "phase2-layout-extension-migration-v1",
-      seed: "phase2-layout-extension-migration-seed-v1",
+      id: "phase2-layout-extension-migration-v2",
+      seed: "phase2-layout-extension-migration-seed-v2",
       ticks: 70,
       variants: {
         warm: { resetTicks: [], reverseObservation: false },
-        reset: { resetTicks: [50_015], reverseObservation: false },
+        reset: { resetTicks: [50_015, 50_033], reverseObservation: false },
         reordered: { resetTicks: [], reverseObservation: true },
       },
       facts: {
@@ -65,17 +65,29 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383)", () => {
         siteProposals: 0,
       },
     });
+    expect(actual.scenario.threatInterruption).toEqual({
+      authorizationCount: 0,
+      blockers: ["threat"],
+      blockedTicks: [50_031, 50_032, 50_033, 50_034],
+      bothStructuresPresent: true,
+      destroyCallCount: 0,
+      removalIntentCount: 0,
+      removalProposalCount: 0,
+      removalReceiptCount: 0,
+      resetDuringThreatAt: 50_033,
+      resumedAt: 50_035,
+    });
     expect(actual.scenario.milestones).toEqual({
-      destroyCommandAt: 50_031,
-      destroyDisappearanceObservedAt: 50_032,
+      destroyCommandAt: 50_035,
+      destroyDisappearanceObservedAt: 50_036,
       firstBuildCompletedAt: 50_030,
       firstCompletedReplacementObservedAt: 50_031,
       firstSiteCommandAt: 50_000,
       firstSiteObservedAt: 50_001,
-      secondBuildCompletedAt: 50_062,
-      secondCompletedReplacementObservedAt: 50_063,
-      secondSiteCommandAt: 50_032,
-      secondSiteObservedAt: 50_033,
+      secondBuildCompletedAt: 50_066,
+      secondCompletedReplacementObservedAt: 50_067,
+      secondSiteCommandAt: 50_036,
+      secondSiteObservedAt: 50_037,
     });
     expect(actual.scenario.commands[1]?.tick).toBeGreaterThanOrEqual(
       actual.scenario.milestones.firstCompletedReplacementObservedAt,

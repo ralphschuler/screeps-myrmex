@@ -293,9 +293,12 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   storage, unsafe, same-tick, incomplete, terminal-only, or drifted evidence remains blocked. Issue
   #439 makes current owned-removal arbitration explicit: Phase 2 retains the existing direct
   `Structure.destroy` path after every safety gate and source-forbids `Creep.dismantle` until a
-  later funded policy proves positive full-cost value. Uninterrupted same-structure storage/terminal
-  service, broad dynamic movement/pathfinding proof, autonomous boost manifest production, and
-  defensive or active revision migration remain issue #99.
+  later funded policy proves positive full-cost value. Issue #441 adds checked composed evidence
+  that a replacement-first extension migration pauses without authorization, removal intent,
+  command, or receipt through a current four-tick threat and heap reset, then resumes exactly once
+  after threat clears while preserving the existing geometry, access, CPU, energy, and site bounds.
+  Uninterrupted same-structure storage/terminal service, broad dynamic movement/pathfinding proof,
+  autonomous boost manifest production, and defensive or active revision migration remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
