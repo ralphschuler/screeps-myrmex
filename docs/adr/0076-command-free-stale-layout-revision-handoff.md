@@ -33,16 +33,17 @@ reserve-link equivalent only for safely reconstructible source-defined V1 geomet
 productive-role, reserve-role, Store, cooldown, and native-transfer-exclusion evidence. Issue #421
 adds the smallest general-container equivalent for one legacy energy-only migration without a
 source-service identity or resource manifest. Issue #423 adds the mutually exclusive singleton non-
-energy manifest without broadening continuation to multi-row or source-specific migrations.
+energy manifest. Issue #425 extends the same resource-qualified path to one canonical two-to-eight-
+row source-unspecific manifest while source-specific migration remains inert.
 
 ## Decision
 
 - Layouts owner-local schema V25 separates `records` from `staleRecords`. `records` contains only
   the current algorithm and remains the sole input to layout, mining, industry, health, site, and
   removal projections. `staleRecords` contains fully validated older-algorithm V24-shaped evidence
-  and is inert except for issues #413, #415, #417, #419, #421, and #423's exact extension-, tower-,
-  spawn-, reserve-link-evacuation, or legacy energy-only/singleton non-energy container-migration
-  Logistics continuation.
+  and is inert except for issues #413, #415, #417, #419, #421, #423, and #425's exact extension-,
+  tower-, spawn-, reserve-link-evacuation, or legacy energy-only/bounded resource-manifest container
+  migration Logistics continuation.
 - V1-V24 migration places a structurally valid older-algorithm record in `staleRecords` instead of
   dropping it. Current and stale records share the existing 64-room aggregate cap and one room may
   occur in only one collection. Malformed, duplicate, over-cap, misplaced, or current-algorithm
@@ -104,15 +105,20 @@ energy manifest without broadening continuation to multi-row or source-specific 
   contains exactly one positive non-energy row with its nonnegative replacement baseline, both
   legacy energy fields and `sourceId` are absent, and the same current exact Store, capacity,
   safety, suppression, active-funding, and sole Logistics/V3 boundaries pass. It reuses the existing
-  resource-qualified flow and budget identities; a one-row energy manifest, multi-row manifest,
-  source-specific record, or mixed legacy/manifest shape remains inert.
-- Either stale container term clears only after newer fresh safe observation proves an exact empty
-  target, replacement stock for its resource exactly equal to baseline plus amount, and complete
-  current exact V3 flow, source, and replacement endpoint retirement. Settlement removes only
-  `containerMigration` through the existing layouts-owner precommit, emits no layout or game command
-  globally, and leaves the revision handoff to a later tick. Refill, consumption, capacity or
-  identity drift, active work, expiry, missing vision, unsafe policy, or missing active funding
-  preserves the stale term and authorizes no stale lease action.
+  resource-qualified flow and budget identities; a one-row energy manifest remains inert.
+- Issue #425 permits the mutually exclusive two-to-eight-row form only when `resourceManifest` is
+  canonical, positive, source-unspecific, totals at most 2,000 units, and has no legacy energy
+  fields. Every row retains its existing distinct resource-qualified flow and budget identity while
+  all sinks share one aggregate replacement-capacity reservation. The complete current row set must
+  fit the existing 64-flow bound; malformed, drifted, or over-cap evidence publishes no projection
+  prefix, and an unfunded row authorizes no lease for that row.
+- Each admitted stale container form clears only after newer fresh safe observation proves an exact
+  empty target, replacement stock for every resource exactly equal to baseline plus amount, every
+  exact flow currently funded and inactive, and complete source/replacement endpoint retirement.
+  Settlement removes only `containerMigration` through the existing layouts-owner precommit, emits
+  no layout or game command globally, and leaves the revision handoff to a later tick. Refill,
+  consumption, capacity or identity drift, active work, expiry, missing vision, unsafe policy, or
+  missing active funding preserves the stale term and authorizes no stale lease action.
 - Issue #413 permits one otherwise-quiescent stale extension evacuation to remain an input to the
   existing extension-evacuation projection while all other stale records remain inert. The exact
   unexpired source/replacement/amount/baseline identity must still resolve to two current active
@@ -228,7 +234,7 @@ its sole exact evacuation/migration term—can now converge toward quiescence wi
 cancelling its command; the separate handoff remains delayed until a later tick. One exact settled
 source-service issuance can instead cross that handoff directly without losing its contract or
 lease, regressing its monotonic coordinate, or coupling revision migration to source optimization.
-One exact unfinished legacy energy-only or singleton non-energy container migration, extension,
+One exact unfinished legacy energy-only or bounded resource-manifest container migration, extension,
 reserve-link, spawn, or tower evacuation can continue under its original fixed deadline and then
 settle command-free before the separate handoff, without reopening stale removal authority,
 reinterpreting a source service, bypassing SpawnBroker, using native link transfer, or weakening the
@@ -257,8 +263,8 @@ unbounded history is added.
 
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
 settlement or handoff. Unfinished migration/evacuation continuation for every structure other than
-one legacy energy-only or singleton non-energy general container, extension, reserve link, spawn, or
-tower, plus multi-row, energy-manifest, or source-specific container migration, mismatched or
+one legacy energy-only or bounded resource-manifest general container, extension, reserve link,
+spawn, or tower, plus one-row energy-manifest or source-specific container migration, mismatched or
 multiple failed pairs, unmatched or terminal source-service recovery, arbitrary geometry algorithms,
 defensive migration, dynamic room routing, autonomous boost-manifest production, creep dismantling,
 and uninterrupted same-structure availability remain outside this decision.
@@ -275,9 +281,9 @@ rechecked 2026-07-23 for issue #413. `StructureTower`, `Store`, `Creep.withdraw`
 issue #417. `StructureLink`, `StructureLink.transferEnergy`, `Store`, `Creep.withdraw`,
 `Creep.transfer`, the game loop, and both indexes were rechecked 2026-07-23 for issue #419.
 `StructureContainer`, `Store`, `Creep.withdraw`, `Creep.transfer`, the game loop, and both indexes
-were rechecked 2026-07-23 for issue #421 and 2026-07-24 for issue #423. The relevant pages were also
-checked: `StructureTower` for issue #393, `StructureSpawn` for issue #395, `StructureLink` for issue
-`#397`, `StructureContainer` for issue #399, and `StructureLab` for
+were rechecked 2026-07-23 for issue #421 and 2026-07-24 for issues #423 and #425. The relevant pages
+were also checked: `StructureTower` for issue #393, `StructureSpawn` for issue #395, `StructureLink`
+for issue `#397`, `StructureContainer` for issue #399, and `StructureLab` for
 [issue #401](https://github.com/ralphschuler/screeps-myrmex/issues/401); `StructureTerminal` plus
 `Store` were reviewed for [issue #403](https://github.com/ralphschuler/screeps-myrmex/issues/403),
 and `StructureStorage`, `StructureTerminal`, and `Store` for
@@ -326,7 +332,7 @@ and `StructureStorage`, `StructureTerminal`, and `Store` for
 - Official [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer),
   [`Store`](https://docs.screeps.com/api/#Store),
   [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw), and
-  [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define issues #421/#423's
+  [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define issues #421/#423/#425's
   walkable 2,000-capacity general-purpose source/replacement Stores and adjacent resource-specific
   creep intents. The official [game loop](https://docs.screeps.com/game-loop.html) requires fresh
   later observation, rather than an `OK` result, to prove exact delivery and retired work. Screeps
