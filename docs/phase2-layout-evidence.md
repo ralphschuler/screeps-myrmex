@@ -157,8 +157,11 @@ replacement. Issue [#429](https://github.com/ralphschuler/screeps-myrmex/issues/
 mutually exclusive singleton non-energy manifest under the same evidence. Issue
 [#431](https://github.com/ralphschuler/screeps-myrmex/issues/431) composes that source/service proof
 with one canonical two-to-eight-row manifest and complete current-row funding before lease
-execution. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
-other structure migration and dismantling.
+execution. Issue [#433](https://github.com/ralphschuler/screeps-myrmex/issues/433) admits one exact
+unfinished stale lab evacuation through the existing lab Logistics/V3 path and clears only its
+quiescent exactly delivered term command-free before the later revision handoff. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -271,31 +274,36 @@ other structure migration and dismantling.
    retains the exact matching contract and lease; mismatch, unavailable or terminal-only evidence,
    source or room loss, changed source planning, and unsuccessful handoff remain fail-closed. One
    otherwise-quiescent stale legacy energy-only or bounded resource-manifest container migration,
-   extension, reserve-link, spawn, or tower evacuation remains the sole active stale gameplay
+   extension, lab, reserve-link, spawn, or tower evacuation remains the sole active stale gameplay
    projection. The existing `optional-growth` budget and Logistics/V3 contract path move its exact
-   stock under the original deadline while source refill is suppressed. A manifest has no source
-   identity and contains one non-energy row or two through eight canonical rows with no legacy
-   fields. One legacy energy form may carry one exact source identity only while the target remains
-   adjacent and a different persisted exact selected service occupies the replacement. All forms
-   require two exact non-foreign 2,000-capacity general-purpose Stores and suppress the target
-   source/refill plus replacement refill even when optional work is denied. Extension and spawn
-   replacement refill remain suppressed during acquisition; malformed spawn evidence keeps both
-   exact endpoints suppressed. Spawn work additionally requires active idle 300-capacity exact
-   endpoints and a completed current SpawnBroker plan selecting neither. During an unexpired tower
-   attempt, both source and replacement refill remain suppressed, including while cargo is in
-   flight. A reserve-link term additionally requires safely reconstructible source-defined V1 link
-   positions, complete current RCL8 source/hub/controller roles, one external reserve source, one
-   exact reserve replacement, exact 800-capacity energy Stores, zero cooldown, and exclusion from
-   native link proposals. Its endpoints remain suppressed even when optional work or funding is
-   denied; an existing lease requires the current role-authorized flow and active reservation.
-   Spawn, link, or tower expiry restores ordinary service but keeps removal and revision handoff
-   blocked. Tower continuation also retains at least the exact 10-energy action floor. A later fresh
-   observation may clear only that term when the source is empty, replacement stock for the exact
-   resource is baseline plus amount, no current V3 planning record names the flow or either
-   endpoint, active funding and the same safe handoff policy still pass. This settlement precommits
-   only layouts, emits no layout command in any room, and leaves the revision handoff to a later
-   tick. Another active stale term, source-service sequence, unsafe policy, malformed, refilled,
-   consumed, or drifted Store evidence, active work, expiry, or missing vision remains fail-closed.
+   stock under the original deadline while source refill is suppressed. A stale lab additionally
+   reuses only known V1 committed positions as narrow assignment evidence; every current
+   quiescence/reaction/boost handoff, storage precedence, terminal no-send, Store, cooldown, atomic
+   mixed-flow, and active-funding gate remains unchanged. Active or pending lab work may retain
+   exact evacuation but cannot clear the term before a quiescent observation. A container manifest
+   has no source identity and contains one non-energy row or two through eight canonical rows with
+   no legacy fields. One legacy energy form may carry one exact source identity only while the
+   target remains adjacent and a different persisted exact selected service occupies the
+   replacement. All forms require two exact non-foreign 2,000-capacity general-purpose Stores and
+   suppress the target source/refill plus replacement refill even when optional work is denied.
+   Extension and spawn replacement refill remain suppressed during acquisition; malformed spawn
+   evidence keeps both exact endpoints suppressed. Spawn work additionally requires active idle
+   300-capacity exact endpoints and a completed current SpawnBroker plan selecting neither. During
+   an unexpired tower attempt, both source and replacement refill remain suppressed, including while
+   cargo is in flight. A reserve-link term additionally requires safely reconstructible
+   source-defined V1 link positions, complete current RCL8 source/hub/controller roles, one external
+   reserve source, one exact reserve replacement, exact 800-capacity energy Stores, zero cooldown,
+   and exclusion from native link proposals. Its endpoints remain suppressed even when optional work
+   or funding is denied; an existing lease requires the current role-authorized flow and active
+   reservation. Spawn, link, or tower expiry restores ordinary service but keeps removal and
+   revision handoff blocked. Tower continuation also retains at least the exact 10-energy action
+   floor. A later fresh observation may clear only that term when the source is empty, replacement
+   stock for the exact resource is baseline plus amount, no current V3 planning record names the
+   flow or either endpoint, active funding and the same safe handoff policy still pass. This
+   settlement precommits only layouts, emits no layout command in any room, and leaves the revision
+   handoff to a later tick. Another active stale term, source-service sequence, unsafe policy,
+   malformed, refilled, consumed, or drifted Store evidence, active work, expiry, or missing vision
+   remains fail-closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -688,6 +696,22 @@ outcomes. Focused controls retain canonical manifest, 2,000-unit aggregate Store
 adjacency, no-prefix, partial-funding, drift, unsafe-policy, and exact-delivery failure boundaries.
 No schema, authority, mining plan, executor, command, or persistent field is added.
 
+Issue #433's production-runtime evidence starts from one otherwise-quiescent V25 stale record and
+covers the existing energy-only, mineral-only to storage, mineral-only to terminal, mixed to
+storage, and mixed to terminal forms. Known source-defined V1 lab positions feed only the current
+Industry assignment boundary; stale geometry never enters construction, health, ordinary Industry,
+migration, or removal. Each eligible form reuses its existing funded Logistics/V3 flow identities,
+including atomic mixed admission and storage precedence. Source/replacement suppression and terminal
+send suppression remain durable while optional work is denied; an unsafe, underfunded, expired,
+drifted, active-endpoint, current-effect, or pending-effect term emits no stale lease action. Fresh
+exact source emptiness, every baseline-plus-amount destination gain, current quiescence, and
+complete flow/endpoint retirement clear only `labEvacuation` command-free. The existing revision
+handoff runs on a later tick. Warm, module-reset, and reversed-fact variants produce byte-equivalent
+owner, planning, and zero-layout-command outcomes for all five forms. Focused Logistics evidence
+retains quiescent and exact reaction/boost handoff admission, mixed-flow atomicity, exact
+Store/capacity, over-cap no-prefix, and work-retirement blockers. The exact production bundle
+receipt is refreshed; no schema, authority, executor, command, or persistent field is added.
+
 Issue #415's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
 500-energy tower evacuation and an exact active replacement retaining the 10-energy action floor.
 The same colony budget and Logistics/V3 path publish the persisted flow; production runtime evidence
@@ -1058,7 +1082,9 @@ lint, type, test, documentation, bundle, and package evidence.
   allowances, 50,000 build cost, 2,000 energy and 3,000 mineral capacities, range-two reaction
   geometry, cooldown behavior, and 30-mineral/20-energy boost cost. Issue #401 consumes only fresh
   target absence and does not reinterpret stock, destination, assignment, reaction, boost, or
-  replacement readiness; official
+  replacement readiness. Issue #433 reuses those same current facts and the existing creep-
+  logistics boundary for unfinished stale work; exact later Store and quiescent work-retirement
+  evidence, not an `OK` result, clears the term. Official
   [`StructureLab.runReaction`](https://docs.screeps.com/api/#StructureLab.runReaction) defines the
   scheduled five-unit command and source, target, range, cooldown, activation, and RCL failures.
 - Official [`StructureLink`](https://docs.screeps.com/api/#StructureLink) defines the 2/3/4/6
@@ -1115,7 +1141,9 @@ lint, type, test, documentation, bundle, and package evidence.
 - Screeps Wiki [StructureTower](https://wiki.screepspl.us/StructureTower/) supplies tower placement,
   refill-access, and ten-energy action terminology only.
 - Screeps Wiki [`StructureLab`](https://wiki.screepspl.us/StructureLab/) supplies two-input,
-  range-two, cooldown, emptying, and refill terminology only.
+  range-two, cooldown, emptying, and refill terminology only; Wiki
+  [Logistics](https://wiki.screepspl.us/Logistics/) and
+  [`Intent`](https://wiki.screepspl.us/Intent/) supply hauling and deferred-effect terminology only.
 - Screeps Wiki [`StructureLink`](https://wiki.screepspl.us/StructureLink/) supplies source, storage,
   controller, and balancing terminology only; MYRMEX role derivation remains source-defined.
 - Screeps engine 4.3.2

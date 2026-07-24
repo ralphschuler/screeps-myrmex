@@ -119,6 +119,41 @@ export function staleLayoutExtensionEvacuationSettlementBlocker(input: {
   return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
 }
 
+/** Known-V1 persisted lab term retained for durable suppression and stale-lease revocation. */
+export function isKnownV1StaleLayoutLabEvacuation(record: StaleLayoutRecord): boolean {
+  return (
+    record.algorithmRevision === LAYOUT_V1_ALGORITHM_REVISION && record.labEvacuation !== undefined
+  );
+}
+
+/** Exact stale shape whose existing lab evacuation may continue without authorizing removal. */
+export function isStaleLayoutLabEvacuationContinuation(record: StaleLayoutRecord): boolean {
+  return (
+    isKnownV1StaleLayoutLabEvacuation(record) &&
+    record.containerMigration === undefined &&
+    record.extensionEvacuation === undefined &&
+    record.linkEvacuation === undefined &&
+    record.spawnEvacuation === undefined &&
+    record.storageEvacuation === undefined &&
+    record.terminalEvacuation === undefined &&
+    record.towerEvacuation === undefined &&
+    record.removalReceipt === undefined &&
+    (record.siteReceipts?.length ?? 0) === 0 &&
+    record.sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) !== true
+  );
+}
+
+/** Reuses the safe handoff policy after logically removing one exactly delivered lab term. */
+export function staleLayoutLabEvacuationSettlementBlocker(input: {
+  readonly colony: ColonyView;
+  readonly record: StaleLayoutRecord;
+}): LayoutBlocker | null {
+  if (!isStaleLayoutLabEvacuationContinuation(input.record)) return "revision-handoff-active";
+  const { labEvacuation: _labEvacuation, ...settled } = input.record;
+  void _labEvacuation;
+  return staleLayoutRevisionBlocker({ colony: input.colony, record: settled }, false);
+}
+
 /**
  * Exact known stale shape whose existing reserve-link evacuation may continue without authorizing
  * stale geometry, native transfer, or removal.
@@ -379,6 +414,41 @@ export function reconstructStaleLayoutLinkPlacements(input: {
       .filter(({ structureType }) => structureType === "link")
       .map(({ pos }) => ({ ...pos })),
   );
+}
+
+/**
+ * Reconstructs only known V1 lab positions for one authorized stale evacuation. The result cannot
+ * authorize stale construction, health, ordinary Industry work, migration priority, or removal.
+ */
+export function reconstructStaleLayoutLabPlacements(input: {
+  readonly commitment: LayoutCommitment;
+  readonly roomName: string;
+  readonly unlocks: ColonyRclUnlockAllowances;
+}): readonly PositionSnapshot[] | null {
+  if (
+    input.commitment.algorithmRevision !== LAYOUT_V1_ALGORITHM_REVISION ||
+    input.unlocks.labs !== 10
+  )
+    return null;
+  const positions = transformCells(
+    input.roomName,
+    input.commitment.anchor,
+    input.commitment.transform,
+    compileOwnedRoomLayoutV1(input.unlocks),
+  )
+    .filter(({ layer, structureType }) => layer === "primary" && structureType === "lab")
+    .map(({ pos }) => ({ ...pos }))
+    .sort(
+      (left, right) =>
+        left.y - right.y || left.x - right.x || left.roomName.localeCompare(right.roomName),
+    );
+  if (
+    positions.length !== input.unlocks.labs ||
+    new Set(positions.map(({ roomName, x, y }) => `${roomName}:${String(x)}:${String(y)}`)).size !==
+      positions.length
+  )
+    return null;
+  return freeze(positions);
 }
 
 export function reconstructCommittedLayout(input: {

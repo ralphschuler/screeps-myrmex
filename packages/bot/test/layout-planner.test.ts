@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
+  isKnownV1StaleLayoutLabEvacuation,
   isStaleLayoutContainerMigrationContinuation,
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutLabEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
   projectLayoutConvergencePlacements,
+  reconstructStaleLayoutLabPlacements,
   reconstructStaleLayoutLinkPlacements,
   selectLayoutPlanningWindow,
   type LayoutPlanningInput,
@@ -291,6 +294,98 @@ describe("stale extension evacuation continuation", () => {
             service: { issuerSequence: 2, kind: "source-container", sourceId: "source-a" },
           },
         ],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("stale lab evacuation continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    fingerprint: "stale-layout",
+    labEvacuation: {
+      destinationId: "storage-destination",
+      destinationInitialAmount: 100,
+      energyAmount: 200,
+      expiresAt: 250,
+      mineralAmount: 300,
+      replacementId: "lab-replacement",
+      replacementInitialEnergy: 100,
+      resourceType: "H",
+      sourceId: "lab-obsolete",
+      startedAt: 100,
+    },
+    roomName: "W1N1",
+    sourceServices: [],
+    transform: 0,
+  });
+
+  it("reconstructs only known V1 lab positions as narrow evacuation evidence", () => {
+    const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
+    if (unlocks === undefined) throw new Error("RCL8 policy missing");
+    expect(
+      reconstructStaleLayoutLabPlacements({
+        commitment: staleRecord(),
+        roomName: "W1N1",
+        unlocks,
+      }),
+    ).toHaveLength(10);
+    expect(
+      reconstructStaleLayoutLabPlacements({
+        commitment: { ...staleRecord(), algorithmRevision: "unknown-layout-revision" },
+        roomName: "W1N1",
+        unlocks,
+      }),
+    ).toBeNull();
+    expect(
+      reconstructStaleLayoutLabPlacements({
+        commitment: { ...staleRecord(), algorithmRevision: "owned-room-layout-v2-source-services" },
+        roomName: "W1N1",
+        unlocks,
+      }),
+    ).toBeNull();
+  });
+
+  it("retains known-V1 suppression while admitting only the sole otherwise-quiescent term", () => {
+    expect(isKnownV1StaleLayoutLabEvacuation(staleRecord())).toBe(true);
+    expect(isStaleLayoutLabEvacuationContinuation(staleRecord())).toBe(true);
+    const currentRecord = {
+      ...staleRecord(),
+      algorithmRevision: "owned-room-layout-v2-source-services",
+    };
+    expect(isKnownV1StaleLayoutLabEvacuation(currentRecord)).toBe(false);
+    expect(isStaleLayoutLabEvacuationContinuation(currentRecord)).toBe(false);
+    const unknownRecord = { ...staleRecord(), algorithmRevision: "unknown-layout-revision" };
+    expect(isKnownV1StaleLayoutLabEvacuation(unknownRecord)).toBe(false);
+    expect(isStaleLayoutLabEvacuationContinuation(unknownRecord)).toBe(false);
+    const siblingTerm = {
+      ...staleRecord(),
+      extensionEvacuation: {
+        amount: 50,
+        expiresAt: 250,
+        replacementId: "extension-replacement",
+        replacementInitialEnergy: 0,
+        sourceId: "extension-obsolete",
+        startedAt: 100,
+      },
+    };
+    expect(isKnownV1StaleLayoutLabEvacuation(siblingTerm)).toBe(true);
+    expect(isStaleLayoutLabEvacuationContinuation(siblingTerm)).toBe(false);
+    expect(
+      isStaleLayoutLabEvacuationContinuation({
+        ...staleRecord(),
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "lab-replacement",
+          targetId: "lab-obsolete",
+          targetStructureType: "lab",
+        },
       }),
     ).toBe(false);
   });
