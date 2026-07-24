@@ -2466,6 +2466,131 @@ describe("logistics runtime adapter", () => {
     ).toEqual(["W1N1"]);
   });
 
+  it("exactly settles one singleton non-energy container migration", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("non-energy container fixture room missing");
+    const container = (
+      id: string,
+      x: number,
+      resources: readonly { readonly amount: number; readonly resourceType: string }[],
+    ) => {
+      const usedCapacity = resources.reduce((total, { amount }) => total + amount, 0);
+      return {
+        hits: 250_000,
+        hitsMax: 250_000,
+        id,
+        ownerUsername: null,
+        ownership: "unowned" as const,
+        pos: position(x, 12),
+        store: {
+          capacity: 2_000,
+          freeCapacity: 2_000 - usedCapacity,
+          resources,
+          usedCapacity,
+        },
+        structureType: "container",
+        ticksToDecay: 5_000,
+      };
+    };
+    const migration = {
+      expiresAt: 160,
+      replacementId: "container-replacement",
+      resourceManifest: [["U", 50, 10]],
+      startedAt: 10,
+      targetId: "container-obsolete",
+    } as const;
+    const record: LayoutRecord = {
+      algorithmRevision: "owned-room-layout-v1",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      containerMigration: migration,
+      fingerprint: "layout-stale",
+      roomName: "W1N1",
+      transform: 0,
+    };
+    const migrationWorld = (targetAmount: number, replacementAmount: number, reverse = false) => ({
+      ...snapshot,
+      observation: { ...snapshot.observation, tick: 11 },
+      observedAt: 11,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          storedStructures: [
+            ...room.storedStructures,
+            container(
+              migration.targetId,
+              12,
+              targetAmount === 0 ? [] : [{ amount: targetAmount, resourceType: "U" }],
+            ),
+            container(migration.replacementId, 13, [
+              { amount: 20, resourceType: "energy" },
+              { amount: replacementAmount, resourceType: "U" },
+            ]),
+          ].sort((left, right) =>
+            reverse ? right.id.localeCompare(left.id) : left.id.localeCompare(right.id),
+          ),
+        },
+      ],
+    });
+    const flowId = "layout-container-evacuation:W1N1:container-obsolete:container-replacement:1:U";
+    const partial = migrationWorld(25, 35);
+    const partialProjection = projectLayoutContainerMigrations({
+      records: [record],
+      snapshot: partial,
+      tick: 11,
+    });
+    expect(partialProjection.edges).toEqual([
+      expect.objectContaining({ id: flowId, maximumAmount: 50 }),
+    ]);
+    expect(partialProjection.nodes).toContainEqual(
+      expect.objectContaining({ kind: "source", observedAmount: 25, resourceType: "U" }),
+    );
+    expect(
+      projectLayoutContainerMigrations({
+        records: JSON.parse(JSON.stringify([record])) as readonly LayoutRecord[],
+        snapshot: JSON.parse(JSON.stringify(migrationWorld(25, 35, true))) as WorldSnapshot,
+        tick: 11,
+      }),
+    ).toEqual(partialProjection);
+    expect(
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set([flowId]),
+        records: [record],
+        snapshot: partial,
+        tick: 11,
+      }),
+    ).toEqual([]);
+
+    const delivered = migrationWorld(0, 60);
+    expect(
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set([flowId]),
+        records: [record],
+        snapshot: delivered,
+        tick: 11,
+      }),
+    ).toEqual(["W1N1"]);
+    expect(
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set([
+          "layout-container-evacuation:W1N1:container-obsolete:container-replacement",
+        ]),
+        records: [record],
+        snapshot: delivered,
+        tick: 11,
+      }),
+    ).toEqual([]);
+  });
+
   it("projects mixed container stock as atomic resource-specific funded flows", () => {
     const snapshot = world();
     const room = snapshot.rooms[0];

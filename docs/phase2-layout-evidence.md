@@ -144,10 +144,12 @@ current active/idle/Store and SpawnBroker exclusion evidence. Issue
 under known V1 geometry, exact current productive/reserve-role continuity, zero-cooldown 800-
 capacity Stores, and native-transfer exclusion. Issue
 [#421](https://github.com/ralphschuler/screeps-myrmex/issues/421) adds one legacy energy-only
-general- container continuation with exact 2,000-capacity Stores, durable endpoint suppression,
-active funding, exact delivery, and command-free settlement before the later handoff. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
-and dismantling.
+general-container continuation with exact 2,000-capacity Stores, durable endpoint suppression,
+active funding, exact delivery, and command-free settlement before the later handoff. Issue
+[#423](https://github.com/ralphschuler/screeps-myrmex/issues/423) adds the mutually exclusive
+singleton non-energy manifest through its resource-qualified flow under the same limits. Parent
+issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
+migration and dismantling.
 
 ## Runtime order
 
@@ -259,14 +261,15 @@ and dismantling.
    budget. No stale-layout suspension or new contract is produced for an accepted handoff, which
    retains the exact matching contract and lease; mismatch, unavailable or terminal-only evidence,
    source or room loss, changed source planning, and unsuccessful handoff remain fail-closed. One
-   otherwise-quiescent stale legacy energy-only general-container migration or extension, reserve-
-   link, spawn, or tower evacuation remains the sole active stale gameplay projection. The existing
-   `optional-growth` budget and Logistics/V3 contract path move its exact energy under the original
-   deadline while source refill is suppressed. The container form has no manifest or source
-   identity, requires two exact non-foreign 2,000-capacity general-purpose Stores, and suppresses
-   the target source/refill plus replacement refill even when optional work is denied. Extension and
-   spawn replacement refill remain suppressed during acquisition; malformed spawn evidence keeps
-   both exact endpoints suppressed. Spawn work additionally requires active idle 300-capacity exact
+   otherwise-quiescent stale legacy energy-only or singleton non-energy general-container migration,
+   extension, reserve-link, spawn, or tower evacuation remains the sole active stale gameplay
+   projection. The existing `optional-growth` budget and Logistics/V3 contract path move its exact
+   stock under the original deadline while source refill is suppressed. Either container form has no
+   source identity; the singleton form has exactly one non-energy manifest row and no legacy fields.
+   Both require two exact non-foreign 2,000-capacity general-purpose Stores and suppress the target
+   source/refill plus replacement refill even when optional work is denied. Extension and spawn
+   replacement refill remain suppressed during acquisition; malformed spawn evidence keeps both
+   exact endpoints suppressed. Spawn work additionally requires active idle 300-capacity exact
    endpoints and a completed current SpawnBroker plan selecting neither. During an unexpired tower
    attempt, both source and replacement refill remain suppressed, including while cargo is in
    flight. A reserve-link term additionally requires safely reconstructible source-defined V1 link
@@ -276,12 +279,12 @@ and dismantling.
    denied; an existing lease requires the current role-authorized flow and active reservation.
    Spawn, link, or tower expiry restores ordinary service but keeps removal and revision handoff
    blocked. Tower continuation also retains at least the exact 10-energy action floor. A later fresh
-   observation may clear only that term when the source is empty, replacement energy is exactly
-   baseline plus amount, no current V3 planning record names the flow or either endpoint, active
-   funding and the same safe handoff policy still pass. This settlement precommits only layouts,
-   emits no layout command in any room, and leaves the revision handoff to a later tick. Another
-   active stale term, source-service sequence, unsafe policy, malformed, refilled, consumed, or
-   drifted Store evidence, active work, expiry, or missing vision remains fail-closed.
+   observation may clear only that term when the source is empty, replacement stock for the exact
+   resource is baseline plus amount, no current V3 planning record names the flow or either
+   endpoint, active funding and the same safe handoff policy still pass. This settlement precommits
+   only layouts, emits no layout command in any room, and leaves the revision handoff to a later
+   tick. Another active stale term, source-service sequence, unsafe policy, malformed, refilled,
+   consumed, or drifted Store evidence, active work, expiry, or missing vision remains fail-closed.
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -601,6 +604,21 @@ resource manifests, source identities, missing legacy pairs, another active term
 source issuance, malformed/capacity-drifted Stores, duplicate or missing endpoints, active work,
 refill/consumption drift, threat, expiry, missing funding, and aggregate overflow. No schema,
 authority, executor, command, or persistent field is added.
+
+Issue #423's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
+singleton `U` manifest, 50 units at the general-container target, a 10-unit replacement baseline,
+and two non-foreign 2,000-capacity general-purpose Stores. The existing `optional-growth` budget,
+Logistics/V3 contract, allocator, lease agent, action arbiter, and creep executors remain the only
+resource path. Target source/refill and replacement refill suppression persists when threat denies
+optional continuation; active funding, exact resource-qualified flow, current Store identity, and
+safe policy gate stale lease execution. Fresh target emptiness, exact 60-unit replacement stock, and
+complete flow/source/replacement endpoint retirement clear only `containerMigration` command-free;
+the revision handoff follows on a later tick. Warm, module-reset, and reversed-structure variants
+produce byte-equivalent owner, planning, and zero-layout-command outcomes. Focused controls reject
+current revisions, energy-only or multi-row manifests, source identities, legacy energy fields,
+another active term, malformed/capacity-drifted Stores, active work, refill/consumption drift,
+threat, expiry, missing funding, and wrong flow identity. No schema, authority, executor, command,
+or persistent field is added.
 
 Issue #415's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
 500-energy tower evacuation and an exact active replacement retaining the 10-energy action floor.
@@ -962,8 +980,9 @@ lint, type, test, documentation, bundle, and package evidence.
   [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) define the source,
   adjacent harvest, walkable 2,000-capacity/5,000-build-cost container, five-room allowance, and
   same-tile drop collection. Issue #411 changes only repository reconciliation and keeps the exact
-  static-mining work position; it adds no command. Issue #421 reuses two exact current non-foreign
-  general-purpose container Stores and does not reinterpret source-service identity or removal.
+  static-mining work position; it adds no command. Issues #421 and #423 reuse two exact current non-
+  foreign general-purpose container Stores and do not reinterpret source-service identity or
+  removal; #423's singleton non-energy row uses the existing resource-specific Store projection.
 - Official [`StructureTower`](https://docs.screeps.com/api/#StructureTower) defines the 1/2/3/6
   RCL3/5/7/8 allowances, 1,000 energy capacity, and 10-energy attack/heal/repair action cost.
 - Official [`StructureLab`](https://docs.screeps.com/api/#StructureLab) defines the 3/6/10 RCL6/7/8
@@ -1006,7 +1025,7 @@ lint, type, test, documentation, bundle, and package evidence.
   [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define the existing scheduled
   acquire/deliver command boundary used by evacuation. The official
   [game loop](https://docs.screeps.com/game-loop.html) requires later fresh Store observation to
-  prove #421's exact delivery rather than treating `OK` as settlement.
+  prove #421/#423's exact delivery rather than treating `OK` as settlement.
 - Official [Control guide](https://docs.screeps.com/control.html) constrains RCL structure access.
 - Screeps engine 4.3.2
   [`checkConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/utils.js#L128-L189),
@@ -1014,7 +1033,7 @@ lint, type, test, documentation, bundle, and package evidence.
   and current common
   [`OBSTACLE_OBJECT_TYPES`](https://github.com/screeps/common/blob/2fb779b26eef9b4b0f412584f6bd47c897949766/lib/constants.js#L85)
   prove road/rampart co-location without a preceding destroy command.
-- Screeps Wiki [Energy](https://wiki.screepspl.us/Energy/) supplies issue #421's walkable 2,000-unit
+- Screeps Wiki [Energy](https://wiki.screepspl.us/Energy/) supplies issues #421/#423's walkable
   container-buffer and creep-hauler terminology only.
 - Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/),
   [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/), and

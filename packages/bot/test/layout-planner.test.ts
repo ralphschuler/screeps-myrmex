@@ -15,7 +15,7 @@ import {
   type StaleLayoutRecord,
 } from "../src/layout";
 
-describe("stale energy-only container migration continuation", () => {
+describe("stale singleton container migration continuation", () => {
   const staleRecord = (): StaleLayoutRecord => ({
     algorithmRevision: "owned-room-layout-v1",
     anchor: { roomName: "W1N1", x: 25, y: 25 },
@@ -35,10 +35,22 @@ describe("stale energy-only container migration continuation", () => {
     transform: 0,
   });
 
-  it("admits only the sole legacy energy-only general-container term", () => {
+  it("admits only legacy energy or singleton non-energy general-container terms", () => {
     const migration = staleRecord().containerMigration;
     if (migration === undefined) throw new Error("stale container migration fixture missing");
     expect(isStaleLayoutContainerMigrationContinuation(staleRecord())).toBe(true);
+    const {
+      energyAmount: _energy,
+      replacementInitialEnergy: _energyBaseline,
+      ...manifestBase
+    } = migration;
+    void [_energy, _energyBaseline];
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: { ...manifestBase, resourceManifest: [["U", 500, 100]] },
+      }),
+    ).toBe(true);
     expect(
       isStaleLayoutContainerMigrationContinuation({
         ...staleRecord(),
@@ -49,8 +61,20 @@ describe("stale energy-only container migration continuation", () => {
       isStaleLayoutContainerMigrationContinuation({
         ...staleRecord(),
         containerMigration: {
-          ...migration,
+          ...manifestBase,
           resourceManifest: [["energy", 500, 100]],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: {
+          ...manifestBase,
+          resourceManifest: [
+            ["H", 250, 50],
+            ["U", 250, 50],
+          ],
         },
       }),
     ).toBe(false);

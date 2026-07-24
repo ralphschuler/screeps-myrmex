@@ -61,7 +61,22 @@ export function projectLayoutContainerMigrationSuppression(input: {
   });
 }
 
-/** Fresh command-free completion evidence for one exact energy-only container migration. */
+/** Canonical flow identities for one validated container migration. */
+export function layoutContainerMigrationFlowIds(
+  roomName: string,
+  migration: LayoutContainerMigration,
+): readonly string[] | null {
+  const terms = migrationTerms(migration);
+  if (terms === null) return null;
+  const ids = terms.map((term) =>
+    term.legacyEnergy
+      ? layoutContainerMigrationFlowId(roomName, migration)
+      : layoutContainerMigrationResourceFlowId(roomName, migration, term.resourceType),
+  );
+  return ids.some((id) => id === null) ? null : Object.freeze(ids as readonly string[]);
+}
+
+/** Fresh command-free completion evidence for one exact singleton container migration. */
 export function completedLayoutContainerMigrationRoomNames(input: {
   readonly activeFlowIds: ReadonlySet<string>;
   readonly activeTargetIds: ReadonlySet<string>;
@@ -83,7 +98,7 @@ export function completedLayoutContainerMigrationRoomNames(input: {
       continue;
     const terms = migrationTerms(migration);
     const term = terms?.[0];
-    if (terms?.length !== 1 || term?.legacyEnergy !== true) continue;
+    if (terms?.length !== 1 || term === undefined) continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
     if (
       room?.controller?.ownership !== "owned" ||
@@ -111,10 +126,12 @@ export function completedLayoutContainerMigrationRoomNames(input: {
       targetResources === null ||
       replacementResources === null ||
       targetResources.size !== 0 ||
-      (replacementResources.get("energy") ?? 0) !== term.replacementInitialAmount + term.amount
+      (replacementResources.get(term.resourceType) ?? 0) !==
+        term.replacementInitialAmount + term.amount
     )
       continue;
-    const flowId = layoutContainerMigrationFlowId(room.name, migration);
+    const flowId = layoutContainerMigrationFlowIds(room.name, migration)?.[0];
+    if (flowId === undefined) continue;
     if (
       !input.authorizedFlowIds.has(flowId) ||
       input.activeFlowIds.has(flowId) ||

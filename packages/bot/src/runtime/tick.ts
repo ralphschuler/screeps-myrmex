@@ -139,7 +139,6 @@ import {
   emptyLayoutsOwner,
   freshSourceServicePlacements,
   layoutCacheDependencies,
-  layoutContainerMigrationFlowId,
   layoutExtensionEvacuationFlowId,
   isLayoutSpawnEvacuationFlowId,
   isLayoutStorageEvacuationFlowId,
@@ -220,6 +219,7 @@ import {
 } from "../logistics/runtime";
 import {
   completedLayoutContainerMigrationRoomNames,
+  layoutContainerMigrationFlowIds,
   projectLayoutContainerMigrations,
   projectLayoutContainerMigrationSuppression,
 } from "../logistics/container-migration";
@@ -4652,18 +4652,22 @@ function blockedStaleLayoutContainerMigrationFlowIds(
       if (!isStaleLayoutContainerMigrationContinuation(record)) return [];
       const migration = record.containerMigration;
       if (migration === undefined) return [];
-      const flowId = layoutContainerMigrationFlowId(record.roomName, migration);
-      const edge = logistics.graph.edges.find(({ id }) => id === flowId);
+      const flowIds = layoutContainerMigrationFlowIds(record.roomName, migration);
+      if (flowIds === null) return [];
       const colony = colonyPlanning.colonies.find(({ roomName }) => roomName === record.roomName);
-      const binding = edge?.budgetBinding;
-      if (
-        binding !== undefined &&
+      const authorized =
         colony !== undefined &&
-        staleLayoutContainerMigrationSettlementBlocker({ colony, record }) === null &&
-        activeReservations.has(`${record.roomName}\u0000${binding.category}\u0000${binding.issuer}`)
-      )
-        return [];
-      return [flowId];
+        staleLayoutContainerMigrationSettlementBlocker({ colony, record }) === null;
+      return flowIds.filter((flowId) => {
+        const binding = logistics.graph.edges.find(({ id }) => id === flowId)?.budgetBinding;
+        return !(
+          authorized &&
+          binding !== undefined &&
+          activeReservations.has(
+            `${record.roomName}\u0000${binding.category}\u0000${binding.issuer}`,
+          )
+        );
+      });
     }),
   );
 }

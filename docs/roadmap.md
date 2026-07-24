@@ -266,14 +266,15 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   service adjacency, RCL8 source/hub/controller/reserve-role, 800-capacity Store, zero-cooldown, and
   native-transfer-exclusion evidence. Issue #421 adds one legacy energy-only general-container
   continuation with no manifest or source identity, exact current 2,000-capacity Stores, durable
-  endpoint suppression, current active funding, and the same sole Logistics/V3 path. Fresh exact
-  empty-source and baseline-plus-amount replacement energy, complete flow/endpoint retirement, and
-  unchanged safe policy clear only the applicable term command-free; the ordinary revision handoff
-  remains a later tick. Unrelated active, mismatched, multiple-pair, unpaired storage, unsafe,
-  same-tick, incomplete, terminal-only, or drifted evidence remains blocked. Uninterrupted
-  same-structure storage/terminal service, broad dynamic movement/pathfinding proof, autonomous
-  boost manifest production, defensive or active revision migration, and creep dismantling remain
-  issue #99.
+  endpoint suppression, current active funding, and the same sole Logistics/V3 path. Issue #423 adds
+  the mutually exclusive singleton non-energy manifest under those same bounds while energy-only,
+  multi-row, and source-specific manifests remain inert. Fresh exact empty-source and baseline-plus-
+  amount replacement stock, complete flow/endpoint retirement, and unchanged safe policy clear only
+  the applicable term command-free; the ordinary revision handoff remains a later tick. Unrelated
+  active, mismatched, multiple-pair, unpaired storage, unsafe, same-tick, incomplete, terminal-only,
+  or drifted evidence remains blocked. Uninterrupted same-structure storage/terminal service, broad
+  dynamic movement/pathfinding proof, autonomous boost manifest production, defensive or active
+  revision migration, and creep dismantling remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
