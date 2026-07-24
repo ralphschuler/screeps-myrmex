@@ -193,35 +193,41 @@ site. A busy, selected, sole/replacementless, endpoint-bound, expired, unsafe, c
 drifted spawn remains. [ADR 0067](adr/0067-stocked-obsolete-spawn-evacuation.md) records the stocked
 handoff.
 
-Terminal convergence accepts a bounded inter-room-service outage only to restore the sole committed
-RCL6+ terminal. One active empty zero-cooldown external terminal is eligible only while exact active
-storage preserves local inventory service, Industry's current terminal-work projection is quiescent,
-and no terminal-bound lab evacuation or Logistics endpoint remains. Current send proposals mark both
-source and destination rooms active; an unattributable active/backoff send receipt fails the
-complete view closed. The sole removal arbiter admits the narrow `terminal → storage` continuity
-form, and fresh execution rechecks exact 300,000/1,000,000-unit general-purpose Stores before
-destruction. Stocked, cooling, active-work, storage-unavailable, unsafe, or drifted terminals
-remain. Observed disappearance exposes the committed terminal through the ordinary
-site/funding/build chain. [ADR 0068](adr/0068-empty-obsolete-terminal-relocation.md) records this
-intentional outage.
+Terminal continuity now takes precedence over canonical coordinates. The pure projection retains one
+compatible external owned terminal as the convergent placement from RCL6 through RCL8, so no new
+evacuation, removal, inter-room-service outage, or 100,000-energy rebuild starts merely to move it.
+Missing terminal service still exposes the committed position through the ordinary build chain. Only
+an exact current layouts record that already contains a terminal evacuation or terminal removal
+receipt whose source/target matches the sole current owned terminal may continue the older bounded
+path. For that grandfathered term, one active empty zero-cooldown external terminal is eligible only
+while exact active storage preserves local inventory service, Industry's current terminal-work
+projection is quiescent, and no terminal-bound lab evacuation or Logistics endpoint remains. Current
+send proposals mark both source and destination rooms active; an unattributable active/backoff send
+receipt fails the complete view closed. The sole removal arbiter admits the narrow
+`terminal → storage` continuity form, and fresh execution rechecks exact 300,000/1,000,000-unit
+general-purpose Stores before destruction. Stocked, cooling, active-work, storage-unavailable,
+unsafe, or drifted grandfathered terms remain. Observed disappearance exposes the committed terminal
+through the ordinary site/funding/build chain.
+[ADR 0068](adr/0068-empty-obsolete-terminal-relocation.md) records the prior outage;
+[ADR 0078](adr/0078-compatible-external-terminal-continuity.md) supersedes new migration admission.
 
-One otherwise eligible terminal holding exactly one resource kind and at most 3,000 units may first
-persist one 150-tick evacuation into that same exact active storage. The sole funded V3 Logistics
-path moves the stock while internal sends from or to the room and competing terminal source/refill
-work remain suppressed during the unexpired attempt. Fresh target emptiness, storage exactly at
-baseline plus amount, retired flow/endpoints, zero cooldown, unchanged quiescence, and every
-existing safety term are mandatory before removal. Mixed/larger stock, destination consumption or
-capacity loss, unrelated work, pressure, or uncertainty preserves the terminal and suppresses active
-work. Timeout restores ordinary terminal service but remains removal-blocking evidence.
+One grandfathered terminal term holding exactly one resource kind and at most 3,000 units may retain
+its 150-tick evacuation into that same exact active storage. The sole funded V3 Logistics path moves
+the stock while internal sends from or to the room and competing terminal source/refill work remain
+suppressed during the unexpired attempt. Fresh target emptiness, storage exactly at baseline plus
+amount, retired flow/endpoints, zero cooldown, unchanged quiescence, and every existing safety term
+are mandatory before removal. Mixed/larger stock, destination consumption or capacity loss,
+unrelated work, pressure, or uncertainty preserves the terminal and suppresses active work. Timeout
+restores ordinary terminal service but remains removal-blocking evidence.
 [ADR 0069](adr/0069-single-resource-stocked-terminal-evacuation.md) records this bound.
 
-A terminal holding two through eight resource kinds may use the same path only when the canonical
-manifest totals at most 3,000 units. Each row binds its exact amount and storage baseline, receives
-a distinct funded V3 flow, and shares one aggregate storage-capacity reservation. Every currently
-active row admits atomically; completed rows leave the group so asymmetric delivery remains
-resumable. Removal requires every exact destination gain plus complete manifest flow/endpoint
-retirement. Refill, consumption, overgain, malformed/reordered terms, bounded overflow, or partial
-authorization keeps removal closed.
+A grandfathered terminal term holding two through eight resource kinds may use the same path only
+when the canonical manifest totals at most 3,000 units. Each row binds its exact amount and storage
+baseline, receives a distinct funded V3 flow, and shares one aggregate storage-capacity reservation.
+Every currently active row admits atomically; completed rows leave the group so asymmetric delivery
+remains resumable. Removal requires every exact destination gain plus complete manifest
+flow/endpoint retirement. Refill, consumption, overgain, malformed/reordered terms, bounded
+overflow, or partial authorization keeps removal closed.
 [ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records this composition.
 
 Storage continuity now takes precedence over canonical coordinates. The pure projection retains one

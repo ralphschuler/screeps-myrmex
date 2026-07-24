@@ -553,6 +553,11 @@ export function projectLayoutConvergencePlacements(input: {
     LayoutRecord,
     "removalReceipt" | "storageEvacuation"
   > | null;
+  readonly currentTerminalId?: string | null;
+  readonly currentTerminalMigration?: Pick<
+    LayoutRecord,
+    "removalReceipt" | "terminalEvacuation"
+  > | null;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly sources: readonly PositionSnapshot[];
@@ -575,7 +580,21 @@ export function projectLayoutConvergencePlacements(input: {
       input.currentStorageMigration?.removalReceipt?.targetStructureType === "storage") &&
     input.unlocks.storage === 1 &&
     input.unlocks.terminal === 1;
-  const terminalConvergenceSafe = input.unlocks.terminal === 1;
+  const terminalEvacuation = input.currentTerminalMigration?.terminalEvacuation;
+  const terminalReceipt = input.currentTerminalMigration?.removalReceipt;
+  const terminalMigrationPresent =
+    terminalEvacuation !== undefined || terminalReceipt?.targetStructureType === "terminal";
+  const terminalMigrationMatches =
+    input.currentTerminalId !== undefined &&
+    input.currentTerminalId !== null &&
+    (terminalEvacuation === undefined || terminalEvacuation.sourceId === input.currentTerminalId) &&
+    (terminalReceipt?.targetStructureType !== "terminal" ||
+      terminalReceipt.targetId === input.currentTerminalId);
+  const terminalConvergenceSafe =
+    terminalMigrationPresent &&
+    terminalMigrationMatches &&
+    input.unlocks.storage === 1 &&
+    input.unlocks.terminal === 1;
   return freeze(
     [
       ...input.current.filter(
@@ -794,14 +813,21 @@ function adopt(
   return placements
     .map((p) => {
       const e = exact.get(`${p.structureType}:${key(p.pos)}`);
-      if (e && (p.structureType !== "storage" || e.ownership === "owned")) {
+      if (
+        e &&
+        ((p.structureType !== "storage" && p.structureType !== "terminal") ||
+          e.ownership === "owned")
+      ) {
         used.add(e.id);
         return { ...p, adoption: "exact" as const };
       }
       const compatible = external
         .get(p.structureType)
         ?.find(
-          (s) => !used.has(s.id) && (p.structureType !== "storage" || s.ownership === "owned"),
+          (s) =>
+            !used.has(s.id) &&
+            ((p.structureType !== "storage" && p.structureType !== "terminal") ||
+              s.ownership === "owned"),
         );
       if (compatible && p.layer === "primary") {
         used.add(compatible.id);

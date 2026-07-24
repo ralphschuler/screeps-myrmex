@@ -177,7 +177,13 @@ receives a distinct funded V3 flow into the same aggregate storage-capacity rese
 admits every currently projected row atomically. Removal waits for every exact destination gain and
 complete manifest work retirement.
 [ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records this composition. Issue
-[#371](https://github.com/ralphschuler/screeps-myrmex/issues/371) restores committed storage
+[#445](https://github.com/ralphschuler/screeps-myrmex/issues/445) makes one compatible external
+owned terminal the stable convergent RCL6-RCL8 placement. Only an exact current layouts record
+already containing `terminalEvacuation` or a terminal removal receipt retains canonical convergence
+for the bounded continuation above only when every present terminal source/target ID matches the
+sole current owned terminal; a missing owned terminal still exposes its committed planned placement.
+[ADR 0078](adr/0078-compatible-external-terminal-continuity.md) records continuity over geometry.
+Issue [#371](https://github.com/ralphschuler/screeps-myrmex/issues/371) restores committed storage
 geometry only at RCL6+ and permits one active empty external storage to use one exact active
 terminal as bounded local inventory continuity. The effective Logistics gate, exact current healthy
 room projection, current/projected work, and persisted layout evacuations fail closed. Layouts V20
@@ -297,9 +303,14 @@ placement, so coordinate difference alone creates no new storage migration. Only
 layouts record already containing `storageEvacuation` or a storage removal receipt retains canonical
 convergence for the bounded continuation above. Missing storage still exposes its committed planned
 placement. [ADR 0077](adr/0077-compatible-external-storage-continuity.md) records continuity over
-geometry. `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone
-calls `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and
-lab result reuses the same fixed receipt.
+geometry. Issue #445 applies the equivalent RCL6-RCL8 policy to one compatible external owned
+terminal: only exact current `terminalEvacuation` or terminal-removal-receipt evidence whose
+source/target ID matches the sole current owned terminal retains the older canonical path, and
+missing terminal service still exposes the planned position.
+[ADR 0078](adr/0078-compatible-external-terminal-continuity.md) records that boundary.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
+result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -2050,7 +2061,9 @@ planning publishes only the typed `threat` blocker, no removal authority or rece
 and the same bounded migration resumes exactly once after threat clears across a heap reset and
 reordered observation. Issue #443 retains compatible external storage across RCL4-RCL8 by default;
 only exact persisted storage evacuation/removal evidence may continue the older canonical path.
-Neither outcome changes runtime authority, owner schema, command path, or CPU estimate.
+Issue #445 applies the same continuity-over-geometry rule to one compatible external owned terminal
+at RCL6-RCL8, with exact terminal evacuation/removal terms grandfathered. None changes runtime
+authority, owner schema, command path, or CPU estimate.
 
 Issue #355 restores source-defined primary spawn geometry only when current allowance is at least
 two. At full allowance, `ConstructionPlanner` may remove one active idle empty external spawn only
@@ -2062,27 +2075,32 @@ spawn receipt discriminator; observed disappearance exposes the final committed 
 the ordinary construction chain. [ADR 0066](adr/0066-replacement-first-idle-spawn-removal.md)
 records this cross-authority evidence boundary.
 
-Issue #359 restores the sole source-defined terminal position at RCL6-RCL8. `IndustryDirector`
-publishes one bounded tick-local terminal-work view after send planning; current sends mark both
-source and destination active, while an unmatched active/backoff receipt makes the view unavailable.
-`ConstructionPlanner` may remove one active empty zero-cooldown external terminal only while exactly
-one active exact-capacity storage preserves local inventory service, no terminal-bound lab
-evacuation or Logistics endpoint remains, and every existing colony/layout/site safety gate passes.
-The arbiter's exact `terminal → storage` continuity form does not weaken same-type replacement
-checks or the later inverse storage form. `StructureDestroyExecutor` rechecks the exact 300,000-unit
-empty terminal Store and exact active 1,000,000-unit same-room storage. Layouts V17 adds only the
-terminal receipt discriminator, and observed disappearance exposes the committed terminal site
-through the ordinary construction chain. [ADR 0068](adr/0068-empty-obsolete-terminal-relocation.md)
-records the intentional bounded terminal-service outage.
+Issue #359 established the sole source-defined terminal relocation path. Under issue #445, its
+RCL6-RCL8 canonical convergence and every following terminal-evacuation/removal rule apply only to
+an exact current layouts record that already contains a terminal evacuation or terminal removal
+receipt. A compatible external owned terminal with no such persisted term remains the sole
+convergent placement and cannot become a new migration candidate. For a grandfathered term,
+`IndustryDirector` publishes one bounded tick-local terminal-work view after send planning; current
+sends mark both source and destination active, while an unmatched active/backoff receipt makes the
+view unavailable. `ConstructionPlanner` may remove one active empty zero-cooldown external terminal
+only while exactly one active exact-capacity storage preserves local inventory service, no
+terminal-bound lab evacuation or Logistics endpoint remains, and every existing colony/layout/site
+safety gate passes. The arbiter's exact `terminal → storage` continuity form does not weaken
+same-type replacement checks or the later inverse storage form. `StructureDestroyExecutor` rechecks
+the exact 300,000-unit empty terminal Store and exact active 1,000,000-unit same-room storage.
+Layouts V17 adds only the terminal receipt discriminator, and observed disappearance exposes the
+committed terminal site through the ordinary construction chain.
+[ADR 0068](adr/0068-empty-obsolete-terminal-relocation.md) records the intentional bounded
+terminal-service outage.
 
-Issue #361 extends only that terminal path. One exact positive resource row of at most 3,000 units
-may persist for 150 ticks when the same exact active storage has complete aggregate capacity. While
-unexpired, following ticks suppress internal sends involving the room and replace ordinary terminal
-stock publication with one resource-specific, externally funded V3 creep-logistics flow into
-storage. Removal requires fresh terminal emptiness, storage exactly at baseline plus amount, retired
-exact flow/endpoints, zero cooldown, unchanged Industry quiescence, and every existing
-geometry/safety term. Expiry restores ordinary terminal work but keeps the failed attempt as
-removal-blocking evidence. Layouts V18 adds one optional fixed-shape terminal evacuation; V17
+Issue #361 extends only that grandfathered terminal path. One exact positive resource row of at most
+3,000 units may persist for 150 ticks when the same exact active storage has complete aggregate
+capacity. While unexpired, following ticks suppress internal sends involving the room and replace
+ordinary terminal stock publication with one resource-specific, externally funded V3 creep-logistics
+flow into storage. Removal requires fresh terminal emptiness, storage exactly at baseline plus
+amount, retired exact flow/endpoints, zero cooldown, unchanged Industry quiescence, and every
+existing geometry/safety term. Expiry restores ordinary terminal work but keeps the failed attempt
+as removal-blocking evidence. Layouts V18 adds one optional fixed-shape terminal evacuation; V17
 migrates without invented terms and old code preserves future bytes.
 [ADR 0069](adr/0069-single-resource-stocked-terminal-evacuation.md) records the bounded handoff.
 
@@ -2864,16 +2882,18 @@ Required architecture assertions include:
   targets first use one exact bounded funded V3 evacuation and require fresh target-empty,
   baseline-plus-amount replacement energy, retired exact work/endpoints, and live replacement-energy
   revalidation;
-- obsolete-terminal removal requires RCL6-RCL8 full allowance, one active exact empty zero-cooldown
-  external terminal, one exact active same-room storage, a current quiescent Industry terminal-work
-  view, no terminal-bound unrelated Logistics work, current colony/site safety, and the same global
-  one-command/reset-safe receipt ceilings; one positive single-resource target or canonical
-  two-to-eight-resource manifest of at most 3,000 aggregate units first uses one 150-tick funded V3
-  evacuation into that storage, suppresses internal sends and competing terminal stock work while
-  unexpired, atomically admits every currently active manifest row, and requires fresh target-empty,
-  every exact baseline-plus-amount storage gain, and retired exact flows/endpoints; expiry restores
-  ordinary terminal service but remains removal-blocking; the narrow `terminal → storage` continuity
-  form cannot weaken same-type replacement checks for another structure kind;
+- a compatible external owned terminal with no persisted terminal evacuation or terminal removal
+  receipt is the stable RCL6-RCL8 convergent placement and cannot enter removal; grandfathered
+  obsolete-terminal removal requires one active exact empty zero-cooldown external terminal, one
+  exact active same-room storage, a current quiescent Industry terminal-work view, no terminal-bound
+  unrelated Logistics work, current colony/site safety, and the same global one-command/reset-safe
+  receipt ceilings; one positive single-resource target or canonical two-to-eight-resource manifest
+  of at most 3,000 aggregate units first uses one 150-tick funded V3 evacuation into that storage,
+  suppresses internal sends and competing terminal stock work while unexpired, atomically admits
+  every currently active manifest row, and requires fresh target-empty, every exact
+  baseline-plus-amount storage gain, and retired exact flows/endpoints; expiry restores ordinary
+  terminal service but remains removal-blocking; the narrow `terminal → storage` continuity form
+  cannot weaken same-type replacement checks for another structure kind;
 - a validated older-algorithm layout record is isolated from gameplay except for one otherwise-
   quiescent exact unfinished legacy energy-only or bounded resource-manifest container migration,
   extension, lab, reserve-link, spawn, or tower evacuation continuing through the existing funded V3

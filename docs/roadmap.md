@@ -299,8 +299,10 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   after threat clears while preserving the existing geometry, access, CPU, energy, and site bounds.
   Issue #443 preserves one compatible external storage as the convergent RCL4-RCL8 placement, so no
   new evacuation, removal, or 30,000-energy rebuild starts solely for canonical coordinates;
-  grandfathered exact evacuation/removal terms retain their bounded continuation. Uninterrupted
-  same-structure terminal service, broad dynamic movement/pathfinding proof, autonomous boost
+  grandfathered exact evacuation/removal terms retain their bounded continuation. Issue #445 applies
+  the same continuity-over-geometry policy to one compatible external owned terminal at RCL6-RCL8,
+  avoiding a new service outage and 100,000-energy rebuild while grandfathering exact existing
+  terminal evacuation/removal terms. Broad dynamic movement/pathfinding proof, autonomous boost
   manifest production, and defensive or active revision migration remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
