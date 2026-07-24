@@ -152,9 +152,12 @@ singleton non-energy manifest through its resource-qualified flow under the same
 canonical two-to-eight-row source-unspecific manifest with distinct funded flows, shared aggregate
 replacement capacity, exact all-row settlement, and no partial publication. Issue
 [#427](https://github.com/ralphschuler/screeps-myrmex/issues/427) admits one source-specific legacy
-energy form only under fresh exact source adjacency and different selected-service replacement
-continuity. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
-other structure migration and dismantling.
+energy form only under fresh exact source adjacency to both target and different selected-service
+replacement. Issue [#429](https://github.com/ralphschuler/screeps-myrmex/issues/429) admits the
+mutually exclusive singleton non-energy manifest under the same evidence while multi-row source-
+specific manifests remain inert. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure migration
+and dismantling.
 
 ## Runtime order
 
@@ -648,14 +651,27 @@ Issue #427's production-runtime evidence starts from one otherwise-quiescent V25
 different persisted exact selected source-service replacement with a 10-energy baseline. The
 existing `optional-growth` budget, Logistics/V3 contract, allocator, lease agent, action arbiter,
 and creep executors remain the only resource path. Projection and completion both revalidate source
-adjacency and the selected replacement position. Fresh target emptiness, exact 60 replacement
-energy, active funding, and complete flow/endpoint retirement clear only `containerMigration`
-command-free; source-service identity, sequence, and work position remain unchanged, and the
-revision handoff follows on a later tick. Warm, module-reset, and reversed-fact variants produce
-byte-equivalent owner, planning, and zero-layout-command outcomes. Focused controls reject a source-
-specific manifest, source/service drift, wrong replacement, malformed Stores, active work, unsafe
-policy, expiry, missing funding, and non-exact delivery. No schema, authority, mining plan,
-executor, command, or persistent field is added.
+adjacency to the target and the sole selected replacement service. Fresh target emptiness, exact 60
+replacement energy, active funding, and complete flow/endpoint retirement clear only
+`containerMigration` command-free; source-service identity, sequence, and work position remain
+unchanged, and the revision handoff follows on a later tick. Warm, module-reset, and reversed-fact
+variants produce byte-equivalent owner, planning, and zero-layout-command outcomes. Focused controls
+reject source/ service drift, wrong replacement, malformed Stores, active work, unsafe policy,
+expiry, missing funding, and non-exact delivery. No schema, authority, mining plan, executor,
+command, or persistent field is added.
+
+Issue #429's production-runtime evidence changes that same bounded source-container fixture to one
+canonical 50-unit `U` manifest row with a 10-unit replacement baseline and no legacy energy fields.
+The existing resource-qualified `optional-growth` budget, Logistics/V3 contract, allocator, lease
+agent, action arbiter, and creep executors remain the only resource path. Fresh projection and
+completion revalidate exact source adjacency to both the target and the sole different persisted
+exact selected-service replacement. Exact target emptiness, 60 replacement `U`, active funding, and
+complete resource-flow and endpoint retirement clear only `containerMigration` command-free;
+source-service identity, sequence, and work position remain unchanged, and handoff waits for the
+next eligible tick. Warm, module-reset, and reversed-fact variants produce byte-equivalent owner,
+planning, and zero-command outcomes. Focused controls keep one-row energy and multi-row
+source-specific manifests inert and reject source/service drift through the unchanged completion
+boundary. No schema, authority, mining plan, executor, command, or persistent field is added.
 
 Issue #415's production-runtime evidence starts from one otherwise-quiescent V25 stale record with a
 500-energy tower evacuation and an exact active replacement retaining the 10-energy action floor.

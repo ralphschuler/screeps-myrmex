@@ -2479,7 +2479,7 @@ describe("logistics runtime adapter", () => {
         },
       ],
     };
-    const sourceSpecificWorld = (serviceX: number, sourceX = 11) => ({
+    const sourceSpecificWorld = (serviceX: number, sourcePosition = position(12, 11)) => ({
       ...delivered,
       rooms: [
         {
@@ -2489,7 +2489,7 @@ describe("logistics runtime adapter", () => {
               energy: 3_000,
               energyCapacity: 3_000,
               id: "source-a",
-              pos: position(sourceX, 12),
+              pos: sourcePosition,
               ticksToRegeneration: 300,
             },
           ],
@@ -2511,7 +2511,11 @@ describe("logistics runtime adapter", () => {
         tick: 11,
       }),
     ).toEqual(["W1N1"]);
-    for (const drifted of [sourceSpecificWorld(14), sourceSpecificWorld(13, 10)])
+    for (const drifted of [
+      sourceSpecificWorld(14),
+      sourceSpecificWorld(13, position(10, 12)),
+      sourceSpecificWorld(13, position(11, 12)),
+    ])
       expect(
         completedLayoutContainerMigrationRoomNames({
           activeFlowIds: new Set(),
@@ -2646,6 +2650,76 @@ describe("logistics runtime adapter", () => {
         snapshot: delivered,
         tick: 11,
       }),
+    ).toEqual([]);
+
+    const sourceSpecificRoom = delivered.rooms[0];
+    if (sourceSpecificRoom === undefined) throw new Error("source-specific room missing");
+    const sourceSpecificService = {
+      adoption: "exact",
+      layer: "primary",
+      minimumRcl: 2,
+      pos: position(13, 12),
+      service: { kind: "source-container", sourceId: "source-a" },
+      structureType: "container",
+    } as const;
+    const sourceSpecificRecord: LayoutRecord = {
+      ...record,
+      containerMigration: { ...migration, sourceId: "source-a" },
+      sourceServices: [sourceSpecificService],
+    };
+    const sourceSpecificWorld = (sourcePosition = position(12, 11)) => ({
+      ...delivered,
+      rooms: [
+        {
+          ...sourceSpecificRoom,
+          sources: [
+            {
+              energy: 3_000,
+              energyCapacity: 3_000,
+              id: "source-a",
+              pos: sourcePosition,
+              ticksToRegeneration: 300,
+            },
+          ],
+        },
+      ],
+    });
+    const completedSourceSpecific = (candidate: LayoutRecord, candidateWorld: WorldSnapshot) =>
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set([flowId]),
+        records: [candidate],
+        snapshot: candidateWorld,
+        tick: 11,
+      });
+    expect(completedSourceSpecific(sourceSpecificRecord, sourceSpecificWorld())).toEqual(["W1N1"]);
+    expect(
+      completedSourceSpecific(sourceSpecificRecord, sourceSpecificWorld(position(10, 12))),
+    ).toEqual([]);
+    expect(
+      completedSourceSpecific(sourceSpecificRecord, sourceSpecificWorld(position(11, 12))),
+    ).toEqual([]);
+    expect(
+      completedSourceSpecific(
+        {
+          ...sourceSpecificRecord,
+          sourceServices: [{ ...sourceSpecificService, pos: position(14, 12) }],
+        },
+        sourceSpecificWorld(),
+      ),
+    ).toEqual([]);
+    expect(
+      completedSourceSpecific(
+        {
+          ...sourceSpecificRecord,
+          sourceServices: [
+            sourceSpecificService,
+            { ...sourceSpecificService, pos: position(14, 12) },
+          ],
+        },
+        sourceSpecificWorld(),
+      ),
     ).toEqual([]);
   });
 

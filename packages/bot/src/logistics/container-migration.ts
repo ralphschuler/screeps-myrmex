@@ -486,15 +486,22 @@ function currentSourceMigration(
     id === migration.sourceId ? inRangeOne(pos, target.pos) : false,
   );
   const services = (record.sourceServices ?? []).filter(
-    ({ adoption, pos, service, structureType }) =>
-      adoption === "exact" &&
-      structureType === "container" &&
-      service?.kind === "source-container" &&
-      service.sourceId === migration.sourceId &&
-      samePosition(pos, replacement.pos) &&
-      !samePosition(pos, target.pos),
+    ({ service }) =>
+      service?.kind === "source-container" && service.sourceId === migration.sourceId,
   );
-  return sources.length === 1 && services.length === 1;
+  const source = sources[0];
+  const selectedService = services[0];
+  return (
+    sources.length === 1 &&
+    source !== undefined &&
+    services.length === 1 &&
+    selectedService !== undefined &&
+    selectedService.adoption === "exact" &&
+    selectedService.structureType === "container" &&
+    samePosition(selectedService.pos, replacement.pos) &&
+    !samePosition(selectedService.pos, target.pos) &&
+    inRangeOne(source.pos, selectedService.pos)
+  );
 }
 function currentContainer(structure: StoredStructureSnapshot): boolean {
   return structure.structureType === "container" && structure.ownership !== "foreign";

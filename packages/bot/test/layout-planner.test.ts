@@ -35,7 +35,7 @@ describe("stale container migration continuation", () => {
     transform: 0,
   });
 
-  it("admits legacy energy source forms but keeps source-specific manifests inert", () => {
+  it("admits singleton non-energy source forms but keeps multi-resource source manifests inert", () => {
     const migration = staleRecord().containerMigration;
     if (migration === undefined) throw new Error("stale container migration fixture missing");
     expect(isStaleLayoutContainerMigrationContinuation(staleRecord())).toBe(true);
@@ -157,6 +157,19 @@ describe("stale container migration continuation", () => {
         containerMigration: {
           ...manifestBase,
           resourceManifest: [["U", 500, 100]],
+          sourceId: "source-a",
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: {
+          ...manifestBase,
+          resourceManifest: [
+            ["H", 250, 50],
+            ["U", 250, 50],
+          ],
           sourceId: "source-a",
         },
       }),
