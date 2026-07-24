@@ -269,15 +269,17 @@ the existing funded Logistics/V3 path. Issue #423 adds the mutually exclusive si
 manifest form under the same Stores, suppression, funding, and command boundaries. Issue #425 adds
 one canonical two-to-eight-row source-unspecific manifest under those same boundaries, with distinct
 resource-qualified funded flows and one aggregate replacement-capacity reservation. Issue #427
-admits one source-specific legacy energy form only while fresh observation retains exact source
-adjacency and a different persisted exact selected source-service replacement; source-specific
-manifests remain inert. Fresh exact empty-source, every baseline-plus-amount replacement gain,
-retired flow/endpoints, active funding, and unchanged safe policy clear only the applicable term
-command-free; the revision handoff remains a later tick. Every other unfinished stale migration
-remains inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the
-boundary. `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone
-calls `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and
-lab result reuses the same fixed receipt.
+admits one source-specific legacy energy form only while fresh observation retains exact source-to-
+target and source-to-selected-service adjacency at a different persisted exact replacement. The
+mutually exclusive one-row non-energy manifest is admitted by issue #429 under that same
+source/service evidence; multi-row source-specific manifests remain inert. Fresh exact empty-source,
+every baseline-plus-amount replacement gain, retired flow/endpoints, active funding, and unchanged
+safe policy clear only the applicable term command-free; the revision handoff remains a later tick.
+Every other unfinished stale migration remains inert.
+[ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the boundary.
+`StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
+`Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
+result reuses the same fixed receipt.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1551,11 +1553,13 @@ record to reuse this exact flow. Issue #423 permits the mutually exclusive one-r
 general record to reuse its resource-qualified flow. Issue #425 permits one canonical two-to-eight-
 row source-unspecific manifest to reuse every distinct resource-qualified flow under one aggregate
 replacement-capacity reservation. Issue #427 permits one source-specific legacy energy record only
-while current exact source adjacency and the different persisted exact selected replacement service
-remain unchanged; completion revalidates the same evidence before clearing it. All forms require
-current safe policy and active funding, keep target source/refill plus replacement refill suppressed
-independently of optional admission, and clear only from fresh exact delivery of every row plus
-complete work retirement before a later revision handoff.
+while current exact source-to-target and source-to-selected-service adjacency at the different
+persisted exact replacement remains unchanged. Issue #429 permits the mutually exclusive singleton
+non-energy manifest under the same exact source/service evidence; multi-row source-specific
+manifests remain inert. Completion revalidates that evidence before clearing either admitted form.
+All forms require current safe policy and active funding, keep target source/refill plus replacement
+refill suppressed independently of optional admission, and clear only from fresh exact delivery of
+every row plus complete work retirement before a later revision handoff.
 
 Reserve-link stock migration uses the same authority only after the canonical link-role boundary
 revalidates every productive anchor plus the exact external/reserve-replacement relation from
@@ -1713,8 +1717,8 @@ optional fixed-shape single-resource storage evacuation, V22 adds its bounded tw
 manifest alternative, V23 adds the exact settled-batch cursor for one 3,001–6,000-unit
 single-resource continuation, V24 permits that cursor on a canonical two-to-eight-resource manifest
 under the same total, and V25 isolates validated stale-algorithm records in a separate collection
-until one command-free safe handoff. Only #413/#415/#417/#419/#421/#423/#425/#427's exact unfinished
-extension, tower, spawn, reserve-link evacuation, or admitted legacy energy-only/bounded
+until one command-free safe handoff. Only #413/#415/#417/#419/#421/#423/#425/#427/#429's exact
+unfinished extension, tower, spawn, reserve-link evacuation, or admitted legacy energy-only/bounded
 resource-manifest container migration may remain a funded Logistics input until its separate
 command-free settlement. Degraded, unknown, lost, stale, denied, or CPU-skipped work preserves prior
 commitments and authorizes no command. Every observed owned layout site enters the existing funded

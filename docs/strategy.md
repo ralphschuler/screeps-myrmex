@@ -305,26 +305,27 @@ exact contract and lease; unavailable, duplicate, terminal-only, mismatched, uns
 evidence remains inert. One otherwise-quiescent unfinished legacy energy-only or valid bounded
 resource-manifest container migration, extension, reserve-link, spawn, or tower evacuation is the
 sole active-work exception: its original deadline and exact source/replacement/amount/baseline
-identity may continue through the existing funded V3 Logistics path. A manifest has no source-
-service identity and contains one non-energy row or two through eight canonical rows with no legacy
-energy fields; each row retains a distinct funded flow/budget identity and all share aggregate
-replacement capacity. One legacy energy form may instead retain one exact source identity only while
-the target stays adjacent to that source and a different persisted exact selected source service
-remains at the replacement. The container requires two exact non-foreign 2,000-capacity
-general-purpose Stores and suppresses the target source and both refill endpoints even when optional
-continuation is denied. Tower continuation also preserves the operational replacement's 10-energy
-action floor. Spawn continuation additionally requires exact active idle 300-capacity endpoints and
-a completed current SpawnBroker plan selecting neither; source refill stays suppressed, while
-replacement refill returns only after exact source emptiness. Reserve-link continuation accepts only
-known source-defined V1 geometry and fresh RCL8 proof that each unique stale service remains
-adjacent to its exact source, all productive roles remain intact, one external reserve source and
-one exact reserve replacement exist, and exact zero-cooldown 800-capacity energy Stores exclude both
-endpoints from native transfers. Durable endpoint suppression survives denied optional work; creep
-Logistics is the only resource path. Fresh source emptiness, every exact replacement gain, complete
-flow/endpoint retirement, active funding, and unchanged safe policy clear only that term in a
-command-free tick; current-layout handoff remains a separate following tick. A safe quiescent RCL8
-record may use the existing bounded infrastructure-recovery authorization for that command-free
-source-defined handoff. Every other unfinished stale migration stays inert.
+identity may continue through the existing funded V3 Logistics path. A source-unspecific manifest
+contains one non-energy row or two through eight canonical rows with no legacy energy fields; each
+row retains a distinct funded flow/budget identity and all share aggregate replacement capacity. One
+legacy energy form or the mutually exclusive singleton non-energy manifest may instead retain one
+exact source identity only while both the target and a different persisted exact selected
+replacement service stay adjacent to that source. Multi-row source-specific manifests stay inert.
+The container requires two exact non-foreign 2,000-capacity general-purpose Stores and suppresses
+the target source and both refill endpoints even when optional continuation is denied. Tower
+continuation also preserves the operational replacement's 10-energy action floor. Spawn continuation
+additionally requires exact active idle 300-capacity endpoints and a completed current SpawnBroker
+plan selecting neither; source refill stays suppressed, while replacement refill returns only after
+exact source emptiness. Reserve-link continuation accepts only known source-defined V1 geometry and
+fresh RCL8 proof that each unique stale service remains adjacent to its exact source, all productive
+roles remain intact, one external reserve source and one exact reserve replacement exist, and exact
+zero-cooldown 800-capacity energy Stores exclude both endpoints from native transfers. Durable
+endpoint suppression survives denied optional work; creep Logistics is the only resource path. Fresh
+source emptiness, every exact replacement gain, complete flow/endpoint retirement, active funding,
+and unchanged safe policy clear only that term in a command-free tick; current-layout handoff
+remains a separate following tick. A safe quiescent RCL8 record may use the existing bounded
+infrastructure-recovery authorization for that command-free source-defined handoff. Every other
+unfinished stale migration stays inert.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering
