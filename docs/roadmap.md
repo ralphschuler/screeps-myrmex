@@ -273,14 +273,15 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   and over-cap admission publishes no prefix. Issue #427 admits one source-specific legacy energy
   form only with fresh exact source-to-target and source-to-selected-service adjacency at a
   different persisted exact replacement. Issue #429 admits the mutually exclusive singleton
-  non-energy manifest under the same exact source/service evidence while multi-row source-specific
-  manifests remain inert. Fresh exact empty-source, every exact replacement gain, complete flow and
-  endpoint retirement, and unchanged safe policy clear only the applicable term command-free; the
-  ordinary revision handoff remains a later tick. Unrelated active, mismatched, multiple-pair,
-  unpaired storage, unsafe, same-tick, incomplete, terminal-only, or drifted evidence remains
-  blocked. Uninterrupted same-structure storage/terminal service, broad dynamic movement/pathfinding
-  proof, autonomous boost manifest production, defensive or active revision migration, and creep
-  dismantling remain issue #99.
+  non-energy manifest under the same exact source/service evidence. Issue #431 admits its canonical
+  two-to-eight-row composition and requires complete current-row funding before lease execution.
+  Fresh exact empty-source, every exact replacement gain, complete flow and endpoint retirement, and
+  unchanged safe policy clear only the applicable term command-free; the ordinary revision handoff
+  remains a later tick. Unrelated active, mismatched, multiple-pair, unpaired storage, unsafe,
+  same-tick, incomplete, terminal-only, or drifted evidence remains blocked. Uninterrupted
+  same-structure storage/terminal service, broad dynamic movement/pathfinding proof, autonomous
+  boost manifest production, defensive or active revision migration, and creep dismantling remain
+  issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

@@ -76,6 +76,25 @@ export function layoutContainerMigrationFlowIds(
   return ids.some((id) => id === null) ? null : Object.freeze(ids as readonly string[]);
 }
 
+/** Keeps every currently projected row of one container manifest atomic. */
+export function completeExecutableLayoutContainerMigrationFlowIds(input: {
+  readonly executableFlowIds: ReadonlySet<string>;
+  readonly projectedFlowIds: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+}): ReadonlySet<string> {
+  const complete = new Set<string>();
+  for (const record of input.records) {
+    if (record.containerMigration === undefined) continue;
+    const flowIds = layoutContainerMigrationFlowIds(record.roomName, record.containerMigration);
+    if (flowIds === null) continue;
+    const projected = flowIds.filter((flowId) => input.projectedFlowIds.has(flowId));
+    if (projected.length > 0 && projected.every((flowId) => input.executableFlowIds.has(flowId))) {
+      for (const flowId of projected) complete.add(flowId);
+    }
+  }
+  return complete;
+}
+
 /** Fresh command-free completion evidence for one exact bounded container migration. */
 export function completedLayoutContainerMigrationRoomNames(input: {
   readonly activeFlowIds: ReadonlySet<string>;

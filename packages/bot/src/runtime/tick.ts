@@ -218,6 +218,7 @@ import {
   type LogisticsRuntimeProjection,
 } from "../logistics/runtime";
 import {
+  completeExecutableLayoutContainerMigrationFlowIds,
   completedLayoutContainerMigrationRoomNames,
   layoutContainerMigrationFlowIds,
   projectLayoutContainerMigrations,
@@ -3906,10 +3907,29 @@ function colonyDirectorSystem(
         logisticsPlan,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
       );
-      const logisticsExecutableContainerMigrationFlowIds = currentlyExecutableLogisticsFlowIds(
+      const logisticsCandidateContainerMigrationFlowIds = currentlyExecutableLogisticsFlowIds(
         projectedContainerMigrationFlowIds,
         logistics,
       );
+      const stockedContainerMigrationSourceNodeIds = new Set(
+        layoutContainerMigrations.nodes.flatMap(({ id, kind, observedAmount }) =>
+          kind === "source" && observedAmount > 0 ? [id] : [],
+        ),
+      );
+      const currentContainerMigrationFlowIds = new Set(
+        layoutContainerMigrations.edges.flatMap(({ id, sourceNodeId }) =>
+          stockedContainerMigrationSourceNodeIds.has(sourceNodeId) ||
+          logisticsCandidateContainerMigrationFlowIds.has(id)
+            ? [id]
+            : [],
+        ),
+      );
+      const logisticsExecutableContainerMigrationFlowIds =
+        completeExecutableLayoutContainerMigrationFlowIds({
+          executableFlowIds: logisticsCandidateContainerMigrationFlowIds,
+          projectedFlowIds: currentContainerMigrationFlowIds,
+          records: containerMigrationRecords,
+        });
       const logisticsExecutableTowerEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
         projectedTowerEvacuationFlowIds,
         logistics,
@@ -4237,14 +4257,20 @@ function colonyDirectorSystem(
           category === "optional-growth" && status === "active" ? [issuer] : [],
         ),
       );
-      const executableContainerMigrationFlowIds = new Set(
-        layoutContainerMigrations.edges.flatMap(({ budgetBinding, id }) =>
-          logisticsExecutableContainerMigrationFlowIds.has(id) &&
-          budgetBinding !== undefined &&
-          activeContainerMigrationBudgetIssuers.has(budgetBinding.issuer)
-            ? [id]
-            : [],
-        ),
+      const executableContainerMigrationFlowIds = completeExecutableLayoutContainerMigrationFlowIds(
+        {
+          executableFlowIds: new Set(
+            layoutContainerMigrations.edges.flatMap(({ budgetBinding, id }) =>
+              logisticsExecutableContainerMigrationFlowIds.has(id) &&
+              budgetBinding !== undefined &&
+              activeContainerMigrationBudgetIssuers.has(budgetBinding.issuer)
+                ? [id]
+                : [],
+            ),
+          ),
+          projectedFlowIds: currentContainerMigrationFlowIds,
+          records: containerMigrationRecords,
+        },
       );
       const activeSpawnEvacuationBudgetIssuers = new Set(
         session.result.reservations.flatMap(({ category, issuer, status }) =>

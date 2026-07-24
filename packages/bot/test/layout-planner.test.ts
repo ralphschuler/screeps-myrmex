@@ -35,7 +35,7 @@ describe("stale container migration continuation", () => {
     transform: 0,
   });
 
-  it("admits singleton non-energy source forms but keeps multi-resource source manifests inert", () => {
+  it("admits bounded source-specific resource manifests", () => {
     const migration = staleRecord().containerMigration;
     if (migration === undefined) throw new Error("stale container migration fixture missing");
     expect(isStaleLayoutContainerMigrationContinuation(staleRecord())).toBe(true);
@@ -173,7 +173,7 @@ describe("stale container migration continuation", () => {
           sourceId: "source-a",
         },
       }),
-    ).toBe(false);
+    ).toBe(true);
     const { replacementInitialEnergy: _baseline, ...withoutBaseline } = migration;
     void _baseline;
     expect(

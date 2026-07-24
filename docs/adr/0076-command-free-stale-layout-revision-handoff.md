@@ -37,14 +37,16 @@ energy manifest. Issue #425 extends the same resource-qualified path to one cano
 row source-unspecific manifest. Issue #427 admits the separate source-specific legacy energy form
 only while its original selected-source-service evidence remains exact. Issue #429 admits the
 mutually exclusive singleton non-energy source-specific manifest under that same exact evidence.
+Issue #431 composes that source/service proof with one canonical two-to-eight-row manifest and
+requires its complete currently executable row set to retain funding before lease execution.
 
 ## Decision
 
 - Layouts owner-local schema V25 separates `records` from `staleRecords`. `records` contains only
   the current algorithm and remains the sole input to layout, mining, industry, health, site, and
   removal projections. `staleRecords` contains fully validated older-algorithm V24-shaped evidence
-  and is inert except for issues #413, #415, #417, #419, #421, #423, #425, #427, and #429's exact
-  extension-, tower-, spawn-, reserve-link-evacuation, or admitted legacy energy-only/bounded
+  and is inert except for issues #413, #415, #417, #419, #421, #423, #425, #427, #429, and #431's
+  exact extension-, tower-, spawn-, reserve-link-evacuation, or admitted legacy energy-only/bounded
   resource-manifest container migration Logistics continuation.
 - V1-V24 migration places a structurally valid older-algorithm record in `staleRecords` instead of
   dropping it. Current and stale records share the existing 64-room aggregate cap and one room may
@@ -115,14 +117,17 @@ mutually exclusive singleton non-energy source-specific manifest under that same
   fit the existing 64-flow bound; malformed, drifted, or over-cap evidence publishes no projection
   prefix, and an unfunded row authorizes no lease for that row.
 - Issue #427 permits one legacy positive-energy form to carry one bounded `sourceId` with no
-  `resourceManifest`. Issue #429 permits the mutually exclusive source-specific manifest only when
-  it contains exactly one positive non-energy row and no legacy energy fields; multi-row and one-row
-  energy source-specific manifests remain inert. Fresh projection and completion evidence for both
+  `resourceManifest`. Issue #429 permits the mutually exclusive source-specific manifest when it
+  contains exactly one positive non-energy row and no legacy energy fields. Issue #431 admits the
+  same source-specific form with two through eight canonical positive rows under the existing
+  2,000-unit aggregate bound; one-row energy manifests remain inert. Every currently executable row
+  must retain Logistics admission and active funding before any row may enter lease execution, while
+  already delivered rows leave that current group. Fresh projection and completion evidence for all
   admitted forms must retain the exact source adjacent to the target and one different persisted
   `exact` source-service container adjacent to that source at the exact replacement position.
   Exactly one selected service may name that source. The persisted source-service identity,
-  sequence, and work position remain unchanged; neither path renews or optimizes mining work, and
-  issue #411 alone owns the later exact contract-preserving revision handoff.
+  sequence, and work position remain unchanged; no path renews or optimizes mining work, and issue
+  #411 alone owns the later exact contract-preserving revision handoff.
 - Each admitted stale container form clears only after newer fresh safe observation proves an exact
   empty target, replacement stock for every resource exactly equal to baseline plus amount, every
   exact flow currently funded and inactive, and complete source/replacement endpoint retirement.
@@ -247,15 +252,16 @@ source-service issuance can instead cross that handoff directly without losing i
 lease, regressing its monotonic coordinate, or coupling revision migration to source optimization.
 One exact unfinished legacy energy-only or bounded resource-manifest container migration, extension,
 reserve-link, spawn, or tower evacuation can continue under its original fixed deadline and then
-settle command-free before the separate handoff. The source-specific legacy energy and singleton
-non-energy forms additionally retain exact source adjacency to both target and different selected
-replacement service without renewing or reinterpreting mining work. No continuation reopens stale
-removal authority, bypasses SpawnBroker, uses native link transfer, or weakens the tower
-replacement's action-energy floor. Rooms advance deterministically across JSON/global-heap
-reconstruction and reordered world facts. Other active, evacuation-bearing records without one sole
-exact match, unpaired storage, unsafe, terminal-drifted, or conservation-incomplete records remain
-fail-closed until a later explicit policy handles them; this decision does not reinterpret or cancel
-their work.
+settle command-free before the separate handoff. The source-specific legacy energy, singleton
+non-energy, and two-to-eight-row manifest forms additionally retain exact source adjacency to both
+target and different selected replacement service without renewing or reinterpreting mining work.
+Every current row in a multi-resource continuation passes funding as one group before lease
+execution. No continuation reopens stale removal authority, bypasses SpawnBroker, uses native link
+transfer, or weakens the tower replacement's action-energy floor. Rooms advance deterministically
+across JSON/global-heap reconstruction and reordered world facts. Other active, evacuation-bearing
+records without one sole exact match, unpaired storage, unsafe, terminal-drifted, or
+conservation-incomplete records remain fail-closed until a later explicit policy handles them; this
+decision does not reinterpret or cancel their work.
 
 Persistent cost is one empty `staleRecords` array in normal owner state and at most one fully
 bounded record per already-capped room during handoff. Planning retains the existing two-room
@@ -277,11 +283,10 @@ unbounded history is added.
 Rollback to V24 pauses layout work without rewriting V25. Redeploying V25 resumes the exact bounded
 settlement or handoff. Unfinished migration/evacuation continuation for every structure other than
 one admitted legacy energy-only or bounded resource-manifest container, extension, reserve link,
-spawn, or tower, plus one-row energy-manifest or multi-row source-specific resource-manifest
-migration, mismatched or multiple failed pairs, unmatched or terminal source-service recovery,
-arbitrary geometry algorithms, defensive migration, dynamic room routing, autonomous boost-manifest
-production, creep dismantling, and uninterrupted same-structure availability remain outside this
-decision.
+spawn, or tower, plus one-row energy-manifest migration, mismatched or multiple failed pairs,
+unmatched or terminal source-service recovery, arbitrary geometry algorithms, defensive migration,
+dynamic room routing, autonomous boost-manifest production, creep dismantling, and uninterrupted
+same-structure availability remain outside this decision.
 
 ## Mechanics sources
 
@@ -295,8 +300,8 @@ rechecked 2026-07-23 for issue #413. `StructureTower`, `Store`, `Creep.withdraw`
 issue #417. `StructureLink`, `StructureLink.transferEnergy`, `Store`, `Creep.withdraw`,
 `Creep.transfer`, the game loop, and both indexes were rechecked 2026-07-23 for issue #419.
 `StructureContainer`, `Store`, `Creep.withdraw`, `Creep.transfer`, the game loop, and both indexes
-were rechecked 2026-07-23 for issue #421 and 2026-07-24 for issues #423, #425, #427, and #429.
-`Source` and `Static Harvesting` were also rechecked for #427/#429's exact selected-service
+were rechecked 2026-07-23 for issue #421 and 2026-07-24 for issues #423, #425, #427, #429, and #431.
+`Source` and `Static Harvesting` were also rechecked for #427/#429/#431's exact selected-service
 boundary. The relevant pages were also checked: `StructureTower` for issue #393, `StructureSpawn`
 for issue #395, `StructureLink` for issue `#397`, `StructureContainer` for issue #399, and
 `StructureLab` for [issue #401](https://github.com/ralphschuler/screeps-myrmex/issues/401);
@@ -349,8 +354,8 @@ for issue #395, `StructureLink` for issue `#397`, `StructureContainer` for issue
   [`Store`](https://docs.screeps.com/api/#Store),
   [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw), and
   [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define issues
-  #421/#423/#425/#427/#429's walkable 2,000-capacity general-purpose source/replacement Stores and
-  adjacent resource-specific creep intents. The official
+  #421/#423/#425/#427/#429/#431's walkable 2,000-capacity general-purpose source/replacement Stores
+  and adjacent resource-specific creep intents. The official
   [game loop](https://docs.screeps.com/game-loop.html) requires fresh later observation, rather than
   an `OK` result, to prove exact delivery and retired work. Screeps Wiki
   [Energy](https://wiki.screepspl.us/Energy/) supplies container-buffer and hauler terminology only.
@@ -378,8 +383,8 @@ for issue #395, `StructureLink` for issue `#397`, `StructureContainer` for issue
   [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) retain the source,
   adjacent harvest, walkable 2,000-unit container, and same-tile dropped-resource mechanics behind
   the preserved static-mining work position. Issue #411 changes only repository reconciliation;
-  issues #427/#429 only revalidate the persisted selected-service evidence around existing
-  Logistics. Neither issue adds a game command or reinterprets those mechanics.
+  issues #427/#429/#431 only revalidate the persisted selected-service evidence around existing
+  Logistics. None adds a game command or reinterprets those mechanics.
 - Screeps Wiki [index](https://wiki.screepspl.us/Main_Page/),
   [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/),
   [`StructureLink`](https://wiki.screepspl.us/StructureLink/),
