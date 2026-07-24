@@ -2867,6 +2867,11 @@ function layoutPlanningSystem(
         });
         maintenanceLayouts.push({ placements, roomName: room.name });
         const layoutRecord = owner.records.find(({ roomName }) => roomName === room.name) ?? null;
+        const ownedTerminals = (room.structures ?? []).filter(
+          ({ ownership, structureType }) => ownership === "owned" && structureType === "terminal",
+        );
+        const currentTerminalId =
+          ownedTerminals.length === 1 ? (ownedTerminals[0]?.id ?? null) : null;
         const convergencePlacements =
           colony.rclPolicy.unlocks === null
             ? placements
@@ -2874,6 +2879,8 @@ function layoutPlanningSystem(
                 commitment,
                 current: placements,
                 currentStorageMigration: layoutRecord,
+                currentTerminalId,
+                currentTerminalMigration: layoutRecord,
                 roomName: room.name,
                 sourceCount: room.sources.length,
                 sources: room.sources.map(({ pos }) => pos),

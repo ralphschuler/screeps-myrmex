@@ -177,6 +177,7 @@ function plan(
     readonly industry?: IndustryTerminalWorkRoomView | null;
     readonly logisticsEvidenceReady?: boolean;
     readonly labEvacuation?: Parameters<ConstructionPlanner["planMigration"]>[0]["labEvacuation"];
+    readonly placements?: readonly LayoutPlacement[];
     readonly removalReceipt?: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"];
     readonly room?: RoomSnapshot;
     readonly terminalEvacuation?: Parameters<
@@ -204,7 +205,7 @@ function plan(
     labEvacuation: input.labEvacuation ?? null,
     logisticsEvidenceReady: input.logisticsEvidenceReady ?? true,
     observationFingerprint: `obs-${String(input.room?.observedAt ?? 100)}`,
-    placements: [terminalPlacement],
+    placements: input.placements ?? [terminalPlacement],
     policyFingerprint: "policy-terminal",
     removalReceipt: input.removalReceipt ?? null,
     room: input.room ?? room(),
@@ -213,6 +214,28 @@ function plan(
 }
 
 describe("empty obsolete-terminal relocation", () => {
+  it("does not start relocation when the compatible external terminal remains convergent", () => {
+    const external = terminal();
+    const retained = plan({
+      placements: [
+        {
+          ...terminalPlacement,
+          adoption: "compatible-external",
+          pos: external.pos,
+        },
+      ],
+      room: room({ target: external }),
+    });
+
+    expect(retained).toMatchObject({
+      authorization: null,
+      blockers: [],
+      proposals: [],
+      removalReceipt: null,
+      terminalEvacuation: null,
+    });
+  });
+
   it("authorizes one terminal-to-storage removal and reconstructs committed geometry", () => {
     const ready = plan();
     expect(ready).toMatchObject({

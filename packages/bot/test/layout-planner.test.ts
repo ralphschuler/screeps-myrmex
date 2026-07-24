@@ -1254,36 +1254,265 @@ describe("owned-room-layout-v1", () => {
     }
   });
 
-  it("restores committed terminal geometry for one bounded service outage", () => {
+  it("retains one compatible external terminal from RCL6 through RCL8", () => {
+    const external = structure("terminal", 35, 35, "owned");
+    for (const level of [6, 7, 8]) {
+      const input = fixture(level);
+      const planned = planOwnedRoomLayout({
+        ...input,
+        structures: [...input.structures, external],
+      });
+      const reordered = planOwnedRoomLayout({
+        ...input,
+        structures: [...input.structures, external].reverse(),
+      });
+      if (planned.status !== "complete" || reordered.status !== "complete")
+        throw new Error("expected complete layout");
+      const unlocks = input.policy.unlocks;
+      if (unlocks === null) throw new Error("expected RCL unlocks");
+      const convergent = projectLayoutConvergencePlacements({
+        commitment: planned.commitment,
+        current: planned.placements,
+        roomName: input.roomName,
+        sourceCount: input.sources.length,
+        sources: input.sources,
+        unlocks,
+      });
+
+      expect(JSON.stringify(reordered)).toBe(JSON.stringify(planned));
+      expect(convergent.filter(({ structureType }) => structureType === "terminal")).toEqual([
+        expect.objectContaining({
+          adoption: "compatible-external",
+          pos: external.pos,
+          structureType: "terminal",
+        }),
+      ]);
+      expect(
+        projectLayoutConvergencePlacements({
+          commitment: planned.commitment,
+          current: planned.placements,
+          roomName: input.roomName,
+          sourceCount: input.sources.length,
+          sources: input.sources,
+          unlocks,
+        }),
+      ).toEqual(convergent);
+      expect(
+        diffOwnedRoomLayout({
+          colonyId: input.roomName,
+          commitment: planned.commitment,
+          commitmentConflicted: false,
+          constructionSites: input.constructionSites,
+          observationFingerprint: "terminal-continuity-observation",
+          placements: convergent,
+          policy: input.policy,
+          policyEnabled: true,
+          policyFingerprint: "terminal-continuity-policy",
+          roomName: input.roomName,
+          roomStatus: "owned",
+          structures: [...input.structures, external],
+        }).proposals.filter(({ structureType }) => structureType === "terminal"),
+      ).toEqual([]);
+    }
+
+    for (const ownership of ["foreign", "unowned"] as const) {
+      const nonOwnedInput = fixture(8);
+      const plannedWithoutTerminal = planOwnedRoomLayout(nonOwnedInput);
+      if (plannedWithoutTerminal.status !== "complete")
+        throw new Error("expected complete baseline layout");
+      const committedTerminal = plannedWithoutTerminal.placements.find(
+        ({ structureType }) => structureType === "terminal",
+      );
+      if (committedTerminal === undefined) throw new Error("expected committed terminal");
+      for (const nonOwned of [
+        structure("terminal", 35, 35, ownership),
+        structure("terminal", committedTerminal.pos.x, committedTerminal.pos.y, ownership),
+      ]) {
+        const nonOwnedPlanned = planOwnedRoomLayout({
+          ...nonOwnedInput,
+          structures: [...nonOwnedInput.structures, nonOwned],
+        });
+        if (nonOwnedPlanned.status !== "complete")
+          throw new Error("expected complete non-owned layout");
+        expect(
+          nonOwnedPlanned.placements.some(
+            ({ adoption, pos, structureType }) =>
+              (adoption === "compatible-external" || adoption === "exact") &&
+              structureType === "terminal" &&
+              pos.x === nonOwned.pos.x &&
+              pos.y === nonOwned.pos.y,
+          ),
+        ).toBe(false);
+      }
+    }
+
+    const missing = fixture(8);
+    const plannedMissing = planOwnedRoomLayout(missing);
+    if (plannedMissing.status !== "complete" || missing.policy.unlocks === null)
+      throw new Error("expected complete missing-terminal layout");
+    expect(
+      projectLayoutConvergencePlacements({
+        commitment: plannedMissing.commitment,
+        current: plannedMissing.placements,
+        roomName: missing.roomName,
+        sourceCount: missing.sources.length,
+        sources: missing.sources,
+        unlocks: missing.policy.unlocks,
+      }).filter(({ structureType }) => structureType === "terminal"),
+    ).toEqual([expect.objectContaining({ adoption: "planned", structureType: "terminal" })]);
+  });
+
+  it("keeps canonical terminal convergence for an already-persisted migration", () => {
     const input = fixture(6);
     const external = structure("terminal", 35, 35, "owned");
     const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
     if (planned.status !== "complete") throw new Error("expected complete layout");
     const unlocks = input.policy.unlocks;
     if (unlocks === null) throw new Error("expected RCL unlocks");
-    const convergent = projectLayoutConvergencePlacements({
-      commitment: planned.commitment,
-      current: planned.placements,
-      roomName: input.roomName,
-      sourceCount: input.sources.length,
-      sources: input.sources,
-      unlocks,
-    });
+    const baseRecord = { ...planned.commitment, roomName: input.roomName };
+    const persistedRecords: readonly LayoutRecord[] = [
+      {
+        ...baseRecord,
+        terminalEvacuation: {
+          amount: 1,
+          expiresAt: 250,
+          replacementId: "storage-retained",
+          replacementInitialAmount: 0,
+          resourceType: "energy",
+          sourceId: external.id,
+          startedAt: 100,
+        },
+      },
+      {
+        ...baseRecord,
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "storage-retained",
+          targetId: external.id,
+          targetStructureType: "terminal",
+        },
+      },
+      {
+        ...baseRecord,
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "storage-retained",
+          targetId: external.id,
+          targetStructureType: "terminal",
+        },
+        terminalEvacuation: {
+          amount: 1,
+          expiresAt: 250,
+          replacementId: "storage-retained",
+          replacementInitialAmount: 0,
+          resourceType: "energy",
+          sourceId: external.id,
+          startedAt: 100,
+        },
+      },
+    ];
 
-    expect(planned.placements).toContainEqual(
-      expect.objectContaining({
-        adoption: "compatible-external",
-        pos: external.pos,
-        structureType: "terminal",
-      }),
-    );
-    expect(convergent.filter(({ structureType }) => structureType === "terminal")).toHaveLength(1);
-    expect(
-      convergent.some(
-        ({ pos, structureType }) =>
-          structureType === "terminal" && pos.x === external.pos.x && pos.y === external.pos.y,
-      ),
-    ).toBe(false);
+    for (const currentTerminalMigration of persistedRecords) {
+      const parsedOwner = parseLayoutsOwner(
+        JSON.parse(
+          JSON.stringify({
+            ...emptyLayoutsOwner(),
+            records: [currentTerminalMigration],
+          }),
+        ),
+      );
+      const parsedMigration = parsedOwner?.records[0];
+      if (parsedMigration === undefined) throw new Error("expected parsed migration evidence");
+      const convergent = projectLayoutConvergencePlacements({
+        commitment: planned.commitment,
+        current: planned.placements,
+        currentTerminalId: external.id,
+        currentTerminalMigration: parsedMigration,
+        roomName: input.roomName,
+        sourceCount: input.sources.length,
+        sources: input.sources,
+        unlocks,
+      });
+
+      expect(convergent.filter(({ structureType }) => structureType === "terminal")).toHaveLength(
+        1,
+      );
+      expect(
+        convergent.some(
+          ({ pos, structureType }) =>
+            structureType === "terminal" && pos.x === external.pos.x && pos.y === external.pos.y,
+        ),
+      ).toBe(false);
+
+      const retainedWithoutCurrentIdentity = projectLayoutConvergencePlacements({
+        commitment: planned.commitment,
+        current: planned.placements,
+        currentTerminalId: null,
+        currentTerminalMigration: parsedMigration,
+        roomName: input.roomName,
+        sourceCount: input.sources.length,
+        sources: input.sources,
+        unlocks,
+      });
+      expect(
+        retainedWithoutCurrentIdentity.some(
+          ({ pos, structureType }) =>
+            structureType === "terminal" && pos.x === external.pos.x && pos.y === external.pos.y,
+        ),
+      ).toBe(true);
+
+      let mismatchedMigration: LayoutRecord;
+      if (parsedMigration.terminalEvacuation !== undefined) {
+        mismatchedMigration = {
+          ...parsedMigration,
+          terminalEvacuation: {
+            ...parsedMigration.terminalEvacuation,
+            sourceId: "terminal-retired",
+          },
+        };
+      } else if (parsedMigration.removalReceipt !== undefined) {
+        mismatchedMigration = {
+          ...parsedMigration,
+          removalReceipt: {
+            ...parsedMigration.removalReceipt,
+            targetId: "terminal-retired",
+          },
+        };
+      } else {
+        throw new Error("expected terminal migration evidence");
+      }
+      const parsedMismatch = parseLayoutsOwner(
+        JSON.parse(
+          JSON.stringify({
+            ...emptyLayoutsOwner(),
+            records: [mismatchedMigration],
+          }),
+        ),
+      )?.records[0];
+      if (parsedMismatch === undefined) throw new Error("expected parsed mismatched evidence");
+      const retained = projectLayoutConvergencePlacements({
+        commitment: planned.commitment,
+        current: planned.placements,
+        currentTerminalId: external.id,
+        currentTerminalMigration: parsedMismatch,
+        roomName: input.roomName,
+        sourceCount: input.sources.length,
+        sources: input.sources,
+        unlocks,
+      });
+      expect(
+        retained.some(
+          ({ pos, structureType }) =>
+            structureType === "terminal" && pos.x === external.pos.x && pos.y === external.pos.y,
+        ),
+      ).toBe(true);
+    }
   });
 
   it("restores committed spawn geometry only when redundant spawn service is available", () => {

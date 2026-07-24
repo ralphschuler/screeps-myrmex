@@ -174,7 +174,10 @@ arbitration explicit: Phase 2 keeps the existing direct-destroy path and source-
 extension migration with one bounded current-threat pause and reset before exact automatic
 resumption. Issue [#443](https://github.com/ralphschuler/screeps-myrmex/issues/443) retains one
 compatible external storage as the stable RCL4-RCL8 placement and admits canonical convergence only
-for an exact already-persisted storage evacuation/removal term. Parent issue
+for an exact already-persisted storage evacuation/removal term. Issue
+[#445](https://github.com/ralphschuler/screeps-myrmex/issues/445) applies the equivalent RCL6-RCL8
+policy to one compatible external owned terminal and grandfathers only exact current terminal
+evacuation/removal evidence. Parent issue
 [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
 migration.
 
@@ -605,6 +608,16 @@ JSON-reconstructed current storage evacuation or storage removal receipt instead
 canonical convergence path, so persisted V20-V25 evidence is not abandoned. The projection adds no
 owner field, Memory bytes, command, resource spend, or scan.
 
+Issue #445's equivalent production-policy evidence plans ordered and reversed RCL6-RCL8 rooms with
+one compatible external owned terminal. Repeated projection retains the exact external position,
+produces no replacement terminal site, and gives `ConstructionPlanner` no evacuation, removal
+proposal, authorization, or receipt. Foreign/unowned terminals cannot satisfy exact or compatible
+adoption, while a missing owned terminal still exposes one planned committed placement. An exact
+JSON-reconstructed current terminal evacuation or terminal removal receipt instead retains the prior
+canonical path only when its source/target matches the sole observed owned terminal; mismatched or
+orphaned evidence retains the current service position. Persisted V17-V25 evidence is not abandoned,
+and the projection adds no owner field, Memory bytes, command, resource spend, or scan.
+
 Issue #413's production-runtime evidence starts from an otherwise-quiescent V25 stale record with
 one 50-energy extension evacuation. The normal colony budget and Logistics planner publish its exact
 `optional-growth` issuer and V3 flow while the stale owner remains isolated from every other
@@ -954,17 +967,22 @@ reserves replacement capacity once, and survives partial transfer plus JSON rese
 flow endpoints do not self-block progress, while unrelated endpoints, current SpawnBroker selection,
 busy/inactive spawns, Store/capacity/stock drift, timeout, safety drift, and over-cap records fail
 closed. Fresh empty-target, replacement gain, retired work, live minimum-energy validation, receipt
-backoff, observed disappearance, and final committed-site reconstruction are asserted. Terminal
-convergence proves one external exact empty zero-cooldown terminal can use exact active storage only
-under a current quiescent Industry terminal-work view and retired target endpoints. Current source-
-or destination-room sends, unattributable active/backoff send receipts, terminal-bound lab
-evacuation, target stock/cooldown, malformed Stores, storage loss/inactivity, safety drift, and live
-refill/cooldown/capacity drift fail closed. Typed arbitration permits only the exact
-`terminal → storage` form, V16-to-V17 migration invents no receipt, reset/reorder preserves pending
-success, fresh disappearance exposes the committed terminal site, and the ordinary diff suppresses
-further work after restoration. The stocked continuation migrates V17 to V18 without invented terms,
-persists one exact 1–3,000-unit resource/baseline record, suppresses internal sends and terminal
-source/refill competition, and projects one next-tick funded V3 flow into the storage
+backoff, observed disappearance, and final committed-site reconstruction are asserted.
+
+Under issue #445, the existing terminal convergence and evacuation suites prove only the
+already-persisted grandfathered path. A compatible external owned terminal with no exact current
+migration term remains convergent and emits no removal proposal.
+
+Terminal convergence proves one external exact empty zero-cooldown terminal can use exact active
+storage only under a current quiescent Industry terminal-work view and retired target endpoints.
+Current source- or destination-room sends, unattributable active/backoff send receipts,
+terminal-bound lab evacuation, target stock/cooldown, malformed Stores, storage loss/inactivity,
+safety drift, and live refill/cooldown/capacity drift fail closed. Typed arbitration permits only
+the exact `terminal → storage` form, V16-to-V17 migration invents no receipt, reset/reorder
+preserves pending success, fresh disappearance exposes the committed terminal site, and the ordinary
+diff suppresses further work after restoration. The stocked continuation migrates V17 to V18 without
+invented terms, persists one exact 1–3,000-unit resource/baseline record, suppresses internal sends
+and terminal source/refill competition, and projects one next-tick funded V3 flow into the storage
 aggregate-capacity key. Partial delivery plus JSON reset/reordered observation preserves terms;
 mixed/larger stock, destination consumption/capacity loss, unrelated endpoints, pressure, or
 malformed evidence blocks active work. Timeout restores ordinary service while preserving
@@ -1199,13 +1217,16 @@ lint, type, test, documentation, bundle, and package evidence.
   evidence can clear. Issue #437 reuses that exact storage/terminal boundary and every existing
   scalar, manifest, and two-batch identity; later exact Store and retired-work evidence advances the
   cursor or clears only the stale term without authorizing removal.
-- Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
-  RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary. Issue
-  #403 consumes only fresh exact target absence and does not reinterpret stock delivery, storage
-  capacity, send suppression, quiescence, endpoint retirement, or replacement continuity. Issue #435
-  reuses those same current terminal facts and scalar/manifest Logistics/V3 identities for
-  unfinished stale work; exact later Store, Industry-quiescence, and work-retirement evidence—not an
-  `OK` result—clears only the evacuation term.
+- Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) and
+  [`Room.terminal`](https://docs.screeps.com/api/#Room.terminal) define the one RCL6+ owned
+  terminal, its shared 300,000-unit Store, 100,000 build cost, 10-tick send cooldown, and room
+  property. Issue #445 therefore retains one compatible current owned endpoint instead of initiating
+  an outage solely for coordinates; absent terminal service still follows the separately scheduled
+  construction path. Issue #403 consumes only fresh exact target absence and does not reinterpret
+  stock delivery, storage capacity, send suppression, quiescence, endpoint retirement, or
+  replacement continuity. Issue #435 reuses those same current terminal facts and scalar/manifest
+  Logistics/V3 identities for unfinished stale work; exact later Store, Industry-quiescence, and
+  work-retirement evidence—not an `OK` result—clears only the evacuation term.
 - Official [`Store`](https://docs.screeps.com/api/#Store) defines resource-specific stock and shared
   general-purpose used/free-capacity checks.
 - Official [`Creep.withdraw`](https://docs.screeps.com/api/#Creep.withdraw) and
@@ -1226,8 +1247,10 @@ lint, type, test, documentation, bundle, and package evidence.
   container-buffer and creep-hauler terminology only.
 - Screeps Wiki [`StructureStorage`](https://wiki.screepspl.us/StructureStorage/) identifies storage
   as the primary room resource store; issue #443 uses that terminology only.
-- Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/),
-  [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/), and
+- Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/)
+  supplies issue #445's community layout terminology only; terminal continuity remains independently
+  designed from official mechanics.
+- Screeps Wiki [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/) and
   [Pathfinding](https://wiki.screepspl.us/Pathfinding/) provide community layout, container-service,
   access, and static-matrix terminology only; official contracts and current engine source govern
   passability, and MYRMEX remains clean-room and source-defined.

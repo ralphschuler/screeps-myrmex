@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. Superseded by ADR 0078 only for admission of new terminal relocation; exact persisted
+terminal migration evidence retains this decision's bounded continuation and reconciliation.
 
 ## Context
 
@@ -46,8 +47,9 @@ could strand new stock in a ruin outside the current logistics graph.
 
 ## Consequences
 
-One safe mature room can trade a bounded terminal-service outage for deterministic geometry
-convergence while retaining local inventory service. No stock evacuation, new persistent commitment,
+For a grandfathered exact migration, one safe mature room can trade a bounded terminal-service
+outage for deterministic geometry convergence while retaining local inventory service. ADR 0078
+prevents new admission solely for coordinates. No stock evacuation, new persistent commitment,
 terminal command authority, storage authority, logistics flow, queue, or root Memory schema is
 added.
 
