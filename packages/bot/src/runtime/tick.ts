@@ -132,6 +132,7 @@ import {
   arbitrateStructureRemovals,
   clearStaleLayoutContainerMigration,
   clearStaleLayoutExtensionEvacuation,
+  clearStaleLayoutLabEvacuation,
   clearStaleLayoutLinkEvacuation,
   clearStaleLayoutSpawnEvacuation,
   clearStaleLayoutTowerEvacuation,
@@ -142,8 +143,10 @@ import {
   layoutExtensionEvacuationFlowId,
   isLayoutSpawnEvacuationFlowId,
   isLayoutStorageEvacuationFlowId,
+  isKnownV1StaleLayoutLabEvacuation,
   isStaleLayoutContainerMigrationContinuation,
   isStaleLayoutExtensionEvacuationContinuation,
+  isStaleLayoutLabEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
@@ -171,11 +174,13 @@ import {
   reconcileStaleLayoutSiteReceipt,
   reconcileStructureDestroyExecution,
   reconstructCommittedLayout,
+  reconstructStaleLayoutLabPlacements,
   reconstructStaleLayoutLinkPlacements,
   registerLayoutCompiledCache,
   selectLayoutPlanningWindow,
   staleLayoutContainerMigrationSettlementBlocker,
   staleLayoutExtensionEvacuationSettlementBlocker,
+  staleLayoutLabEvacuationSettlementBlocker,
   staleLayoutLinkEvacuationSettlementBlocker,
   staleLayoutRemovalSettlementBlocker,
   staleLayoutRevisionHandoffBlocker,
@@ -232,7 +237,9 @@ import {
 } from "../logistics/extension-evacuation";
 import {
   completeExecutableLayoutLabEvacuationFlowIds,
+  completedLayoutLabEvacuationRoomNames,
   projectLayoutLabEvacuations,
+  projectLayoutLabEvacuationSuppression,
 } from "../logistics/lab-evacuation";
 import {
   authorizeLayoutLinkEvacuationFlowIds,
@@ -2332,6 +2339,22 @@ function layoutPlanningSystem(
           tick: context.tick,
         }),
       );
+      const staleLabEvacuationRecords = initialOwner.staleRecords.filter(
+        isStaleLayoutLabEvacuationContinuation,
+      );
+      const completedStaleLabEvacuationRooms =
+        staleLabEvacuationRecords.length === 0
+          ? new Set<string>()
+          : new Set(
+              completedLayoutLabEvacuationRoomNames({
+                activeFlowIds: activeLogisticsFlowIds,
+                activeTargetIds: currentLogisticsTargetIds,
+                migrationRooms: currentLabs().migrationRooms,
+                records: staleLabEvacuationRecords,
+                snapshot: context.snapshot,
+                tick: context.tick,
+              }),
+            );
       const selectedSpawnIds =
         context.spawn.status === "planned" && context.spawn.broker !== null
           ? projectActiveSpawnClaimIds(context.spawn.broker)
@@ -2468,6 +2491,22 @@ function layoutPlanningSystem(
           staleLayoutExtensionEvacuationSettlementBlocker({ colony, record: staleRecord }) === null
         ) {
           owner = clearStaleLayoutExtensionEvacuation(owner, room.name);
+          changed = true;
+          ownerPrecommitRequired = true;
+          planning.push({
+            blocker: "revision-handoff-active",
+            fingerprint: staleRecord.fingerprint,
+            roomName: room.name,
+            status: "degraded",
+          });
+          break;
+        }
+        if (
+          staleRecord !== undefined &&
+          completedStaleLabEvacuationRooms.has(room.name) &&
+          staleLayoutLabEvacuationSettlementBlocker({ colony, record: staleRecord }) === null
+        ) {
+          owner = clearStaleLayoutLabEvacuation(owner, room.name);
           changed = true;
           ownerPrecommitRequired = true;
           planning.push({
@@ -2878,7 +2917,10 @@ export function projectLayoutTerminalSendBlockedRoomNames(
       (terminalEvacuation !== undefined &&
         tick > terminalEvacuation.startedAt &&
         tick < terminalEvacuation.expiresAt) ||
-      (labEvacuation !== undefined && "destinationStructureType" in labEvacuation)
+      (labEvacuation !== undefined &&
+        "destinationStructureType" in labEvacuation &&
+        tick > labEvacuation.startedAt &&
+        tick < labEvacuation.expiresAt)
         ? [roomName]
         : [],
     ),
@@ -3413,14 +3455,17 @@ function colonyDirectorSystem(
         ? planSurvivalFlow(context.snapshot, context.contractExecution, context.contractPlanning)
         : Object.freeze([]);
       const owner = input.manager?.ownerView("colonies") ?? null;
+      const staleLayoutsOwner = parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null);
+      const explicitStaleSourceService = hasExplicitStaleSourceService(staleLayoutsOwner);
       const stalePolicyPlanningAdmitted =
         mode === "normal" &&
-        (hasExplicitStaleSourceService(input.manager) ||
-          hasStaleLayoutContainerMigrationContinuation(input.manager) ||
-          hasStaleLayoutExtensionEvacuationContinuation(input.manager) ||
-          hasStaleLayoutLinkEvacuationContinuation(input.manager) ||
-          hasStaleLayoutSpawnEvacuationContinuation(input.manager) ||
-          hasStaleLayoutTowerEvacuationContinuation(input.manager)) &&
+        (explicitStaleSourceService ||
+          hasStaleLayoutContainerMigrationContinuation(staleLayoutsOwner) ||
+          hasStaleLayoutExtensionEvacuationContinuation(staleLayoutsOwner) ||
+          hasStaleLayoutLabEvacuationContinuation(staleLayoutsOwner) ||
+          hasStaleLayoutLinkEvacuationContinuation(staleLayoutsOwner) ||
+          hasStaleLayoutSpawnEvacuationContinuation(staleLayoutsOwner) ||
+          hasStaleLayoutTowerEvacuationContinuation(staleLayoutsOwner)) &&
         input.game.cpu.getUsed() + 1.5 <= budget.hardCeiling;
       if (stalePolicyPlanningAdmitted) {
         const stalePolicy = colonyDirector.begin({
@@ -3435,7 +3480,7 @@ function colonyDirectorSystem(
           domainHealth: Object.freeze([]),
         });
         staleLayoutPolicyColonies = stalePolicy.result.colonies;
-        if (hasExplicitStaleSourceService(input.manager))
+        if (explicitStaleSourceService)
           sourceServiceHandoff = planLayoutSourceServiceHandoff(
             input,
             context,
@@ -3538,6 +3583,23 @@ function colonyDirectorSystem(
           );
         }),
       ];
+      const knownStaleLabEvacuationRecords =
+        persistedLayoutsOwner?.staleRecords.filter(isKnownV1StaleLayoutLabEvacuation) ?? [];
+      const staleLabEvacuationRecords = knownStaleLabEvacuationRecords.filter(
+        isStaleLayoutLabEvacuationContinuation,
+      );
+      const authorizedStaleLabEvacuationRecords = layoutWorkEnabled
+        ? staleLabEvacuationRecords.filter((record) => {
+            const colony = staleLayoutPolicyColonies.find(
+              ({ roomName }) => roomName === record.roomName,
+            );
+            return (
+              colony !== undefined &&
+              staleLayoutLabEvacuationSettlementBlocker({ colony, record }) === null
+            );
+          })
+        : [];
+      const labEvacuationRecords = [...layoutRecords, ...authorizedStaleLabEvacuationRecords];
       const staleLinkEvacuationRecords =
         persistedLayoutsOwner?.staleRecords.filter(isStaleLayoutLinkEvacuationContinuation) ?? [];
       const linkEvacuationRecords = [
@@ -3587,7 +3649,9 @@ function colonyDirectorSystem(
           : []),
       ];
       const terminalSendBlockedRoomNames = projectLayoutTerminalSendBlockedRoomNames(
-        persistedLayoutRecords,
+        knownStaleLabEvacuationRecords.length === 0
+          ? persistedLayoutRecords
+          : [...persistedLayoutRecords, ...knownStaleLabEvacuationRecords],
         context.tick,
       );
       const industryProjection = isFeatureEnabled(context.config, "phase2.industry")
@@ -3822,10 +3886,18 @@ function colonyDirectorSystem(
             committedLabLayouts:
               isFeatureEnabled(context.config, "phase2.layout") &&
               context.snapshot.ownedRooms.some(({ controller }) => controller.level === 8)
-                ? projectCommittedLabLayouts(
-                    context.snapshot,
-                    parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null),
-                  )
+                ? [
+                    ...projectCommittedLabLayouts(
+                      context.snapshot,
+                      parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null),
+                    ),
+                    ...(authorizedStaleLabEvacuationRecords.length === 0
+                      ? []
+                      : projectStaleLabEvacuationLayouts(
+                          context.snapshot,
+                          authorizedStaleLabEvacuationRecords,
+                        )),
+                  ]
                 : [],
             fundedBudgetIds: fundedIndustryBudgetIds,
             pendingAttempts: industryDraft.owner.labAttempts,
@@ -3839,12 +3911,32 @@ function colonyDirectorSystem(
           })
         : emptyLabCompositionProjection();
       industryDraft.labs = labs;
-      const layoutLabEvacuations = projectLayoutLabEvacuations({
+      const projectedLayoutLabEvacuations = projectLayoutLabEvacuations({
         existingBudgets: priorLedger,
         migrationRooms: labs.migrationRooms,
-        records: layoutRecords,
+        records: labEvacuationRecords,
         snapshot: context.snapshot,
         tick: context.tick,
+      });
+      const layoutLabEvacuationSuppression =
+        layoutWorkEnabled && knownStaleLabEvacuationRecords.length === 0
+          ? Object.freeze({
+              suppressedSinkTargetIds:
+                projectedLayoutLabEvacuations.demands.suppressedSinkTargetIds,
+              suppressedSourceTargetIds:
+                projectedLayoutLabEvacuations.demands.suppressedSourceTargetIds,
+            })
+          : projectLayoutLabEvacuationSuppression({
+              records: [...persistedLayoutRecords, ...knownStaleLabEvacuationRecords],
+              snapshot: context.snapshot,
+              tick: context.tick,
+            });
+      const layoutLabEvacuations = Object.freeze({
+        ...projectedLayoutLabEvacuations,
+        demands: Object.freeze({
+          ...projectedLayoutLabEvacuations.demands,
+          ...layoutLabEvacuationSuppression,
+        }),
       });
       const mature =
         isFeatureEnabled(context.config, "phase2.mature") &&
@@ -3994,7 +4086,7 @@ function colonyDirectorSystem(
                 logistics,
               ),
               projectedFlowIds: projectedLabEvacuationFlowIds,
-              records: layoutRecords,
+              records: labEvacuationRecords,
             });
       const logisticsExecutableLinkEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
         new Set(layoutLinkEvacuations.demands.edges.map(({ id }) => id)),
@@ -4346,7 +4438,7 @@ function colonyDirectorSystem(
         executableLabEvacuationFlowIds = completeExecutableLayoutLabEvacuationFlowIds({
           executableFlowIds: budgetExecutableLabEvacuationFlowIds,
           projectedFlowIds: projectedLabEvacuationFlowIds,
-          records: layoutRecords,
+          records: labEvacuationRecords,
         });
       }
       const activeLinkEvacuationBudgetIssuers = new Set(
@@ -4443,10 +4535,12 @@ function persistedLayoutLabEvacuationFlowIds(manager: MemoryManager | null): Rea
   const owner = parseLayoutsOwner(manager.ownerView("layouts"));
   if (owner === null) return new Set();
   return new Set(
-    owner.records.flatMap(({ labEvacuation, roomName }) => {
-      if (labEvacuation === undefined) return [];
-      return layoutLabEvacuationFlowIds(roomName, labEvacuation) ?? [];
-    }),
+    [...owner.records, ...owner.staleRecords.filter(isKnownV1StaleLayoutLabEvacuation)].flatMap(
+      ({ labEvacuation, roomName }) => {
+        if (labEvacuation === undefined) return [];
+        return layoutLabEvacuationFlowIds(roomName, labEvacuation) ?? [];
+      },
+    ),
   );
 }
 
@@ -4605,59 +4699,37 @@ function activeLayoutLinkEvacuationIds(
   );
 }
 
-function hasExplicitStaleSourceService(manager: MemoryManager | null): boolean {
-  if (manager === null) return false;
+function hasExplicitStaleSourceService(owner: LayoutsOwnerV25 | null): boolean {
   return (
-    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
+    owner?.staleRecords.some(
       ({ sourceServices }) =>
         sourceServices?.some(({ service }) => service?.issuerSequence !== undefined) === true,
     ) === true
   );
 }
 
-function hasStaleLayoutContainerMigrationContinuation(manager: MemoryManager | null): boolean {
-  if (manager === null) return false;
-  return (
-    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
-      isStaleLayoutContainerMigrationContinuation,
-    ) === true
-  );
+function hasStaleLayoutContainerMigrationContinuation(owner: LayoutsOwnerV25 | null): boolean {
+  return owner?.staleRecords.some(isStaleLayoutContainerMigrationContinuation) === true;
 }
 
-function hasStaleLayoutExtensionEvacuationContinuation(manager: MemoryManager | null): boolean {
-  if (manager === null) return false;
-  return (
-    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
-      isStaleLayoutExtensionEvacuationContinuation,
-    ) === true
-  );
+function hasStaleLayoutExtensionEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
+  return owner?.staleRecords.some(isStaleLayoutExtensionEvacuationContinuation) === true;
 }
 
-function hasStaleLayoutLinkEvacuationContinuation(manager: MemoryManager | null): boolean {
-  if (manager === null) return false;
-  return (
-    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
-      isStaleLayoutLinkEvacuationContinuation,
-    ) === true
-  );
+function hasStaleLayoutLabEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
+  return owner?.staleRecords.some(isStaleLayoutLabEvacuationContinuation) === true;
 }
 
-function hasStaleLayoutSpawnEvacuationContinuation(manager: MemoryManager | null): boolean {
-  if (manager === null) return false;
-  return (
-    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
-      isStaleLayoutSpawnEvacuationContinuation,
-    ) === true
-  );
+function hasStaleLayoutLinkEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
+  return owner?.staleRecords.some(isStaleLayoutLinkEvacuationContinuation) === true;
 }
 
-function hasStaleLayoutTowerEvacuationContinuation(manager: MemoryManager | null): boolean {
-  if (manager === null) return false;
-  return (
-    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
-      isStaleLayoutTowerEvacuationContinuation,
-    ) === true
-  );
+function hasStaleLayoutSpawnEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
+  return owner?.staleRecords.some(isStaleLayoutSpawnEvacuationContinuation) === true;
+}
+
+function hasStaleLayoutTowerEvacuationContinuation(owner: LayoutsOwnerV25 | null): boolean {
+  return owner?.staleRecords.some(isStaleLayoutTowerEvacuationContinuation) === true;
 }
 
 function blockedStaleLayoutContainerMigrationFlowIds(
@@ -4897,6 +4969,44 @@ export function projectCommittedLabLayouts(
           roomName: room.name,
         }),
       ];
+    });
+  return Object.freeze(layouts.slice(0, 64));
+}
+
+/** Narrow known-V1 geometry used only by an already-authorized stale lab evacuation. */
+export function projectStaleLabEvacuationLayouts(
+  snapshot: WorldSnapshot,
+  records: readonly LayoutRecord[],
+): readonly CommittedLabLayout[] {
+  const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
+  if (unlocks === undefined || records.length > 64 || snapshot.rooms.length > 64)
+    return Object.freeze([]);
+  const layouts = [...snapshot.rooms]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((room): readonly CommittedLabLayout[] => {
+      if (room.controller?.ownership !== "owned" || room.controller.level !== 8) return [];
+      const roomRecords = records.filter(({ roomName }) => roomName === room.name);
+      const record = roomRecords[0];
+      if (
+        roomRecords.length !== 1 ||
+        record === undefined ||
+        !isStaleLayoutLabEvacuationContinuation(record)
+      )
+        return [];
+      const labPositions = reconstructStaleLayoutLabPlacements({
+        commitment: commitmentFromRecord(record),
+        roomName: room.name,
+        unlocks,
+      });
+      return labPositions === null
+        ? []
+        : [
+            Object.freeze({
+              labPositions,
+              layoutFingerprint: record.fingerprint,
+              roomName: room.name,
+            }),
+          ];
     });
   return Object.freeze(layouts.slice(0, 64));
 }

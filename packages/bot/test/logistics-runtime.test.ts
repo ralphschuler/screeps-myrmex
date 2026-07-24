@@ -29,7 +29,9 @@ import {
 } from "../src/logistics/extension-evacuation";
 import {
   completeExecutableLayoutLabEvacuationFlowIds,
+  completedLayoutLabEvacuationRoomNames,
   projectLayoutLabEvacuations,
+  projectLayoutLabEvacuationSuppression,
 } from "../src/logistics/lab-evacuation";
 import {
   authorizeLayoutLinkEvacuationFlowIds,
@@ -1172,6 +1174,59 @@ describe("logistics runtime adapter", () => {
       suppressedSinkTargetIds: ["lab-obsolete", replacementId],
       suppressedSourceTargetIds: ["lab-obsolete", replacementId],
     });
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+        records: [mixedRecord],
+        snapshot: {
+          ...mixedWorld,
+          rooms: mixedWorld.rooms.map((value) => ({
+            ...value,
+            ownedLabs: value.ownedLabs.map((candidate) =>
+              candidate.id === replacementId
+                ? {
+                    ...candidate,
+                    energy: 251,
+                    store: {
+                      ...candidate.store,
+                      resources: [{ amount: 251, resourceType: "energy" }],
+                      usedCapacity: 251,
+                    },
+                  }
+                : candidate,
+            ),
+          })),
+        },
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual([]);
+    expect(
+      projectLayoutLabEvacuations({
+        existingBudgets: [],
+        migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+        records: [mixedRecord],
+        snapshot: {
+          ...mixedWorld,
+          rooms: mixedWorld.rooms.map((value) => ({
+            ...value,
+            ownedStorages: value.ownedStorages.map((candidate) => ({
+              ...candidate,
+              store: {
+                ...candidate.store,
+                freeCapacity: 799,
+                resources: [
+                  { amount: 998_200, resourceType: "energy" },
+                  { amount: 1_001, resourceType: "XGH2O" },
+                ],
+                usedCapacity: 999_201,
+              },
+            })),
+          })),
+        },
+        tick: 11,
+      }).authorizedFlowIds,
+    ).toEqual([]);
 
     const emptiedSourceLabs = mixedLabs.map((value) =>
       value.id === "lab-obsolete"
@@ -1227,6 +1282,149 @@ describe("logistics runtime adapter", () => {
         suppressedSinkTargetIds: ["lab-obsolete", replacementId],
       },
     });
+    expect(
+      projectLayoutLabEvacuationSuppression({
+        records: [mixedRecord],
+        snapshot: {
+          ...mixedWorld,
+          rooms: mixedWorld.rooms.map((value) => ({
+            ...value,
+            hostileCreeps: [
+              {
+                id: "hostile-a",
+              } as unknown as WorldSnapshot["rooms"][number]["hostileCreeps"][number],
+            ],
+          })),
+        },
+        tick: 11,
+      }),
+    ).toEqual({
+      suppressedSinkTargetIds: ["lab-obsolete", replacementId],
+      suppressedSourceTargetIds: ["lab-obsolete", replacementId],
+    });
+    expect(
+      projectLayoutLabEvacuationSuppression({
+        records: [mineralRecord],
+        snapshot: mineralWorld,
+        tick: 11,
+      }),
+    ).toEqual({
+      suppressedSinkTargetIds: ["lab-obsolete"],
+      suppressedSourceTargetIds: ["lab-obsolete"],
+    });
+    expect(
+      projectLayoutLabEvacuationSuppression({
+        records: [mixedRecord],
+        snapshot: mixedWorld,
+        tick: mixedTerms.expiresAt,
+      }),
+    ).toEqual({ suppressedSinkTargetIds: [], suppressedSourceTargetIds: [] });
+
+    const deliveredLabs = emptiedSourceLabs.map((value) =>
+      value.id === replacementId
+        ? {
+            ...value,
+            energy: mixedTerms.replacementInitialEnergy + mixedTerms.energyAmount,
+            store: {
+              ...value.store,
+              resources: [
+                {
+                  amount: mixedTerms.replacementInitialEnergy + mixedTerms.energyAmount,
+                  resourceType: "energy",
+                },
+              ],
+              usedCapacity: mixedTerms.replacementInitialEnergy + mixedTerms.energyAmount,
+            },
+          }
+        : value,
+    );
+    const deliveredStorage = {
+      ...storage,
+      store: {
+        ...storage.store,
+        freeCapacity: 50,
+        resources: [
+          { amount: 998_200, resourceType: "energy" },
+          {
+            amount: mixedTerms.destinationInitialAmount + mixedTerms.mineralAmount,
+            resourceType: mixedTerms.resourceType,
+          },
+        ],
+        usedCapacity: 999_950,
+      },
+    } as const;
+    const deliveredWorld = {
+      ...emptiedSourceWorld,
+      rooms: emptiedSourceWorld.rooms.map((value) => ({
+        ...value,
+        ownedLabs: deliveredLabs,
+        ownedStorages: [deliveredStorage],
+      })),
+    } satisfies WorldSnapshot;
+    const completionInput = {
+      activeFlowIds: new Set<string>(),
+      activeTargetIds: new Set<string>(),
+      migrationRooms: [{ ...migrationRooms[0], evacuationStorageId: storage.id }],
+      records: [mixedRecord],
+      snapshot: deliveredWorld,
+      tick: 11,
+    } as const;
+    expect(completedLayoutLabEvacuationRoomNames(completionInput)).toEqual(["W1N1"]);
+    expect(
+      completedLayoutLabEvacuationRoomNames({
+        ...completionInput,
+        activeFlowIds: new Set([mixedFlowIds[0] ?? ""]),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutLabEvacuationRoomNames({
+        ...completionInput,
+        activeTargetIds: new Set([mixedTerms.destinationId]),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutLabEvacuationRoomNames({
+        ...completionInput,
+        migrationRooms: [
+          { ...migrationRooms[0], activity: ["commitment"] as const, quiescent: false },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutLabEvacuationRoomNames({
+        ...completionInput,
+        records: Array.from({ length: 65 }, () => mixedRecord),
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutLabEvacuationRoomNames({
+        ...completionInput,
+        snapshot: {
+          ...deliveredWorld,
+          rooms: deliveredWorld.rooms.map((value) => ({
+            ...value,
+            ownedStorages: [
+              {
+                ...deliveredStorage,
+                store: {
+                  ...deliveredStorage.store,
+                  freeCapacity: 49,
+                  resources: [
+                    { amount: 998_200, resourceType: "energy" },
+                    {
+                      amount: mixedTerms.destinationInitialAmount + mixedTerms.mineralAmount + 1,
+                      resourceType: mixedTerms.resourceType,
+                    },
+                  ],
+                  usedCapacity: 999_951,
+                },
+              },
+            ],
+          })),
+        },
+      }),
+    ).toEqual([]);
+
     const capacityLostStorage = {
       ...storage,
       store: {
@@ -1551,6 +1749,14 @@ describe("logistics runtime adapter", () => {
         suppressedSourceTargetIds: [],
       },
     };
+    const suppressed = {
+      ...empty,
+      demands: {
+        ...empty.demands,
+        suppressedSinkTargetIds: ["lab-obsolete", replacementId],
+        suppressedSourceTargetIds: ["lab-obsolete", replacementId],
+      },
+    };
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],
@@ -1559,7 +1765,7 @@ describe("logistics runtime adapter", () => {
         snapshot: mixedWorld,
         tick: 11,
       }),
-    ).toEqual(empty);
+    ).toEqual(suppressed);
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],
@@ -1568,7 +1774,7 @@ describe("logistics runtime adapter", () => {
         snapshot: evacuationWorld,
         tick: 11,
       }),
-    ).toEqual(empty);
+    ).toEqual(suppressed);
     expect(
       projectLayoutLabEvacuations({
         existingBudgets: [],

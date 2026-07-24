@@ -660,6 +660,21 @@ export function clearStaleLayoutExtensionEvacuation(
   return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
 }
 
+export function clearStaleLayoutLabEvacuation(
+  owner: LayoutsOwnerV25,
+  roomName: string,
+): LayoutsOwnerV25 {
+  const prior = owner.staleRecords.find((record) => record.roomName === roomName);
+  if (prior?.labEvacuation === undefined) return owner;
+  const staleRecords = owner.staleRecords.map((record) => {
+    if (record.roomName !== roomName) return record;
+    const { labEvacuation: _labEvacuation, ...retained } = record;
+    void _labEvacuation;
+    return retained;
+  });
+  return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
+}
+
 export function clearStaleLayoutLinkEvacuation(
   owner: LayoutsOwnerV25,
   roomName: string,

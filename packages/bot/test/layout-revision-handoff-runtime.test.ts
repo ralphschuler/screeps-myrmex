@@ -6,6 +6,8 @@ import {
   layoutContainerMigrationResourceFlowId,
   layoutExtensionEvacuationBudgetIssuer,
   layoutExtensionEvacuationFlowId,
+  layoutLabEvacuationBudgetIssuers,
+  layoutLabEvacuationFlowIds,
   layoutLinkEvacuationBudgetIssuer,
   layoutLinkEvacuationFlowId,
   layoutSpawnEvacuationBudgetIssuer,
@@ -14,6 +16,7 @@ import {
   layoutTowerEvacuationFlowId,
   parseLayoutsOwner,
   reconcileStaleLayoutRemovalReceipt,
+  reconstructCommittedLayout,
   reconstructStaleLayoutLinkPlacements,
   reconcileStaleLayoutSiteReceipt,
   type LayoutLabEvacuation,
@@ -23,6 +26,7 @@ import {
 } from "../src/layout";
 import { COLONY_RCL_POLICY_TABLE, reservationIdFor, type BudgetRequest } from "../src/colony";
 import { contractIdFor, requestSignature, type WorkContractRequest } from "../src/contracts";
+import { assignLabCluster } from "../src/industry";
 import { deriveLinkRoleAnchors, type LinkLayoutEvidence } from "../src/links";
 import type { RuntimeGame } from "../src/runtime/context";
 import { runTick } from "../src/runtime/tick";
@@ -63,6 +67,24 @@ interface GameOptions {
     readonly replacementEnergy: number;
     readonly sourceEnergy: number;
   };
+  readonly staleLabEvacuation?: {
+    readonly labPositions: readonly {
+      readonly id: string;
+      readonly x: number;
+      readonly y: number;
+    }[];
+    readonly destination?: {
+      readonly amount: number;
+      readonly id: string;
+      readonly resourceType: string;
+      readonly structureType: "storage" | "terminal";
+    };
+    readonly replacementEnergy: number;
+    readonly sourceEnergy: number;
+    readonly sourceMineralAmount?: number;
+    readonly sourceMineralType?: string | null;
+    readonly sourcePosition: { readonly x: number; readonly y: number };
+  };
   readonly staleLinkEvacuation?: {
     readonly exactLinks: readonly {
       readonly cooldown?: number;
@@ -91,6 +113,7 @@ interface GameOptions {
   readonly unavailableIndustryTerminalWork?: boolean;
   readonly storageTerminalResources?: readonly (readonly [string, number])[];
   readonly sourcePosition?: { readonly x: number; readonly y: number };
+  readonly workerPosition?: { readonly x: number; readonly y: number };
   readonly staticMiner?: boolean;
   readonly threat?: boolean;
   readonly visible?: boolean;
@@ -99,6 +122,7 @@ interface GameOptions {
 interface Commands {
   readonly createConstructionSite: ReturnType<typeof vi.fn<() => number>>;
   readonly destroyStructure: ReturnType<typeof vi.fn<() => number>>;
+  readonly sendTerminal: ReturnType<typeof vi.fn<() => number>>;
   readonly transferLinkEnergy: ReturnType<typeof vi.fn<() => number>>;
   readonly transferEnergy: ReturnType<typeof vi.fn<() => number>>;
   readonly withdrawEnergy: ReturnType<typeof vi.fn<() => number>>;
@@ -308,12 +332,13 @@ type StaleActiveEvidence =
   | "evacuation"
   | "site-receipt"
   | "source-handoff"
+  | "lab-evacuation"
   | "link-evacuation"
   | "spawn-evacuation"
   | "tower-evacuation"
   | null;
 
-describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425/#427/#429/#431)", () => {
+describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#397/#399/#401/#403/#405/#407/#409/#413/#415/#417/#419/#421/#423/#425/#427/#429/#431/#433)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -1430,6 +1455,195 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     ).not.toBe(true);
     expect(layoutsOwner(memory).staleRecords[0]?.extensionEvacuation).toEqual(evacuation);
   });
+
+  it.each(LAB_EVACUATION_VARIANTS)(
+    "continues one stale lab $name evacuation through the exact funded V3 flow set",
+    ({ evacuation }) => {
+      const commands = commandSpies();
+      const memory = {} as Memory;
+      runTick({ game: game(100, commands), memory });
+      const labFixture = committedLabFixture(memory);
+      seedStaleLabEvacuation(memory, evacuation);
+      commands.createConstructionSite.mockClear();
+      commands.destroyStructure.mockClear();
+
+      const pending = runTick({
+        game: game(201, commands, {
+          controllerLevel: 8,
+          roomEnergyAvailable: 12_900,
+          roomEnergyCapacityAvailable: 12_900,
+          staleLabEvacuation: staleLabEvacuationGameState(labFixture, evacuation, false),
+        }),
+        memory,
+      });
+      const flowIds = layoutLabEvacuationFlowIds(ROOM_NAME, evacuation);
+      const budgetIssuers = layoutLabEvacuationBudgetIssuers(ROOM_NAME, evacuation);
+      if (budgetIssuers === null || flowIds === null)
+        throw new Error("expected bounded lab evacuation identities");
+      const contracts = memory.myrmex?.contracts as
+        | {
+            readonly active?: readonly {
+              readonly execution?: { readonly flowId?: string };
+            }[];
+          }
+        | undefined;
+
+      expect(pending.kernel.faults).toEqual([]);
+      expect(
+        budgetIssuers.every((issuer) =>
+          pending.colony.reservations.some(
+            (reservation) =>
+              reservation.category === "optional-growth" &&
+              reservation.colonyId === ROOM_NAME &&
+              reservation.issuer === issuer &&
+              reservation.status === "active",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        flowIds.every((flowId) =>
+          contracts?.active?.some(({ execution }) => execution?.flowId === flowId),
+        ),
+      ).toBe(true);
+      expect(pending.layout.planning).toEqual([
+        expect.objectContaining({
+          blocker: "revision-handoff-active",
+          roomName: ROOM_NAME,
+          status: "degraded",
+        }),
+      ]);
+      expect(layoutsOwner(memory).records).toEqual([]);
+      expect(layoutsOwner(memory).staleRecords[0]?.labEvacuation).toEqual(evacuation);
+      expect(commands.createConstructionSite).not.toHaveBeenCalled();
+      expect(commands.destroyStructure).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(LAB_EVACUATION_VARIANTS)(
+    "settles delivered stale lab $name stock command-free before a later handoff",
+    async ({ evacuation }) => {
+      const forward = await runCompletedStaleLabEvacuationVariant(evacuation, false, false);
+      const reset = await runCompletedStaleLabEvacuationVariant(evacuation, false, true);
+      const reordered = await runCompletedStaleLabEvacuationVariant(evacuation, true, false);
+      const flowIds = layoutLabEvacuationFlowIds(ROOM_NAME, evacuation);
+      if (flowIds === null) throw new Error("expected bounded stale lab flow identities");
+
+      expect(forward.admissionFlowIds).toEqual([...flowIds].sort());
+      expect(forward.retirementOwner.staleRecords[0]?.labEvacuation).toEqual(evacuation);
+      expect(forward.settlementPlanning).toEqual([
+        expect.objectContaining({
+          blocker: "revision-handoff-active",
+          roomName: ROOM_NAME,
+          status: "degraded",
+        }),
+      ]);
+      expect(forward.settlementOwner.records).toEqual([]);
+      expect(forward.settlementOwner.staleRecords).toHaveLength(1);
+      expect(forward.settlementOwner.staleRecords[0]?.labEvacuation).toBeUndefined();
+      expect(forward.settlementCommands).toEqual({ create: 0, destroy: 0 });
+      expect(forward.settlementResourceCommands).toEqual({ send: 0, transfer: 0, withdraw: 0 });
+      expect(forward.handoffOwner).toMatchObject({
+        records: [
+          expect.objectContaining({ algorithmRevision: "owned-room-layout-v2-source-services" }),
+        ],
+        staleRecords: [],
+      });
+      expect(forward.handoffPlanning).toEqual([
+        expect.objectContaining({ blocker: null, roomName: ROOM_NAME, status: "handoff" }),
+      ]);
+      expect(forward.handoffCommands).toEqual({ create: 0, destroy: 0 });
+      expect(reset).toEqual(forward);
+      expect(reordered).toEqual(forward);
+    },
+    30_000,
+  );
+
+  it.each(["threat", "sibling term"] as const)(
+    "revokes an existing stale lab lease under %s denial while retaining the term",
+    (denial) => {
+      const commands = commandSpies();
+      const memory = {} as Memory;
+      const evacuation = LAB_EVACUATION_VARIANTS[0].evacuation;
+      runTick({ game: game(100, commands), memory });
+      const labFixture = committedLabFixture(memory);
+      seedStaleLabEvacuation(memory, evacuation);
+      const baseOptions = {
+        controllerLevel: 8,
+        roomEnergyAvailable: 12_900,
+        roomEnergyCapacityAvailable: 12_900,
+        staleLabEvacuation: staleLabEvacuationGameState(labFixture, evacuation, false),
+        workerPosition: labFixture.sourcePosition,
+      } as const;
+      const flowIds = layoutLabEvacuationFlowIds(ROOM_NAME, evacuation);
+      if (flowIds === null) throw new Error("expected bounded stale lab flow identities");
+
+      for (let tick = 202; tick <= 205; tick += 1)
+        runTick({ game: game(tick, commands, baseOptions), memory });
+      const contractsBefore = memory.myrmex?.contracts as
+        | {
+            readonly active?: readonly {
+              readonly execution?: { readonly flowId?: string };
+              readonly lease?: unknown;
+              readonly state?: string;
+            }[];
+          }
+        | undefined;
+      expect(
+        contractsBefore?.active?.some(
+          ({ execution, lease, state }) =>
+            execution?.flowId !== undefined &&
+            flowIds.includes(execution.flowId) &&
+            lease !== null &&
+            (state === "assigned" || state === "active"),
+        ),
+      ).toBe(true);
+      commands.transferEnergy.mockClear();
+      commands.withdrawEnergy.mockClear();
+
+      if (denial === "sibling term") {
+        const owner = layoutsOwner(memory);
+        memory.myrmex = {
+          ...memory.myrmex,
+          layouts: {
+            ...owner,
+            revision: owner.revision + 1,
+            staleRecords: owner.staleRecords.map((record) => ({
+              ...record,
+              extensionEvacuation: {
+                amount: 50,
+                expiresAt: 350,
+                replacementId: "extension-replacement",
+                replacementInitialEnergy: 0,
+                sourceId: "extension-obsolete",
+                startedAt: 200,
+              },
+            })),
+          },
+        } as unknown as NonNullable<Memory["myrmex"]>;
+      }
+      runTick({
+        game: game(206, commands, {
+          ...baseOptions,
+          ...(denial === "threat" ? { threat: true } : {}),
+        }),
+        memory,
+      });
+      const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+
+      expect(commands.withdrawEnergy).not.toHaveBeenCalled();
+      expect(commands.transferEnergy).not.toHaveBeenCalled();
+      expect(
+        contractsAfter?.active?.some(
+          ({ execution, lease, state }) =>
+            execution?.flowId !== undefined &&
+            flowIds.includes(execution.flowId) &&
+            lease !== null &&
+            (state === "assigned" || state === "active"),
+        ),
+      ).not.toBe(true);
+      expect(layoutsOwner(memory).staleRecords[0]?.labEvacuation).toEqual(evacuation);
+    },
+  );
 
   it("continues one stale spawn evacuation through the existing funded logistics path", () => {
     const commands = commandSpies();
@@ -4317,6 +4531,20 @@ function storageTerminalResources(
   return [[evacuation.resourceType, evacuation.amount + evacuation.terminalInitialAmount]];
 }
 
+function seedStaleLabEvacuation(memory: Memory, evacuation: LayoutLabEvacuation): void {
+  seedStaleOwner(memory, "lab-evacuation");
+  const owner = layoutsOwner(memory);
+  memory.myrmex = {
+    ...memory.myrmex,
+    layouts: {
+      ...owner,
+      staleRecords: owner.staleRecords.map((record) =>
+        record.roomName === ROOM_NAME ? { ...record, labEvacuation: evacuation } : record,
+      ),
+    },
+  } as unknown as NonNullable<Memory["myrmex"]>;
+}
+
 function seedStaleRemovalReceipt(
   memory: Memory,
   overrides: Partial<NonNullable<LayoutsOwnerV25["records"][number]["removalReceipt"]>>,
@@ -4576,15 +4804,15 @@ function seedStaleOwner(memory: Memory, active: StaleActiveEvidence, roomName = 
           },
         }
       : {}),
-    ...(completedLabEvacuation
+    ...(active === "lab-evacuation" || completedLabEvacuation
       ? {
           labEvacuation: {
             amount: 100,
-            expiresAt: 250,
+            expiresAt: completedLabEvacuation ? 250 : 350,
             replacementId: "lab-replacement",
             replacementInitialEnergy: 0,
             sourceId: "lab-obsolete",
-            startedAt: 100,
+            startedAt: completedLabEvacuation ? 100 : 200,
           },
         }
       : {}),
@@ -4869,10 +5097,129 @@ function layoutsOwner(memory: Memory): LayoutsOwnerV25 {
   return owner;
 }
 
+function staleLabEvacuationGameState(
+  fixture: ReturnType<typeof committedLabFixture>,
+  evacuation: LayoutLabEvacuation,
+  delivered: boolean,
+): NonNullable<GameOptions["staleLabEvacuation"]> {
+  const mixed = "energyAmount" in evacuation;
+  const mineral = "resourceType" in evacuation;
+  const energyAmount = mixed ? evacuation.energyAmount : mineral ? 0 : evacuation.amount;
+  const mineralAmount = mixed ? evacuation.mineralAmount : mineral ? evacuation.amount : 0;
+  const replacementInitialEnergy =
+    "replacementInitialEnergy" in evacuation ? evacuation.replacementInitialEnergy : 0;
+  const destinationId = "destinationId" in evacuation ? evacuation.destinationId : null;
+  const destinationInitialAmount = mineral ? evacuation.destinationInitialAmount : 0;
+  const resourceType = mineral ? evacuation.resourceType : null;
+  return {
+    ...fixture,
+    ...(mineralAmount > 0 && resourceType !== null && destinationId !== null
+      ? {
+          destination: {
+            amount: destinationInitialAmount + (delivered ? mineralAmount : 0),
+            id: destinationId,
+            resourceType,
+            structureType:
+              "destinationStructureType" in evacuation
+                ? ("terminal" as const)
+                : ("storage" as const),
+          },
+        }
+      : {}),
+    replacementEnergy: replacementInitialEnergy + (delivered ? energyAmount : 0),
+    sourceEnergy: delivered ? 0 : energyAmount,
+    sourceMineralAmount: delivered ? 0 : mineralAmount,
+    sourceMineralType: delivered || mineralAmount === 0 ? null : resourceType,
+  };
+}
+
+function committedLabFixture(memory: Memory): {
+  readonly labPositions: readonly { readonly id: string; readonly x: number; readonly y: number }[];
+  readonly sourcePosition: { readonly x: number; readonly y: number };
+} {
+  const record = layoutsOwner(memory).records.find(({ roomName }) => roomName === ROOM_NAME);
+  const unlocks = COLONY_RCL_POLICY_TABLE.find(({ level }) => level === 8)?.unlocks;
+  if (record === undefined || unlocks === undefined)
+    throw new Error("expected current RCL8 layout");
+  const placements = reconstructCommittedLayout({
+    commitment: record,
+    roomName: ROOM_NAME,
+    sourceCount: 1,
+    unlocks,
+  });
+  if (placements === null) throw new Error("expected reconstructible RCL8 layout");
+  const labPlacements = placements.filter(
+    ({ layer, structureType }) => layer === "primary" && structureType === "lab",
+  );
+  for (let omitted = 0; omitted < labPlacements.length; omitted += 1) {
+    const candidates = labPlacements
+      .filter((_, index) => index !== omitted)
+      .map(({ pos }, index) => ({
+        active: true,
+        cooldown: 0,
+        energy: 0,
+        energyCapacity: 2_000,
+        hits: 500,
+        hitsMax: 500,
+        id: index === 0 ? "lab-replacement" : `lab-exact-${String(index)}`,
+        mineralAmount: 0,
+        mineralCapacity: 3_000,
+        mineralType: null,
+        pos,
+        store: { capacity: null, freeCapacity: null, resources: [], usedCapacity: 0 },
+      }));
+    const assignment = assignLabCluster({
+      labs: candidates,
+      layoutFingerprint: record.fingerprint,
+      limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
+      roomName: ROOM_NAME,
+    }).assignment;
+    if (assignment === null) continue;
+    const occupied = new Set(labPlacements.map(({ pos }) => `${String(pos.x)}:${String(pos.y)}`));
+    const minimumX = Math.min(...candidates.map(({ pos }) => pos.x));
+    const maximumX = Math.max(...candidates.map(({ pos }) => pos.x));
+    const minimumY = Math.min(...candidates.map(({ pos }) => pos.y));
+    const maximumY = Math.max(...candidates.map(({ pos }) => pos.y));
+    for (let y = minimumY - 2; y <= maximumY + 2; y += 1) {
+      for (let x = minimumX - 2; x <= maximumX + 2; x += 1) {
+        if (x <= 0 || x >= 49 || y <= 0 || y >= 49 || occupied.has(`${String(x)}:${String(y)}`))
+          continue;
+        const firstCandidate = candidates[0];
+        if (firstCandidate === undefined) continue;
+        const sourceLab = {
+          ...firstCandidate,
+          id: "lab-obsolete",
+          pos: { roomName: ROOM_NAME, x, y },
+        };
+        const currentAssignment = assignLabCluster({
+          labs: [...candidates, sourceLab],
+          layoutFingerprint: record.fingerprint,
+          limits: { maximumBoostLabs: 2, maximumLabsScanned: 10, maximumOutputLabs: 8 },
+          roomName: ROOM_NAME,
+        }).assignment;
+        if (
+          currentAssignment !== null &&
+          [
+            ...currentAssignment.reagentLabIds,
+            ...currentAssignment.productLabIds,
+            ...currentAssignment.boostLabIds,
+          ].includes("lab-replacement")
+        )
+          return {
+            labPositions: candidates.map(({ id, pos }) => ({ id, x: pos.x, y: pos.y })),
+            sourcePosition: { x, y },
+          };
+      }
+    }
+  }
+  throw new Error("expected one valid stale lab migration fixture");
+}
+
 function commandSpies(): Commands {
   return {
     createConstructionSite: vi.fn(() => 0),
     destroyStructure: vi.fn(() => 0),
+    sendTerminal: vi.fn(() => 0),
     transferLinkEnergy: vi.fn(() => 0),
     transferEnergy: vi.fn(() => 0),
     withdrawEnergy: vi.fn(() => 0),
@@ -5138,6 +5485,112 @@ async function runCompletedStaleMixedContainerMigrationVariant(
     settlementOwner,
     settlementPlanning: settlement.layout.planning,
     sourceServices,
+  };
+}
+
+async function runCompletedStaleLabEvacuationVariant(
+  evacuation: LayoutLabEvacuation,
+  reverse: boolean,
+  reset: boolean,
+) {
+  const commands = commandSpies();
+  let memory = {} as Memory;
+  let executeTick = runTick;
+  executeTick({ game: game(100, commands, { reverse }), memory });
+  const labFixture = committedLabFixture(memory);
+  seedStaleLabEvacuation(memory, evacuation);
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+  const baseRoomOptions = {
+    controllerLevel: 8,
+    reverse,
+    roomEnergyAvailable: 12_900,
+    roomEnergyCapacityAvailable: 12_900,
+  } as const;
+  executeTick({
+    game: game(201, commands, {
+      ...baseRoomOptions,
+      staleLabEvacuation: staleLabEvacuationGameState(labFixture, evacuation, false),
+    }),
+    memory,
+  });
+  const expectedFlowIds = layoutLabEvacuationFlowIds(ROOM_NAME, evacuation);
+  if (expectedFlowIds === null) throw new Error("expected bounded stale lab flow identities");
+  const admissionFlowIds = (
+    (
+      memory.myrmex?.contracts as
+        | {
+            readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[];
+          }
+        | undefined
+    )?.active ?? []
+  )
+    .flatMap(({ execution }) =>
+      execution?.flowId !== undefined && expectedFlowIds.includes(execution.flowId)
+        ? [execution.flowId]
+        : [],
+    )
+    .sort();
+  // A terminal ContractLedger outcome is absent from `active`; inject that retired-work boundary.
+  const contractOwner = memory.myrmex?.contracts as
+    | {
+        readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[];
+      }
+    | undefined;
+  memory.myrmex = {
+    ...memory.myrmex,
+    contracts: {
+      ...contractOwner,
+      active: (contractOwner?.active ?? []).filter(
+        ({ execution }) =>
+          execution?.flowId === undefined || !expectedFlowIds.includes(execution.flowId),
+      ),
+    },
+  } as NonNullable<Memory["myrmex"]>;
+  const retirementOwner = layoutsOwner(memory);
+  if (reset) {
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    executeTick = (await import("../src/runtime/tick")).runTick;
+  }
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+  commands.sendTerminal.mockClear();
+  commands.transferEnergy.mockClear();
+  commands.withdrawEnergy.mockClear();
+  const deliveredRoomOptions = {
+    ...baseRoomOptions,
+    staleLabEvacuation: staleLabEvacuationGameState(labFixture, evacuation, true),
+  } as const;
+
+  const settlement = executeTick({ game: game(202, commands, deliveredRoomOptions), memory });
+  const settlementOwner = layoutsOwner(memory);
+  const settlementCommands = {
+    create: commands.createConstructionSite.mock.calls.length,
+    destroy: commands.destroyStructure.mock.calls.length,
+  };
+  const settlementResourceCommands = {
+    send: commands.sendTerminal.mock.calls.length,
+    transfer: commands.transferEnergy.mock.calls.length,
+    withdraw: commands.withdrawEnergy.mock.calls.length,
+  };
+  commands.createConstructionSite.mockClear();
+  commands.destroyStructure.mockClear();
+
+  const handoff = executeTick({ game: game(203, commands, deliveredRoomOptions), memory });
+  return {
+    admissionFlowIds,
+    handoffCommands: {
+      create: commands.createConstructionSite.mock.calls.length,
+      destroy: commands.destroyStructure.mock.calls.length,
+    },
+    handoffOwner: layoutsOwner(memory),
+    handoffPlanning: handoff.layout.planning,
+    retirementOwner,
+    settlementCommands,
+    settlementOwner,
+    settlementPlanning: settlement.layout.planning,
+    settlementResourceCommands,
   };
 }
 
@@ -5512,11 +5965,12 @@ function game(
     owner: { username: "Myrmex" },
     pos:
       options.staleContainerMigration === undefined &&
+      options.staleLabEvacuation === undefined &&
       options.staleLinkEvacuation === undefined &&
       options.staleSpawnEvacuation === undefined &&
       options.staleTowerEvacuation === undefined
         ? pos(25, 25)
-        : pos(39, 39),
+        : pos(options.workerPosition?.x ?? 39, options.workerPosition?.y ?? 39),
     room: { name: roomName },
     spawning: false,
     store: { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 },
@@ -5697,7 +6151,7 @@ function game(
           owner: { username: "Myrmex" },
           pos: pos(39, 40),
           room: { name: roomName },
-          send: () => 0,
+          send: commands.sendTerminal,
           store: {
             ...Object.fromEntries(storageTerminalResources),
             getCapacity: () => storageTerminalCapacity,
@@ -5860,6 +6314,111 @@ function game(
     staleTowerEvacuation === undefined
       ? null
       : evacuationTower("tower-replacement", 41, staleTowerEvacuation.replacementEnergy);
+  const staleLabEvacuation = options.staleLabEvacuation;
+  const evacuationLab = (
+    id: string,
+    x: number,
+    y: number,
+    energy: number,
+    mineralAmount = 0,
+    mineralType: string | null = null,
+  ) => {
+    const store = {
+      getCapacity: (resourceType?: string) =>
+        resourceType === "energy" ? 2_000 : resourceType === undefined ? null : 3_000,
+      getFreeCapacity: (resourceType?: string) =>
+        resourceType === "energy" ? 2_000 - energy : resourceType === undefined ? null : 3_000,
+      getUsedCapacity: (resourceType?: string) =>
+        resourceType === undefined
+          ? energy + mineralAmount
+          : resourceType === "energy"
+            ? energy
+            : resourceType === mineralType
+              ? mineralAmount
+              : 0,
+    };
+    Object.defineProperty(store, "energy", { enumerable: energy > 0, value: energy });
+    if (mineralType !== null)
+      Object.defineProperty(store, mineralType, {
+        enumerable: mineralAmount > 0,
+        value: mineralAmount,
+      });
+    return {
+      cooldown: 0,
+      destroy: commands.destroyStructure,
+      energy,
+      energyCapacity: 2_000,
+      hits: 500,
+      hitsMax: 500,
+      id,
+      isActive: () => true,
+      mineralAmount,
+      mineralCapacity: 3_000,
+      mineralType,
+      my: true,
+      owner: { username: "Myrmex" },
+      pos: pos(x, y),
+      room: { name: roomName },
+      store,
+      structureType: "lab",
+    } as unknown as StructureLab;
+  };
+  const staleLabStructures =
+    staleLabEvacuation === undefined
+      ? []
+      : [
+          evacuationLab(
+            "lab-obsolete",
+            staleLabEvacuation.sourcePosition.x,
+            staleLabEvacuation.sourcePosition.y,
+            staleLabEvacuation.sourceEnergy,
+            staleLabEvacuation.sourceMineralAmount ?? 0,
+            staleLabEvacuation.sourceMineralType ?? null,
+          ),
+          ...staleLabEvacuation.labPositions.map(({ id, x, y }) =>
+            evacuationLab(
+              id,
+              x,
+              y,
+              id === "lab-replacement" ? staleLabEvacuation.replacementEnergy : 0,
+            ),
+          ),
+        ];
+  const staleLabDestination =
+    staleLabEvacuation?.destination === undefined
+      ? null
+      : (() => {
+          const destination = staleLabEvacuation.destination;
+          const capacity = destination.structureType === "storage" ? 1_000_000 : 300_000;
+          const store = {
+            getCapacity: () => capacity,
+            getFreeCapacity: () => capacity - destination.amount,
+            getUsedCapacity: (resourceType?: string) =>
+              resourceType === undefined || resourceType === destination.resourceType
+                ? destination.amount
+                : 0,
+          };
+          Object.defineProperty(store, destination.resourceType, {
+            enumerable: destination.amount > 0,
+            value: destination.amount,
+          });
+          return {
+            ...(destination.structureType === "terminal"
+              ? { cooldown: 0, send: commands.sendTerminal }
+              : {}),
+            destroy: commands.destroyStructure,
+            hits: destination.structureType === "storage" ? 10_000 : 3_000,
+            hitsMax: destination.structureType === "storage" ? 10_000 : 3_000,
+            id: destination.id,
+            isActive: () => true,
+            my: true,
+            owner: { username: "Myrmex" },
+            pos: pos(20, 20),
+            room: { name: roomName },
+            store,
+            structureType: destination.structureType,
+          } as unknown as StructureStorage | StructureTerminal;
+        })();
   const staleLinkEvacuation = options.staleLinkEvacuation;
   const evacuationLink = (id: string, x: number, y: number, energy: number, cooldown = 0) =>
     ({
@@ -5928,7 +6487,7 @@ function game(
               : staleRemovalTargetType === "lab"
                 ? { cooldown: 0, mineralType: null }
                 : staleRemovalTargetType === "terminal"
-                  ? { cooldown: 0, send: () => 0 }
+                  ? { cooldown: 0, send: commands.sendTerminal }
                   : {}),
         owner: { username: "Myrmex" },
         pos: pos(40, 40),
@@ -5961,6 +6520,8 @@ function game(
         ...(staleSpawnReplacement === null ? [] : [staleSpawnReplacement]),
         ...(staleTowerSource === null ? [] : [staleTowerSource]),
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
+        ...staleLabStructures,
+        ...(staleLabDestination === null ? [] : [staleLabDestination]),
         ...staleLinkStructures,
         ...(staleLinkStorage === null ? [] : [staleLinkStorage]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
@@ -5977,6 +6538,8 @@ function game(
         ...(staleSpawnReplacement === null ? [] : [staleSpawnReplacement]),
         ...(staleTowerSource === null ? [] : [staleTowerSource]),
         ...(staleTowerReplacement === null ? [] : [staleTowerReplacement]),
+        ...staleLabStructures,
+        ...(staleLabDestination === null ? [] : [staleLabDestination]),
         ...staleLinkStructures,
         ...(staleLinkStorage === null ? [] : [staleLinkStorage]),
         ...(staleRemovalTarget === null ? [] : [staleRemovalTarget]),
@@ -6037,7 +6600,10 @@ function game(
                                 ? staleTowerSource
                                 : id === staleTowerReplacement?.id
                                   ? staleTowerReplacement
-                                  : (staleLinkStructures.find((link) => link.id === id) ?? null))),
+                                  : (staleLabStructures.find((lab) => lab.id === id) ??
+                                    (id === staleLabDestination?.id ? staleLabDestination : null) ??
+                                    staleLinkStructures.find((link) => link.id === id) ??
+                                    null))),
     rooms: { [roomName]: room },
     shard: { name: "shard3" },
     time,

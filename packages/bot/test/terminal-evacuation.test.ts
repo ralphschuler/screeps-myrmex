@@ -445,6 +445,26 @@ describe("stocked obsolete-terminal evacuation", () => {
     const { terminalEvacuation: _evacuation, ...withoutEvacuation } = record();
     void _evacuation;
     expect(projectLayoutTerminalSendBlockedRoomNames([withoutEvacuation], 11)).toEqual(new Set());
+    const terminalLabEvacuation = {
+      ...withoutEvacuation,
+      labEvacuation: {
+        amount: 100,
+        destinationId: replacementId,
+        destinationInitialAmount: 0,
+        destinationStructureType: "terminal" as const,
+        expiresAt: 160,
+        replacementId: "lab-replacement",
+        resourceType: "H",
+        sourceId: "lab-obsolete",
+        startedAt: 10,
+      },
+    };
+    expect(projectLayoutTerminalSendBlockedRoomNames([terminalLabEvacuation], 11)).toEqual(
+      new Set([roomName]),
+    );
+    expect(projectLayoutTerminalSendBlockedRoomNames([terminalLabEvacuation], 160)).toEqual(
+      new Set(),
+    );
   });
 
   it("allows only the currently authorized evacuation lease to name suppressed endpoints", () => {
