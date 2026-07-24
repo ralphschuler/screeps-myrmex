@@ -2723,6 +2723,88 @@ describe("logistics runtime adapter", () => {
       { resourceType: "energy", version: 3 },
     ]);
 
+    const flowIds = projection.edges.map(({ id }) => id);
+    const completionSnapshot = (
+      targetResources: readonly { readonly amount: number; readonly resourceType: string }[],
+      replacementResources: readonly { readonly amount: number; readonly resourceType: string }[],
+      reverse = false,
+    ) => ({
+      ...migrationSnapshot,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          storedStructures: [
+            ...room.storedStructures,
+            stored(migration.targetId, 12, targetResources),
+            stored(migration.replacementId, 13, replacementResources),
+          ].sort((left, right) =>
+            reverse ? right.id.localeCompare(left.id) : left.id.localeCompare(right.id),
+          ),
+        },
+      ],
+    });
+    const delivered = completionSnapshot(
+      [],
+      [
+        { amount: 25, resourceType: "energy" },
+        { amount: 25, resourceType: "U" },
+      ],
+    );
+    const completed = (input?: {
+      readonly activeFlowIds?: ReadonlySet<string>;
+      readonly activeTargetIds?: ReadonlySet<string>;
+      readonly authorizedFlowIds?: ReadonlySet<string>;
+      readonly snapshot?: WorldSnapshot;
+    }) =>
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: input?.activeFlowIds ?? new Set(),
+        activeTargetIds: input?.activeTargetIds ?? new Set(),
+        authorizedFlowIds: input?.authorizedFlowIds ?? new Set(flowIds),
+        records: [record],
+        snapshot: input?.snapshot ?? delivered,
+        tick: 11,
+      });
+    expect(completed()).toEqual(["W1N1"]);
+    expect(completed({ authorizedFlowIds: new Set([flowIds[0] ?? ""]) })).toEqual([]);
+    expect(completed({ activeFlowIds: new Set([flowIds[1] ?? ""]) })).toEqual([]);
+    expect(completed({ activeTargetIds: new Set([migration.replacementId]) })).toEqual([]);
+    expect(
+      completed({
+        snapshot: completionSnapshot(
+          [{ amount: 25, resourceType: "energy" }],
+          [{ amount: 25, resourceType: "U" }],
+        ),
+      }),
+    ).toEqual([]);
+    expect(
+      completed({
+        snapshot: completionSnapshot(
+          [],
+          [
+            { amount: 24, resourceType: "energy" },
+            { amount: 25, resourceType: "U" },
+          ],
+        ),
+      }),
+    ).toEqual([]);
+    expect(
+      completed({
+        snapshot: JSON.parse(
+          JSON.stringify(
+            completionSnapshot(
+              [],
+              [
+                { amount: 25, resourceType: "U" },
+                { amount: 25, resourceType: "energy" },
+              ],
+              true,
+            ),
+          ),
+        ) as WorldSnapshot,
+      }),
+    ).toEqual(["W1N1"]);
+
     const singletonTarget = stored("container-obsolete", 12, [{ amount: 50, resourceType: "U" }]);
     const singletonSnapshot = {
       ...migrationSnapshot,

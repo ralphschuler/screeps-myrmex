@@ -11,12 +11,14 @@ import {
   isObservedLayoutAccessWalkable,
 } from "./access";
 import { compileOwnedRoomLayoutV1 } from "./layout-v1";
+import { validContainerMigration } from "./persistence";
 import { selectSourceServices } from "./source-services";
 import {
   LAYOUT_ALGORITHM_REVISION,
   LAYOUT_V1_ALGORITHM_REVISION,
   matchedStaleLayoutEvacuationKind,
   MAX_LAYOUT_CANDIDATES,
+  MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
   MAX_LAYOUT_FLOOD_CELLS,
   MAX_LAYOUT_ROOMS_PER_TICK,
   MAX_LAYOUT_TRANSFORMS,
@@ -44,24 +46,26 @@ export function staleLayoutRemovalSettlementBlocker(input: {
   return staleLayoutRevisionBlocker(input, true);
 }
 
-/** Exact stale shape whose singleton general-container migration may continue without removal. */
+/** Exact stale shape whose bounded general-container migration may continue without removal. */
 export function isStaleLayoutContainerMigrationContinuation(record: StaleLayoutRecord): boolean {
   const migration = record.containerMigration;
-  if (migration === undefined) return false;
+  if (!validContainerMigration(migration)) return false;
   const legacyEnergy =
     migration.resourceManifest === undefined &&
     migration.energyAmount !== undefined &&
     migration.replacementInitialEnergy !== undefined;
-  const manifestTerm = migration.resourceManifest?.[0];
-  const singletonNonEnergy =
+  const manifest = migration.resourceManifest;
+  const manifestTerm = manifest?.[0];
+  const boundedManifest =
     migration.energyAmount === undefined &&
     migration.replacementInitialEnergy === undefined &&
-    migration.resourceManifest?.length === 1 &&
-    manifestTerm !== undefined &&
-    manifestTerm[0] !== "energy";
+    manifest !== undefined &&
+    manifest.length >= 1 &&
+    manifest.length <= MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES &&
+    !(manifest.length === 1 && manifestTerm?.[0] === "energy");
   return (
     record.algorithmRevision !== LAYOUT_ALGORITHM_REVISION &&
-    (legacyEnergy || singletonNonEnergy) &&
+    (legacyEnergy || boundedManifest) &&
     migration.sourceId === undefined &&
     record.extensionEvacuation === undefined &&
     record.labEvacuation === undefined &&

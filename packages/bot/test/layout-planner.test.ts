@@ -15,7 +15,7 @@ import {
   type StaleLayoutRecord,
 } from "../src/layout";
 
-describe("stale singleton container migration continuation", () => {
+describe("stale container migration continuation", () => {
   const staleRecord = (): StaleLayoutRecord => ({
     algorithmRevision: "owned-room-layout-v1",
     anchor: { roomName: "W1N1", x: 25, y: 25 },
@@ -35,7 +35,7 @@ describe("stale singleton container migration continuation", () => {
     transform: 0,
   });
 
-  it("admits only legacy energy or singleton non-energy general-container terms", () => {
+  it("admits only legacy energy or bounded source-unspecific manifest terms", () => {
     const migration = staleRecord().containerMigration;
     if (migration === undefined) throw new Error("stale container migration fixture missing");
     expect(isStaleLayoutContainerMigrationContinuation(staleRecord())).toBe(true);
@@ -76,6 +76,73 @@ describe("stale singleton container migration continuation", () => {
             ["U", 250, 50],
           ],
         },
+      }),
+    ).toBe(true);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: {
+          ...manifestBase,
+          resourceManifest: [
+            ["H", 1, 0],
+            ["O", 1, 0],
+            ["U", 1, 0],
+            ["X", 1, 0],
+            ["Z", 1, 0],
+            ["energy", 1, 0],
+            ["power", 1, 0],
+            ["silicon", 1, 0],
+          ],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: {
+          ...manifestBase,
+          resourceManifest: [
+            ["H", 1, 0],
+            ["O", 1, 0],
+            ["U", 1, 0],
+            ["X", 1, 0],
+            ["Z", 1, 0],
+            ["energy", 1, 0],
+            ["mist", 1, 0],
+            ["power", 1, 0],
+            ["silicon", 1, 0],
+          ],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: {
+          ...manifestBase,
+          resourceManifest: [
+            ["U", 1, 0],
+            ["U", 1, 0],
+          ],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: {
+          ...manifestBase,
+          resourceManifest: [
+            ["U", 1, 0],
+            ["energy", 2_000, 0],
+          ],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: { ...migration, expiresAt: 251 },
       }),
     ).toBe(false);
     expect(

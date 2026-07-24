@@ -76,7 +76,7 @@ export function layoutContainerMigrationFlowIds(
   return ids.some((id) => id === null) ? null : Object.freeze(ids as readonly string[]);
 }
 
-/** Fresh command-free completion evidence for one exact singleton container migration. */
+/** Fresh command-free completion evidence for one exact bounded container migration. */
 export function completedLayoutContainerMigrationRoomNames(input: {
   readonly activeFlowIds: ReadonlySet<string>;
   readonly activeTargetIds: ReadonlySet<string>;
@@ -97,8 +97,7 @@ export function completedLayoutContainerMigrationRoomNames(input: {
     )
       continue;
     const terms = migrationTerms(migration);
-    const term = terms?.[0];
-    if (terms?.length !== 1 || term === undefined) continue;
+    if (terms === null || terms.length === 0) continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
     if (
       room?.controller?.ownership !== "owned" ||
@@ -126,15 +125,19 @@ export function completedLayoutContainerMigrationRoomNames(input: {
       targetResources === null ||
       replacementResources === null ||
       targetResources.size !== 0 ||
-      (replacementResources.get(term.resourceType) ?? 0) !==
-        term.replacementInitialAmount + term.amount
+      terms.some(
+        (term) =>
+          (replacementResources.get(term.resourceType) ?? 0) !==
+          term.replacementInitialAmount + term.amount,
+      )
     )
       continue;
-    const flowId = layoutContainerMigrationFlowIds(room.name, migration)?.[0];
-    if (flowId === undefined) continue;
+    const flowIds = layoutContainerMigrationFlowIds(room.name, migration);
+    if (flowIds === null || flowIds.length !== terms.length) continue;
     if (
-      !input.authorizedFlowIds.has(flowId) ||
-      input.activeFlowIds.has(flowId) ||
+      flowIds.some(
+        (flowId) => !input.authorizedFlowIds.has(flowId) || input.activeFlowIds.has(flowId),
+      ) ||
       input.activeTargetIds.has(target.id) ||
       input.activeTargetIds.has(replacement.id)
     )

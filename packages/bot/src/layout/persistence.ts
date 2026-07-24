@@ -862,7 +862,7 @@ function validRecordShape(v: unknown, currentAlgorithm: boolean): v is LayoutRec
     (v.siteReceipts === undefined || validReceipts(v.siteReceipts, v.roomName))
   );
 }
-function validContainerMigration(value: unknown): value is LayoutContainerMigration {
+export function validContainerMigration(value: unknown): value is LayoutContainerMigration {
   if (
     !record(value) ||
     !integer(value.startedAt) ||
