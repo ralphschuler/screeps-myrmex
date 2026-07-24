@@ -57,11 +57,18 @@ that candidate. If compatible adoption relocates the spawn, the committed origin
 bounded reachability proof. Degraded planning preserves an eligible prior commitment and emits no
 placements, so migration cannot authorize sites or removal from stranded geometry. Executable local
 movement uses the same current rampart passability rule: a private foreign rampart blocks the static
-path matrix, while an owned or public rampart remains walkable. A blocked lease suspends with no
-movement intent instead of repeatedly approaching an impassable tile. When changed public state
-changes effective tile passability, it receives a different reconstructible traversal revision. This
-still does not prove dynamic congestion, deadlock recovery, room routing, or broad layout-wide
-traffic access.
+path matrix, while an owned or public rampart remains walkable. A statically blocked lease suspends
+with no movement intent. When changed public state changes effective tile passability, it receives a
+different reconstructible traversal revision.
+
+Dynamic blockage uses bounded quality evidence rather than path or task Memory. One exact correlated
+move attempt is retained in a short-lived heap cache. Three consecutive unchanged observations under
+the same lease/goal bypass the reusable path and overlay current creep occupancy plus earlier
+proposed destinations on one CPU-admitted cold search. Movement resets the age; no executable route
+by tick ten suspends the lease through `ContractLedger`. A heap reset may restart this quality
+counter but cannot authorize unsafe movement or change work ownership. This proves bounded local
+congestion recovery only; multi-room routing, persistent traffic optimization, and general
+multi-actor deadlock resolution remain unavailable.
 
 Layout convergence is destructive only under explicit narrow authority. Current engine-compatible
 roads and ramparts use the ordinary construction-site chain: a planned primary structure can retain

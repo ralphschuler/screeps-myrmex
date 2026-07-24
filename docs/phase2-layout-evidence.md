@@ -91,7 +91,10 @@ proof that every observed owned source retains one distinct semantic service on 
 spawn-reachable adjacent work tile. Issue
 [#369](https://github.com/ralphschuler/screeps-myrmex/issues/369) applies the same private/owned/
 public rampart passability rule to the production local-path projection and lease-agent outcome.
-Issue [#371](https://github.com/ralphschuler/screeps-myrmex/issues/371) restores committed storage
+Issue [#447](https://github.com/ralphschuler/screeps-myrmex/issues/447) adds exact heap-only
+no-progress correlation, bounded occupancy/reservation-aware uncached replanning, and typed lease
+release for repeated local dynamic blockage. Issue
+[#371](https://github.com/ralphschuler/screeps-myrmex/issues/371) restores committed storage
 geometry at RCL6+ and permits one active empty external storage to use an exact active terminal as
 bounded local inventory continuity only with an effective Logistics gate, one exact current healthy
 room row, retired current/projected work, and no durable layout destination. Issue
@@ -325,7 +328,12 @@ migration.
    settlement precommits only layouts, emits no layout command in any room, and leaves the revision
    handoff to a later tick. Another active stale term, source-service sequence, unsafe policy,
    malformed, refilled, consumed, or drifted Store evidence, active work, expiry, or missing vision
-   remains fail-closed.
+   remains fail-closed. Issue #447 separately retains one exact prior correlated local attempt in a
+   128-entry/two-tick reconstructible heap cache. Three consecutive unchanged observations bypass
+   the reusable path and overlay at most 128 current creep positions and earlier proposed
+   destinations on one CPU-admitted cold search. Actor movement resets age; ten unchanged
+   observations emit one typed lease suspension and no retry.
+
 4. `links.plan` publishes canonical current-layout role classification and funded transfer
    arbitration. Optional `migration.layout` then runs `ConstructionPlanner` for the same bounded
    two-room window and consumes that public current-tick result. Its stable system ID orders it
@@ -511,6 +519,9 @@ fingerprints, occupancy conflicts, and global or room pressure authorize no comm
 ## Fixed bounds
 
 - two planned rooms per tick;
+- at most 128 two-tick heap-only movement-attempt records and 128 canonical tick-local dynamic
+  blockers per uncached replan; an empty heap resets age, and no dynamic position enters persistent
+  Memory, a static matrix, or a reusable local-path key/value;
 - at most eight explicit stale source services per admitted room compared with the existing capped
   256-record ContractLedger planning view; the result is tick-local and adds no persistent bytes;
 - eight constant-time legal-work-position checks per observed source before candidate search;
@@ -617,6 +628,16 @@ JSON-reconstructed current terminal evacuation or terminal removal receipt inste
 canonical path only when its source/target matches the sole observed owned terminal; mismatched or
 orphaned evidence retains the current service position. Persisted V17-V25 evidence is not abandoned,
 and the projection adds no owner field, Memory bytes, command, resource spend, or scan.
+
+Issue #447's focused production-authority evidence records accepted, blocked, and typed no-path
+attempts against exact actor/contract/revision/goal/range/first-step/tick terms. Consecutive
+unchanged positions advance age; actor movement, lease/goal drift, evidence gaps, and heap reset
+return it to zero. The three-tick outcome bypasses the reusable eastward step, overlays the current
+blocking creep on one uncached search, moves north, then reaches and emits the existing correlated
+build action. Reordered creep facts produce the same plan. A tick-ten control emits one
+`agent-movement-blocked` suspension and no movement. Focused cache/adapter tests prove dynamic
+positions reach only the cold-search matrix, preserve the reusable path, obey CPU admission, and add
+no persistent owner or command authority.
 
 Issue #413's production-runtime evidence starts from an otherwise-quiescent V25 stale record with
 one 50-energy extension evacuation. The normal colony budget and Logistics planner publish its exact
@@ -942,8 +963,9 @@ controls and a legal two-source room still commit both semantic services. Issue 
 passes the observed private/public/owned variants through the production traversal and local-path
 contracts: private evidence yields typed `path-unavailable` suspension and no movement, public/
 owned evidence remains executable, changed passability receives a distinct cache revision, and
-reorder/heap reconstruction is equivalent. This still does not certify dynamic congestion, deadlock
-recovery, room routing, or broad layout-wide traffic access.
+reorder/heap reconstruction is equivalent. Issue #447 certifies the bounded single-room congestion
+case above; general multi-actor deadlock recovery, room routing, and broad layout-wide traffic
+access remain unproved.
 
 Focused tests cover one-call execution, next-tick duplicate suppression, every documented return
 code, adapter isolation, stale/ownership/loss guards, cap pressure, complete/degraded commitments,
@@ -1133,6 +1155,15 @@ lint, type, test, documentation, bundle, and package evidence.
 
 ## Mechanics sources
 
+- Official [`Creep.move`](https://docs.screeps.com/api/#Creep.move) defines one-square scheduled
+  movement, fatigue/body requirements, and return codes; `OK` does not prove next-tick displacement.
+  Official [`PathFinder`](https://docs.screeps.com/api/#PathFinder) defines cost matrices,
+  impassable 255-cost cells, `maxOps`, `maxCost`, and incomplete results used by #447's bounded
+  dynamic overlay. Official
+  [simultaneous actions](https://docs.screeps.com/simultaneous-actions.html) keeps movement separate
+  from the primary-action pipeline. Screeps Wiki
+  [Pathfinding](https://wiki.screepspl.us/Pathfinding/) supplies static-matrix and dynamic-overlay
+  terminology only; official mechanics and MYRMEX's clean-room movement authority govern.
 - Official
   [`Room.createConstructionSite`](https://docs.screeps.com/api/#Room.createConstructionSite)
   documents return codes and the 100-site player cap.

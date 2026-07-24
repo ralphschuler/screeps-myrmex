@@ -49,6 +49,7 @@ import {
   SnapshotLocalPathPlanningService,
   emptyMovementRuntimeResult,
   getMovementPathCache,
+  getMovementProgressTracker,
   type LocalPathPlanningService,
   type LocalPathSearch,
   type MovementRuntimeResult,
@@ -1347,7 +1348,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
               ...authorizedTowerEvacuationFlowIds,
             ]),
           ),
+          movementPolicy: context.config.policy.movement,
           paths: context.localPathPlanning,
+          progress: getMovementProgressTracker(input.cacheManager),
           snapshot: context.snapshot,
           tick: context.tick,
         });
@@ -1626,6 +1629,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           : input.movementRuntime.disabled();
         return staged(
           () => {
+            getMovementProgressTracker(input.cacheManager).record(
+              result,
+              context.snapshot,
+              context.tick,
+            );
             input.runtime.publishMovement(result);
           },
           () => {
@@ -3273,7 +3281,9 @@ function prepareSpawnEvacuationFlowContinuation(input: {
           input.context.contractExecution,
           input.authorizedFlowIds,
         ),
+        movementPolicy: input.context.config.policy.movement,
         paths: input.context.localPathPlanning,
+        progress: getMovementProgressTracker(input.composition.cacheManager),
         snapshot: input.context.snapshot,
         tick: input.context.tick,
       })

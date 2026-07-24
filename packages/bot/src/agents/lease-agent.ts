@@ -3,8 +3,15 @@ import type {
   ContractTransitionRequest,
   LeasedWorkExecution,
 } from "../contracts";
-import type { LocalPathPlanningService } from "../movement/path-cache";
+import type { MovementPolicy } from "../config";
+import {
+  LOCAL_PATH_SEARCH_CPU_ESTIMATE,
+  MAX_DYNAMIC_MOVEMENT_BLOCKERS,
+  type LocalPathPlanningService,
+  type LocalPathPlanResult,
+} from "../movement/path-cache";
 import type { CreepActionIntent, MovementIntent } from "../movement/contracts";
+import type { MovementProgressView } from "../movement/progress";
 import type {
   CreepSnapshot,
   PositionSnapshot,
@@ -22,6 +29,7 @@ export type AgentDispositionReason =
   | "actor-store-full"
   | "actor-ttl-insufficient"
   | "contract-expired"
+  | "movement-blocked"
   | "path-unavailable"
   | "work-position-invalid"
   | "target-depleted"
@@ -45,7 +53,9 @@ export interface LeaseAgentPlan {
 export interface LeaseAgentPlanInput {
   readonly availablePathCpu: number;
   readonly execution: ContractExecutionView;
+  readonly movementPolicy: MovementPolicy;
   readonly paths: LocalPathPlanningService;
+  readonly progress: MovementProgressView;
   readonly snapshot: WorldSnapshot;
   readonly tick: number;
 }
@@ -63,6 +73,7 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
   const movement: MovementIntent[] = [];
   const dispositions: LeaseAgentDisposition[] = [];
   const seenActors = new Set<string>();
+  let remainingPathCpu = Math.max(0, input.availablePathCpu);
   const leases = input.execution.leases
     .slice()
     .sort(
@@ -104,14 +115,15 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       actions.push(actionIntent(lease, actor, target));
       continue;
     }
-    const path = input.paths.plan({
-      availableCpu: Math.max(0, input.availablePathCpu - index * 0.5),
+    let path = input.paths.plan({
+      availableCpu: remainingPathCpu,
       goal,
       origin: actor.pos,
       range,
       snapshot: input.snapshot,
       tick: input.tick,
     });
+    remainingPathCpu = afterPathSearch(remainingPathCpu, path);
     if (path.status !== "ready" || path.directions[0] === undefined) {
       dispositions.push({
         contractId: lease.contractId,
@@ -121,9 +133,53 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       });
       continue;
     }
-    const direction = path.directions[0];
-    const destination = nextPosition(actor.pos, direction);
-    if (destination === null) {
+    const stuckAge = input.progress.stuckAge({
+      actorId: actor.id,
+      actorPosition: actor.pos,
+      contractId: lease.contractId,
+      contractRevision: lease.revision,
+      goal,
+      range,
+      tick: input.tick,
+    });
+    if (stuckAge >= input.movementPolicy.blockedReleaseTicks) {
+      dispositions.push({
+        contractId: lease.contractId,
+        contractRevision: lease.revision,
+        reason: "movement-blocked",
+        to: "suspended",
+      });
+      continue;
+    }
+    if (stuckAge >= input.movementPolicy.stuckReplanTicks) {
+      const blockedPositions = dynamicMovementBlockers(input.snapshot, actor.id, movement);
+      if (blockedPositions === null) {
+        movement.push(movementIntent(lease, actor.pos, null, goal, range, stuckAge));
+        continue;
+      }
+      const replanned = input.paths.plan({
+        availableCpu: remainingPathCpu,
+        blockedPositions,
+        bypassCache: true,
+        goal,
+        origin: actor.pos,
+        range,
+        snapshot: input.snapshot,
+        tick: input.tick,
+      });
+      remainingPathCpu = afterPathSearch(remainingPathCpu, replanned);
+      // CPU denial reduces route quality only; the already-authorized cached move remains safe.
+      if (replanned.status !== "deferred") {
+        if (replanned.status !== "ready" || replanned.directions[0] === undefined) {
+          movement.push(movementIntent(lease, actor.pos, null, goal, range, stuckAge));
+          continue;
+        }
+        path = replanned;
+      }
+    }
+    const direction = firstPathDirection(path);
+    const destination = direction === null ? null : nextPosition(actor.pos, direction);
+    if (direction === null || destination === null) {
       dispositions.push({
         contractId: lease.contractId,
         contractRevision: lease.revision,
@@ -132,19 +188,7 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       });
       continue;
     }
-    movement.push({
-      actorId: actor.id,
-      contractId: lease.contractId,
-      contractRevision: lease.revision,
-      deadline: actionDeadline(lease),
-      destination,
-      direction,
-      goal,
-      id: `lease:${lease.contractId}:r${String(lease.revision)}:move`,
-      priority: lease.priority.value,
-      range,
-      stuckAge: 0,
-    });
+    movement.push(movementIntent(lease, destination, direction, goal, range, stuckAge));
   }
   return Object.freeze({
     actions: Object.freeze(actions),
@@ -452,6 +496,78 @@ function actionAmount(
     remaining,
     resourceAmount(actor.store, resource),
     target.store?.freeCapacity ?? remaining,
+  );
+}
+
+function movementIntent(
+  lease: LeasedWorkExecution,
+  destination: PositionSnapshot,
+  direction: DirectionConstant | null,
+  goal: PositionSnapshot,
+  range: number,
+  stuckAge: number,
+): MovementIntent {
+  return {
+    actorId: lease.actorId,
+    contractId: lease.contractId,
+    contractRevision: lease.revision,
+    deadline: actionDeadline(lease),
+    destination,
+    direction,
+    goal,
+    id: `lease:${lease.contractId}:r${String(lease.revision)}:move`,
+    priority: lease.priority.value,
+    range,
+    stuckAge,
+  };
+}
+
+function dynamicMovementBlockers(
+  snapshot: WorldSnapshot,
+  actorId: string,
+  proposed: readonly MovementIntent[],
+): readonly PositionSnapshot[] | null {
+  const actorRoom = snapshot.rooms.find((room) =>
+    room.ownedCreeps.some((actor) => actor.id === actorId),
+  );
+  if (actorRoom === undefined) return null;
+  const positions = [
+    ...actorRoom.ownedCreeps.filter((actor) => actor.id !== actorId).map((actor) => actor.pos),
+    ...actorRoom.hostileCreeps.map((actor) => actor.pos),
+    ...proposed
+      .filter(
+        (intent) => intent.actorId !== actorId && intent.destination.roomName === actorRoom.name,
+      )
+      .map((intent) => intent.destination),
+  ];
+  if (positions.length > MAX_DYNAMIC_MOVEMENT_BLOCKERS) return null;
+  const byPosition = new Map<string, PositionSnapshot>();
+  for (const position of positions)
+    byPosition.set(`${position.roomName}:${String(position.x)}:${String(position.y)}`, position);
+  const canonical = [...byPosition.values()].sort(
+    (left, right) =>
+      compareStrings(left.roomName, right.roomName) || left.y - right.y || left.x - right.x,
+  );
+  return canonical.length <= MAX_DYNAMIC_MOVEMENT_BLOCKERS
+    ? Object.freeze(canonical.map((position) => Object.freeze({ ...position })))
+    : null;
+}
+
+function firstPathDirection(result: LocalPathPlanResult): DirectionConstant | null {
+  return result.status === "ready" ? (result.directions[0] ?? null) : null;
+}
+
+function afterPathSearch(remaining: number, result: LocalPathPlanResult): number {
+  return consumedColdSearch(result)
+    ? Math.max(0, remaining - LOCAL_PATH_SEARCH_CPU_ESTIMATE)
+    : remaining;
+}
+
+function consumedColdSearch(result: LocalPathPlanResult): boolean {
+  return (
+    (result.status === "ready" && result.source === "search") ||
+    (result.status === "no-path" &&
+      (result.reason === "adapter-fault" || result.reason === "incomplete"))
   );
 }
 

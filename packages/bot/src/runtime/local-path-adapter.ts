@@ -18,6 +18,11 @@ export function createScreepsLocalPathSearch(): LocalPathSearch | null {
           if (input.staticMatrix.walkability.charAt(y * 50 + x) === "#") matrix.set(x, y, 255);
         }
       }
+      for (const blocked of input.blockedPositions) {
+        if (blocked.roomName !== input.origin.roomName)
+          throw new Error("cross-room-dynamic-blocker");
+        matrix.set(blocked.x, blocked.y, 255);
+      }
       const origin = new position(input.origin.x, input.origin.y, input.origin.roomName);
       const goal = new position(input.goal.x, input.goal.y, input.goal.roomName);
       const result = pathFinder.search(

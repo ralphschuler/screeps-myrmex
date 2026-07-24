@@ -114,6 +114,73 @@ describe("movement path cache", () => {
     expect(coldPlanner.plan({ ...request, availableCpu: 2, tick: 2 })).toEqual(searched);
   });
 
+  it("bypasses reusable paths for bounded dynamic blockers without caching their overlay", () => {
+    const cache = getMovementPathCache(new CacheManager());
+    const calls: LocalPathSearchInput[] = [];
+    const planner = new LocalPathPlanner(
+      cache,
+      {
+        search: (input) => {
+          calls.push(input);
+          return {
+            cost: input.blockedPositions.length === 0 ? 2 : 3,
+            directions: input.blockedPositions.length === 0 ? [3, 3] : [1, 2, 3],
+            incomplete: false,
+          };
+        },
+      },
+      DEFAULT_SURVIVAL_POLICY.movement,
+    );
+    const request = {
+      availableCpu: 1,
+      buildStaticMatrix: () => ({
+        roomName: "W1N1",
+        revision: "terrain:1",
+        walkability: ".".repeat(2_500),
+      }),
+      estimatedSearchCpu: 0.5,
+      goal: position(12, 10),
+      origin: position(10, 10),
+      range: 1,
+      staticMatrixRevision: "terrain:1",
+      tick: 1,
+    };
+
+    expect(planner.plan(request)).toMatchObject({ source: "search", directions: [3, 3] });
+    expect(planner.plan({ ...request, tick: 2 })).toMatchObject({ source: "cache" });
+    expect(
+      planner.plan({
+        ...request,
+        availableCpu: 0.49,
+        blockedPositions: [position(11, 10)],
+        bypassCache: true,
+        tick: 2,
+      }),
+    ).toEqual({ reason: "cpu-budget", status: "deferred" });
+    expect(
+      planner.plan({
+        ...request,
+        blockedPositions: [position(11, 10)],
+        bypassCache: true,
+        tick: 2,
+      }),
+    ).toMatchObject({ source: "search", directions: [1, 2, 3] });
+    expect(
+      planner.plan({
+        ...request,
+        blockedPositions: [position(11, 10)],
+        bypassCache: true,
+        tick: 3,
+      }),
+    ).toMatchObject({ source: "search", directions: [1, 2, 3] });
+    expect(planner.plan({ ...request, tick: 3 })).toMatchObject({
+      source: "cache",
+      directions: [3, 3],
+    });
+    expect(calls).toHaveLength(3);
+    expect(calls[1]?.blockedPositions).toEqual([position(11, 10)]);
+  });
+
   it("rejects cross-room, incomplete, and over-cost results without caching them", () => {
     let calls = 0;
     const planner = new LocalPathPlanner(

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ContractExecutionView, LeasedWorkExecution } from "../../bot/src/contracts";
 import { planLeaseAgents } from "../../bot/src/agents/lease-agent";
+import { DEFAULT_SURVIVAL_POLICY } from "../../bot/src/config/defaults";
+import type { ContractExecutionView, LeasedWorkExecution } from "../../bot/src/contracts";
+import { EMPTY_MOVEMENT_PROGRESS_VIEW } from "../../bot/src/movement/progress";
 import { MovementRuntime } from "../../bot/src/movement/runtime";
 import type {
   LocalPathPlanningService,
@@ -123,7 +125,9 @@ function recoveryScenario(
       const plan = planLeaseAgents({
         availablePathCpu: 0.5,
         execution: execution(input.reverseLeases, input.targetPresent),
+        movementPolicy: DEFAULT_SURVIVAL_POLICY.movement,
         paths: pathService(input.path),
+        progress: EMPTY_MOVEMENT_PROGRESS_VIEW,
         snapshot,
         tick: gameTime,
       });

@@ -211,8 +211,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   source, while an impossible or incomplete source assignment preserves the prior commitment and
   emits no placements. Issue #369 aligns executable local traversal with that invariant: private
   foreign ramparts are static blockers, owned/public ramparts remain walkable, and changed effective
-  passability separates cached path evidence without persistent invalidation state. Issue #371
-  advances layouts V20 with one empty obsolete-storage relocation at RCL6-RCL8: an exact active
+  passability separates cached path evidence without persistent invalidation state. Issue #447 adds
+  bounded local congestion recovery: exact heap-only movement-attempt evidence triggers one
+  occupancy/reservation-aware uncached replan after three unchanged ticks and one typed lease
+  suspension after ten, without putting dynamic facts in reusable paths or persistent Memory. Issue
+  #371 advances layouts V20 with one empty obsolete-storage relocation at RCL6-RCL8: an exact active
   terminal provides bounded local inventory continuity, an effective gate plus one exact current
   healthy Logistics row is mandatory, work and persisted destinations fail closed, and the same
   bounded receipt/executor path exposes the committed storage site after fresh disappearance. Issue

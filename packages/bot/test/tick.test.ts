@@ -2004,7 +2004,7 @@ describe("tick lifecycle", () => {
     expect(outcome.kernel.cpuUsed).toBe(2.75);
     expect(outcome.kernel.overheadCpu).toBe(2);
     expect(phaseCpu + outcome.kernel.overheadCpu).toBe(outcome.kernel.cpuUsed);
-    expect(outcome.telemetry).toMatchObject({ cacheEntries: 2, cacheNamespaces: 3 });
+    expect(outcome.telemetry).toMatchObject({ cacheEntries: 2, cacheNamespaces: 4 });
   });
 
   it("returns the kernel report when the mandatory telemetry system itself faults", () => {

@@ -44,6 +44,7 @@ describe("runtime local path adapter", () => {
     if (adapter === null) throw new Error("expected Screeps path adapter");
     expect(
       adapter.search({
+        blockedPositions: [{ roomName: "W1N1", x: 11, y: 10 }],
         goal: { roomName: "W1N1", x: 12, y: 10 },
         maxCost: 200,
         maxOps: 2_000,
@@ -57,6 +58,7 @@ describe("runtime local path adapter", () => {
       }),
     ).toEqual({ cost: 2, directions: [3, 3], incomplete: false });
     expect(set).toHaveBeenCalledWith(0, 0, 255);
+    expect(set).toHaveBeenCalledWith(11, 10, 255);
     expect(search).toHaveBeenCalledWith(
       expect.any(FakePosition),
       expect.objectContaining({ range: 1 }),

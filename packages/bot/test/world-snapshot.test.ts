@@ -3,7 +3,11 @@ import { planLeaseAgents } from "../src/agents";
 import { CacheManager } from "../src/cache";
 import { DEFAULT_SURVIVAL_POLICY } from "../src/config/defaults";
 import type { LeasedWorkExecution } from "../src/contracts";
-import { getMovementPathCache, SnapshotLocalPathPlanningService } from "../src/movement";
+import {
+  EMPTY_MOVEMENT_PROGRESS_VIEW,
+  getMovementPathCache,
+  SnapshotLocalPathPlanningService,
+} from "../src/movement";
 import type { RuntimeGame } from "../src/runtime/context";
 import { observeWorld } from "../src/world/observe";
 import {
@@ -309,7 +313,9 @@ describe("WorldSnapshot", () => {
       planLeaseAgents({
         availablePathCpu: 1,
         execution: { leases: [lease], status: "ready" },
+        movementPolicy: DEFAULT_SURVIVAL_POLICY.movement,
         paths: pathService,
+        progress: EMPTY_MOVEMENT_PROGRESS_VIEW,
         snapshot,
         tick: 500,
       });

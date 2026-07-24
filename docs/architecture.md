@@ -1040,7 +1040,9 @@ Invalidation uses dependency epochs rather than scattered deletes. Initial epoch
 
 For example, a route cache key includes origin, destination, policy ID, and topology epoch. A static
 cost matrix includes room name, structure-layout epoch, and pathing-policy epoch. Dynamic creeps are
-overlaid per tick and do not invalidate static matrices.
+overlaid per tick and do not invalidate static matrices or enter reusable local paths. The separate
+two-tick movement-progress namespace contains only bounded reconstructible attempt evidence; losing
+it resets congestion age and reduces quality without changing correctness.
 
 Only `CacheManager` may own global heap maps. A tiny function-local memoization that cannot survive
 the call is allowed. Anything reused across calls or ticks is a registered namespace.
@@ -1646,8 +1648,21 @@ service. The path service accepts only same-room positions and a static-matrix b
 configured operation and cost ceilings to its narrow search adapter, and refuses a cold rebuild or
 search when the enclosing system's `CpuScheduler` budget is insufficient. Static matrices and local
 direction lists are reconstructible heap-cache values; live objects, creep occupancy, reservations,
-and task state are never cached. The Execute-phase arbiter overlays current-tick occupancy and
+and task state never enter those values or keys. The Execute-phase arbiter resolves current-tick
 reservations only after cache lookup.
+
+Issue [#447](https://github.com/ralphschuler/screeps-myrmex/issues/447) adds bounded local
+congestion recovery without another state authority. One 128-entry, two-tick heap cache records only
+the exact prior correlated movement attempt and beginning-of-tick actor position after an accepted,
+blocked, or typed no-path result. A consecutive unchanged position under the same contract revision
+and goal advances `stuckAge`; actor movement, evidence gaps, lease/goal drift, or heap reset returns
+it to zero. At `stuckReplanTicks`, the lease agent bypasses the reusable local path and gives the
+narrow search adapter at most 128 canonical current-room creep positions and already-proposed
+destinations as an impassable tick-local overlay. That search consumes the existing 0.5-CPU
+allowance and configured operation/cost limits, and its result is never cached. At
+`blockedReleaseTicks`, the agent emits one ordinary correlated suspension request and no movement;
+`ContractLedger` remains the only lease owner. Empty heap may delay replanning but cannot authorize
+movement, persist occupancy, or change contract safety.
 
 Observe is the only live terrain/structure reader for that service. It publishes a compact immutable
 per-visible-room traversal projection; runtime's local path adapter is the only code that creates
@@ -1667,7 +1682,9 @@ The arbiter:
 - overlays current dynamic occupancy on static matrices;
 - reserves destinations and resolves swaps/chains deterministically;
 - favors safety, then deadline, then stuck age, then stable actor ID;
-- detects and recovers from repeated blockage;
+- detects repeated local blockage from exact correlated next-tick evidence, performs one bounded
+  occupancy-aware cold replan, and releases work through the existing contract channel at its
+  configured ceiling;
 - reports no-path and unsafe-route outcomes to the owning contract.
 
 Room routing and intra-room movement share policy inputs but remain separate cache namespaces.
@@ -2266,10 +2283,10 @@ containers and matching owned sites precede bounded static route distance from c
 the primary spawn, then plain terrain, swamp terrain, y, and x. Walls, borders, incompatible primary
 placements, structures, sites, and duplicate assignments fail closed; roads and ramparts may
 overlap. Dynamic creeps, congestion, movement reservations, and role state never enter commitment or
-cache identity. A source without a legal reachable work tile produces a bounded source-specific
-blocker without invalidating safe assignments for other sources. Old algorithm commitments are
-discarded as stale rebuild work rather than corrupting the `layouts` owner, and placements remain
-heap-only.
+reusable path/layout cache identity; issue #447 overlays them only on an uncached bounded search. A
+source without a legal reachable work tile produces a bounded source-specific blocker without
+invalidating safe assignments for other sources. Old algorithm commitments are discarded as stale
+rebuild work rather than corrupting the `layouts` owner, and placements remain heap-only.
 
 Issue #367 makes source access a production layout-admission invariant. A constant eight-position
 preflight rejects any observed source with no legal adjacent terrain/current-occupancy tile; private
@@ -2862,6 +2879,10 @@ Required architecture assertions include:
 - the sole observed traversal projection and layout access share one rampart rule: private foreign
   ramparts block production local paths, owned/public ramparts remain walkable, and an effective
   passability change changes the cache revision without persistent invalidation state;
+- one exact prior correlated movement attempt may occupy only the bounded reconstructible movement
+  progress cache; after the configured unchanged-position threshold, current creep occupancy and
+  proposed destinations overlay one uncached local search, and the release threshold emits one typed
+  lease suspension without persisting dynamic facts;
 - engine-compatible road/rampart layering uses the ordinary construction-site chain, while current
   sites and incompatible primary occupants block and no road-removal intent exists;
 - a complete production layout requires one distinct semantic service on a legal
