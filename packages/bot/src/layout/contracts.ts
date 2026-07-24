@@ -297,10 +297,10 @@ export interface LayoutRecord extends LayoutCommitment {
 }
 
 /**
- * Fully validated older-algorithm evidence. Only one exact otherwise-quiescent extension, reserve-
- * link, spawn, or tower evacuation may remain a Logistics input; stale geometry and removal stay
- * inert. Reserve-link continuation accepts only the known source-defined V1 geometry as role-safety
- * evidence.
+ * Fully validated older-algorithm evidence. Only one exact otherwise-quiescent legacy energy-only
+ * container migration or extension, reserve-link, spawn, or tower evacuation may remain a Logistics
+ * input; stale geometry and removal stay inert. Reserve-link continuation accepts only the known
+ * source-defined V1 geometry as role-safety evidence.
  */
 export type StaleLayoutRecord = LayoutRecord;
 export type CompletedStaleLayoutEvacuationKind =

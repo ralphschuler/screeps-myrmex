@@ -17,7 +17,11 @@ import {
   layoutTowerEvacuationFlowId,
   type LayoutRecord,
 } from "../src/layout";
-import { projectLayoutContainerMigrations } from "../src/logistics/container-migration";
+import {
+  completedLayoutContainerMigrationRoomNames,
+  projectLayoutContainerMigrations,
+  projectLayoutContainerMigrationSuppression,
+} from "../src/logistics/container-migration";
 import {
   completedLayoutExtensionEvacuationRoomNames,
   projectLayoutExtensionEvacuations,
@@ -2278,6 +2282,37 @@ describe("logistics runtime adapter", () => {
       "container-replacement",
     ]);
     expect(projection.suppressedSourceTargetIds).toEqual(["container-obsolete"]);
+    expect(
+      projectLayoutContainerMigrations({
+        records: [
+          {
+            algorithmRevision: "owned-room-layout-v1",
+            anchor: position(25, 25),
+            blockers: [],
+            committedAt: 1,
+            containerMigration: migration,
+            fingerprint: "layout-stale",
+            roomName: "W1N1",
+            transform: 0,
+          },
+        ],
+        snapshot: {
+          ...migrationSnapshot,
+          rooms: [
+            {
+              ...room,
+              observedAt: 11,
+              storedStructures: [
+                ...room.storedStructures,
+                obsolete,
+                container(replacement.id, 13, 20),
+              ],
+            },
+          ],
+        },
+        tick: 11,
+      }).edges,
+    ).toEqual([]);
     const runtime = planLogisticsRuntime({
       execution: emptyContractExecutionView("ready"),
       includeOptional: true,
@@ -2298,6 +2333,137 @@ describe("logistics runtime adapter", () => {
     expect(runtime.plan.blockers).not.toContainEqual(
       expect.objectContaining({ reason: "duplicate-id" }),
     );
+  });
+
+  it("durably suppresses and exactly settles one energy-only container migration", () => {
+    const snapshot = world();
+    const room = snapshot.rooms[0];
+    if (room === undefined) throw new Error("stale container fixture room missing");
+    const container = (id: string, x: number, energy: number) => ({
+      hits: 250_000,
+      hitsMax: 250_000,
+      id,
+      ownerUsername: null,
+      ownership: "unowned" as const,
+      pos: position(x, 12),
+      store: {
+        capacity: 2_000,
+        freeCapacity: 2_000 - energy,
+        resources: energy === 0 ? [] : [{ amount: energy, resourceType: "energy" }],
+        usedCapacity: energy,
+      },
+      structureType: "container",
+      ticksToDecay: 5_000,
+    });
+    const migration = {
+      energyAmount: 50,
+      expiresAt: 160,
+      replacementId: "container-replacement",
+      replacementInitialEnergy: 10,
+      startedAt: 10,
+      targetId: "container-obsolete",
+    } as const;
+    const record: LayoutRecord = {
+      algorithmRevision: "owned-room-layout-v1",
+      anchor: position(25, 25),
+      blockers: [],
+      committedAt: 1,
+      containerMigration: migration,
+      fingerprint: "layout-stale",
+      roomName: "W1N1",
+      transform: 0,
+    };
+    const migrationWorld = (targetEnergy: number, replacementEnergy: number) => ({
+      ...snapshot,
+      observation: { ...snapshot.observation, tick: 11 },
+      observedAt: 11,
+      rooms: [
+        {
+          ...room,
+          observedAt: 11,
+          storedStructures: [
+            ...room.storedStructures,
+            container(migration.targetId, 12, targetEnergy),
+            container(migration.replacementId, 13, replacementEnergy),
+          ],
+        },
+      ],
+    });
+    const pending = migrationWorld(50, 10);
+    const pendingRoom = pending.rooms[0];
+    if (pendingRoom === undefined) throw new Error("pending container room missing");
+    const suppression = projectLayoutContainerMigrationSuppression({
+      records: [record],
+      snapshot: { ...pending, rooms: [{ ...pendingRoom, hostileCreeps: [{} as never] }] },
+      tick: 11,
+    });
+    expect(suppression).toEqual({
+      suppressedSinkTargetIds: [migration.targetId, migration.replacementId],
+      suppressedSourceTargetIds: [migration.targetId],
+    });
+    expect(
+      projectLayoutContainerMigrationSuppression({
+        records: [record],
+        snapshot: pending,
+        tick: migration.expiresAt,
+      }),
+    ).toEqual({ suppressedSinkTargetIds: [], suppressedSourceTargetIds: [] });
+
+    const delivered = migrationWorld(0, 60);
+    const deliveredRoom = delivered.rooms[0];
+    if (deliveredRoom === undefined) throw new Error("delivered container room missing");
+    const flowId = "layout-container-evacuation:W1N1:container-obsolete:container-replacement";
+    const completed = (activeFlowIds = new Set<string>(), activeTargetIds = new Set<string>()) =>
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds,
+        activeTargetIds,
+        authorizedFlowIds: new Set([flowId]),
+        records: [record],
+        snapshot: delivered,
+        tick: 11,
+      });
+    expect(completed()).toEqual(["W1N1"]);
+    expect(
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set(),
+        records: [record],
+        snapshot: delivered,
+        tick: 11,
+      }),
+    ).toEqual([]);
+    expect(completed(new Set([flowId]))).toEqual([]);
+    expect(completed(new Set(), new Set([migration.targetId]))).toEqual([]);
+    expect(completed(new Set(), new Set([migration.replacementId]))).toEqual([]);
+    expect(
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set([flowId]),
+        records: [record],
+        snapshot: migrationWorld(0, 61),
+        tick: 11,
+      }),
+    ).toEqual([]);
+    expect(
+      completedLayoutContainerMigrationRoomNames({
+        activeFlowIds: new Set(),
+        activeTargetIds: new Set(),
+        authorizedFlowIds: new Set([flowId]),
+        records: [record],
+        snapshot: {
+          ...delivered,
+          rooms: [
+            {
+              ...deliveredRoom,
+              storedStructures: [...deliveredRoom.storedStructures].reverse(),
+            },
+          ],
+        },
+        tick: 11,
+      }),
+    ).toEqual(["W1N1"]);
   });
 
   it("projects mixed container stock as atomic resource-specific funded flows", () => {

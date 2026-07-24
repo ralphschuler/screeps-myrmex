@@ -630,6 +630,21 @@ export function persistStaleConstructionSiteReceipts(
   return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
 }
 
+export function clearStaleLayoutContainerMigration(
+  owner: LayoutsOwnerV25,
+  roomName: string,
+): LayoutsOwnerV25 {
+  const prior = owner.staleRecords.find((record) => record.roomName === roomName);
+  if (prior?.containerMigration === undefined) return owner;
+  const staleRecords = owner.staleRecords.map((record) => {
+    if (record.roomName !== roomName) return record;
+    const { containerMigration: _containerMigration, ...retained } = record;
+    void _containerMigration;
+    return retained;
+  });
+  return freeze({ ...owner, revision: owner.revision + 1, staleRecords });
+}
+
 export function clearStaleLayoutExtensionEvacuation(
   owner: LayoutsOwnerV25,
   roomName: string,

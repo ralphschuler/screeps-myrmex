@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
+  isStaleLayoutContainerMigrationContinuation,
   isStaleLayoutExtensionEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
@@ -13,6 +14,89 @@ import {
   type LayoutPlanningInput,
   type StaleLayoutRecord,
 } from "../src/layout";
+
+describe("stale energy-only container migration continuation", () => {
+  const staleRecord = (): StaleLayoutRecord => ({
+    algorithmRevision: "owned-room-layout-v1",
+    anchor: { roomName: "W1N1", x: 25, y: 25 },
+    blockers: [],
+    committedAt: 1,
+    containerMigration: {
+      energyAmount: 500,
+      expiresAt: 250,
+      replacementId: "container-replacement",
+      replacementInitialEnergy: 100,
+      startedAt: 100,
+      targetId: "container-obsolete",
+    },
+    fingerprint: "stale-layout",
+    roomName: "W1N1",
+    sourceServices: [],
+    transform: 0,
+  });
+
+  it("admits only the sole legacy energy-only general-container term", () => {
+    const migration = staleRecord().containerMigration;
+    if (migration === undefined) throw new Error("stale container migration fixture missing");
+    expect(isStaleLayoutContainerMigrationContinuation(staleRecord())).toBe(true);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        algorithmRevision: "owned-room-layout-v2-source-services",
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: {
+          ...migration,
+          resourceManifest: [["energy", 500, 100]],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: { ...migration, sourceId: "source-a" },
+      }),
+    ).toBe(false);
+    const { replacementInitialEnergy: _baseline, ...withoutBaseline } = migration;
+    void _baseline;
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        containerMigration: withoutBaseline,
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        extensionEvacuation: {
+          amount: 50,
+          expiresAt: 250,
+          replacementId: "extension-replacement",
+          replacementInitialEnergy: 0,
+          sourceId: "extension-obsolete",
+          startedAt: 100,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isStaleLayoutContainerMigrationContinuation({
+        ...staleRecord(),
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "container-replacement",
+          targetId: "container-obsolete",
+          targetStructureType: "container",
+        },
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("stale extension evacuation continuation", () => {
   const staleRecord = (): StaleLayoutRecord => ({

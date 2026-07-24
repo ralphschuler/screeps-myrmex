@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CacheManager } from "../src/cache";
 import {
+  clearStaleLayoutContainerMigration,
   clearStaleLayoutLinkEvacuation,
   clearStaleLayoutTowerEvacuation,
   emptyLayoutsOwner,
@@ -682,6 +683,24 @@ describe("layout persistence and cache", () => {
         "resource".repeat(8),
       ),
     ).toBeNull();
+
+    const legacyEnergyOwner = persistLayoutContainerMigration(
+      persistLayoutCommitment(emptyLayoutsOwner(), "W1N1", commitment),
+      "W1N1",
+      migration,
+    );
+    const current = legacyEnergyOwner.records[0];
+    if (current === undefined) throw new Error("expected persisted container migration");
+    const staleOwner: LayoutsOwnerV25 = {
+      ...legacyEnergyOwner,
+      records: [],
+      staleRecords: [{ ...current, algorithmRevision: "owned-room-layout-v1" }],
+    };
+    const settled = clearStaleLayoutContainerMigration(staleOwner, "W1N1");
+    expect(settled.revision).toBe(staleOwner.revision + 1);
+    expect(settled.records).toEqual([]);
+    expect(settled.staleRecords[0]?.containerMigration).toBeUndefined();
+    expect(clearStaleLayoutContainerMigration(settled, "W1N1")).toBe(settled);
   });
 
   it("persists identity-bound destroy backoff for every current removal path", () => {

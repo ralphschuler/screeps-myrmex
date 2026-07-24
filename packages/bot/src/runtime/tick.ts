@@ -130,6 +130,7 @@ import {
   StructureDestroyExecutor,
   arbitrateConstructionSites,
   arbitrateStructureRemovals,
+  clearStaleLayoutContainerMigration,
   clearStaleLayoutExtensionEvacuation,
   clearStaleLayoutLinkEvacuation,
   clearStaleLayoutSpawnEvacuation,
@@ -138,9 +139,11 @@ import {
   emptyLayoutsOwner,
   freshSourceServicePlacements,
   layoutCacheDependencies,
+  layoutContainerMigrationFlowId,
   layoutExtensionEvacuationFlowId,
   isLayoutSpawnEvacuationFlowId,
   isLayoutStorageEvacuationFlowId,
+  isStaleLayoutContainerMigrationContinuation,
   isStaleLayoutExtensionEvacuationContinuation,
   isStaleLayoutLinkEvacuationContinuation,
   isStaleLayoutSpawnEvacuationContinuation,
@@ -172,6 +175,7 @@ import {
   reconstructStaleLayoutLinkPlacements,
   registerLayoutCompiledCache,
   selectLayoutPlanningWindow,
+  staleLayoutContainerMigrationSettlementBlocker,
   staleLayoutExtensionEvacuationSettlementBlocker,
   staleLayoutLinkEvacuationSettlementBlocker,
   staleLayoutRemovalSettlementBlocker,
@@ -214,7 +218,11 @@ import {
   renewLogisticsBudgets,
   type LogisticsRuntimeProjection,
 } from "../logistics/runtime";
-import { projectLayoutContainerMigrations } from "../logistics/container-migration";
+import {
+  completedLayoutContainerMigrationRoomNames,
+  projectLayoutContainerMigrations,
+  projectLayoutContainerMigrationSuppression,
+} from "../logistics/container-migration";
 import {
   completedLayoutExtensionEvacuationRoomNames,
   projectLayoutExtensionEvacuations,
@@ -628,6 +636,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let growthCandidates: readonly GrowthCandidate[] = Object.freeze([]);
   let staticMiningPlan: StaticMiningPlan = emptyStaticMiningPlan();
   let logisticsRuntime = emptyLogisticsRuntimeProjection();
+  let authorizedContainerMigrationFlowIds: ReadonlySet<string> = new Set();
+  let suppressedContainerMigrationTargetIds: ReadonlySet<string> = new Set();
   let activeLabEvacuationFlowIds: ReadonlySet<string> = persistedLayoutLabEvacuationFlowIds(
     input.manager,
   );
@@ -836,6 +846,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         logistics,
         logisticsCpu,
         matureMaintenance,
+        authorizedContainerMigrations,
+        suppressedContainerMigrationTargets,
         activeLabEvacuations,
         authorizedLabEvacuations,
         activeLinkEvacuations,
@@ -860,6 +872,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         logisticsRuntime = logistics;
         logisticsCpuUsed = logisticsCpu;
         maintenanceBudget = matureMaintenance;
+        authorizedContainerMigrationFlowIds = authorizedContainerMigrations;
+        suppressedContainerMigrationTargetIds = suppressedContainerMigrationTargets;
         activeLabEvacuationFlowIds = activeLabEvacuations;
         authorizedLabEvacuationFlowIds = authorizedLabEvacuations;
         activeLinkEvacuationFlowIds = activeLinkEvacuations;
@@ -1261,6 +1275,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
               ? [execution.flowId]
               : [],
         );
+        const blockedStaleContainerMigrationFlowIds = blockedStaleLayoutContainerMigrationFlowIds(
+          input.manager,
+          context.colony,
+          logisticsRuntime,
+        );
         const blockedStaleExtensionEvacuationFlowIds = blockedStaleLayoutExtensionEvacuationFlowIds(
           input.manager,
           context.colony,
@@ -1284,6 +1303,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
                   (flowId) => !authorizedLinkEvacuationFlowIds.has(flowId),
                 ),
                 ...blockedStorageEvacuationFlowIds,
+                ...blockedStaleContainerMigrationFlowIds,
                 ...blockedStaleExtensionEvacuationFlowIds,
                 ...blockedStaleTowerEvacuationFlowIds,
                 ...[...activeTerminalEvacuationFlowIds].filter(
@@ -1294,12 +1314,14 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
               logisticsAcquireAdmissionLimits(context.contractExecution, logisticsRuntime),
             ),
             new Set([
+              ...suppressedContainerMigrationTargetIds,
               ...suppressedSpawnEvacuationTargetIds,
               ...suppressedStorageEvacuationTargetIds,
               ...suppressedTerminalEvacuationTargetIds,
               ...suppressedTowerEvacuationTargetIds,
             ]),
             new Set([
+              ...authorizedContainerMigrationFlowIds,
               ...authorizedStorageEvacuationFlowIds,
               ...authorizedTerminalEvacuationFlowIds,
               ...authorizedTowerEvacuationFlowIds,
@@ -2277,6 +2299,29 @@ function layoutPlanningSystem(
         activeTerminalLogisticsTargetIds.add(request.execution.counterpartId);
       }
       const currentLogisticsTargetIds = new Set(activeLogisticsTargetIds);
+      const activeReservationBindings = new Set(
+        context.colony.reservations.flatMap(({ category, issuer, status }) =>
+          status === "active" ? [`${category}\u0000${issuer}`] : [],
+        ),
+      );
+      const fundedContainerMigrationFlowIds = new Set(
+        logistics.graph.edges.flatMap(({ budgetBinding, id }) =>
+          budgetBinding !== undefined &&
+          activeReservationBindings.has(`${budgetBinding.category}\u0000${budgetBinding.issuer}`)
+            ? [id]
+            : [],
+        ),
+      );
+      const completedStaleContainerMigrationRooms = new Set(
+        completedLayoutContainerMigrationRoomNames({
+          activeFlowIds: activeLogisticsFlowIds,
+          activeTargetIds: currentLogisticsTargetIds,
+          authorizedFlowIds: fundedContainerMigrationFlowIds,
+          records: initialOwner.staleRecords.filter(isStaleLayoutContainerMigrationContinuation),
+          snapshot: context.snapshot,
+          tick: context.tick,
+        }),
+      );
       const completedStaleExtensionEvacuationRooms = new Set(
         completedLayoutExtensionEvacuationRoomNames({
           activeFlowIds: activeLogisticsFlowIds,
@@ -2400,6 +2445,22 @@ function layoutPlanningSystem(
         }
         const priorRecord = owner.records.find((record) => record.roomName === room.name);
         const staleRecord = owner.staleRecords.find((record) => record.roomName === room.name);
+        if (
+          staleRecord !== undefined &&
+          completedStaleContainerMigrationRooms.has(room.name) &&
+          staleLayoutContainerMigrationSettlementBlocker({ colony, record: staleRecord }) === null
+        ) {
+          owner = clearStaleLayoutContainerMigration(owner, room.name);
+          changed = true;
+          ownerPrecommitRequired = true;
+          planning.push({
+            blocker: "revision-handoff-active",
+            fingerprint: staleRecord.fingerprint,
+            roomName: room.name,
+            status: "degraded",
+          });
+          break;
+        }
         if (
           staleRecord !== undefined &&
           completedStaleExtensionEvacuationRooms.has(room.name) &&
@@ -3313,6 +3374,8 @@ function colonyDirectorSystem(
     logistics: LogisticsRuntimeProjection,
     logisticsCpuUsed: number,
     matureMaintenance: MaintenanceBudgetProjection,
+    authorizedContainerMigrations: ReadonlySet<string>,
+    suppressedContainerMigrationTargets: ReadonlySet<string>,
     activeLabEvacuations: ReadonlySet<string>,
     authorizedLabEvacuations: ReadonlySet<string>,
     activeLinkEvacuations: ReadonlySet<string>,
@@ -3352,6 +3415,7 @@ function colonyDirectorSystem(
       const stalePolicyPlanningAdmitted =
         mode === "normal" &&
         (hasExplicitStaleSourceService(input.manager) ||
+          hasStaleLayoutContainerMigrationContinuation(input.manager) ||
           hasStaleLayoutExtensionEvacuationContinuation(input.manager) ||
           hasStaleLayoutLinkEvacuationContinuation(input.manager) ||
           hasStaleLayoutSpawnEvacuationContinuation(input.manager) ||
@@ -3439,6 +3503,23 @@ function colonyDirectorSystem(
         context.contractExecution.status === "ready" &&
         context.contractPlanning.status === "ready";
       const layoutRecords = layoutWorkEnabled ? persistedLayoutRecords : [];
+      const staleContainerMigrationRecords =
+        persistedLayoutsOwner?.staleRecords.filter(isStaleLayoutContainerMigrationContinuation) ??
+        [];
+      const containerMigrationRecords = [
+        ...layoutRecords,
+        ...(layoutWorkEnabled
+          ? staleContainerMigrationRecords.filter((record) => {
+              const colony = staleLayoutPolicyColonies.find(
+                ({ roomName }) => roomName === record.roomName,
+              );
+              return (
+                colony !== undefined &&
+                staleLayoutContainerMigrationSettlementBlocker({ colony, record }) === null
+              );
+            })
+          : []),
+      ];
       const staleExtensionEvacuationRecords = layoutWorkEnabled
         ? (persistedLayoutsOwner?.staleRecords.filter(
             isStaleLayoutExtensionEvacuationContinuation,
@@ -3543,12 +3624,38 @@ function colonyDirectorSystem(
             )
           : [],
       );
-      const layoutContainerMigrations = projectLayoutContainerMigrations({
+      const projectedLayoutContainerMigrations = projectLayoutContainerMigrations({
         existingBudgets: priorLedger,
-        records: layoutRecords,
+        records: containerMigrationRecords,
         snapshot: context.snapshot,
         tick: context.tick,
       });
+      const staleContainerMigrationSuppression = projectLayoutContainerMigrationSuppression({
+        records: staleContainerMigrationRecords,
+        snapshot: context.snapshot,
+        tick: context.tick,
+      });
+      const containerMigrationSuppressedSinkTargetIds = [
+        ...new Set([
+          ...(projectedLayoutContainerMigrations.suppressedSinkTargetIds ?? []),
+          ...staleContainerMigrationSuppression.suppressedSinkTargetIds,
+        ]),
+      ].sort();
+      const containerMigrationSuppressedSourceTargetIds = [
+        ...new Set([
+          ...(projectedLayoutContainerMigrations.suppressedSourceTargetIds ?? []),
+          ...staleContainerMigrationSuppression.suppressedSourceTargetIds,
+        ]),
+      ].sort();
+      const layoutContainerMigrations = Object.freeze({
+        ...projectedLayoutContainerMigrations,
+        suppressedSinkTargetIds: Object.freeze(containerMigrationSuppressedSinkTargetIds),
+        suppressedSourceTargetIds: Object.freeze(containerMigrationSuppressedSourceTargetIds),
+      });
+      economyCandidates = withoutSuppressedSurvivalTransfers(
+        economyCandidates,
+        new Set(containerMigrationSuppressedSinkTargetIds),
+      );
       const projectedLayoutEvacuations = projectLayoutExtensionEvacuations({
         existingBudgets: priorLedger,
         records: extensionEvacuationRecords,
@@ -3695,6 +3802,9 @@ function colonyDirectorSystem(
         economyCandidates,
         new Set(towerEvacuationSuppressedSinkTargetIds),
       );
+      const projectedContainerMigrationFlowIds = new Set(
+        layoutContainerMigrations.edges.map(({ id }) => id),
+      );
       const projectedTowerEvacuationFlowIds = new Set(
         layoutTowerEvacuations.demands.edges.map(({ id }) => id),
       );
@@ -3795,6 +3905,10 @@ function colonyDirectorSystem(
       const logistics = renewLogisticsBudgets(
         logisticsPlan,
         resolveColoniesOwner(owner).owner?.ledger ?? [],
+      );
+      const logisticsExecutableContainerMigrationFlowIds = currentlyExecutableLogisticsFlowIds(
+        projectedContainerMigrationFlowIds,
+        logistics,
       );
       const logisticsExecutableTowerEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
         projectedTowerEvacuationFlowIds,
@@ -4118,6 +4232,20 @@ function colonyDirectorSystem(
         const elapsed = input.game.cpu.getUsed() - startedAt;
         if (Number.isFinite(elapsed) && elapsed > 0) miningCpuUsed += elapsed;
       }
+      const activeContainerMigrationBudgetIssuers = new Set(
+        session.result.reservations.flatMap(({ category, issuer, status }) =>
+          category === "optional-growth" && status === "active" ? [issuer] : [],
+        ),
+      );
+      const executableContainerMigrationFlowIds = new Set(
+        layoutContainerMigrations.edges.flatMap(({ budgetBinding, id }) =>
+          logisticsExecutableContainerMigrationFlowIds.has(id) &&
+          budgetBinding !== undefined &&
+          activeContainerMigrationBudgetIssuers.has(budgetBinding.issuer)
+            ? [id]
+            : [],
+        ),
+      );
       const activeSpawnEvacuationBudgetIssuers = new Set(
         session.result.reservations.flatMap(({ category, issuer, status }) =>
           category === "optional-growth" && status === "active" ? [issuer] : [],
@@ -4228,6 +4356,11 @@ function colonyDirectorSystem(
         logistics,
         logisticsCpuUsed,
         provisionalMaintenance,
+        executableContainerMigrationFlowIds,
+        new Set([
+          ...containerMigrationSuppressedSinkTargetIds,
+          ...containerMigrationSuppressedSourceTargetIds,
+        ]),
         persistedLayoutLabEvacuationFlowIds(input.manager),
         executableLabEvacuationFlowIds,
         persistedLayoutLinkEvacuationFlowIds(input.manager),
@@ -4456,6 +4589,15 @@ function hasExplicitStaleSourceService(manager: MemoryManager | null): boolean {
   );
 }
 
+function hasStaleLayoutContainerMigrationContinuation(manager: MemoryManager | null): boolean {
+  if (manager === null) return false;
+  return (
+    parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
+      isStaleLayoutContainerMigrationContinuation,
+    ) === true
+  );
+}
+
 function hasStaleLayoutExtensionEvacuationContinuation(manager: MemoryManager | null): boolean {
   if (manager === null) return false;
   return (
@@ -4489,6 +4631,40 @@ function hasStaleLayoutTowerEvacuationContinuation(manager: MemoryManager | null
     parseLayoutsOwner(manager.ownerView("layouts"))?.staleRecords.some(
       isStaleLayoutTowerEvacuationContinuation,
     ) === true
+  );
+}
+
+function blockedStaleLayoutContainerMigrationFlowIds(
+  manager: MemoryManager | null,
+  colonyPlanning: ColonyPlanningResult,
+  logistics: LogisticsRuntimeProjection,
+): readonly string[] {
+  if (manager === null) return Object.freeze([]);
+  const owner = parseLayoutsOwner(manager.ownerView("layouts"));
+  if (owner === null) return Object.freeze([]);
+  const activeReservations = new Set(
+    colonyPlanning.reservations.flatMap(({ category, colonyId, issuer, status }) =>
+      status === "active" ? [`${colonyId}\u0000${category}\u0000${issuer}`] : [],
+    ),
+  );
+  return Object.freeze(
+    owner.staleRecords.flatMap((record) => {
+      if (!isStaleLayoutContainerMigrationContinuation(record)) return [];
+      const migration = record.containerMigration;
+      if (migration === undefined) return [];
+      const flowId = layoutContainerMigrationFlowId(record.roomName, migration);
+      const edge = logistics.graph.edges.find(({ id }) => id === flowId);
+      const colony = colonyPlanning.colonies.find(({ roomName }) => roomName === record.roomName);
+      const binding = edge?.budgetBinding;
+      if (
+        binding !== undefined &&
+        colony !== undefined &&
+        staleLayoutContainerMigrationSettlementBlocker({ colony, record }) === null &&
+        activeReservations.has(`${record.roomName}\u0000${binding.category}\u0000${binding.issuer}`)
+      )
+        return [];
+      return [flowId];
+    }),
   );
 }
 

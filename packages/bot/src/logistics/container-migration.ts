@@ -5,6 +5,7 @@ import {
   MAX_LAYOUT_CONTAINER_MIGRATION_FLOWS,
   MAX_LAYOUT_CONTAINER_MIGRATION_RESOURCES,
   MAX_LAYOUT_CONTAINER_STORE_RESOURCES,
+  MAX_LAYOUT_RECORDS,
   layoutContainerMigrationBudgetIssuer,
   layoutContainerMigrationFlowId,
   layoutContainerMigrationResourceBudgetIssuer,
@@ -25,6 +26,105 @@ interface ResourceTerm {
   readonly legacyEnergy: boolean;
   readonly replacementInitialAmount: number;
   readonly resourceType: string;
+}
+
+export interface LayoutContainerMigrationSuppression {
+  readonly suppressedSinkTargetIds: readonly string[];
+  readonly suppressedSourceTargetIds: readonly string[];
+}
+
+/** Durable endpoint suppression for persisted stock, independent of optional-work authorization. */
+export function projectLayoutContainerMigrationSuppression(input: {
+  readonly records: readonly LayoutRecord[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): LayoutContainerMigrationSuppression {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return emptySuppression();
+  const suppressedSinkTargetIds = new Set<string>();
+  const suppressedSourceTargetIds = new Set<string>();
+  for (const record of [...input.records].sort((left, right) =>
+    left.roomName.localeCompare(right.roomName),
+  )) {
+    const migration = record.containerMigration;
+    if (!isCurrentContainerMigrationTerm(migration, input.tick)) continue;
+    const terms = migrationTerms(migration);
+    if (terms === null || terms.length === 0) continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (room?.controller?.ownership !== "owned" || room.observedAt !== input.tick) continue;
+    suppressedSinkTargetIds.add(migration.targetId);
+    suppressedSinkTargetIds.add(migration.replacementId);
+    suppressedSourceTargetIds.add(migration.targetId);
+  }
+  return freeze({
+    suppressedSinkTargetIds: [...suppressedSinkTargetIds].sort(),
+    suppressedSourceTargetIds: [...suppressedSourceTargetIds].sort(),
+  });
+}
+
+/** Fresh command-free completion evidence for one exact energy-only container migration. */
+export function completedLayoutContainerMigrationRoomNames(input: {
+  readonly activeFlowIds: ReadonlySet<string>;
+  readonly activeTargetIds: ReadonlySet<string>;
+  readonly authorizedFlowIds: ReadonlySet<string>;
+  readonly records: readonly LayoutRecord[];
+  readonly snapshot: WorldSnapshot;
+  readonly tick: number;
+}): readonly string[] {
+  if (input.records.length > MAX_LAYOUT_RECORDS) return Object.freeze([]);
+  const completed: string[] = [];
+  for (const record of [...input.records].sort((left, right) =>
+    left.roomName.localeCompare(right.roomName),
+  )) {
+    const migration = record.containerMigration;
+    if (
+      !isCurrentContainerMigrationTerm(migration, input.tick) ||
+      input.tick <= migration.startedAt
+    )
+      continue;
+    const terms = migrationTerms(migration);
+    const term = terms?.[0];
+    if (terms?.length !== 1 || term?.legacyEnergy !== true) continue;
+    const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
+    if (
+      room?.controller?.ownership !== "owned" ||
+      room.observedAt !== input.tick ||
+      room.hostileCreeps.length > 0
+    )
+      continue;
+    const targets = room.storedStructures.filter(({ id }) => id === migration.targetId);
+    const replacements = room.storedStructures.filter(({ id }) => id === migration.replacementId);
+    const target = targets[0];
+    const replacement = replacements[0];
+    if (
+      targets.length !== 1 ||
+      replacements.length !== 1 ||
+      target === undefined ||
+      replacement === undefined ||
+      target.id === replacement.id ||
+      !currentContainer(target) ||
+      !currentContainer(replacement)
+    )
+      continue;
+    const targetResources = exactResources(target);
+    const replacementResources = exactResources(replacement);
+    if (
+      targetResources === null ||
+      replacementResources === null ||
+      targetResources.size !== 0 ||
+      (replacementResources.get("energy") ?? 0) !== term.replacementInitialAmount + term.amount
+    )
+      continue;
+    const flowId = layoutContainerMigrationFlowId(room.name, migration);
+    if (
+      !input.authorizedFlowIds.has(flowId) ||
+      input.activeFlowIds.has(flowId) ||
+      input.activeTargetIds.has(target.id) ||
+      input.activeTargetIds.has(replacement.id)
+    )
+      continue;
+    completed.push(room.name);
+  }
+  return Object.freeze(completed);
 }
 
 /** Projects one layout-owned general-container handoff into the sole logistics graph. */
@@ -51,10 +151,8 @@ export function projectLayoutContainerMigrations(input: {
   for (const record of [...input.records].sort((a, b) => a.roomName.localeCompare(b.roomName))) {
     const migration = record.containerMigration;
     if (
-      migration === undefined ||
-      migration.expiresAt - migration.startedAt !== LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS ||
-      input.tick <= migration.startedAt ||
-      input.tick >= migration.expiresAt
+      !isCurrentContainerMigrationTerm(migration, input.tick) ||
+      input.tick <= migration.startedAt
     )
       continue;
     const room = input.snapshot.rooms.find(({ name }) => name === record.roomName);
@@ -212,6 +310,17 @@ export function projectLayoutContainerMigrations(input: {
   });
 }
 
+function isCurrentContainerMigrationTerm(
+  migration: LayoutRecord["containerMigration"],
+  tick: number,
+): migration is LayoutContainerMigration {
+  return (
+    migration !== undefined &&
+    migration.expiresAt - migration.startedAt === LAYOUT_CONTAINER_MIGRATION_TIMEOUT_TICKS &&
+    tick < migration.expiresAt
+  );
+}
+
 function migrationTerms(migration: LayoutContainerMigration): readonly ResourceTerm[] | null {
   const manifest: unknown = migration.resourceManifest;
   const hasEnergy = migration.energyAmount !== undefined;
@@ -309,10 +418,14 @@ function currentResourcesMatchTerms(
     const term = termsByResource.get(resourceType);
     if (term === undefined || amount > term.amount) return false;
   }
-  return terms.every(
-    ({ replacementInitialAmount, resourceType }) =>
-      (replacement.get(resourceType) ?? 0) >= replacementInitialAmount,
-  );
+  return terms.every(({ amount, replacementInitialAmount, resourceType }) => {
+    const targetAmount = target.get(resourceType) ?? 0;
+    const replacementAmount = replacement.get(resourceType) ?? 0;
+    return (
+      replacementAmount >= replacementInitialAmount &&
+      targetAmount + replacementAmount - replacementInitialAmount <= amount
+    );
+  });
 }
 
 function renewedRevision(
@@ -402,6 +515,9 @@ function positiveInteger(value: unknown): value is number {
 }
 function compare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+function emptySuppression(): LayoutContainerMigrationSuppression {
+  return freeze({ suppressedSinkTargetIds: [], suppressedSourceTargetIds: [] });
 }
 function emptyProjection(): LayoutContainerMigrationProjection {
   return freeze({
