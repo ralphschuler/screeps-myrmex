@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { COLONY_RCL_POLICY_TABLE } from "../src/colony/rcl-policy";
 import {
+  diffOwnedRoomLayout,
+  emptyLayoutsOwner,
   isKnownV1StaleLayoutLabEvacuation,
   isPersistedStaleLayoutStorageEvacuation,
   isStaleLayoutContainerMigrationContinuation,
@@ -11,6 +13,7 @@ import {
   isStaleLayoutStorageEvacuationContinuation,
   isStaleLayoutTerminalEvacuationContinuation,
   isStaleLayoutTowerEvacuationContinuation,
+  parseLayoutsOwner,
   planOwnedRoomLayout,
   planOwnedRoomLayouts,
   projectLayoutConvergencePlacements,
@@ -18,6 +21,7 @@ import {
   reconstructStaleLayoutLinkPlacements,
   selectLayoutPlanningWindow,
   type LayoutPlanningInput,
+  type LayoutRecord,
   type StaleLayoutRecord,
 } from "../src/layout";
 
@@ -1076,54 +1080,178 @@ describe("owned-room-layout-v1", () => {
       );
   });
 
-  it("restores committed storage geometry only when terminal allowance is unlocked", () => {
+  it("retains one compatible external storage from RCL4 through RCL8", () => {
+    const external = structure("storage", 35, 35, "owned");
+    for (const level of [4, 5, 6, 7, 8]) {
+      const input = fixture(level);
+      const planned = planOwnedRoomLayout({
+        ...input,
+        structures: [...input.structures, external],
+      });
+      const reordered = planOwnedRoomLayout({
+        ...input,
+        structures: [...input.structures, external].reverse(),
+      });
+      if (planned.status !== "complete" || reordered.status !== "complete")
+        throw new Error("expected complete layout");
+      const unlocks = input.policy.unlocks;
+      if (unlocks === null) throw new Error("expected RCL unlocks");
+      const convergent = projectLayoutConvergencePlacements({
+        commitment: planned.commitment,
+        current: planned.placements,
+        roomName: input.roomName,
+        sourceCount: input.sources.length,
+        sources: input.sources,
+        unlocks,
+      });
+
+      expect(JSON.stringify(reordered)).toBe(JSON.stringify(planned));
+      expect(convergent.filter(({ structureType }) => structureType === "storage")).toEqual([
+        expect.objectContaining({
+          adoption: "compatible-external",
+          pos: external.pos,
+          structureType: "storage",
+        }),
+      ]);
+      expect(
+        projectLayoutConvergencePlacements({
+          commitment: planned.commitment,
+          current: planned.placements,
+          roomName: input.roomName,
+          sourceCount: input.sources.length,
+          sources: input.sources,
+          unlocks,
+        }),
+      ).toEqual(convergent);
+      expect(
+        diffOwnedRoomLayout({
+          colonyId: input.roomName,
+          commitment: planned.commitment,
+          commitmentConflicted: false,
+          constructionSites: input.constructionSites,
+          observationFingerprint: "storage-continuity-observation",
+          placements: convergent,
+          policy: input.policy,
+          policyEnabled: true,
+          policyFingerprint: "storage-continuity-policy",
+          roomName: input.roomName,
+          roomStatus: "owned",
+          structures: [...input.structures, external],
+        }).proposals.filter(({ structureType }) => structureType === "storage"),
+      ).toEqual([]);
+    }
+
+    for (const ownership of ["foreign", "unowned"] as const) {
+      const nonOwnedInput = fixture(8);
+      const plannedWithoutStorage = planOwnedRoomLayout(nonOwnedInput);
+      if (plannedWithoutStorage.status !== "complete")
+        throw new Error("expected complete baseline layout");
+      const committedStorage = plannedWithoutStorage.placements.find(
+        ({ structureType }) => structureType === "storage",
+      );
+      if (committedStorage === undefined) throw new Error("expected committed storage");
+      for (const nonOwned of [
+        structure("storage", 35, 35, ownership),
+        structure("storage", committedStorage.pos.x, committedStorage.pos.y, ownership),
+      ]) {
+        const nonOwnedPlanned = planOwnedRoomLayout({
+          ...nonOwnedInput,
+          structures: [...nonOwnedInput.structures, nonOwned],
+        });
+        if (nonOwnedPlanned.status !== "complete")
+          throw new Error("expected complete non-owned layout");
+        expect(
+          nonOwnedPlanned.placements.some(
+            ({ adoption, pos, structureType }) =>
+              (adoption === "compatible-external" || adoption === "exact") &&
+              structureType === "storage" &&
+              pos.x === nonOwned.pos.x &&
+              pos.y === nonOwned.pos.y,
+          ),
+        ).toBe(false);
+      }
+    }
+
+    const missing = fixture(8);
+    const plannedMissing = planOwnedRoomLayout(missing);
+    if (plannedMissing.status !== "complete" || missing.policy.unlocks === null)
+      throw new Error("expected complete missing-storage layout");
+    expect(
+      projectLayoutConvergencePlacements({
+        commitment: plannedMissing.commitment,
+        current: plannedMissing.placements,
+        roomName: missing.roomName,
+        sourceCount: missing.sources.length,
+        sources: missing.sources,
+        unlocks: missing.policy.unlocks,
+      }).filter(({ structureType }) => structureType === "storage"),
+    ).toEqual([expect.objectContaining({ adoption: "planned", structureType: "storage" })]);
+  });
+
+  it("keeps canonical storage convergence for an already-persisted migration", () => {
     const input = fixture(6);
     const external = structure("storage", 35, 35, "owned");
     const planned = planOwnedRoomLayout({ ...input, structures: [...input.structures, external] });
     if (planned.status !== "complete") throw new Error("expected complete layout");
     const unlocks = input.policy.unlocks;
     if (unlocks === null) throw new Error("expected RCL unlocks");
-    const convergent = projectLayoutConvergencePlacements({
-      commitment: planned.commitment,
-      current: planned.placements,
-      roomName: input.roomName,
-      sourceCount: input.sources.length,
-      sources: input.sources,
-      unlocks,
-    });
+    const baseRecord = { ...planned.commitment, roomName: input.roomName };
+    const persistedRecords: readonly LayoutRecord[] = [
+      {
+        ...baseRecord,
+        storageEvacuation: {
+          amount: 1,
+          expiresAt: 250,
+          resourceType: "energy",
+          sourceId: external.id,
+          startedAt: 100,
+          terminalId: "terminal-retained",
+          terminalInitialAmount: 0,
+        },
+      },
+      {
+        ...baseRecord,
+        removalReceipt: {
+          attempt: 1,
+          code: "OK",
+          nextEligibleTick: 101,
+          observedAt: 100,
+          replacementId: "terminal-retained",
+          targetId: external.id,
+          targetStructureType: "storage",
+        },
+      },
+    ];
 
-    expect(planned.placements).toContainEqual(
-      expect.objectContaining({
-        adoption: "compatible-external",
-        pos: external.pos,
-        structureType: "storage",
-      }),
-    );
-    expect(convergent.filter(({ structureType }) => structureType === "storage")).toHaveLength(1);
-    expect(
-      convergent.some(
-        ({ pos, structureType }) =>
-          structureType === "storage" && pos.x === external.pos.x && pos.y === external.pos.y,
-      ),
-    ).toBe(false);
+    for (const currentStorageMigration of persistedRecords) {
+      const parsedOwner = parseLayoutsOwner(
+        JSON.parse(
+          JSON.stringify({
+            ...emptyLayoutsOwner(),
+            records: [currentStorageMigration],
+          }),
+        ),
+      );
+      const parsedMigration = parsedOwner?.records[0];
+      if (parsedMigration === undefined) throw new Error("expected parsed migration evidence");
+      const convergent = projectLayoutConvergencePlacements({
+        commitment: planned.commitment,
+        current: planned.placements,
+        currentStorageMigration: parsedMigration,
+        roomName: input.roomName,
+        sourceCount: input.sources.length,
+        sources: input.sources,
+        unlocks,
+      });
 
-    const rcl4 = fixture(4);
-    const rcl4Planned = planOwnedRoomLayout({
-      ...rcl4,
-      structures: [...rcl4.structures, external],
-    });
-    if (rcl4Planned.status !== "complete") throw new Error("expected complete RCL4 layout");
-    if (rcl4.policy.unlocks === null) throw new Error("expected RCL4 unlocks");
-    expect(
-      projectLayoutConvergencePlacements({
-        commitment: rcl4Planned.commitment,
-        current: rcl4Planned.placements,
-        roomName: rcl4.roomName,
-        sourceCount: rcl4.sources.length,
-        sources: rcl4.sources,
-        unlocks: rcl4.policy.unlocks,
-      }),
-    ).toEqual(rcl4Planned.placements);
+      expect(convergent.filter(({ structureType }) => structureType === "storage")).toHaveLength(1);
+      expect(
+        convergent.some(
+          ({ pos, structureType }) =>
+            structureType === "storage" && pos.x === external.pos.x && pos.y === external.pos.y,
+        ),
+      ).toBe(false);
+    }
   });
 
   it("restores committed terminal geometry for one bounded service outage", () => {

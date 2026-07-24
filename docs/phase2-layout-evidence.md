@@ -172,8 +172,11 @@ arbitration explicit: Phase 2 keeps the existing direct-destroy path and source-
 `Creep.dismantle` until a later funded policy proves positive full-cost value. Issue
 [#441](https://github.com/ralphschuler/screeps-myrmex/issues/441) composes the checked stable
 extension migration with one bounded current-threat pause and reset before exact automatic
-resumption. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
-other structure migration.
+resumption. Issue [#443](https://github.com/ralphschuler/screeps-myrmex/issues/443) retains one
+compatible external storage as the stable RCL4-RCL8 placement and admits canonical convergence only
+for an exact already-persisted storage evacuation/removal term. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
+migration.
 
 ## Runtime order
 
@@ -593,6 +596,14 @@ reset, and reordered variants while making its command choice enforceable. The a
 rejects direct, computed, destructured, transitive, bound, `call`, and `apply` forms of
 `Creep.dismantle`, including calls placed in an executor. Runtime CPU, persistent Memory, game
 resources, migration receipts, and the existing direct command path are unchanged.
+
+Issue #443's focused production-policy evidence plans ordered and reversed RCL4-RCL8 rooms with one
+compatible external storage. Every projection retains the exact external position, produces no
+replacement storage site, and gives `ConstructionPlanner` no evacuation, removal proposal,
+authorization, or receipt. Missing storage still exposes one planned committed placement. An exact
+JSON-reconstructed current storage evacuation or storage removal receipt instead retains the prior
+canonical convergence path, so persisted V20-V25 evidence is not abandoned. The projection adds no
+owner field, Memory bytes, command, resource spend, or scan.
 
 Issue #413's production-runtime evidence starts from an otherwise-quiescent V25 stale record with
 one 50-energy extension evacuation. The normal colony budget and Logistics planner publish its exact
@@ -1178,13 +1189,16 @@ lint, type, test, documentation, bundle, and package evidence.
   [`creeps/move.js`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/creeps/move.js#L34-L43)
   prove that a non-public rampart owned by another user blocks movement while owned/public ramparts
   remain walkable.
-- Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) defines the one
-  RCL4+ owned general-purpose store, its 1,000,000-unit capacity, and its 30,000 build cost. Issue
-  #405 consumes only newer exact target absence and retains the existing complete original-resource
-  conservation and retained-terminal continuity proof before stale evidence can clear. Issue #437
-  reuses that exact storage/terminal boundary and every existing scalar, manifest, and two-batch
-  identity; later exact Store and retired-work evidence advances the cursor or clears only the stale
-  term without authorizing removal.
+- Official [`StructureStorage`](https://docs.screeps.com/api/#StructureStorage) and
+  [`Room.storage`](https://docs.screeps.com/api/#Room.storage) define the one RCL4+ owned
+  general-purpose store, its 1,000,000-unit capacity, 30,000 build cost, and absent-room property.
+  Issue #443 therefore retains one compatible current endpoint instead of initiating a service
+  outage solely for coordinates; absent storage still follows the existing separately scheduled
+  construction path. Issue #405 consumes only newer exact target absence and retains the existing
+  complete original-resource conservation and retained-terminal continuity proof before stale
+  evidence can clear. Issue #437 reuses that exact storage/terminal boundary and every existing
+  scalar, manifest, and two-batch identity; later exact Store and retired-work evidence advances the
+  cursor or clears only the stale term without authorizing removal.
 - Official [`StructureTerminal`](https://docs.screeps.com/api/#StructureTerminal) defines the one
   RCL6+ owned terminal, its shared 300,000-unit Store, cooldown, and scheduled send boundary. Issue
   #403 consumes only fresh exact target absence and does not reinterpret stock delivery, storage
@@ -1210,6 +1224,8 @@ lint, type, test, documentation, bundle, and package evidence.
   prove road/rampart co-location without a preceding destroy command.
 - Screeps Wiki [Energy](https://wiki.screepspl.us/Energy/) supplies issues #421/#423/#425's walkable
   container-buffer and creep-hauler terminology only.
+- Screeps Wiki [`StructureStorage`](https://wiki.screepspl.us/StructureStorage/) identifies storage
+  as the primary room resource store; issue #443 uses that terminology only.
 - Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/),
   [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/), and
   [Pathfinding](https://wiki.screepspl.us/Pathfinding/) provide community layout, container-service,

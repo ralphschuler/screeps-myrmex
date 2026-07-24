@@ -292,7 +292,12 @@ that term. Fresh exact target emptiness, every baseline-plus-amount replacement 
 flow/endpoints, active funding, and unchanged safe policy clear only the applicable term
 command-free; the revision handoff remains a later tick. Every other unfinished stale migration
 remains inert. [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records the
-boundary. `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone
+boundary. Issue #443 makes one compatible external storage the stable convergent RCL4-RCL8
+placement, so coordinate difference alone creates no new storage migration. Only an exact current
+layouts record already containing `storageEvacuation` or a storage removal receipt retains canonical
+convergence for the bounded continuation above. Missing storage still exposes its committed planned
+placement. [ADR 0077](adr/0077-compatible-external-storage-continuity.md) records continuity over
+geometry. `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone
 calls `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and
 lab result reuses the same fixed receipt.
 
@@ -2043,7 +2048,9 @@ current owned-removal method explicit: only the existing direct-destroy authorit
 composes the existing replacement-first extension path with current room and colony threat evidence:
 planning publishes only the typed `threat` blocker, no removal authority or receipt reaches Execute,
 and the same bounded migration resumes exactly once after threat clears across a heap reset and
-reordered observation. No runtime authority, owner schema, command path, or CPU estimate changes.
+reordered observation. Issue #443 retains compatible external storage across RCL4-RCL8 by default;
+only exact persisted storage evacuation/removal evidence may continue the older canonical path.
+Neither outcome changes runtime authority, owner schema, command path, or CPU estimate.
 
 Issue #355 restores source-defined primary spawn geometry only when current allowance is at least
 two. At full allowance, `ConstructionPlanner` may remove one active idle empty external spawn only
@@ -2087,20 +2094,22 @@ Removal requires every baseline-plus-amount gain and retirement of every manifes
 migrates without inventing terms; V18 code preserves future V19 bytes and disables layout work.
 [ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records the composition.
 
-Issue #371 adds the inverse critical-inventory continuation. The convergence projection restores the
-sole committed storage position only when policy unlocks exactly one storage and one terminal.
-`ConstructionPlanner` may remove one active external storage only at RCL6-RCL8 when it is the sole
-owned storage with an exact empty 1,000,000-unit Store, one exact active same-room terminal retains
-a 300,000-unit general-purpose Store, and every colony/layout/site safety gate passes. The Logistics
-gate must be effective, exactly one healthy room row must match current observation, and ready
-contract evidence must show no assigned/active primary or counterpart and no projected V3 Logistics
-request naming the storage. Durable lab or terminal evacuation terms using it as destination also
-block. The arbiter accepts only the exact `storage → terminal` pair; the executor freshly rechecks
-both Stores and activity before one call. Layouts V20 adds only the storage receipt discriminator;
-V1-V19 migrate without invented evidence, rollback preserves future bytes, and observed
-disappearance exposes the ordinary committed storage site.
-[ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records the bounded service and capacity
-reduction.
+Issue #371 established the inverse critical-inventory continuation. Under issue #443, its RCL6-RCL8
+canonical convergence and every following storage-evacuation/removal rule apply only to an exact
+current layouts record that already contains a storage evacuation or storage removal receipt. A
+compatible external storage with no such persisted term remains the sole convergent placement and
+cannot become a new migration candidate. For a grandfathered term, `ConstructionPlanner` may remove
+one active external storage only when it is the sole owned storage with an exact empty
+1,000,000-unit Store, one exact active same-room terminal retains a 300,000-unit general-purpose
+Store, and every colony/layout/site safety gate passes. The Logistics gate must be effective,
+exactly one healthy room row must match current observation, and ready contract evidence must show
+no assigned/active primary or counterpart and no projected V3 Logistics request naming the storage.
+Durable lab or terminal evacuation terms using it as destination also block. The arbiter accepts
+only the exact `storage → terminal` pair; the executor freshly rechecks both Stores and activity
+before one call. Layouts V20 adds only the storage receipt discriminator; V1-V19 migrate without
+invented evidence, rollback preserves future bytes, and observed disappearance exposes the ordinary
+committed storage site. [ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records the
+bounded service and capacity reduction.
 
 Issue #373 permits that exact path to stage one sole external storage containing one positive
 resource kind totaling at most 3,000 units. Current Industry terminal-work evidence must be
@@ -2911,11 +2920,13 @@ Required architecture assertions include:
   without a stale-layout suspension, while unrelated-active, unsafe, blocked, reset, reordered,
   malformed, evacuation-bearing records without one sole exact match, foreign, unpaired storage,
   conservation drift, or other ambiguous evidence remains bounded and fail-closed;
-- obsolete-storage removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact
-  empty 1,000,000-unit external storage, one exact active 300,000-unit same-room terminal, an
-  effective Logistics gate with one exact current healthy room row, no current/projected Logistics
-  work or durable layout evacuation naming the storage, current colony/site safety, and the same
-  global one-command/reset-safe receipt ceilings; one positive single-resource target or canonical
+- a compatible external storage with no persisted storage evacuation or storage removal receipt is
+  the stable RCL4-RCL8 convergent placement and cannot enter removal; grandfathered obsolete-storage
+  removal requires RCL6-RCL8 full storage/terminal allowance, one sole active exact empty
+  1,000,000-unit external storage, one exact active 300,000-unit same-room terminal, an effective
+  Logistics gate with one exact current healthy room row, no current/projected Logistics work or
+  durable layout evacuation naming the storage, current colony/site safety, and the same global
+  one-command/reset-safe receipt ceilings; one positive single-resource target or canonical
   two-to-eight-resource manifest of at most 3,000 aggregate units first uses one 150-tick funded V3
   evacuation into that terminal, suppresses internal sends and competing work at both endpoints,
   atomically admits every currently active manifest row, and requires fresh target-empty, every

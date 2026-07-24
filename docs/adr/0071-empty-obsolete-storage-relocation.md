@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded for new migration admission by
+[ADR 0077](0077-compatible-external-storage-continuity.md). Existing exact persisted storage
+migration terms retain this decision's continuation and reconciliation rules.
 
 ## Context
 

@@ -185,6 +185,7 @@ function plan(
     >[0]["industryTerminalWork"];
     readonly labEvacuation?: Parameters<ConstructionPlanner["planMigration"]>[0]["labEvacuation"];
     readonly logisticsEvidenceReady?: boolean;
+    readonly placements?: readonly LayoutPlacement[];
     readonly removalReceipt?: Parameters<ConstructionPlanner["planMigration"]>[0]["removalReceipt"];
     readonly room?: RoomSnapshot;
     readonly storageEvacuation?: Parameters<
@@ -220,7 +221,7 @@ function plan(
     labEvacuation: input.labEvacuation ?? null,
     logisticsEvidenceReady: input.logisticsEvidenceReady ?? true,
     observationFingerprint: `obs-${String(visibleRoom.observedAt)}`,
-    placements: [storagePlacement, terminalPlacement],
+    placements: input.placements ?? [storagePlacement, terminalPlacement],
     policyFingerprint: "policy-storage",
     removalReceipt: input.removalReceipt ?? null,
     room: visibleRoom,
@@ -231,6 +232,25 @@ function plan(
 }
 
 describe("empty obsolete-storage relocation", () => {
+  it("does not start relocation when the compatible external storage remains convergent", () => {
+    const external = storage();
+    const retained = plan({
+      placements: [
+        { ...storagePlacement, adoption: "compatible-external", pos: external.pos },
+        terminalPlacement,
+      ],
+      room: room({ target: external }),
+    });
+
+    expect(retained).toMatchObject({
+      authorization: null,
+      blockers: [],
+      proposals: [],
+      removalReceipt: null,
+      storageEvacuation: null,
+    });
+  });
+
   it("requires one current healthy room Logistics projection from the enabled authority", () => {
     const currentHealth = [{ colonyId: roomName, observedAt: 100, status: "healthy" as const }];
     const ready = {

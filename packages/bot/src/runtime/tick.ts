@@ -2866,12 +2866,14 @@ function layoutPlanningSystem(
           roomName: room.name,
         });
         maintenanceLayouts.push({ placements, roomName: room.name });
+        const layoutRecord = owner.records.find(({ roomName }) => roomName === room.name) ?? null;
         const convergencePlacements =
           colony.rclPolicy.unlocks === null
             ? placements
             : projectLayoutConvergencePlacements({
                 commitment,
                 current: placements,
+                currentStorageMigration: layoutRecord,
                 roomName: room.name,
                 sourceCount: room.sources.length,
                 sources: room.sources.map(({ pos }) => pos),
@@ -2890,26 +2892,15 @@ function layoutPlanningSystem(
           ...(activeSpawnClaimIds === null ? {} : { activeSpawnClaimIds }),
           colony,
           commitment,
-          containerMigration:
-            owner.records.find(({ roomName }) => roomName === room.name)?.containerMigration ??
-            null,
+          containerMigration: layoutRecord?.containerMigration ?? null,
           currentPlacements: placements,
-          extensionEvacuation:
-            owner.records.find(({ roomName }) => roomName === room.name)?.extensionEvacuation ??
-            null,
-          labEvacuation:
-            owner.records.find(({ roomName }) => roomName === room.name)?.labEvacuation ?? null,
-          linkEvacuation:
-            owner.records.find(({ roomName }) => roomName === room.name)?.linkEvacuation ?? null,
-          spawnEvacuation:
-            owner.records.find(({ roomName }) => roomName === room.name)?.spawnEvacuation ?? null,
-          storageEvacuation:
-            owner.records.find(({ roomName }) => roomName === room.name)?.storageEvacuation ?? null,
-          terminalEvacuation:
-            owner.records.find(({ roomName }) => roomName === room.name)?.terminalEvacuation ??
-            null,
-          towerEvacuation:
-            owner.records.find(({ roomName }) => roomName === room.name)?.towerEvacuation ?? null,
+          extensionEvacuation: layoutRecord?.extensionEvacuation ?? null,
+          labEvacuation: layoutRecord?.labEvacuation ?? null,
+          linkEvacuation: layoutRecord?.linkEvacuation ?? null,
+          spawnEvacuation: layoutRecord?.spawnEvacuation ?? null,
+          storageEvacuation: layoutRecord?.storageEvacuation ?? null,
+          terminalEvacuation: layoutRecord?.terminalEvacuation ?? null,
+          towerEvacuation: layoutRecord?.towerEvacuation ?? null,
           globalOwnedSiteCount: context.snapshot.ownedConstructionSiteCount,
           industryTerminalWork,
           labMigration: labMigration ?? null,
@@ -2924,8 +2915,7 @@ function layoutPlanningSystem(
           observationFingerprint,
           placements: convergencePlacements,
           policyFingerprint,
-          removalReceipt:
-            owner.records.find(({ roomName }) => roomName === room.name)?.removalReceipt ?? null,
+          removalReceipt: layoutRecord?.removalReceipt ?? null,
           room,
         });
         if (!labHandoffPinned)

@@ -297,8 +297,11 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   that a replacement-first extension migration pauses without authorization, removal intent,
   command, or receipt through a current four-tick threat and heap reset, then resumes exactly once
   after threat clears while preserving the existing geometry, access, CPU, energy, and site bounds.
-  Uninterrupted same-structure storage/terminal service, broad dynamic movement/pathfinding proof,
-  autonomous boost manifest production, and defensive or active revision migration remain issue #99.
+  Issue #443 preserves one compatible external storage as the convergent RCL4-RCL8 placement, so no
+  new evacuation, removal, or 30,000-energy rebuild starts solely for canonical coordinates;
+  grandfathered exact evacuation/removal terms retain their bounded continuation. Uninterrupted
+  same-structure terminal service, broad dynamic movement/pathfinding proof, autonomous boost
+  manifest production, and defensive or active revision migration remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
