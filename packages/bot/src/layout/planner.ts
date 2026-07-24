@@ -27,6 +27,7 @@ import {
   type LayoutPlacement,
   type LayoutPlanningInput,
   type LayoutPlanningResult,
+  type LayoutRecord,
   type LayoutTransform,
   type StaleLayoutRecord,
 } from "./contracts";
@@ -548,6 +549,10 @@ export function reconstructCommittedLayout(input: {
 export function projectLayoutConvergencePlacements(input: {
   readonly commitment: LayoutCommitment;
   readonly current: readonly LayoutPlacement[];
+  readonly currentStorageMigration?: Pick<
+    LayoutRecord,
+    "removalReceipt" | "storageEvacuation"
+  > | null;
   readonly roomName: string;
   readonly sourceCount: number;
   readonly sources: readonly PositionSnapshot[];
@@ -565,7 +570,11 @@ export function projectLayoutConvergencePlacements(input: {
     );
   const labConvergenceSafe = input.unlocks.labs === 10;
   const spawnConvergenceSafe = input.unlocks.spawns >= 2;
-  const storageConvergenceSafe = input.unlocks.storage === 1 && input.unlocks.terminal === 1;
+  const storageConvergenceSafe =
+    (input.currentStorageMigration?.storageEvacuation !== undefined ||
+      input.currentStorageMigration?.removalReceipt?.targetStructureType === "storage") &&
+    input.unlocks.storage === 1 &&
+    input.unlocks.terminal === 1;
   const terminalConvergenceSafe = input.unlocks.terminal === 1;
   return freeze(
     [
@@ -785,11 +794,15 @@ function adopt(
   return placements
     .map((p) => {
       const e = exact.get(`${p.structureType}:${key(p.pos)}`);
-      if (e) {
+      if (e && (p.structureType !== "storage" || e.ownership === "owned")) {
         used.add(e.id);
         return { ...p, adoption: "exact" as const };
       }
-      const compatible = external.get(p.structureType)?.find((s) => !used.has(s.id));
+      const compatible = external
+        .get(p.structureType)
+        ?.find(
+          (s) => !used.has(s.id) && (p.structureType !== "storage" || s.ownership === "owned"),
+        );
       if (compatible && p.layer === "primary") {
         used.add(compatible.id);
         return { ...p, adoption: "compatible-external" as const, pos: compatible.pos };

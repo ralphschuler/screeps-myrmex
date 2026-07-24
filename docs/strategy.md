@@ -224,24 +224,28 @@ retirement. Refill, consumption, overgain, malformed/reordered terms, bounded ov
 authorization keeps removal closed.
 [ADR 0070](adr/0070-mixed-resource-stocked-terminal-evacuation.md) records this composition.
 
-Storage convergence accepts the inverse bounded local-inventory outage only at RCL6-RCL8. The pure
-projection retains compatible external storage at RCL4-RCL5, then restores the committed storage
-position once policy unlocks one terminal. One sole active external storage may be removed only when
-its exact 1,000,000-unit Store is empty, one active exact 300,000-unit terminal remains, the
-committed tile is clear, and every colony/site safety gate passes. The Logistics gate must be
-effective with one exact current healthy room row; current assigned/active work, same-tick projected
-V3 requests, and durable lab or terminal evacuation destinations naming the storage block removal.
-The arbiter's exact `storage → terminal` form and live executor checks preserve terminal continuity
-while accepting a temporary capacity contraction until the existing 30,000-energy build chain
-restores storage. Stocked, pre-RCL6, work-bound, unsafe, or uncertain storage remains.
-[ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records this boundary.
+Storage continuity now takes precedence over canonical coordinates. The pure projection retains one
+compatible external owned storage as the convergent placement from RCL4 through RCL8, so no new
+evacuation, removal, capacity contraction, or 30,000-energy rebuild starts merely to move it.
+Missing storage still exposes the committed position through the ordinary build chain. Only an exact
+current layouts record that already contains a storage evacuation or storage removal receipt may
+continue the older bounded path. For that grandfathered term, one sole active external storage may
+be removed only when its exact 1,000,000-unit Store is empty, one active exact 300,000-unit terminal
+remains, the committed tile is clear, and every colony/site safety gate passes. The Logistics gate
+must be effective with one exact current healthy room row; current assigned/active work, same-tick
+projected V3 requests, and durable lab or terminal evacuation destinations naming the storage block
+removal. The arbiter's exact `storage → terminal` form and live executor checks preserve terminal
+continuity while accepting a temporary capacity contraction until the existing 30,000-energy build
+chain restores storage. Stocked, pre-RCL6, work-bound, unsafe, or uncertain grandfathered terms
+remain. [ADR 0071](adr/0071-empty-obsolete-storage-relocation.md) records the prior path;
+[ADR 0077](adr/0077-compatible-external-storage-continuity.md) supersedes new migration admission.
 
-One otherwise eligible storage containing exactly one resource kind and at most 3,000 units may
-first persist one exclusive 150-tick evacuation into that terminal. Current terminal work must be
-quiescent and aggregate terminal capacity must hold the complete amount. On following ticks, one
-funded `optional-growth` V3 Logistics flow replaces ordinary publication at both endpoints while
-internal sends involving the room are suppressed. Partial delivery is resumable; removal requires
-fresh storage emptiness, terminal stock exactly at baseline plus amount, retired exact flow and both
+One grandfathered storage term containing exactly one resource kind and at most 3,000 units may
+retain its exclusive 150-tick evacuation into that terminal. Current terminal work must be quiescent
+and aggregate terminal capacity must hold the complete amount. On following ticks, one funded
+`optional-growth` V3 Logistics flow replaces ordinary publication at both endpoints while internal
+sends involving the room are suppressed. Partial delivery is resumable; removal requires fresh
+storage emptiness, terminal stock exactly at baseline plus amount, retired exact flow and both
 endpoints, and every unchanged geometry, Logistics, colony, and terminal-safety term. Refill,
 consumption, contention, drift, pressure, or uncertainty preserves the storage. Timeout restores
 ordinary storage/terminal Logistics and send service but remains removal-blocking. Mixed stock may
