@@ -131,11 +131,13 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   energy; the same bounded receipt and one-command authority apply. Issue #314 persists one bounded
   stocked-tower evacuation only when that operational replacement has exact capacity, routes its
   energy through funded logistics, and keeps removal blocked until fresh delivered/empty and
-  retired-flow evidence. Issue #316 restores RCL8 committed link geometry, then removes one active
-  empty idle external link only when canonical current/ideal role evidence classifies the target,
-  missing anchor, and exact replacement as reserve capacity while every source, hub, and controller
-  link remains active. Issue #318 persists one bounded positive-energy reserve-link evacuation only
-  when the exact reserve replacement can hold the complete amount, routes it through funded creep
+  retired-flow evidence. Issue #449 admits either path when one owned rampart is the target tower's
+  only companion; the exact tower alone is removed, while every other shared/site occupancy remains
+  blocked. Issue #316 restores RCL8 committed link geometry, then removes one active empty idle
+  external link only when canonical current/ideal role evidence classifies the target, missing
+  anchor, and exact replacement as reserve capacity while every source, hub, and controller link
+  remains active. Issue #318 persists one bounded positive-energy reserve-link evacuation only when
+  the exact reserve replacement can hold the complete amount, routes it through funded creep
   logistics without native link-transfer loss, and requires exact delivery, retired work, zero
   cooldown, unchanged reserve roles, and no accepted native transfer before removal. Issue #320
   restores committed RCL8 lab geometry, then removes one active empty zero-cooldown external lab

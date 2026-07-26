@@ -180,9 +180,11 @@ compatible external storage as the stable RCL4-RCL8 placement and admits canonic
 for an exact already-persisted storage evacuation/removal term. Issue
 [#445](https://github.com/ralphschuler/screeps-myrmex/issues/445) applies the equivalent RCL6-RCL8
 policy to one compatible external owned terminal and grandfathers only exact current terminal
-evacuation/removal evidence. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
-migration.
+evacuation/removal evidence. Issue [#449](https://github.com/ralphschuler/screeps-myrmex/issues/449)
+permits one obsolete tower's exact empty or funded-stocked path when its only companion is one owned
+rampart; direct destruction still names only the tower and leaves that protective layer intact.
+Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
+structure migration.
 
 ## Runtime order
 
@@ -239,7 +241,7 @@ migration.
    evacuation. The retained terminal resumes ordinary Logistics while the layouts transaction clears
    the fulfilled handoff and exposes the committed replacement site. Tower removal remains separate
    and requires full allowance of at least two, exactly allowance minus one active committed towers,
-   one active empty unshared obsolete target, and an exact active committed replacement holding at
+   one active empty rampart-compatible target, and an exact active committed replacement holding at
    least 10 energy. A stocked target may first persist one exact 150-tick energy evacuation only
    when that replacement can hold the full amount. The observed movement projection reuses the same
    static passability helper as this layout witness: private foreign ramparts are blocked while
