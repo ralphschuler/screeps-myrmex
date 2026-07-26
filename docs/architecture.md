@@ -77,10 +77,13 @@ build a planned structure. Issue #286 permits one empty obsolete extension only 
 allowance and an exact completed committed replacement are observed. Issue #288 lets the same policy
 persist one bounded stocked-extension evacuation, while `LogisticsPlanner` alone routes its exact
 energy to the replacement and suppresses refill competition. Removal still requires fresh
-delivered/empty observation and no active evacuation flow. Issue #290 permits one empty, unselected
-source-adjacent container only while a different exact committed container remains the reachable
-semantic service for the same source. Issue #292 permits one empty compatible-external general
-container only after committed replacement capacity exists; one compact layout-owned handoff
+delivered/empty observation and no active evacuation flow. Issue #453 composes this path through the
+production runtime: sequential V3 stages may reuse the layout-owned budget binding, every site or
+removal result uses the existing layout precommit before root commit, and a narrow spawn-pool
+recovery exception can rebuild the missing committed extension after removal. Issue #290 permits one
+empty, unselected source-adjacent container only while a different exact committed container remains
+the reachable semantic service for the same source. Issue #292 permits one empty compatible-external
+general container only after committed replacement capacity exists; one compact layout-owned handoff
 suppresses its refill and waits for active logistics endpoints to retire. Issue #294 extends that
 handoff to exact energy-only stock. Issue #296 permits a compact binary-ordered manifest of two to
 eight resource kinds and one distinct funded flow per kind. Issue #298 permits the same manifest for
@@ -759,15 +762,16 @@ ordinary Logistics retirement may still fail closed when its projected flow disa
 explicit selected-source handoff, `layout.handoff-reconcile` stages the complete layout draft before
 its root commit; the following tick's contract reconciliation consumes that durable coordinate. The
 same precommit stages one observation-settled stale site or terminal-success non-storage removal
-receipt before ending command-free layout planning for that tick; no separate reconciliation or
-owner exists. An otherwise-quiescent stale revision may carry settled source-service coordinates
-only when its exact bounded ContractLedger planning records match and the new plan preserves the
-complete issuance set. The bounded layout handoff plan completes before colony budgeting; only its
-accepted exact stale set may enter the sole StaticMiningPlanner projection to renew already-matching
-work. If admission, policy, current planning, room/source evidence, or tuple pinning fails, the
-stale set never enters that projection. It is a continuation of the same layout owner, not a second
-planner or state authority. Later outcomes replace their own foundation markers without adding
-another loop.
+receipt before ending command-free layout planning for that tick. Every construction-site or removal
+execution result also activates that precommit before root reconciliation, so scheduler health
+ordering cannot strand its receipt; no separate reconciliation or owner exists. An
+otherwise-quiescent stale revision may carry settled source-service coordinates only when its exact
+bounded ContractLedger planning records match and the new plan preserves the complete issuance set.
+The bounded layout handoff plan completes before colony budgeting; only its accepted exact stale set
+may enter the sole StaticMiningPlanner projection to renew already-matching work. If admission,
+policy, current planning, room/source evidence, or tuple pinning fails, the stale set never enters
+that projection. It is a continuation of the same layout owner, not a second planner or state
+authority. Later outcomes replace their own foundation markers without adding another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -1265,11 +1269,15 @@ current `ColonyDirector` result into a bounded funding view; the rotating reserv
 revision remain tick-local and outside the immutable contract signature. A requested transition to
 `funded` is accepted only for an exact, active, unexpired reservation belonging to a currently
 visible owner colony. One stable grant identity may authorize at most one active contract; a second
-contract using the same binding is rejected until the first becomes terminal. Missing, pending,
-consumed, released, or expired entries deny funding. Known authorization loss moves
-`funded|assigned|active` work to `suspended` and removes any lease without automatic refunding.
-Unknown colony observation authorizes no funding or assignment but preserves the commitment because
-absence of vision is not revocation evidence.
+contract using the same binding is rejected until the first becomes terminal. During one reconcile
+batch, expiry runs first and an already-active predecessor's explicit terminal transition runs
+before new submissions; this permits a sequential Logistics stage to reuse its stable binding
+without an overlapping contract. Results retain canonical transition order, and nonterminal
+transitions such as funding still run after submission. Missing, pending, consumed, released, or
+expired entries deny funding. Known authorization loss moves `funded|assigned|active` work to
+`suspended` and removes any lease without automatic refunding. Unknown colony observation authorizes
+no funding or assignment but preserves the commitment because absence of vision is not revocation
+evidence.
 
 General systems cannot inspect raw `config`, `colonies`, or `contracts` owner bytes through
 `StateView`. The composition adapter alone reads detached owner views; `ContractLedger` alone stages
@@ -1753,7 +1761,10 @@ Exact/adopted structures and matching owned sites suppress duplicates; stale obs
 ownership, foreign occupancy, policy/RCL denial, over-allowance, and commitment conflicts fail
 closed. Canonical policy, colony, placement, structure, coordinate, and stable-ID ordering applies.
 The arbiter keeps five slots below the official 100-site cap, accepts at most two globally and one
-per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites.
+per room per tick, inspects 64 proposals per room, and pauses rooms with ten active sites. Normal
+progression authorizes all policy-eligible proposals. When progression is blocked only because
+spawn-pool capacity is below the current RCL target, the runtime may authorize only `spawn` and
+`extension` proposals; unrelated roads, defenses, and mature structures remain denied.
 
 Up to 32 attempt receipts per room introduced with owner-local schema V2 remain in the current V20
 `layouts` owner. V3 adds the optional source-migration identity, V4 adds one optional source-service

@@ -96,6 +96,27 @@ describe("ConstructionSiteArbiter", () => {
       }).rejected[0]?.reason,
     ).toBe("progression-not-authorized");
   });
+  it("admits only spawn-pool structures through a capacity recovery exception", () => {
+    const extension = proposal("W1N1", "a", 0);
+    const road = { ...proposal("W1N1", "a", 1), structureType: "road" as const };
+    const result = run([road, extension], {
+      progressionAuthorizations: [
+        {
+          authorized: false,
+          colonyId: "a",
+          recoveryStructureTypes: ["extension", "spawn"],
+          roomName: "W1N1",
+        },
+      ],
+    });
+
+    expect(result.accepted.map(({ proposal: accepted }) => accepted.structureType)).toEqual([
+      "extension",
+    ]);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0]?.proposal.structureType).toBe("road");
+    expect(result.rejected[0]?.reason).toBe("progression-not-authorized");
+  });
   it.each([
     ["OK", "receipt-ok-expectation"],
     ["ERR_FULL", "receipt-full-backoff"],

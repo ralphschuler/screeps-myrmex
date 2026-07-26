@@ -33,7 +33,10 @@ The focused test and aggregate warm, JSON/global-heap-reset, and reordered varia
 spawn call with no duplicate demand, a distinct replacement identity, bounded visibility/useful
 work, recovered room energy, and preserved construction progress. The aggregate records non-null
 replacement lateness, nonzero spawn utilization, full-row recovery time, replacement outcome fields,
-and exact outcome equivalence across all variants.
+and exact outcome equivalence across all variants. Issue #453's layout-command precommit correction
+makes one RCL1 site receipt durable in its command tick, reducing the checked RCL1 recovery row from
+1,401/1,332 total/recovery ticks to 1,400/1,331 without changing energy, Memory, telemetry, or
+reset/ reorder equivalence; the exact production-bundle receipt is updated with that runtime change.
 
 Reproduce this slice and the checked aggregate with:
 

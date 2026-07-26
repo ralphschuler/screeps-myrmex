@@ -607,18 +607,39 @@ export class ContractLedger {
           ? this.replace(request)
           : rejectedReplacement(request.predecessorContractId, "invalid-replacement"),
       );
-    const submissions = [...input.requests]
-      .sort(compareSubmissionRequests)
-      .map((request) => this.submit(request, input.tick));
-
     for (const record of [...this.#active]) {
       if (input.tick >= record.expiresAt) {
         this.transitionSystem(record.id, "expired", input.tick, "contract-expired");
       }
     }
-    const transitions = [...input.transitions]
-      .sort(compareTransitionRequests)
-      .map((request) => this.transitionForTick(request, input.tick, fundingView));
+
+    const sortedTransitions = [...input.transitions].sort(compareTransitionRequests);
+    // Release an existing terminal predecessor before admitting a same-binding stage successor.
+    // Newly submitted and nonterminal transitions retain the ordinary submit-then-transition order.
+    const activeContractIds = new Set(this.#active.map(({ id }) => id));
+    const earlyTransitions = new Set(
+      sortedTransitions.filter(
+        ({ contractId, to }) => activeContractIds.has(contractId) && isTerminalState(to),
+      ),
+    );
+    const transitionResults = new Map<ContractTransitionRequest, ContractTransitionResult>();
+    for (const request of earlyTransitions) {
+      transitionResults.set(request, this.transitionForTick(request, input.tick, fundingView));
+    }
+
+    const submissions = [...input.requests]
+      .sort(compareSubmissionRequests)
+      .map((request) => this.submit(request, input.tick));
+
+    for (const request of sortedTransitions) {
+      if (earlyTransitions.has(request)) continue;
+      transitionResults.set(request, this.transitionForTick(request, input.tick, fundingView));
+    }
+    const transitions = sortedTransitions.map((request) => {
+      const result = transitionResults.get(request);
+      if (result === undefined) throw new Error("Contract transition result invariant failed");
+      return result;
+    });
 
     const actorsById = new Map(input.actors.map((actor) => [actor.id, actor]));
     const releases: LeaseReleaseRecord[] = [];

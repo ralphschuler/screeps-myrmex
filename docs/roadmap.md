@@ -305,14 +305,19 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   Issue #451 adds the equivalent four-tick current-RCL2 pause after the RCL3 replacement is
   observed: ten owned extensions against the five-extension allowance emit only `rcl-downgrade`, no
   removal authorization or receipt, and exact reset/reorder evidence resumes once at RCL3 under the
-  same geometry, access, CPU, energy, and site bounds. Issue #443 preserves one compatible external
-  storage as the convergent RCL4-RCL8 placement, so no new evacuation, removal, or 30,000-energy
-  rebuild starts solely for canonical coordinates; grandfathered exact evacuation/removal terms
-  retain their bounded continuation. Issue #445 applies the same continuity-over-geometry policy to
-  one compatible external owned terminal at RCL6-RCL8, avoiding a new service outage and
-  100,000-energy rebuild while grandfathering exact existing terminal evacuation/removal terms.
-  Broad dynamic movement/pathfinding proof, autonomous boost manifest production, and defensive or
-  active revision migration remain issue #99.
+  same geometry, access, CPU, energy, and site bounds. Issue #453 composes one active 50-energy
+  stale extension evacuation through production Logistics, ContractLedger, command-free settlement
+  and revision handoff, direct removal, and exact ten-extension reconstruction. It also pins
+  precommits every layout command result before root commit, permits sequential Logistics stages to
+  reuse one stable budget binding, and limits below-target spawn-pool recovery construction to
+  spawns/extensions. Issue #443 preserves one compatible external storage as the convergent
+  RCL4-RCL8 placement, so no new evacuation, removal, or 30,000-energy rebuild starts solely for
+  canonical coordinates; grandfathered exact evacuation/removal terms retain their bounded
+  continuation. Issue #445 applies the same continuity-over-geometry policy to one compatible
+  external owned terminal at RCL6-RCL8, avoiding a new service outage and 100,000-energy rebuild
+  while grandfathering exact existing terminal evacuation/removal terms. Broad dynamic
+  movement/pathfinding proof, autonomous boost manifest production, and defensive or other active
+  revision migrations remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,

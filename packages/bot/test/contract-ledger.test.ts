@@ -147,6 +147,67 @@ describe("ContractLedger", () => {
     expect(ledger.submit(second, 2)).toMatchObject({ accepted: true, outcome: "created" });
   });
 
+  it("retires an active predecessor before admitting a same-binding next stage", () => {
+    const first = makeRequest({ issuerKey: "acquire", targetId: "source-1" });
+    const { id: firstId, ledger } = createAssignedLedger(first);
+    transitionOrThrow(ledger, firstId, "active", 4);
+    const second = makeRequest({
+      issuerKey: "deliver",
+      issuerSequence: 2,
+      targetId: "storage-1",
+    });
+    const secondId = contractIdFor(second.issuer, second.issuerKey, second.issuerSequence);
+
+    const result = ledger.reconcile({
+      actors: [makeActor("incumbent")],
+      funding: activeFunding(),
+      requests: [second],
+      tick: 5,
+      transitions: [
+        {
+          contractId: firstId,
+          reason: "stage-complete",
+          tick: 5,
+          to: "completed",
+        },
+      ],
+      travel: ZERO_TRAVEL,
+    });
+
+    expect(result.transitions).toEqual([
+      { accepted: true, contractId: firstId, from: "active", to: "completed" },
+    ]);
+    expect(result.submissions).toEqual([
+      { accepted: true, contractId: secondId, outcome: "created" },
+    ]);
+    expect(ledger.view().active).toEqual([expect.objectContaining({ id: secondId })]);
+
+    const blocked = openLedger({});
+    const blockedFirstId = submitOrThrow(blocked, first, 1);
+    const rejected = blocked.reconcile({
+      actors: [],
+      funding: activeFunding(),
+      requests: [second],
+      tick: 2,
+      transitions: [
+        {
+          contractId: blockedFirstId,
+          reason: "premature-stage-complete",
+          tick: 2,
+          to: "completed",
+        },
+      ],
+      travel: ZERO_TRAVEL,
+    });
+    expect(rejected.transitions).toEqual([
+      { accepted: false, contractId: blockedFirstId, reason: "illegal-transition" },
+    ]);
+    expect(rejected.submissions).toEqual([
+      { accepted: false, contractId: secondId, reason: "funding-binding-conflict" },
+    ]);
+    expect(blocked.view().active).toEqual([expect.objectContaining({ id: blockedFirstId })]);
+  });
+
   it("atomically replaces one funded binding with its exact next issuer sequence", () => {
     const predecessor = makeRequest({
       execution: {

@@ -27,6 +27,7 @@ import {
   type ReplayScenario,
   type ScenarioRunResult,
 } from "../../src";
+import { collectPhase2ActiveStaleExtensionConvergenceEvidence } from "./phase2-active-stale-extension-convergence";
 import { collectPhase2ProductionLayoutBuildEvidence } from "./phase2-production-layout-build";
 import { collectPhase2StorageRebuildContinuityEvidence } from "./phase2-storage-rebuild-continuity";
 
@@ -239,10 +240,12 @@ export async function collectPhase2LayoutMigrationEvidence() {
   const milestones = requiredMilestones(final.milestones);
   const productionBuild = await collectPhase2ProductionLayoutBuildEvidence();
   const storageRebuildContinuity = collectPhase2StorageRebuildContinuityEvidence();
+  const activeStaleExtensionConvergence =
+    await collectPhase2ActiveStaleExtensionConvergenceEvidence();
 
   return Object.freeze({
     schemaVersion: 5,
-    evidenceIssues: Object.freeze([365, 377, 383, 441, 451]),
+    evidenceIssues: Object.freeze([365, 377, 383, 441, 451, 453]),
     issue: 365,
     status: "complete",
     scenario: {
@@ -307,6 +310,7 @@ export async function collectPhase2LayoutMigrationEvidence() {
       accessWitnessScope: "scenario-level",
       duplicateDestroyCommands: duplicateDestroyCommands(final.commands),
     },
+    activeStaleExtensionConvergence,
     productionBuild,
     storageRebuildContinuity,
     equivalence: {

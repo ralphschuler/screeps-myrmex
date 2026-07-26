@@ -3,14 +3,16 @@ import checkedEvidence from "../../../docs/phase2-layout-migration-results.json"
 import { collectPhase2LayoutMigrationEvidence } from "./fixtures/phase2-layout-migration";
 
 const FIND_CREEPS_VALUE = 101;
+const FIND_HOSTILE_CREEPS_VALUE = 102;
 const FIND_SOURCES_VALUE = 105;
 const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 
-describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451)", () => {
+describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#453)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
+    vi.stubGlobal("FIND_HOSTILE_CREEPS", FIND_HOSTILE_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
     vi.stubGlobal("FIND_DROPPED_RESOURCES", FIND_DROPPED_RESOURCES_VALUE);
     vi.stubGlobal("FIND_STRUCTURES", FIND_STRUCTURES_VALUE);
@@ -23,7 +25,8 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451)", 
 
     expect(actual).toEqual(checkedEvidence);
     expect(actual).toMatchObject({
-      evidenceIssues: [365, 377, 383, 441, 451],
+      activeStaleExtensionConvergence: actual.activeStaleExtensionConvergence,
+      evidenceIssues: [365, 377, 383, 441, 451, 453],
       issue: 365,
       productionBuild: {
         buildEnergy: 100,
@@ -202,5 +205,5 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451)", 
     });
     expect(actual.equivalence.semanticBytesIdentical).toBe(true);
     expect(new Set(Object.values(actual.equivalence.outcomeHashes))).toHaveLength(1);
-  }, 15_000);
+  }, 30_000);
 });
