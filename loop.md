@@ -125,7 +125,9 @@ result. It contains, as applicable:
 - one pull request and its CI/review resolution.
 
 Do not begin a second feature after opening the first pull request. You may fix that pull request,
-document blockers, and prepare the next issue, but do not create parallel implementation branches.
+document blockers, and record evidence-backed findings under Section 17. Do not select, create, or
+start the next primary outcome slice in the same invocation. A possible next slice belongs only in
+the end-of-run report and requires a fresh preflight in a later invocation.
 
 Examples of good slices:
 
@@ -151,6 +153,20 @@ Examples of slices that are too broad:
 Read `docs/roadmap.md` at the start of every run. Determine the earliest phase whose exit condition
 has not been demonstrated. Work only in that phase unless an urgent regression or security failure
 preempts it.
+
+An open parent, epic, or gate issue is not by itself evidence that more implementation is required.
+Before selecting or creating any child issue, perform the parent closure audit in Section 7.1.
+
+For every parent, epic, and gate issue, its acceptance criteria and explicit dependency set form a
+frozen closure contract once its first implementation child begins. For an existing parent without a
+recorded freeze point, record the current acceptance criteria and dependency set before selecting
+more child work. The autonomous loop may not add a new acceptance criterion, dependency, checklist
+item, or coverage category as a closure blocker. Such a change requires an explicit maintainer
+decision that records the reason, the bounded addition, and its finite completion condition.
+
+Broad category language does not imply exhaustive coverage of every structure type, resource
+combination, world permutation, or reset ordering. A complete matrix is required only when the
+frozen closure contract explicitly enumerates a finite matrix and its completion condition.
 
 Priority order:
 
@@ -255,7 +271,42 @@ Select the highest-priority issue that:
 - improves a phase exit condition or prevents a regression;
 - has a clear CPU, Memory, economy, defense, or reliability rationale.
 
-If no suitable issue exists, create one with:
+### 7.1 Audit parent closure before child work
+
+Before selecting or creating a child of a parent, epic, or phase gate:
+
+1. Resolve the frozen acceptance criteria and explicit dependency set.
+2. Reconcile issue state across the child, parent, epic, and roadmap. A dependency closed as
+   completed or superseded must not remain displayed as unmet; correct the checklist or explicitly
+   record why that closure did not satisfy the dependency.
+3. Map existing merged pull requests, tests, scenarios, and evidence documents to every acceptance
+   criterion. Do not use issue count, comment count, or missing unrequested variants as evidence.
+4. Mark criteria whose required evidence already exists. If all frozen criteria are satisfied and
+   all frozen dependencies are resolved, close the parent when authorized and continue with the
+   existing phase-gate issue. Do not invent another child.
+5. For each criterion that remains unchecked, identify reproducible current failing evidence on the
+   default branch: a deterministic scenario, focused test, or sanitized operational trace with exact
+   expected and observed results.
+6. Search existing issues for that exact failure before considering a new issue.
+
+A new child issue may be created only when all of the following are true:
+
+- reproducible failing evidence exists against the current default branch;
+- the expected behavior maps directly to exactly one unchecked frozen acceptance criterion;
+- no existing open issue already owns the failure;
+- the proposed work has a finite one-pull-request outcome; and
+- the issue records the reproduction, expected result, observed result, and criterion mapping.
+
+Missing coverage alone is not failing evidence. Do not create successive issues merely because
+another structure type, resource manifest, ordering, reset variant, or permutation could be tested.
+A per-structure or combinatorial matrix is permitted only when an explicit maintainer-approved,
+bounded requirement enumerates its members and completion condition.
+
+If no frozen criterion has reproducible failing evidence, select the existing gate/evidence issue to
+validate closure. If no such safe work exists, end with **No safe slice** rather than expanding scope.
+
+Only when this audit finds one reproducible unsatisfied frozen criterion and no suitable issue exists,
+create one with:
 
 - an outcome-oriented title;
 - roadmap phase;
@@ -569,10 +620,15 @@ Prefer squash merge unless repository policy states otherwise.
 After merge:
 
 - confirm the merged commit on `main`;
-- confirm linked issue closure or update its remaining criteria;
+- confirm the linked issue and its acceptance checklist reflect the merged outcome, and close it when
+  its criteria are satisfied;
+- perform the Section 7.1 closure audit for its parent using the newly merged evidence;
+- reconcile stale dependency and checklist state in the parent, epic, and roadmap;
+- close the parent when its frozen closure contract is satisfied;
 - remove the branch when safe;
 - confirm required `main` workflows pass;
-- do not immediately begin another implementation in the same run.
+- record any still-failing frozen criterion and its evidence as a recommended next slice;
+- do not select, create, or begin another primary issue in the same invocation.
 
 ## 15. Deployment Gate
 
@@ -639,19 +695,26 @@ empire.
 
 ## 17. Follow-Up Discipline
 
-During the slice, create a follow-up issue only when the finding is:
+During an active slice, create a separate follow-up issue only when the finding is:
 
 - real and evidenced;
 - outside the current acceptance criteria;
 - not already tracked;
 - scoped and testable;
-- important enough to compete in roadmap priority.
+- important enough to compete independently in roadmap priority.
 
-Group related small findings. Use a parent issue only when several independently deliverable slices
-are required for one phase gate.
+A finding outside a parent's frozen closure contract is non-blocking for that parent. Do not append
+it to the parent's acceptance criteria, dependency set, or completion checklist, and do not keep the
+parent open because of it.
 
-Do not generate cleanup, architecture, documentation, or performance issues solely because a tool
-can find them. Every issue states the outcome or risk it affects.
+A new child of the current parent is not an ordinary follow-up. It may be created only through the
+Section 7.1 audit and creation gate. After the primary pull request has been opened, do not create
+another child of that parent in the same invocation; preserve the evidence in the end-of-run report
+for a future fresh preflight.
+
+Group related small findings. Do not generate cleanup, architecture, documentation, performance,
+per-structure, or permutation issues solely because additional coverage is possible. Every issue
+must state the observable failing outcome or risk it affects.
 
 ## 18. Stop Conditions
 
@@ -666,6 +729,10 @@ End the run after one of these terminal states:
 
 Do not keep working merely to fill time. Do not start the next issue after reaching a terminal
 state.
+
+A terminal state is final for the current invocation. After reaching it, perform only required
+verification, issue-state reconciliation, safe branch cleanup, and the end-of-run report. Do not
+return to Sections 5–7, select or create another primary issue, or re-enter Section 20.
 
 ## 19. End-of-Run Report
 
@@ -700,25 +767,27 @@ Keep the report concise and evidence-based.
 Do not produce a ceremonial inventory of every available skill. Mention tools only when they
 affected the result or explain a blocker.
 
-## 20. Begin the Next Iteration
+## 20. Run Exactly One Iteration
 
-Start now:
+Enter this section exactly once per invocation. It is not an instruction to restart after the final
+step. A new iteration requires a later external invocation and a fresh preflight.
 
 1. read the project authority documents;
 2. inspect repository, GitHub, and current phase state;
 3. finish existing loop-owned work before selecting new work;
-4. select or create one outcome issue in the earliest incomplete phase;
-5. research only the uncertain mechanics needed for that issue;
-6. write the executable outcome;
-7. implement the smallest complete behavior;
-8. update telemetry and documentation where required;
-9. run focused validation and `npm run check`;
-10. publish one pull request;
-11. fix its CI and actionable review feedback;
-12. merge only when policy allows;
-13. deploy only when the deployment gate is configured and satisfied;
-14. verify the merged or deployed outcome;
-15. produce the end-of-run report and stop.
+4. determine the earliest incomplete phase;
+5. perform the Section 7.1 closure audit before selecting or creating any child;
+6. select one existing outcome issue, or create one only when the creation gate is satisfied;
+7. research only the uncertain mechanics needed for that issue;
+8. write the executable outcome;
+9. implement the smallest complete behavior;
+10. update telemetry and documentation where required;
+11. run focused validation and `npm run check`;
+12. publish one pull request;
+13. fix its CI and actionable review feedback;
+14. merge and deploy only when their respective policies allow;
+15. verify the outcome and reconcile child, parent, epic, and roadmap state;
+16. produce the end-of-run report and stop without re-entering this section.
 
 The measure of progress is not how much work the agent performed. The measure is whether MYRMEX
 passed one more meaningful outcome gate without increasing architectural entropy.
