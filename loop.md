@@ -303,10 +303,11 @@ A per-structure or combinatorial matrix is permitted only when an explicit maint
 bounded requirement enumerates its members and completion condition.
 
 If no frozen criterion has reproducible failing evidence, select the existing gate/evidence issue to
-validate closure. If no such safe work exists, end with **No safe slice** rather than expanding scope.
+validate closure. If no such safe work exists, end with **No safe slice** rather than expanding
+scope.
 
-Only when this audit finds one reproducible unsatisfied frozen criterion and no suitable issue exists,
-create one with:
+Only when this audit finds one reproducible unsatisfied frozen criterion and no suitable issue
+exists, create one with:
 
 - an outcome-oriented title;
 - roadmap phase;
@@ -620,8 +621,8 @@ Prefer squash merge unless repository policy states otherwise.
 After merge:
 
 - confirm the merged commit on `main`;
-- confirm the linked issue and its acceptance checklist reflect the merged outcome, and close it when
-  its criteria are satisfied;
+- confirm the linked issue and its acceptance checklist reflect the merged outcome, and close it
+  when its criteria are satisfied;
 - perform the Section 7.1 closure audit for its parent using the newly merged evidence;
 - reconcile stale dependency and checklist state in the parent, epic, and roadmap;
 - close the parent when its frozen closure contract is satisfied;
