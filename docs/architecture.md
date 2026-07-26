@@ -2078,11 +2078,15 @@ current owned-removal method explicit: only the existing direct-destroy authorit
 composes the existing replacement-first extension path with current room and colony threat evidence:
 planning publishes only the typed `threat` blocker, no removal authority or receipt reaches Execute,
 and the same bounded migration resumes exactly once after threat clears across a heap reset and
-reordered observation. Issue #443 retains compatible external storage across RCL4-RCL8 by default;
-only exact persisted storage evacuation/removal evidence may continue the older canonical path.
-Issue #445 applies the same continuity-over-geometry rule to one compatible external owned terminal
-at RCL6-RCL8, with exact terminal evacuation/removal terms grandfathered. None changes runtime
-authority, owner schema, command path, or CPU estimate.
+reordered observation. Issue #451 applies the same authority-level preemption when any normalized
+owned count for an allowance-controlled structure exceeds the current RCL-policy allowance. That
+fresh evidence emits only `rcl-downgrade`; it adds no controller history, owner state, or command,
+and the same migration resumes exactly once when current allowances again cover observed assets.
+Issue #443 retains compatible external storage across RCL4-RCL8 by default; only exact persisted
+storage evacuation/removal evidence may continue the older canonical path. Issue #445 applies the
+same continuity-over-geometry rule to one compatible external owned terminal at RCL6-RCL8, with
+exact terminal evacuation/removal terms grandfathered. None changes runtime authority, owner schema,
+command path, or CPU estimate.
 
 Issue #355 restores source-defined primary spawn geometry only when current allowance is at least
 two. At full allowance, `ConstructionPlanner` may remove one active idle empty external spawn only

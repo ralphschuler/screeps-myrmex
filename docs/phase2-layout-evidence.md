@@ -183,8 +183,12 @@ policy to one compatible external owned terminal and grandfathers only exact cur
 evacuation/removal evidence. Issue [#449](https://github.com/ralphschuler/screeps-myrmex/issues/449)
 permits one obsolete tower's exact empty or funded-stocked path when its only companion is one owned
 rampart; direct destruction still names only the tower and leaves that protective layer intact.
-Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other
-structure migration.
+Issue [#451](https://github.com/ralphschuler/screeps-myrmex/issues/451) blocks all removal
+authorization when fresh normalized owned counts exceed the current RCL-policy allowances, then adds
+checked 70-tick RCL3→RCL2→RCL3 extension-migration evidence with one reset during downgrade and
+exact reset/reorder recovery. Parent issue
+[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
+migration.
 
 ## Runtime order
 
@@ -249,19 +253,23 @@ structure migration.
    and a private-only local corridor suspends its lease with no movement intent. The diff also
    follows current engine co-location: planned primary geometry may retain existing roads/ramparts,
    and planned road/rampart layers may share another buildable structure; current sites and
-   incompatible primary occupancy still block. `ConstructionPlanner` may then project one active
-   empty external extension after exact current replacement evidence, one compact stocked-extension
-   evacuation commitment, one unselected source container with a different exact selected service
-   for the same source, or one compact general-container handoff after exact committed replacement
-   capacity exists. Before that migration policy, source-service selection gives one valid persisted
-   position continuity precedence over newly observed exact containers and sites; current offload
-   quality may degrade without moving static-mining terms. If the selected container is absent, one
-   different exact legal/reachable replacement may advance its issuance coordinate only under fresh
-   no-threat, no-controller-risk, legal-workforce, and restored-reserve evidence. Under the same
-   safety evidence, a current exact selected container may advance only to a different exact
-   candidate that strictly precedes it under the existing canonical ordering; worse/equal candidates
-   cannot oscillate the selection, and every persisted position remains reserved to its own source
-   across overlapping candidate sets. An empty redundant source target remains directly removable; a
+   incompatible primary occupancy still block. Before any removal authorization, a normalized owned
+   spawn, extension, tower, link, storage, terminal, lab, extractor, factory, observer, power-spawn,
+   or nuker count above its current RCL-policy allowance emits only `rcl-downgrade`; current facts
+   replace persistent downgrade history, and later allowance recovery re-enters the unchanged
+   migration path. `ConstructionPlanner` may otherwise project one active empty external extension
+   after exact current replacement evidence, one compact stocked-extension evacuation commitment,
+   one unselected source container with a different exact selected service for the same source, or
+   one compact general-container handoff after exact committed replacement capacity exists. Before
+   that migration policy, source-service selection gives one valid persisted position continuity
+   precedence over newly observed exact containers and sites; current offload quality may degrade
+   without moving static-mining terms. If the selected container is absent, one different exact
+   legal/reachable replacement may advance its issuance coordinate only under fresh no-threat,
+   no-controller-risk, legal-workforce, and restored-reserve evidence. Under the same safety
+   evidence, a current exact selected container may advance only to a different exact candidate that
+   strictly precedes it under the existing canonical ordering; worse/equal candidates cannot
+   oscillate the selection, and every persisted position remains reserved to its own source across
+   overlapping candidate sets. An empty redundant source target remains directly removable; a
    stocked one persists the same bounded handoff plus its source identity. An energy-only target
    persists its exact amount and the replacement's current energy. A target with one non-energy kind
    or two to eight kinds persists binary-ordered compact resource/amount/replacement-baseline

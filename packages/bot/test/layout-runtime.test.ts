@@ -987,6 +987,125 @@ describe("composed layout runtime", () => {
       ownedExtensions: [...readyRoom.ownedExtensions].reverse(),
       structures: [...(readyRoom.structures ?? [])].reverse(),
     });
+    const rcl2Policy = projectColonyRclPolicy({
+      activeThreat: false,
+      controllerLevel: 2,
+      controllerRisk: false,
+      cpuMode: "normal",
+      energyAvailable: 550,
+      energyCapacityAvailable: 550,
+      protectedSpawnEnergy: 300,
+      rcl8Health: null,
+      state: "developing",
+      visibility: "visible",
+    });
+    const downgradedRoom = {
+      ...readyRoom,
+      controller:
+        readyRoom.controller === null ? null : { ...readyRoom.controller, level: 2 as const },
+      energyAvailable: 550,
+      energyCapacityAvailable: 550,
+      ownedExtensions: readyRoom.ownedExtensions.map((extension, index) => ({
+        ...extension,
+        active: index < 5,
+      })),
+    };
+    const downgraded = new ConstructionPlanner().planMigration({
+      colony: { ...colony, rclPolicy: rcl2Policy },
+      commitment,
+      globalOwnedSiteCount: 0,
+      observationFingerprint: "obs-rcl2-downgrade",
+      placements: idealExtensions,
+      policyFingerprint: "policy-rcl2",
+      room: downgradedRoom,
+    });
+    expect(downgraded).toMatchObject({
+      authorization: null,
+      blockers: [expect.objectContaining({ reason: "rcl-downgrade" })],
+      proposals: [],
+      removalReceipt: null,
+    });
+    const planDowngraded = (colonyOverride: Partial<ColonyView>, observation: string) =>
+      new ConstructionPlanner().planMigration({
+        colony: { ...colony, rclPolicy: rcl2Policy, ...colonyOverride },
+        commitment,
+        globalOwnedSiteCount: 0,
+        observationFingerprint: observation,
+        placements: idealExtensions,
+        policyFingerprint: "policy-rcl2",
+        room: downgradedRoom,
+      });
+    expect(planDowngraded({ state: "recovering" }, "obs-rcl2-unsafe")).toMatchObject({
+      authorization: null,
+      blockers: [expect.objectContaining({ reason: "colony-unsafe" })],
+    });
+    expect(planDowngraded({ activeThreat: true }, "obs-rcl2-threat")).toMatchObject({
+      authorization: null,
+      blockers: [expect.objectContaining({ reason: "threat" })],
+    });
+    expect(planDowngraded({ controllerRisk: true }, "obs-rcl2-controller-risk")).toMatchObject({
+      authorization: null,
+      blockers: [expect.objectContaining({ reason: "controller-risk" })],
+    });
+    const ordinaryRcl2Extensions = [...exactBefore.slice(0, 4), obsolete];
+    const ordinaryRcl2Room = {
+      ...downgradedRoom,
+      ownedExtensions: ordinaryRcl2Extensions,
+      structures: ordinaryRcl2Extensions.map(({ id, pos: extensionPos }) =>
+        structure(id, extensionPos.x, extensionPos.y),
+      ),
+    };
+    const ordinaryRcl2 = new ConstructionPlanner().planMigration({
+      colony: { ...colony, rclPolicy: rcl2Policy },
+      commitment,
+      globalOwnedSiteCount: 0,
+      observationFingerprint: "obs-rcl2-ordinary",
+      placements: idealExtensions,
+      policyFingerprint: "policy-rcl2",
+      room: ordinaryRcl2Room,
+    });
+    expect(ordinaryRcl2.authorization).not.toBeNull();
+    expect(ordinaryRcl2.blockers).toEqual([]);
+    expect(ordinaryRcl2.proposals).toEqual([
+      expect.objectContaining({
+        replacementId: "extension-exact-3",
+        targetId: "extension-obsolete",
+      }),
+    ]);
+    const allowanceCases = [
+      ["ownedSpawns", 2],
+      ["ownedTowers", 1],
+      ["ownedLinks", 1],
+      ["ownedStorages", 1],
+      ["ownedTerminals", 1],
+      ["ownedLabs", 1],
+      ["ownedExtractors", 1],
+      ["ownedFactories", 1],
+      ["ownedObservers", 1],
+      ["ownedPowerSpawns", 1],
+      ["ownedNukers", 1],
+    ] as const;
+    for (const [field, count] of allowanceCases) {
+      const overAllowanceRoom = {
+        ...ordinaryRcl2Room,
+        [field]: Array.from({ length: count }, (_, index) => ({ id: `${field}-${String(index)}` })),
+      } as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
+      expect(
+        new ConstructionPlanner().planMigration({
+          colony: { ...colony, rclPolicy: rcl2Policy },
+          commitment,
+          globalOwnedSiteCount: 0,
+          observationFingerprint: `obs-rcl2-${field}`,
+          placements: idealExtensions,
+          policyFingerprint: "policy-rcl2",
+          room: overAllowanceRoom,
+        }),
+      ).toMatchObject({
+        authorization: null,
+        blockers: [expect.objectContaining({ reason: "rcl-downgrade" })],
+        proposals: [],
+      });
+    }
     const stockedRoom = room([
       ...exactBefore,
       replacement,

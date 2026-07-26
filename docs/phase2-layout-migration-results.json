@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 4,
-  "evidenceIssues": [365, 377, 383, 441],
+  "schemaVersion": 5,
+  "evidenceIssues": [365, 377, 383, 441, 451],
   "issue": 365,
   "status": "complete",
   "scenario": {
@@ -118,6 +118,35 @@
       "removalReceiptCount": 0,
       "resetDuringThreatAt": 50033,
       "resumedAt": 50035
+    },
+    "rclDowngradeInterruption": {
+      "authorizationCount": 0,
+      "blockers": ["rcl-downgrade"],
+      "blockedTicks": [50031, 50032, 50033, 50034],
+      "bothStructuresPresent": true,
+      "controllerLevel": 2,
+      "destroyCallCount": 0,
+      "energyCapacityAvailable": 550,
+      "extensionAllowance": 5,
+      "maximumActiveExtensions": 5,
+      "removalIntentCount": 0,
+      "removalProposalCount": 0,
+      "removalReceiptCount": 0,
+      "resetDuringDowngradeAt": 50033,
+      "resumedAt": 50035,
+      "equivalence": {
+        "semanticBytesIdentical": true,
+        "outcomeHashes": {
+          "warm": "fnv1a64-utf16:72fb9a639b76f30b",
+          "reset": "fnv1a64-utf16:72fb9a639b76f30b",
+          "reordered": "fnv1a64-utf16:72fb9a639b76f30b"
+        },
+        "semanticHashes": {
+          "warm": "fnv1a64-utf16:f1ff5a7cbf71e7d4",
+          "reset": "fnv1a64-utf16:f1ff5a7cbf71e7d4",
+          "reordered": "fnv1a64-utf16:f1ff5a7cbf71e7d4"
+        }
+      }
     }
   },
   "budgets": {
@@ -300,9 +329,9 @@
   "equivalence": {
     "semanticBytesIdentical": true,
     "outcomeHashes": {
-      "warm": "fnv1a64-utf16:03ca7b6b86ef67c7",
-      "reset": "fnv1a64-utf16:03ca7b6b86ef67c7",
-      "reordered": "fnv1a64-utf16:03ca7b6b86ef67c7"
+      "warm": "fnv1a64-utf16:2de73d3a89e13eb7",
+      "reset": "fnv1a64-utf16:2de73d3a89e13eb7",
+      "reordered": "fnv1a64-utf16:2de73d3a89e13eb7"
     },
     "semanticHashes": {
       "warm": "fnv1a64-utf16:8efc2329d95a9fde",

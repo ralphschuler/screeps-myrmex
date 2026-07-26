@@ -1384,7 +1384,7 @@ describe("empty obsolete-storage relocation", () => {
       "replacement-pending",
       "replacement-pending",
       "replacement-pending",
-      "replacement-pending",
+      "rcl-downgrade",
       "logistics-unavailable",
       "logistics-active",
       "logistics-active",
