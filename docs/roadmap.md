@@ -90,285 +90,84 @@ Operational Memory may disable available work but can never activate an unfinish
 
 ## Phase 2 — Complete Colony
 
-The first bounded Phase 2 slice is tracked by
-[issue #44](https://github.com/ralphschuler/screeps-myrmex/issues/44) and
-[`phase2-colony-policy-evidence.md`](phase2-colony-policy-evidence.md). It adds the tick-local
-RCL2-RCL8 projection and `runtime-config-source-v17`; final domain-health reconciliation and
-sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps-myrmex/issues/225).
+**Status:** implementation complete;
+[issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54) is the sole remaining Phase 2
+outcome gate.
 
-- Extend the existing colony authority from the survival lifecycle to complete RCL policy; do not
-  create a second per-room kernel or state machine.
-- Static mining, logistics contracts, links, storage, terminal, and layouts.
-- Issue #308 supersedes #284's road-removal step after current engine verification: compatible
-  roads/ramparts use the ordinary construction-site chain and never require destruction merely to
-  build a planned structure. Issue #286 adds one extension-only replacement-first step: spare
-  allowance builds canonical committed capacity before the same authority may remove one empty,
-  unshared, obsolete extension under exact current replacement evidence. Issue #288 persists at most
-  one compact extension evacuation per room, routes its exact energy to that replacement through
-  funded logistics, suppresses target refill, and keeps removal blocked until fresh delivered/empty
-  evidence. Issue #290 removes at most one empty, unshared source-adjacent container only while a
-  different exact committed container remains the selected reachable service for that same source;
-  mining identity and work position stay unchanged. Issue #292 restores committed geometry for
-  general non-service containers, builds one replacement under spare allowance, then suppresses
-  obsolete-target refill and waits for active logistics endpoints before removing the empty adopted
-  target. Issue #294 extends that handoff to an exact energy-only target, routing at most 2,000
-  energy through funded logistics and requiring fresh delivered/empty plus retired-flow evidence.
-  Issue #296 extends it to a binary-ordered manifest of two to eight resource kinds, with one
-  distinct funded flow per kind and an atomic 64-flow projection ceiling. Issue #298 extends the
-  same manifest to exactly one non-energy kind while preserving the legacy energy-only identity.
-  Issue #300 reuses that evacuation for one stocked, unselected redundant source-adjacent container
-  while preserving the different exact selected service, mining identity, and work position. Issue
-  #302 pins each persisted legal/reachable source-service position when an alternate appears or its
-  container vanishes, preserving executable mining terms until an explicit handoff exists. Issue
-  #304 advances one lost selected service to a different exact legal/reachable replacement under
-  fresh safety evidence and atomically replaces the mining contract with its exact next issuance
-  sequence. Issue #306 reuses that atomic path when a different existing exact container strictly
-  outranks the selected exact service; worse/equal candidates cannot oscillate the selection. Issue
-  #310 gives every current extension/container destroy path one compact identity-bound receipt with
-  capped reset-safe retry, so a failed room cannot repeatedly consume the global removal slot. Issue
-  #312 restores committed tower geometry while allowance is available, then removes at most one
-  active empty obsolete tower only after an exact active committed replacement retains one action's
-  energy; the same bounded receipt and one-command authority apply. Issue #314 persists one bounded
-  stocked-tower evacuation only when that operational replacement has exact capacity, routes its
-  energy through funded logistics, and keeps removal blocked until fresh delivered/empty and
-  retired-flow evidence. Issue #449 admits either path when one owned rampart is the target tower's
-  only companion; the exact tower alone is removed, while every other shared/site occupancy remains
-  blocked. Issue #316 restores RCL8 committed link geometry, then removes one active empty idle
-  external link only when canonical current/ideal role evidence classifies the target, missing
-  anchor, and exact replacement as reserve capacity while every source, hub, and controller link
-  remains active. Issue #318 persists one bounded positive-energy reserve-link evacuation only when
-  the exact reserve replacement can hold the complete amount, routes it through funded creep
-  logistics without native link-transfer loss, and requires exact delivery, retired work, zero
-  cooldown, unchanged reserve roles, and no accepted native transfer before removal. Issue #320
-  restores committed RCL8 lab geometry, then removes one active empty zero-cooldown external lab
-  only while current industry work is quiescent, no logistics endpoint names any room lab, and the
-  remaining nine exact committed labs still derive a valid cluster. Issue #322 extends only that
-  quiescent path to one energy-only target, persisting a 150-tick funded creep-logistics evacuation
-  and requiring fresh target-empty, baseline-plus-amount replacement energy, retired work, and
-  unchanged cluster/safety evidence before removal. Issue #324 admits one zero-energy, single-kind
-  mineral target only when the industry view publishes one exact active owned storage with complete
-  aggregate capacity. One funded mineral flow uses the sole logistics path; removal requires fresh
-  target emptiness, baseline-plus-amount storage stock, retired work, and unchanged destination,
-  cluster, quiescence, and safety evidence. Issue #326 composes those destinations for one target
-  holding both energy and one mineral kind: two distinct funded flows are admitted atomically, and
-  removal waits for both exact gains plus complete flow/endpoint retirement. Issue #330 permits one
-  existing reaction commitment to advance onto a role-identical nine-committed-lab assignment, then
-  removes the empty unused external lab only after that fingerprint is durable; objective identity
-  and settled progress survive reset, temporary source-layout/staging unavailability, and exact
-  next-observation settlement. Issue #333 extends that exact role-identical handoff to one positive
-  energy-only target, reusing the existing V13 funded creep-logistics evacuation while retained labs
-  continue reaction work; removal waits for delivered replacement gain, retired flow/endpoints, and
-  no pending lab attempt. Issue #335 reuses the same durable handoff and V13 mineral-to-storage flow
-  for one zero-energy, single-kind-mineral target; removal requires exact storage gain, retired
-  work, unchanged destination/roles/safety, and no pending attempt. Issue #337 composes those two
-  destinations for one active mixed target, atomically admitting both existing flows and requiring
-  both exact gains plus complete work retirement before removal. Issue #339 repairs the already
-  available lab gate's composed boost settlement: actor fingerprints now retain immutable identity
-  and body shape across the expected boost annotation, while exact target-part and 30-mineral/
-  20-energy deltas remain mandatory. Issue #341 lets one existing explicit funded boost commitment
-  advance only its assignment fingerprint across the same role-identical obsolete-lab handoff. The
-  rebound tick is command free, reset/reorder preserves all boost objective and settled part terms,
-  readiness requires executable intent or pending attempt evidence, and both current and pending
-  boost work block removal. Issue #343 lets one quiescent mineral-only target use one exact active
-  idle terminal only when no active storage exists; the V14 commitment suppresses internal sends
-  from or to that room and retains the existing funded logistics and fresh-delivery removal gates.
-  Issue #345 reuses that exact destination for a durable `ready` reaction handoff, preserving
-  reaction progress while retaining storage precedence, no-send evidence, and every removal gate.
-  Issue #347 extends the same mineral-only V14 destination to an exact `ready` boost handoff while
-  current boost intents and pending effects continue to block removal. Issue #349 composes the
-  quiescent mixed form with that terminal destination: energy still moves to the retained lab,
-  mineral moves to the terminal, and both flows must admit and settle atomically. Issue #351 reuses
-  that mixed V14 destination during one exact durable `ready` reaction handoff while retained labs
-  continue work. Issue #353 reuses it during the equivalent explicit-boost handoff, preserving both
-  flows while current or pending boost work blocks removal until exact settlement. Issue #355
-  restores committed RCL7/RCL8 spawn geometry and removes one active idle empty external spawn only
-  while full allowance retains an idle unselected exact replacement, the target is unselected, and
-  no assigned/active contract endpoint names it. Issue #357 extends that evidence with one V16,
-  150-tick exact-energy handoff: the sole funded V3 logistics path drains the target into the
-  committed replacement, current SpawnBroker selections and unrelated endpoints suppress execution,
-  and removal waits for fresh empty/gain/retirement evidence plus live replacement-energy
-  revalidation. Issue #359 restores the one committed RCL6+ terminal position, then permits one
-  active empty zero-cooldown external terminal to use exact active storage as local inventory
-  continuity only while Industry publishes current terminal quiescence and no terminal-bound layout
-  or Logistics work exists. V17 adds the terminal receipt discriminator; fresh execution rechecks
-  both exact general-purpose Stores before the same one-command authority acts. Issue #361 advances
-  layouts V18 with one 150-tick single-resource stocked-terminal evacuation: at most 3,000 units
-  move through the sole funded V3 Logistics path into exact active storage, internal sends and
-  competing terminal stock work remain suppressed while the attempt is active, and removal waits for
-  fresh exact empty/gain/retirement plus unchanged quiescence and safety evidence. Expiry releases
-  service work but remains removal-blocking failure evidence. Issue #363 advances layouts V19 with
-  one canonical two-to-eight-resource manifest totaling at most 3,000 units. Distinct funded flows
-  share aggregate storage capacity, admit atomically, and require every exact gain plus complete
-  work retirement before removal. Issue #365 adds checked 70-tick replay evidence exercising the
-  production layout diff plus site/removal arbitration, execution, and reconciliation while one
-  empty obsolete extension is removed and ten exact RCL3 extensions are observed. Construction
-  progress, the 6,000-energy and 100-energy/tick bounds, and 0.25-CPU/tick accounting remain
-  deterministic scenario models. Issue #377 adds the production-runtime complement: the first
-  committed-position extension site's final 100 energy executes through growth funding,
-  ContractLedger assignment, one lease, action arbitration/execution, and live `Creep.build`; fresh
-  observation proves completion. Both rows are reset/reorder equivalent under checked modeled-CPU
-  and persistent-Memory bounds. The room-grid access witness remains scenario-level only. Issue #367
-  adds the production planner's bounded source-access invariant: every complete candidate has one
-  distinct semantic service on a legal spawn-reachable adjacent work tile for every observed owned
-  source, while an impossible or incomplete source assignment preserves the prior commitment and
-  emits no placements. Issue #369 aligns executable local traversal with that invariant: private
-  foreign ramparts are static blockers, owned/public ramparts remain walkable, and changed effective
-  passability separates cached path evidence without persistent invalidation state. Issue #447 adds
-  bounded local congestion recovery: exact heap-only movement-attempt evidence triggers one
-  occupancy/reservation-aware uncached replan after three unchanged ticks and one typed lease
-  suspension after ten, without putting dynamic facts in reusable paths or persistent Memory. Issue
-  #371 advances layouts V20 with one empty obsolete-storage relocation at RCL6-RCL8: an exact active
-  terminal provides bounded local inventory continuity, an effective gate plus one exact current
-  healthy Logistics row is mandatory, work and persisted destinations fail closed, and the same
-  bounded receipt/executor path exposes the committed storage site after fresh disappearance. Issue
-  #373 advances layouts V21 with one 150-tick evacuation for exactly one storage resource kind
-  totaling at most 3,000 units: the sole funded V3 Logistics path moves it to the exact terminal,
-  suppresses both endpoints and internal sends, and requires exact delivery plus work retirement
-  before the unchanged removal path. Issue #375 advances layouts V22 with a canonical
-  two-to-eight-resource alternative under the same 3,000-unit and 150-tick limits: each current row
-  receives a distinct funded V3 flow, every terminal sink shares one aggregate-capacity reservation,
-  current rows admit atomically through Logistics and colony funding, and removal waits for every
-  exact gain plus complete work retirement. Issue #379 advances layouts V23 for one single resource
-  totaling 3,001–6,000 units: exactly two batch-qualified flows execute sequentially under one fixed
-  300-tick deadline, and batch two waits for fresh first-batch delivery plus complete prior-work
-  retirement. Issue #381 advances layouts V24 with the same bounded cursor for a canonical
-  two-to-eight-resource manifest totaling 3,001–6,000 units: binary resource order defines the two
-  aggregate batches, every current row receives a distinct batch-qualified identity, and fresh exact
-  per-resource delivery plus complete work retirement gates the second batch and removal. Issue #383
-  composes fresh storage disappearance with immediate release of the retained terminal from local
-  Logistics suppression, one admitted local flow, one committed replacement site, the existing
-  generic production build proof, and a checked 30,000-energy reconstruction model across
-  warm/reset/reordered variants. Issue #385 advances layouts V25 with one command-free handoff from
-  a fully validated quiescent stale algorithm record to one current complete source/access-safe
-  commitment; older active evidence remains isolated and fail-closed. Issue #387 settles at most one
-  exact successful stale construction-site receipt from a newer owned-site or
-  completed-owned-structure observation, performs a command-free settlement step with no new
-  site/removal output, and leaves every mismatch fail-closed before #385's handoff. Issue #389 adds
-  the equivalent command-free settlement for one otherwise-quiescent terminal-success non-storage
-  removal receipt only after a newer complete owned-room observation proves its exact target absent.
-  Issue #391 permits one matching completed extension evacuation to settle atomically with that
-  receipt when exact target/replacement/type/interval evidence and the same safe newer absence hold;
-  issues #393, #395, #397, #399, #401, #403, and #405 add the equivalent exact completed tower,
-  spawn, reserve-link, container, lab, terminal, and storage pairs under the same gates. Every
-  canonical lab stock/destination form, scalar/manifest terminal form, and scalar, manifest, or two-
-  batch storage form shares its respective source, replacement, and interval identity. Storage also
-  requires current retained-terminal/quiescence and complete original-stock conservation evidence.
-  Issue #407 clears one otherwise-quiescent failed receipt only from newer complete exact-target-
-  presence evidence under the same safe policy, without a retry or same-tick handoff. Issue #409
-  atomically clears that no-effect receipt with its sole exact container, extension, lab, reserve-
-  link, spawn, storage, terminal, or tower evacuation/migration when type, target, replacement, and
-  receipt-within-interval terms match. Issue #411 lets one otherwise-quiescent explicit stale
-  source-service coordinate cross the current-revision handoff only when its exact active
-  ContractLedger planning record, canonical full request signature, and complete unchanged
-  source/position/sequence set match in the existing two-room plan before colony budgeting. Only
-  that accepted exact stale set may renew the already-matching mining budget/contract, so the
-  contract and lease remain active without stale-layout suspension. Issue #413 lets one otherwise-
-  quiescent unfinished stale extension evacuation continue through its exact existing funded V3
-  flow. Issue #415 adds the equivalent exact tower continuation while retaining at least 10
-  replacement energy for one defense action. Issue #417 adds the exact spawn continuation only while
-  current SpawnBroker evidence selects neither active idle 300-capacity endpoint. Issue #419 adds
-  the reserve-link continuation only for known source-defined V1 geometry under fresh exact source-
-  service adjacency, RCL8 source/hub/controller/reserve-role, 800-capacity Store, zero-cooldown, and
-  native-transfer-exclusion evidence. Issue #421 adds one legacy energy-only general-container
-  continuation with no manifest or source identity, exact current 2,000-capacity Stores, durable
-  endpoint suppression, current active funding, and the same sole Logistics/V3 path. Issue #423 adds
-  the mutually exclusive singleton non-energy manifest under those same bounds. Issue #425 extends
-  that resource-qualified path to one canonical two-to-eight-row source-unspecific manifest: every
-  row retains a distinct funded flow/budget identity, all rows share aggregate replacement capacity,
-  and over-cap admission publishes no prefix. Issue #427 admits one source-specific legacy energy
-  form only with fresh exact source-to-target and source-to-selected-service adjacency at a
-  different persisted exact replacement. Issue #429 admits the mutually exclusive singleton
-  non-energy manifest under the same exact source/service evidence. Issue #431 admits its canonical
-  two-to-eight-row composition and requires complete current-row funding before lease execution.
-  Issue #433 admits one exact unfinished stale lab evacuation through the existing energy, mineral,
-  mixed, storage/terminal, and quiescent or exact reaction/boost-handoff Logistics/V3 boundary.
-  Known V1 lab geometry is assignment evidence only; durable endpoint/send suppression survives
-  optional denial, and exact delivery plus quiescent work retirement clears only the evacuation
-  command-free. Issue #435 admits one exact unfinished stale scalar or canonical two-to-eight-row
-  terminal evacuation through its existing Industry-quiescent funded Logistics/V3 path. Durable
-  endpoint/send suppression survives optional denial; fresh terminal emptiness, every exact storage
-  gain, and complete flow/endpoint retirement clear only that term command-free. Issue #437 adds the
-  inverse exact stale storage continuation for every existing scalar, manifest, and 3,001–6,000-unit
-  two-batch form. Current-batch rows retain atomic funding; exact first-batch conservation and
-  retired work advance only the existing cursor command-free, while final exact terminal
-  conservation and retired work clear only the evacuation before the later handoff. Across admitted
-  forms, fresh exact empty-source, every exact replacement gain, complete flow and endpoint
-  retirement, and unchanged safe policy clear only the applicable term command-free; the ordinary
-  revision handoff remains a later tick. Unrelated active, mismatched, multiple-pair, unpaired
-  storage, unsafe, same-tick, incomplete, terminal-only, or drifted evidence remains blocked. Issue
-  #439 makes current owned-removal arbitration explicit: Phase 2 retains the existing direct
-  `Structure.destroy` path after every safety gate and source-forbids `Creep.dismantle` until a
-  later funded policy proves positive full-cost value. Issue #441 adds checked composed evidence
-  that a replacement-first extension migration pauses without authorization, removal intent,
-  command, or receipt through a current four-tick threat and heap reset, then resumes exactly once
-  after threat clears while preserving the existing geometry, access, CPU, energy, and site bounds.
-  Issue #451 adds the equivalent four-tick current-RCL2 pause after the RCL3 replacement is
-  observed: ten owned extensions against the five-extension allowance emit only `rcl-downgrade`, no
-  removal authorization or receipt, and exact reset/reorder evidence resumes once at RCL3 under the
-  same geometry, access, CPU, energy, and site bounds. Issue #453 composes one active 50-energy
-  stale extension evacuation through production Logistics, ContractLedger, command-free settlement
-  and revision handoff, direct removal, and exact ten-extension reconstruction. It also pins
-  precommits every layout command result before root commit, permits sequential Logistics stages to
-  reuse one stable budget binding, and limits below-target spawn-pool recovery construction to
-  spawns/extensions. Issue #457 composes the equivalent active 500-energy stale-tower path through
-  exact delivery, command-free settlement and later revision handoff, one direct removal, and one
-  5,000-energy current-geometry rebuild while retaining an operational 10-energy tower throughout.
-  An exact deliver-stage lease remains authorized through both suppressed endpoints only while its
-  flow is present in the merged Logistics graph and its layout budget is active; acquire remains
-  capped by current Logistics admission. Warm, post-acquire reset, and reordered variants converge
-  with one site, no duplicate command, and bounded persistent state. Issue #443 preserves one
-  compatible external storage as the convergent RCL4-RCL8 placement, so no new evacuation, removal,
-  or 30,000-energy rebuild starts solely for canonical coordinates; grandfathered exact
-  evacuation/removal terms retain their bounded continuation. Issue #445 applies the same
-  continuity-over-geometry policy to one compatible external owned terminal at RCL6-RCL8, avoiding a
-  new service outage and 100,000-energy rebuild while grandfathering exact existing terminal
-  evacuation/removal terms. Broad dynamic movement/pathfinding proof, autonomous boost manifest
-  production, and defensive or other active revision migrations remain issue #99.
-- Issue #46 defines static extraction contracts, stationary workforce projection, and composed
-  reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
-  `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
-  link commands remain #48, and container repair remains #49.
-- Issue #47 establishes the sole bounded LogisticsPlanner authority, fresh owned-room normalization,
-  exact resource reservations, deterministic admission, funded V3 acquire/deliver contracts,
-  convergent dedicated-hauler demand, runtime reconciliation, and observer-only telemetry. Its
-  reset/reorder/failure evidence is recorded in
-  [`phase2-logistics-evidence.md`](phase2-logistics-evidence.md). Terminal sends, link commands
-  (#48), and container repair (#49) remain separate authorities.
-- Issue #48 establishes the sole bounded LinkArbiter authority. Its pure foundation observes owned
-  links, derives ephemeral roles from versioned layout geometry, and admits funded proposals with
-  deterministic source, capacity, and loss reservations. Runtime proposal production, command
-  execution, settlement, and composed recovery evidence remain the next #48 slice.
-- Issue #266 establishes the sole bounded ObserverArbiter and ObserverExecutor. Versioned authorized
-  requests deterministically claim at most one slot per observer, and `OK` settles only from exact
-  next-tick visibility with bounded no-effect retry.
-- Issue #267 composes mature factory, power-spawn, capped nuker-stock, and observer authorities into
-  the static tick graph behind `phase2.mature` and `runtime-config-source-v27`. Exact next-tick
-  effects and observer receipts persist atomically in `IndustryOwnerV5`; checked evidence is in
-  [`phase2-mature-evidence.md`](phase2-mature-evidence.md). Observer target strategy and nuke launch
-  remain unavailable.
-- Issue #225 reconciles the fixed direct layout, mining, logistics, links, maintenance, resources,
-  labs, and industry status into the sole colony lifecycle. RCL8 becomes `sustaining` only with
-  complete current evidence; loss enters one bounded recovery without persisting health or reading
-  telemetry. Checked evidence is in
-  [`phase2-colony-health-evidence.md`](phase2-colony-health-evidence.md).
-- Issue #275 adds fixed progression, reserve, utilization, authority-outcome, and modeled-flow gate
-  inputs plus a bounded rolling observer window in the sole telemetry owner. Telemetry remains
-  unavailable to gameplay decisions; checked evidence is in
-  [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md). Issue #277 adds reset-safe
-  adjacent RCL transition durations with bounded opaque baselines and fixed RCL2–RCL8 aggregates;
-  checked evidence is in [`phase2-rcl-transition-evidence.md`](phase2-rcl-transition-evidence.md).
-  Issue #279 adds bounded adjacent-snapshot road/container net attrition with opaque baselines,
-  fixed rows, and fail-closed gap/cardinality/byte behavior; checked evidence is in
-  [`phase2-attrition-evidence.md`](phase2-attrition-evidence.md). Exact next-observation lab,
-  factory, and power input/output accounting is fixed and label-free. Nested telemetry schema V5
-  adds fixed extractor, link, terminal, lab, and factory current/rolling cooldown-utilization rows
-  with explicit continuity and bounded cap behavior; checked evidence is in
-  [`phase2-telemetry-evidence.md`](phase2-telemetry-evidence.md). Issue #53 predeclares the numeric
-  progression, steady-state, bounded-state, economy, and recovery thresholds in
-  [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md); issue #54 owns their measured soaks and
-  final Phase 2 pass/fail evidence.
-- Repair/rampart policy, labs, reactions, factory, and stock reserves.
-- RCL progression and spawn/energy utilization telemetry.
+Phase 2 extends the survival kernel into one deterministic RCL2–RCL8 colony authority covering
+layouts, mining, logistics, links, maintenance, resources, labs, mature infrastructure, cross-domain
+recovery, and bounded observer-only telemetry.
+
+### Authoritative completed implementation leaves
+
+- [#44](https://github.com/ralphschuler/screeps-myrmex/issues/44) — RCL2–RCL8 lifecycle, population,
+  and reserves.
+- [#45](https://github.com/ralphschuler/screeps-myrmex/issues/45) — versioned layouts and
+  construction-site arbitration.
+- [#46](https://github.com/ralphschuler/screeps-myrmex/issues/46) — static source mining and
+  container infrastructure.
+- [#47](https://github.com/ralphschuler/screeps-myrmex/issues/47) — storage-centered resource flow
+  and specialized hauling.
+- [#48](https://github.com/ralphschuler/screeps-myrmex/issues/48) — source, storage, and controller
+  link arbitration.
+- [#49](https://github.com/ralphschuler/screeps-myrmex/issues/49) — policy-bounded maintenance of
+  roads, structures, walls, and ramparts.
+- [#50](https://github.com/ralphschuler/screeps-myrmex/issues/50) — mineral extraction and
+  storage/terminal stock policy.
+- [#51](https://github.com/ralphschuler/screeps-myrmex/issues/51) — bounded reactions and
+  deterministic boost workflows.
+- [#52](https://github.com/ralphschuler/screeps-myrmex/issues/52) — factories and mature RCL8
+  infrastructure.
+- [#225](https://github.com/ralphschuler/screeps-myrmex/issues/225) — cross-domain recovery and
+  sustained-RCL8 maturity reconciliation.
+- [#53](https://github.com/ralphschuler/screeps-myrmex/issues/53) — progression, utilization,
+  reserve, attrition, and industry telemetry with fixed gate thresholds.
+
+Nested issues, pull requests, ADRs, and evidence updates remain delivery evidence in their owning
+issue and evidence document. They are not additional roadmap leaves, and this section must not be
+expanded into a merge-by-merge changelog.
+
+### Completed layout-migration audit
+
+Additional audited leaf [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) is complete
+against its original five acceptance criteria:
+
+1. Replacement-first removal, stock evacuation, cooldown/activity checks, ownership checks,
+   protected-capacity checks, and the sole direct-destroy authority are recorded in
+   [`phase2-layout-evidence.md`](phase2-layout-evidence.md).
+2. Source/controller access and viable spawn-to-source traversal are covered by
+   [#367](https://github.com/ralphschuler/screeps-myrmex/issues/367) and
+   [#369](https://github.com/ralphschuler/screeps-myrmex/issues/369).
+3. Warm, reset, and reordered variants produce equivalent ordered outcomes and semantic state in
+   [`phase2-layout-migration-results.json`](phase2-layout-migration-results.json).
+4. Bounded retry/reconciliation, threat interruption, and RCL-downgrade recovery are covered by
+   [#310](https://github.com/ralphschuler/screeps-myrmex/issues/310),
+   [#441](https://github.com/ralphschuler/screeps-myrmex/issues/441), and
+   [#451](https://github.com/ralphschuler/screeps-myrmex/issues/451).
+5. Nontrivial active extension and tower migrations converge to stable current geometry within
+   recorded site, energy, CPU, and persistent-state bounds in
+   [#453](https://github.com/ralphschuler/screeps-myrmex/issues/453) and
+   [#457](https://github.com/ralphschuler/screeps-myrmex/issues/457).
+
+Further structure variants, alternative migration strategies, or newly imagined completeness work
+are enhancements, not unfinished #99 or Phase 2 requirements.
+
+### Frozen dependency and gate policy
+
+The Phase 2 dependency set is frozen to #44–#53, #225, and #99. Those implementation leaves are
+complete. Issue #54 is the only remaining Phase 2 gate and uses the already-defined acceptance
+criteria and numeric thresholds in [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md).
+
+Until #54 closes:
+
+- automated issue creation, pull-request descriptions, comments, ADRs, and evidence updates must not
+  add another Phase 2 dependency or widen an existing completed leaf;
+- new repair work is permitted only after a reproducible assertion in #54's fixed matrix fails and
+  the repair cites both that assertion and one existing #54 acceptance criterion;
+- such a repair is subordinate to #54, is not a new roadmap leaf, and ends when the failing
+  assertion passes;
+- work not demonstrated by a failing #54 assertion is deferred to the later-phase backlog and cannot
+  block Phase 2 completion.
 
 **Exit:** repeatedly reach and sustain RCL8 within CPU and energy budgets.
 
@@ -403,7 +202,3 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   strongholds, portals, and cross-shard strategy.
 
 **Exit:** operations meet objective, budget, loss-rate, and retaliation-risk targets.
-
-The final #44-owned slice adds bounded funded-objective population scaling under
-`runtime-config-source-v18`. Domain behavior remains in #45-#52 and cross-domain recovery and
-maturity remain in #225.
