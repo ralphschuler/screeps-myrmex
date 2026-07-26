@@ -455,13 +455,14 @@ stock, cooldown is not proof of useful output, and lab/factory/power output requ
 observation settlement. Missing history reduces evidence and can never authorize work or RCL8
 maturity.
 
-The final Phase 2 evidence boundary is fixed before its soak. One unboosted two-source colony must
-reach RCL8 within 1,820,000 ticks while averaging at least nine controller energy per tick, then
-supply a 15,000-tick steady-state window with at least 13,500 sustaining ticks and a final
-1,500-tick continuous sustaining interval. Source uptime, CPU, reserves, flow identities, bounded
-state, industry exercise, and injected recovery use the numeric limits in
-[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md). These are test policy, not runtime inputs;
-telemetry and the scenario evaluator cannot authorize gameplay.
+The final Phase 2 boundary was fixed before execution. The checked deterministic soak reaches RCL8
+in 1,820,000 ticks at nine controller energy per tick, then observes 15,000 RCL8 ticks with 14,628
+sustaining ticks and a final 12,981-tick continuous sustaining interval. All source, CPU, reserve,
+flow, bounded-state, industry, cooldown, and eleven recovery measurements remain within the numeric
+limits in [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md); exact results, rollback, and
+live risks are in [`phase2-gate-evidence.md`](phase2-gate-evidence.md). This unblocks Phase 3
+planning but does not authorize later-phase actions or MMO deployment. Thresholds, telemetry, and
+Scenario Kit remain observer/test inputs and cannot authorize gameplay.
 
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU

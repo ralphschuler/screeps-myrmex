@@ -27,6 +27,14 @@ export {
   type CanonicalJsonValue,
 } from "./canonical";
 export {
+  PHASE2_GATE_RESULT_SCHEMA_VERSION,
+  collectPhase2GateEvidence,
+  type Phase2GateCollectionInput,
+  type Phase2GateConfigurationEvidence,
+  type Phase2GateEvidenceResult,
+  type Phase2GateInjectionReceipt,
+} from "./phase2-gate-collector";
+export {
   PHASE2_GATE_DECLARATION_SHA256_V1,
   PHASE2_GATE_MEASUREMENT_SCHEMA_VERSION,
   PHASE2_GATE_REQUIRED_LIMIT_IDS,

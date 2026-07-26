@@ -90,8 +90,8 @@ npm run check
 
 Road/container attrition, exact recipe-input accounting, and cooldown-utilization windows are
 complete. Issue #53 predeclares the numeric progression and steady-state boundaries in
-[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md); issue #54 retains complete soak execution
-and final Phase 2 gate evidence.
+[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md); issue #54 now composes this timing
+prerequisite into the complete soak and final Phase 2 gate evidence.
 
 ## Research receipt
 

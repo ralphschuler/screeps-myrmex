@@ -1,12 +1,12 @@
 # Phase 2 Gate Thresholds
 
-Status: **declared, not measured**
+Status: **declaration frozen; measured by issue #54**
 
 Issue [#53](https://github.com/ralphschuler/screeps-myrmex/issues/53) fixes the numeric pass/fail
-boundary that issue [#54](https://github.com/ralphschuler/screeps-myrmex/issues/54) must use for the
-Phase 2 progression and steady-state soaks. The machine-readable source of truth is
-[`phase2-gate-thresholds.json`](phase2-gate-thresholds.json). No value in that file is a measured
-result or evidence that Phase 2 passes.
+boundary used by issue [#54](https://github.com/ralphschuler/screeps-myrmex/issues/54). The
+machine-readable declaration remains [`phase2-gate-thresholds.json`](phase2-gate-thresholds.json);
+no value in that file is measured. Checked measurements and the final result are separate in
+[`phase2-gate-results.json`](phase2-gate-results.json).
 
 ## Pinned progression fixture
 
@@ -28,9 +28,8 @@ reserve restoration.
 
 Every ceiling is `ceil(progress / 9)`. These are MYRMEX policy deadlines, not engine deadlines. The
 existing scenario runner's 10,000-tick bound cannot represent the complete 1,820,000-tick timeline.
-Issue #54 must add a bounded streaming or segmented collector that preserves ordinary source,
-controller, spawn, and deferred-command mechanics. Accelerating controller progress does not prove
-this gate.
+Issue #54 adds a bounded streaming collector that preserves ordinary source, controller, spawn, and
+deferred-command mechanics. Accelerating controller progress does not prove this gate.
 
 ## Pinned steady state
 
@@ -145,8 +144,8 @@ exceed total sustaining ticks, and cooldown continuity cannot exceed the observe
 blocker order remains fixed.
 
 A zero-blocker evaluation returns `within-thresholds`, never `pass`. Structural hashes are not an
-independent proof that a run occurred. Issue #54 owns the collector that derives measurements and
-hashes from canonical per-variant artifacts, compares them with checked results, verifies the exact
+independent proof that a run occurred. Issue #54's collector derives measurements and hashes from
+canonical per-variant artifacts, compares them with checked results, verifies the exact
 bundle/config/policy revisions, and emits the final pass/fail artifact. Telemetry remains
 observer-only; neither this manifest nor its evaluator is available to runtime gameplay code.
 

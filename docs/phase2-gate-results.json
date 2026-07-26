@@ -1,0 +1,581 @@
+{
+  "schemaVersion": 1,
+  "issue": 54,
+  "status": "pass",
+  "completedPrerequisites": [44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 99, 225],
+  "configuration": {
+    "colonyRclPolicySha256": "sha256:21aea2469f73be385b715e695ea987cf3b3da7f25da9168bd1fd68a0289ee414",
+    "runtimeConfigSha256": "sha256:191eda26c52353a9c5b170377b1c3a69264046403e1ac4bb993a4d8a85dd788d"
+  },
+  "evidenceReceipts": [
+    {
+      "id": "attrition",
+      "sha256": "sha256:6615947d69fb118d21ed06b530165770fa8f5e43a9729df3d68593c5dcd3e234"
+    },
+    {
+      "id": "colony-health",
+      "sha256": "sha256:951acfcdfabffa4fba48b95d7271aef28ccf3da729d7bd8e4d393ecbc7ec3eb7"
+    },
+    {
+      "id": "cooldown-utilization",
+      "sha256": "sha256:704c94b5097f47622df48fa273398234c59936eb3bec52bc58ce1a380f662f58"
+    },
+    {
+      "id": "industry",
+      "sha256": "sha256:cd3ad1f40c1b309e650aa27db9b4282a5bde976c8958d9066c4c3110e0486cec"
+    },
+    {
+      "id": "industry-accounting",
+      "sha256": "sha256:59ed248e1dbdbc9d922e1bc6a5a7c9c2ada8ec4a42826fdd73afd9432c8f6239"
+    },
+    {
+      "id": "labs",
+      "sha256": "sha256:e3cae45d7df15fc220a05e2b39894e7e631ae0da86f4159c0013d088a380e420"
+    },
+    {
+      "id": "layout-migration",
+      "sha256": "sha256:552494e69e7ac6d38bf6dd7d3cdd4240b43397edaa46c55a75ebc70915cf41e0"
+    },
+    {
+      "id": "logistics",
+      "sha256": "sha256:22259dc7296adbd829ece585caa7410d6af68a17a6d34769df91ccdcbf74b56d"
+    },
+    {
+      "id": "maintenance",
+      "sha256": "sha256:ca187b3e97d3ae36fa79867836f476d62906169280d87a3d1b23e2a9efac4c8c"
+    },
+    {
+      "id": "mature",
+      "sha256": "sha256:fb0e092fa1edff0e3bdc838adffdf618781896a349e287c6c2bf026cbe4aae64"
+    },
+    {
+      "id": "mining",
+      "sha256": "sha256:b11f5ceb454495648b0a7806d2b243a728cde2fa29df798ca5da988faac8453d"
+    },
+    {
+      "id": "rcl-transition",
+      "sha256": "sha256:f80f20cea0c372e8b4c58cd0b2f649580416fa0c12f5291bfe0941b61f0a81d9"
+    },
+    {
+      "id": "telemetry",
+      "sha256": "sha256:53f7fe6a7dcb6ae71396e3b4e584fc5074cf11e56d219da17294e01d49b3a373"
+    }
+  ],
+  "productionBundle": {
+    "buildSha": "phase2-gate-evidence",
+    "bytes": 1572088,
+    "inputCount": 152,
+    "sha256": "sha256:02ad1ac841a4c1934bf7b425064a707ceae561989f74894903cc033dd15b7ff7"
+  },
+  "progression": {
+    "controllerEnergy": 16380000,
+    "finalRcl": 8,
+    "harvestedEnergy": 36400000,
+    "operatingEnergy": 20020000,
+    "seed": "phase2-progression-v1",
+    "sourceWaste": 0,
+    "totalTicks": 1820000,
+    "transitions": [
+      {
+        "destinationRcl": 3,
+        "ticks": 5000
+      },
+      {
+        "destinationRcl": 4,
+        "ticks": 15000
+      },
+      {
+        "destinationRcl": 5,
+        "ticks": 45000
+      },
+      {
+        "destinationRcl": 6,
+        "ticks": 135000
+      },
+      {
+        "destinationRcl": 7,
+        "ticks": 405000
+      },
+      {
+        "destinationRcl": 8,
+        "ticks": 1215000
+      }
+    ],
+    "variants": [
+      {
+        "name": "warm",
+        "outcomeHash": "fnv1a64-utf16:714e0bd9176f674c",
+        "resetTicks": [],
+        "sourceOrder": "forward"
+      },
+      {
+        "name": "reset",
+        "outcomeHash": "fnv1a64-utf16:714e0bd9176f674c",
+        "resetTicks": [5000, 20000, 65000, 200000, 605000],
+        "sourceOrder": "forward"
+      },
+      {
+        "name": "reordered",
+        "outcomeHash": "fnv1a64-utf16:714e0bd9176f674c",
+        "resetTicks": [],
+        "sourceOrder": "reversed"
+      }
+    ]
+  },
+  "steadyState": {
+    "finalSustainingTicks": 12981,
+    "injections": [
+      {
+        "id": "heap-reset",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "heap-reset-recovery-ticks",
+        "recoveryTicks": 1,
+        "restoredAt": 101,
+        "restoredHealth": "sustaining",
+        "startedAt": 100
+      },
+      {
+        "id": "memory-recovery",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "memory-recovery-ticks",
+        "recoveryTicks": 16,
+        "restoredAt": 216,
+        "restoredHealth": "sustaining",
+        "startedAt": 200
+      },
+      {
+        "id": "worker-loss",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "worker-loss-recovery-ticks",
+        "recoveryTicks": 9,
+        "restoredAt": 309,
+        "restoredHealth": "sustaining",
+        "startedAt": 300
+      },
+      {
+        "id": "spawn-loss",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "spawn-loss-recovery-ticks",
+        "recoveryTicks": 150,
+        "restoredAt": 650,
+        "restoredHealth": "sustaining",
+        "startedAt": 500
+      },
+      {
+        "id": "structure-loss",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "structure-loss-recovery-ticks",
+        "recoveryTicks": 50,
+        "restoredAt": 850,
+        "restoredHealth": "sustaining",
+        "startedAt": 800
+      },
+      {
+        "id": "blocked-logistics",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "blocked-logistics-recovery-ticks",
+        "recoveryTicks": 20,
+        "restoredAt": 1020,
+        "restoredHealth": "sustaining",
+        "startedAt": 1000
+      },
+      {
+        "id": "controller-risk",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "controller-risk-recovery-ticks",
+        "recoveryTicks": 25,
+        "restoredAt": 1225,
+        "restoredHealth": "sustaining",
+        "startedAt": 1200
+      },
+      {
+        "id": "low-bucket",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "low-bucket-recovery-ticks",
+        "recoveryTicks": 25,
+        "restoredAt": 1425,
+        "restoredHealth": "sustaining",
+        "startedAt": 1400
+      },
+      {
+        "id": "resource-shortage",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "resource-shortage-recovery-ticks",
+        "recoveryTicks": 50,
+        "restoredAt": 1650,
+        "restoredHealth": "sustaining",
+        "startedAt": 1600
+      },
+      {
+        "id": "command-error",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "command-error-recovery-ticks",
+        "recoveryTicks": 6,
+        "restoredAt": 1806,
+        "restoredHealth": "sustaining",
+        "startedAt": 1800
+      },
+      {
+        "id": "hostile-pressure",
+        "preHealth": "sustaining",
+        "recoveryLimitId": "hostile-pressure-recovery-ticks",
+        "recoveryTicks": 20,
+        "restoredAt": 2020,
+        "restoredHealth": "sustaining",
+        "startedAt": 2000
+      }
+    ],
+    "observedTicks": 15000,
+    "seed": "phase2-steady-state-v1",
+    "sustainingTicks": 14628,
+    "variants": [
+      {
+        "name": "warm",
+        "outcomeHash": "fnv1a64-utf16:a3556b9b55a38ff1",
+        "resetTicks": [],
+        "structureOrder": "forward"
+      },
+      {
+        "name": "reset",
+        "outcomeHash": "fnv1a64-utf16:a3556b9b55a38ff1",
+        "resetTicks": [100, 200, 300, 500, 800, 1000, 1200, 1400, 1600, 1800, 2000],
+        "structureOrder": "forward"
+      },
+      {
+        "name": "reordered",
+        "outcomeHash": "fnv1a64-utf16:a3556b9b55a38ff1",
+        "resetTicks": [],
+        "structureOrder": "reversed"
+      }
+    ]
+  },
+  "structurePolicies": [
+    {
+      "status": "owned-policy-ready",
+      "structureType": "container"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "controller"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "constructed-wall"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "extension"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "extractor"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "factory"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "lab"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "link"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "nuker"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "observer"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "power-spawn"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "rampart"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "road"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "spawn"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "storage"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "terminal"
+    },
+    {
+      "status": "owned-policy-ready",
+      "structureType": "tower"
+    }
+  ],
+  "measurements": {
+    "schemaVersion": 1,
+    "issue": 54,
+    "attestation": {
+      "manifestSha256": "sha256:ecc728959ca26151df59f005fffee04dd7692502aedf71d008ccabe498912380",
+      "measurementSha256": "sha256:3a3636c9c9291f02e2d724c40b9ac10d611f97bc2d88bea9b439d4ac2825d483",
+      "productionBundleSha256": "sha256:02ad1ac841a4c1934bf7b425064a707ceae561989f74894903cc033dd15b7ff7",
+      "progression": {
+        "seed": "phase2-progression-v1",
+        "warmOutcomeHash": "fnv1a64-utf16:714e0bd9176f674c",
+        "resetOutcomeHash": "fnv1a64-utf16:714e0bd9176f674c",
+        "reorderedOutcomeHash": "fnv1a64-utf16:714e0bd9176f674c"
+      },
+      "steadyState": {
+        "seed": "phase2-steady-state-v1",
+        "warmOutcomeHash": "fnv1a64-utf16:a3556b9b55a38ff1",
+        "resetOutcomeHash": "fnv1a64-utf16:a3556b9b55a38ff1",
+        "reorderedOutcomeHash": "fnv1a64-utf16:a3556b9b55a38ff1"
+      }
+    },
+    "values": [
+      {
+        "id": "progression-rcl3-ticks",
+        "value": 5000
+      },
+      {
+        "id": "progression-rcl4-ticks",
+        "value": 15000
+      },
+      {
+        "id": "progression-rcl5-ticks",
+        "value": 45000
+      },
+      {
+        "id": "progression-rcl6-ticks",
+        "value": 135000
+      },
+      {
+        "id": "progression-rcl7-ticks",
+        "value": 405000
+      },
+      {
+        "id": "progression-rcl8-ticks",
+        "value": 1215000
+      },
+      {
+        "id": "progression-total-ticks",
+        "value": 1820000
+      },
+      {
+        "id": "steady-state-observed-ticks",
+        "value": 15000
+      },
+      {
+        "id": "steady-state-sustaining-ticks",
+        "value": 14628
+      },
+      {
+        "id": "steady-state-final-sustaining-ticks",
+        "value": 12981
+      },
+      {
+        "id": "average-cpu-to-limit",
+        "value": 1505
+      },
+      {
+        "id": "minimum-cpu-tail-headroom",
+        "value": 490
+      },
+      {
+        "id": "minimum-nominal-bucket",
+        "value": 5250
+      },
+      {
+        "id": "minimum-final-bucket",
+        "value": 10000
+      },
+      {
+        "id": "minimum-injected-bucket",
+        "value": 5000
+      },
+      {
+        "id": "persistent-memory-bytes",
+        "value": 324
+      },
+      {
+        "id": "final-window-persistent-growth",
+        "value": 0
+      },
+      {
+        "id": "telemetry-owner-bytes",
+        "value": 38
+      },
+      {
+        "id": "tick-telemetry-bytes",
+        "value": 103
+      },
+      {
+        "id": "cache-entries",
+        "value": 192
+      },
+      {
+        "id": "cache-namespaces",
+        "value": 3
+      },
+      {
+        "id": "minimum-controller-downgrade-margin",
+        "value": 20000
+      },
+      {
+        "id": "minimum-spawn-energy",
+        "value": 5000
+      },
+      {
+        "id": "minimum-terminal-energy",
+        "value": 25000
+      },
+      {
+        "id": "source-uptime",
+        "value": 9980
+      },
+      {
+        "id": "source-waste",
+        "value": 20
+      },
+      {
+        "id": "spawn-utilization",
+        "value": 538
+      },
+      {
+        "id": "logistics-fulfillment",
+        "value": 9940
+      },
+      {
+        "id": "flow-identity-absolute-residual",
+        "value": 0
+      },
+      {
+        "id": "nominal-reserve-violations",
+        "value": 0
+      },
+      {
+        "id": "nominal-authority-failures",
+        "value": 0
+      },
+      {
+        "id": "dropped-observer-inputs",
+        "value": 0
+      },
+      {
+        "id": "rcl-evidence-interruptions",
+        "value": 0
+      },
+      {
+        "id": "unrestored-attrition-hits",
+        "value": 0
+      },
+      {
+        "id": "nominal-structures-lost",
+        "value": 0
+      },
+      {
+        "id": "final-construction-backlog",
+        "value": 0
+      },
+      {
+        "id": "settled-lab-effects",
+        "value": 1
+      },
+      {
+        "id": "settled-factory-effects",
+        "value": 1
+      },
+      {
+        "id": "settled-power-effects",
+        "value": 1
+      },
+      {
+        "id": "resource-policy-observations",
+        "value": 15000
+      },
+      {
+        "id": "settled-link-transfers",
+        "value": 1
+      },
+      {
+        "id": "observer-ready-observations",
+        "value": 15000
+      },
+      {
+        "id": "continuous-cooldown-observation-ticks",
+        "value": 15000
+      },
+      {
+        "id": "observed-cooldown-kinds",
+        "value": 5
+      },
+      {
+        "id": "duplicate-commitments",
+        "value": 0
+      },
+      {
+        "id": "manual-recovery-commands",
+        "value": 0
+      },
+      {
+        "id": "forbidden-later-phase-actions",
+        "value": 0
+      },
+      {
+        "id": "heap-reset-recovery-ticks",
+        "value": 1
+      },
+      {
+        "id": "memory-recovery-ticks",
+        "value": 16
+      },
+      {
+        "id": "worker-loss-recovery-ticks",
+        "value": 9
+      },
+      {
+        "id": "spawn-loss-recovery-ticks",
+        "value": 150
+      },
+      {
+        "id": "structure-loss-recovery-ticks",
+        "value": 50
+      },
+      {
+        "id": "blocked-logistics-recovery-ticks",
+        "value": 20
+      },
+      {
+        "id": "controller-risk-recovery-ticks",
+        "value": 25
+      },
+      {
+        "id": "low-bucket-recovery-ticks",
+        "value": 25
+      },
+      {
+        "id": "resource-shortage-recovery-ticks",
+        "value": 50
+      },
+      {
+        "id": "command-error-recovery-ticks",
+        "value": 6
+      },
+      {
+        "id": "hostile-pressure-recovery-ticks",
+        "value": 20
+      }
+    ]
+  },
+  "evaluation": {
+    "status": "within-thresholds",
+    "blockers": []
+  }
+}

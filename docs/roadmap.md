@@ -90,9 +90,8 @@ Operational Memory may disable available work but can never activate an unfinish
 
 ## Phase 2 — Complete Colony
 
-**Status:** implementation complete;
-[issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54) is the sole remaining Phase 2
-outcome gate.
+**Status:** complete. [Issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54) records
+the passing deterministic progression and steady-state outcome gate.
 
 Phase 2 extends the survival kernel into one deterministic RCL2–RCL8 colony authority covering
 layouts, mining, logistics, links, maintenance, resources, labs, mature infrastructure, cross-domain
@@ -152,24 +151,17 @@ against its original five acceptance criteria:
 Further structure variants, alternative migration strategies, or newly imagined completeness work
 are enhancements, not unfinished #99 or Phase 2 requirements.
 
-### Frozen dependency and gate policy
+### Completed outcome gate
 
-The Phase 2 dependency set is frozen to #44–#53, #225, and #99. Those implementation leaves are
-complete. Issue #54 is the only remaining Phase 2 gate and uses the already-defined acceptance
-criteria and numeric thresholds in [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md).
+The dependency set remained frozen to #44–#53, #225, and #99. Issue #54 executed the predeclared
+numeric contract without adding another implementation leaf. Its streaming warm/reset/reordered
+progression and steady-state collector evaluates all 58 measurements with zero blockers, binds the
+exact production bundle and current configuration/policy revisions, and records rollback and
+remaining live-world risks in [`phase2-gate-evidence.md`](phase2-gate-evidence.md).
 
-Until #54 closes:
-
-- automated issue creation, pull-request descriptions, comments, ADRs, and evidence updates must not
-  add another Phase 2 dependency or widen an existing completed leaf;
-- new repair work is permitted only after a reproducible assertion in #54's fixed matrix fails and
-  the repair cites both that assertion and one existing #54 acceptance criterion;
-- such a repair is subordinate to #54, is not a new roadmap leaf, and ends when the failing
-  assertion passes;
-- work not demonstrated by a failing #54 assertion is deferred to the later-phase backlog and cannot
-  block Phase 2 completion.
-
-**Exit:** repeatedly reach and sustain RCL8 within CPU and energy budgets.
+**Exit:** passed — repeatedly reaches and sustains RCL8 within CPU and energy budgets. Phase 3 issue
+[#10](https://github.com/ralphschuler/screeps-myrmex/issues/10) is unblocked; later-phase gameplay
+and MMO deployment remain gated by their own evidence.
 
 ## Phase 3 — Remote Portfolio
 
