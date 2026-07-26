@@ -3124,15 +3124,18 @@ net hit loss/restoration, disappearance/addition, reset/reorder equivalence, int
 complete over-cap rejection, V2-to-V3 observer-state migration, and atomic baseline byte eviction
 without causal labels or a telemetry gameplay reader.
 
-The Phase 2 progression and steady-state pass boundaries are predeclared in
-[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md) and its versioned JSON manifest.
-`@myrmex/scenario-kit` alone validates and evaluates that manifest; missing issue #54 measurements
-block rather than defaulting to zero. A structurally valid measurement set is bound to canonical
-manifest/measurement SHA-256 receipts, pinned seeds, an exact production-bundle SHA-256, and equal
-warm/reset/reordered outcome hashes. Zero blockers means `within-thresholds`, not a gate pass; the
-[issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54) collector must derive and
-reproduce the artifacts. The manifest is not bundled, persisted, or exposed to `ColonyDirector`,
-telemetry, or another gameplay authority.
+The Phase 2 progression and steady-state boundaries are predeclared in
+[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md). The issue #54 streaming collector executes
+the complete progression and RCL8 tick counts without retaining per-tick transcripts, conservatively
+derives all 58 measurements, and reproduces the checked
+[`phase2-gate-results.json`](phase2-gate-results.json). Manifest, measurement,
+prerequisite-artifact, production-bundle, runtime-config, and RCL-policy SHA-256 receipts bind the
+result. Warm, reset, and reordered variants must have equal semantic hashes, and every injection
+must record restored direct health within its frozen deadline before the collector upgrades zero
+evaluator blockers to a gate pass. The complete method, rollback, and residual live-world risks are
+recorded in [`phase2-gate-evidence.md`](phase2-gate-evidence.md). Scenario Kit remains
+development-only: no gate manifest, result, collector, or evaluator is bundled, persisted, or
+exposed to a gameplay authority.
 
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,
