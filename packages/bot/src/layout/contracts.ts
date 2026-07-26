@@ -926,6 +926,7 @@ export type LayoutMigrationBlocker =
   | "removal-failed"
   | "removal-pending"
   | "reserve-unrestored"
+  | "rcl-downgrade"
   | "room-site-cap"
   | "site-conflict"
   | "spawn-selected"

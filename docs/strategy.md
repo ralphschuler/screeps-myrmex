@@ -83,72 +83,76 @@ replacement, access, reserve, threat, or rollback evidence. A replacement-first 
 that has already observed its committed replacement still pauses while fresh room or colony threat
 evidence exists: no removal authorization, intent, command, or receipt is emitted. Checked reset and
 reorder evidence resumes the same migration exactly once after threat clears without operator or
-Memory repair. Phase 2 may use spare extension allowance to build committed capacity, then remove
-one active obsolete extension only after the room reaches full allowance with exactly allowance
-minus one active extensions on committed geometry and an exact owned replacement remains. A stocked
-target first persists one bounded evacuation, reserves exact source/replacement capacity in the sole
-logistics graph, and suppresses ordinary refill of both targets during acquisition. Empty-source
-suppression continues through delivery. Removal waits for fresh empty-source, delivered-replacement,
-and retired-flow evidence. Current site headroom is required; the executor rechecks target stock and
-replacement identity; only fresh observation proves removal. Stored structures other than this one
-extension, defensive, critical, foreign, unknown, and multiply occupied structures remain excluded.
-General migration remains fail-closed. One source-container exception removes an unshared,
-unselected container beside exactly one source only while a different exact committed
-source-container remains the selected reachable service for that source. An empty target is directly
-eligible; a stocked target persists one bounded source-specific handoff and reuses the exact
-resource-manifest logistics path before removal. The stationary mining identity and work position do
-not change; selected, sole, ambiguous, or replacementless containers remain. A separate
-general-container exception first spends spare allowance on committed non-service capacity, then
-persists one bounded target handoff. An empty target suppresses refill and waits for every active
-logistics endpoint naming it to retire. An exact energy-only target whose amount fits the
-replacement additionally uses the sole funded logistics flow. A target containing one non-energy
-kind or two to eight resource kinds instead persists one compact binary-ordered manifest and uses
-one distinct funded flow per kind; energy as the only manifest row remains invalid so its legacy
-identity cannot be duplicated. Both stocked paths suppress the target source and both refill sinks,
-and require fresh empty-target, every delivered replacement gain, and retired flow/endpoint evidence
-before removal. Canonical general positions adjacent to a source, over-eight-kind or malformed
-stock, selected source-service targets, capacity loss, and unavailable contract evidence fail
-closed. Other stocked structures and rooms without exact replacement evidence remain untouched.
-Every authorized extension/container/tower/link destroy result persists one exact per-room receipt:
-success waits for fresh target disappearance, failures back off and stop after three attempts, and a
-blocked room leaves the global removal slot available to another eligible room. Tower convergence
-first uses spare allowance to build committed geometry. An active empty obsolete tower may be
-removed only at full allowance of at least two, with exactly allowance minus one active committed
-towers and one exact active committed replacement retaining at least the 10 energy required for an
-immediate defense action. A stocked target first persists one exact 150-tick evacuation only when
-that replacement can hold all target energy. The sole logistics authority moves it under funded
-optional growth; target refill is suppressed, replacement capacity is reserved once, and removal
-waits for fresh empty-target, delivered-replacement, and retired-flow/endpoint evidence. A sole,
-over-capacity, inactive, underfunded, threatened, or pressured tower remains. At RCL8, link
-convergence similarly spends spare allowance through the ordinary build chain. It may remove only
-one active external reserve link after canonical current/ideal role evidence proves all source, hub,
-and controller anchors remain exact and active, the missing anchor plus target and exact replacement
-are reserve capacity, both links have exact 800-capacity energy-only stores at zero cooldown, and no
-accepted native link transfer names either. An empty target is directly removable. A stocked target
-first persists one bounded exact evacuation only when the replacement can hold all energy; the sole
-funded creep-logistics path moves it without native link-transfer loss. Removal then requires exact
-target emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, unchanged reserve
-roles, and zero cooldown. Cooling, malformed, productive-role, incomplete, or pressured links
-remain. RCL8 lab convergence also spends spare allowance through the ordinary build chain. One
-active empty zero-cooldown external lab may be removed only when nine active labs already occupy
-distinct committed positions, the current industry projection has no commitment, pending attempt,
-intent, or staging demand, no unrelated logistics endpoint names any room lab, and those nine exact
-labs still form a valid reaction cluster. An otherwise eligible energy-only target first persists
-one 150-tick evacuation when the canonical exact replacement has complete independent energy
-capacity. The sole funded creep-logistics path suppresses both labs' ordinary source/refill
-publication; removal waits for fresh target emptiness, baseline-plus-amount replacement energy,
-retired flow/endpoints, and unchanged quiescence, cluster, and safety evidence. A zero-energy target
-holding one mineral kind may instead use the exact active owned storage published by the industry
-view when its general-purpose Store has complete aggregate capacity. If no active storage exists, a
-quiescent mineral-only target or one under an exact durable `ready` reaction or boost handoff may
-use one exact active idle terminal with complete 300,000-unit aggregate capacity. Industry
-suppresses every internal send from or to that room while the V14 terminal commitment exists. One
-funded mineral flow suppresses the obsolete lab's ordinary source/refill publication; removal waits
-for fresh lab emptiness, baseline-plus-amount destination stock, retired work, and unchanged
-destination, quiescence or handoff, cluster, and safety evidence. A current boost intent or matching
-pending effect allows evacuation to continue but blocks removal. While quiescent, a target holding
-both energy and one mineral kind may use that same terminal for mineral while energy still moves to
-the retained lab. Both flows are admitted as an atomic pair, and removal waits for both destination
+Memory repair. Fresh evidence that any normalized owned allowance-controlled structure count exceeds
+the current RCL-policy allowance similarly blocks all removal authorization with `rcl-downgrade`.
+The bot persists no downgrade state; current allowance recovery re-enables the unchanged bounded
+migration, while a normal room within its current allowance retains existing behavior. Phase 2 may
+use spare extension allowance to build committed capacity, then remove one active obsolete extension
+only after the room reaches full allowance with exactly allowance minus one active extensions on
+committed geometry and an exact owned replacement remains. A stocked target first persists one
+bounded evacuation, reserves exact source/replacement capacity in the sole logistics graph, and
+suppresses ordinary refill of both targets during acquisition. Empty-source suppression continues
+through delivery. Removal waits for fresh empty-source, delivered-replacement, and retired-flow
+evidence. Current site headroom is required; the executor rechecks target stock and replacement
+identity; only fresh observation proves removal. Stored structures other than this one extension,
+defensive, critical, foreign, unknown, and multiply occupied structures remain excluded. General
+migration remains fail-closed. One source-container exception removes an unshared, unselected
+container beside exactly one source only while a different exact committed source-container remains
+the selected reachable service for that source. An empty target is directly eligible; a stocked
+target persists one bounded source-specific handoff and reuses the exact resource-manifest logistics
+path before removal. The stationary mining identity and work position do not change; selected, sole,
+ambiguous, or replacementless containers remain. A separate general-container exception first spends
+spare allowance on committed non-service capacity, then persists one bounded target handoff. An
+empty target suppresses refill and waits for every active logistics endpoint naming it to retire. An
+exact energy-only target whose amount fits the replacement additionally uses the sole funded
+logistics flow. A target containing one non-energy kind or two to eight resource kinds instead
+persists one compact binary-ordered manifest and uses one distinct funded flow per kind; energy as
+the only manifest row remains invalid so its legacy identity cannot be duplicated. Both stocked
+paths suppress the target source and both refill sinks, and require fresh empty-target, every
+delivered replacement gain, and retired flow/endpoint evidence before removal. Canonical general
+positions adjacent to a source, over-eight-kind or malformed stock, selected source-service targets,
+capacity loss, and unavailable contract evidence fail closed. Other stocked structures and rooms
+without exact replacement evidence remain untouched. Every authorized extension/container/tower/link
+destroy result persists one exact per-room receipt: success waits for fresh target disappearance,
+failures back off and stop after three attempts, and a blocked room leaves the global removal slot
+available to another eligible room. Tower convergence first uses spare allowance to build committed
+geometry. An active empty obsolete tower may be removed only at full allowance of at least two, with
+exactly allowance minus one active committed towers and one exact active committed replacement
+retaining at least the 10 energy required for an immediate defense action. A stocked target first
+persists one exact 150-tick evacuation only when that replacement can hold all target energy. The
+sole logistics authority moves it under funded optional growth; target refill is suppressed,
+replacement capacity is reserved once, and removal waits for fresh empty-target,
+delivered-replacement, and retired-flow/endpoint evidence. A sole, over-capacity, inactive,
+underfunded, threatened, or pressured tower remains. At RCL8, link convergence similarly spends
+spare allowance through the ordinary build chain. It may remove only one active external reserve
+link after canonical current/ideal role evidence proves all source, hub, and controller anchors
+remain exact and active, the missing anchor plus target and exact replacement are reserve capacity,
+both links have exact 800-capacity energy-only stores at zero cooldown, and no accepted native link
+transfer names either. An empty target is directly removable. A stocked target first persists one
+bounded exact evacuation only when the replacement can hold all energy; the sole funded
+creep-logistics path moves it without native link-transfer loss. Removal then requires exact target
+emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, unchanged reserve roles,
+and zero cooldown. Cooling, malformed, productive-role, incomplete, or pressured links remain. RCL8
+lab convergence also spends spare allowance through the ordinary build chain. One active empty
+zero-cooldown external lab may be removed only when nine active labs already occupy distinct
+committed positions, the current industry projection has no commitment, pending attempt, intent, or
+staging demand, no unrelated logistics endpoint names any room lab, and those nine exact labs still
+form a valid reaction cluster. An otherwise eligible energy-only target first persists one 150-tick
+evacuation when the canonical exact replacement has complete independent energy capacity. The sole
+funded creep-logistics path suppresses both labs' ordinary source/refill publication; removal waits
+for fresh target emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, and
+unchanged quiescence, cluster, and safety evidence. A zero-energy target holding one mineral kind
+may instead use the exact active owned storage published by the industry view when its
+general-purpose Store has complete aggregate capacity. If no active storage exists, a quiescent
+mineral-only target or one under an exact durable `ready` reaction or boost handoff may use one
+exact active idle terminal with complete 300,000-unit aggregate capacity. Industry suppresses every
+internal send from or to that room while the V14 terminal commitment exists. One funded mineral flow
+suppresses the obsolete lab's ordinary source/refill publication; removal waits for fresh lab
+emptiness, baseline-plus-amount destination stock, retired work, and unchanged destination,
+quiescence or handoff, cluster, and safety evidence. A current boost intent or matching pending
+effect allows evacuation to continue but blocks removal. While quiescent, a target holding both
+energy and one mineral kind may use that same terminal for mineral while energy still moves to the
+retained lab. Both flows are admitted as an atomic pair, and removal waits for both destination
 gains plus complete work retirement. Exact durable reaction and explicit-boost handoffs may reuse
 that mixed terminal pair. One active reaction may continue only when the external target has no
 current or post-removal role, the retained nine labs keep byte-identical reagent/product/boost IDs,

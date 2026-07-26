@@ -38,8 +38,11 @@ const EXTENSION_BUILD_ENERGY = 3_000;
 const MAXIMUM_BUILD_ENERGY_PER_TICK = 100;
 const OBSOLETE_ID = "extension-obsolete";
 const POLICY_FINGERPRINT = "phase2-layout-rcl3-policy-v1";
+const RCL2_POLICY_FINGERPRINT = "phase2-layout-rcl2-policy-v1";
 const SCENARIO_ID = "phase2-layout-extension-migration-v2";
 const SCENARIO_SEED = "phase2-layout-extension-migration-seed-v2";
+const RCL_DOWNGRADE_SCENARIO_ID = "phase2-layout-rcl-downgrade-migration-v1";
+const RCL_DOWNGRADE_SCENARIO_SEED = "phase2-layout-rcl-downgrade-migration-seed-v1";
 const RESET_TICK = FIRST_TICK + 15;
 const THREAT_START_TICK = FIRST_TICK + 31;
 const THREAT_END_TICK = FIRST_TICK + 35;
@@ -71,6 +74,7 @@ const VARIANTS = Object.freeze({
 });
 
 type VariantName = keyof typeof VARIANTS;
+type InterruptionKind = "rcl-downgrade" | "threat";
 
 interface ExtensionState {
   readonly id: string;
@@ -123,6 +127,7 @@ interface LayoutWorld {
 
 interface LayoutInput {
   readonly activeThreat: boolean;
+  readonly controllerLevel: 2 | 3;
   readonly reverseObservation: boolean;
 }
 
@@ -133,7 +138,10 @@ interface LayoutOutcome {
   readonly activeThreat: boolean;
   readonly buildEnergy: number;
   readonly commands: readonly CommandRecord[];
+  readonly controllerLevel: 2 | 3;
   readonly destroyCalls: number;
+  readonly energyCapacityAvailable: 550 | 800;
+  readonly extensionAllowance: 5 | 10;
   readonly firstReplacementPresent: boolean;
   readonly migrationAuthorized: boolean;
   readonly migrationBlockers: readonly string[];
@@ -151,14 +159,15 @@ interface LayoutHeap {
   readonly siteExecutor: ConstructionSiteExecutor;
 }
 
-function policy(activeThreat: boolean) {
+function policy(activeThreat: boolean, controllerLevel: 2 | 3) {
+  const energyCapacityAvailable = controllerLevel === 2 ? 550 : 800;
   return projectColonyRclPolicy({
     activeThreat,
-    controllerLevel: 3,
+    controllerLevel,
     controllerRisk: false,
     cpuMode: "normal",
-    energyAvailable: 800,
-    energyCapacityAvailable: 800,
+    energyAvailable: energyCapacityAvailable,
+    energyCapacityAvailable,
     protectedSpawnEnergy: 300,
     rcl8Health: null,
     state: "developing",
@@ -206,23 +215,34 @@ const COMMITMENT: LayoutCommitment = Object.freeze({
 });
 
 export async function collectPhase2LayoutMigrationEvidence() {
-  const warm = runScenario(layoutMigrationScenario("warm"));
-  const reset = runScenario(layoutMigrationScenario("reset"));
-  const reordered = runScenario(layoutMigrationScenario("reordered"));
+  const warm = runScenario(layoutMigrationScenario("warm", "threat"));
+  const reset = runScenario(layoutMigrationScenario("reset", "threat"));
+  const reordered = runScenario(layoutMigrationScenario("reordered", "threat"));
+  const rclDowngradeWarm = runScenario(layoutMigrationScenario("warm", "rcl-downgrade"));
+  const rclDowngradeReset = runScenario(layoutMigrationScenario("reset", "rcl-downgrade"));
+  const rclDowngradeReordered = runScenario(layoutMigrationScenario("reordered", "rcl-downgrade"));
   const summaries = {
     warm: summarize(warm),
     reset: summarize(reset),
     reordered: summarize(reordered),
   };
+  const rclDowngradeSummaries = {
+    warm: summarize(rclDowngradeWarm),
+    reset: summarize(rclDowngradeReset),
+    reordered: summarize(rclDowngradeReordered),
+  };
   const semanticBytes = Object.values(summaries).map((value) => canonicalSerialize(value));
+  const rclDowngradeSemanticBytes = Object.values(rclDowngradeSummaries).map((value) =>
+    canonicalSerialize(value),
+  );
   const final = reset.finalWorld;
   const milestones = requiredMilestones(final.milestones);
   const productionBuild = await collectPhase2ProductionLayoutBuildEvidence();
   const storageRebuildContinuity = collectPhase2StorageRebuildContinuityEvidence();
 
   return Object.freeze({
-    schemaVersion: 4,
-    evidenceIssues: Object.freeze([365, 377, 383, 441]),
+    schemaVersion: 5,
+    evidenceIssues: Object.freeze([365, 377, 383, 441, 451]),
     issue: 365,
     status: "complete",
     scenario: {
@@ -239,6 +259,22 @@ export async function collectPhase2LayoutMigrationEvidence() {
       commands: final.commands,
       milestones,
       threatInterruption: summarizeThreatInterruption(reset),
+      rclDowngradeInterruption: {
+        ...summarizeRclDowngradeInterruption(rclDowngradeReset),
+        equivalence: {
+          semanticBytesIdentical: new Set(rclDowngradeSemanticBytes).size === 1,
+          outcomeHashes: {
+            warm: rclDowngradeWarm.outcomeHash,
+            reset: rclDowngradeReset.outcomeHash,
+            reordered: rclDowngradeReordered.outcomeHash,
+          },
+          semanticHashes: {
+            warm: canonicalHash(rclDowngradeSummaries.warm),
+            reset: canonicalHash(rclDowngradeSummaries.reset),
+            reordered: canonicalHash(rclDowngradeSummaries.reordered),
+          },
+        },
+      },
       deferredEffects: {
         firstSiteObservedNextTick:
           milestones.firstSiteObservedAt === milestones.firstSiteCommandAt + 1,
@@ -291,18 +327,21 @@ export async function collectPhase2LayoutMigrationEvidence() {
 
 function layoutMigrationScenario(
   variantName: VariantName,
+  interruption: InterruptionKind,
 ): ReplayScenario<LayoutWorld, LayoutInput, LayoutOutcome, LayoutHeap> {
   const variant = VARIANTS[variantName];
   return defineReplayScenario({
-    id: SCENARIO_ID,
-    seed: SCENARIO_SEED,
+    id: interruption === "threat" ? SCENARIO_ID : RCL_DOWNGRADE_SCENARIO_ID,
+    seed: interruption === "threat" ? SCENARIO_SEED : RCL_DOWNGRADE_SCENARIO_SEED,
     initialWorld: initialWorld(),
     ticks: Array.from({ length: TICKS }, (_, offset) => {
       const gameTime = FIRST_TICK + offset;
       return {
         gameTime,
         input: {
-          activeThreat: THREAT_TICKS.includes(gameTime),
+          activeThreat: interruption === "threat" && THREAT_TICKS.includes(gameTime),
+          controllerLevel:
+            interruption === "rcl-downgrade" && THREAT_TICKS.includes(gameTime) ? 2 : 3,
           reverseObservation: variant.reverseObservation,
         },
         cpuBudget: CPU_PER_TICK,
@@ -318,7 +357,7 @@ function layoutMigrationScenario(
     },
     step: ({ gameTime, heap, input, world }) => step(gameTime, heap, input, world),
     verify: (result) => {
-      verifyScenario(result, variantName);
+      verifyScenario(result, variantName, interruption);
     },
   });
 }
@@ -330,8 +369,16 @@ function step(
   world: LayoutWorld,
 ): { readonly nextWorld: LayoutWorld; readonly outcome: LayoutOutcome; readonly cpuUsed: number } {
   const milestones = observeMilestones(world, gameTime);
-  const room = roomSnapshot(world, gameTime, input.reverseObservation, input.activeThreat);
-  const currentPolicy = policy(input.activeThreat);
+  const room = roomSnapshot(
+    world,
+    gameTime,
+    input.reverseObservation,
+    input.activeThreat,
+    input.controllerLevel,
+  );
+  const currentPolicy = policy(input.activeThreat, input.controllerLevel);
+  const policyFingerprint =
+    input.controllerLevel === 2 ? RCL2_POLICY_FINGERPRINT : POLICY_FINGERPRINT;
   const observationFingerprint = `phase2-layout-observation:${String(gameTime)}`;
   const structures = room.structures ?? [];
   const diff = diffOwnedRoomLayout({
@@ -343,7 +390,7 @@ function step(
     placements: PLACEMENTS,
     policy: currentPolicy,
     policyEnabled: true,
-    policyFingerprint: POLICY_FINGERPRINT,
+    policyFingerprint,
     roomName: ROOM,
     roomStatus: "owned",
     structures,
@@ -374,7 +421,7 @@ function step(
     globalOwnedSiteCount: world.sites.length,
     observationFingerprint,
     placements: PLACEMENTS,
-    policyFingerprint: POLICY_FINGERPRINT,
+    policyFingerprint,
     removalReceipt: record?.removalReceipt ?? null,
     room,
   });
@@ -476,12 +523,15 @@ function step(
     nextWorld,
     outcome: {
       accessWitnessPreserved: nextWorld.accessWitnessPreserved,
-      activeExtensions: world.extensions.length,
+      activeExtensions: room.ownedExtensions.filter(({ active }) => active).length,
       activeSites: world.sites.length,
       activeThreat: input.activeThreat,
       buildEnergy,
       commands,
+      controllerLevel: input.controllerLevel,
       destroyCalls: destroyExecution.filter(({ called }) => called).length,
+      energyCapacityAvailable: input.controllerLevel === 2 ? 550 : 800,
+      extensionAllowance: input.controllerLevel === 2 ? 5 : 10,
       firstReplacementPresent: world.extensions.some(({ x, y }) => x === 18 && y === 20),
       migrationAuthorized: migration.authorization !== null,
       migrationBlockers: migration.blockers.map(({ reason }) => reason),
@@ -533,10 +583,22 @@ function initialWorld(): LayoutWorld {
   };
 }
 
-function roomSnapshot(world: LayoutWorld, tick: number, reverse: boolean, activeThreat: boolean) {
+function roomSnapshot(
+  world: LayoutWorld,
+  tick: number,
+  reverse: boolean,
+  activeThreat: boolean,
+  controllerLevel: 2 | 3,
+) {
   const extensions = reverse ? [...world.extensions].reverse() : world.extensions;
   const sites = reverse ? [...world.sites].reverse() : world.sites;
   const sources = reverse ? [...SOURCES].reverse() : SOURCES;
+  const activeExtensionIds = new Set(
+    [...world.extensions]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .slice(0, controllerLevel === 2 ? 5 : 10)
+      .map(({ id }) => id),
+  );
   const structures = [
     ...world.extensions.map((extension) => ({
       hits: 1_000,
@@ -569,12 +631,12 @@ function roomSnapshot(world: LayoutWorld, tick: number, reverse: boolean, active
     })),
     controller: {
       id: CONTROLLER.id,
-      level: 3,
+      level: controllerLevel,
       ownerUsername: "Myrmex",
       ownership: "owned" as const,
       pos: CONTROLLER.pos,
       progress: 0,
-      progressTotal: 135_000,
+      progressTotal: controllerLevel === 2 ? 45_000 : 135_000,
       reservationTicksToEnd: null,
       reservationUsername: null,
       safeMode: null,
@@ -583,13 +645,15 @@ function roomSnapshot(world: LayoutWorld, tick: number, reverse: boolean, active
       ticksToDowngrade: 20_000,
       upgradeBlocked: null,
     },
-    energyAvailable: 800,
-    energyCapacityAvailable: 800,
+    energyAvailable: controllerLevel === 2 ? 550 : 800,
+    energyCapacityAvailable: controllerLevel === 2 ? 550 : 800,
     hostileCreeps: activeThreat ? [{ id: "hostile-1" }] : [],
     name: ROOM,
     observedAt: tick,
     ownedCreeps: [],
-    ownedExtensions: extensions.map(extensionSnapshot),
+    ownedExtensions: extensions.map((extension) =>
+      extensionSnapshot(extension, activeExtensionIds.has(extension.id)),
+    ),
     ownedSpawns: [
       {
         active: true,
@@ -621,9 +685,9 @@ function roomSnapshot(world: LayoutWorld, tick: number, reverse: boolean, active
   } as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
 }
 
-function extensionSnapshot(extension: ExtensionState) {
+function extensionSnapshot(extension: ExtensionState, active = true) {
   return {
-    active: true,
+    active,
     hits: 1_000,
     hitsMax: 1_000,
     id: extension.id,
@@ -709,6 +773,7 @@ function buildCompletionMilestones(
 function verifyScenario(
   result: ScenarioRunResult<LayoutWorld, LayoutInput, LayoutOutcome>,
   variantName: VariantName,
+  interruption: InterruptionKind,
 ): void {
   const world = result.finalWorld;
   const kinds = world.commands.map(({ kind }) => kind).join(",");
@@ -722,13 +787,16 @@ function verifyScenario(
     throw new Error(`${variantName} variant reset dimensions drifted`);
   }
   if (
-    result.transcript.ticks.some(
-      ({ gameTime, input }) =>
+    result.transcript.ticks.some(({ gameTime, input }) => {
+      const interrupted = THREAT_TICKS.includes(gameTime);
+      return (
         input.reverseObservation !== variant.reverseObservation ||
-        input.activeThreat !== THREAT_TICKS.includes(gameTime),
-    )
+        input.activeThreat !== (interruption === "threat" && interrupted) ||
+        input.controllerLevel !== (interruption === "rcl-downgrade" && interrupted ? 2 : 3)
+      );
+    })
   ) {
-    throw new Error(`${variantName} variant threat or observation order drifted`);
+    throw new Error(`${variantName} variant interruption or observation order drifted`);
   }
   if (kinds !== "create-site,destroy-structure,create-site") {
     throw new Error(`unexpected layout command order: ${kinds}`);
@@ -746,27 +814,39 @@ function verifyScenario(
     throw new Error("layout did not converge without proposals");
   }
   const milestones = requiredMilestones(world.milestones);
-  const threatOutcomes = result.outcomes.filter(({ activeThreat }) => activeThreat);
+  const interruptedOutcomes = result.outcomes.filter(({ tick }) => THREAT_TICKS.includes(tick));
+  const expectedBlocker = interruption === "threat" ? "threat" : "rcl-downgrade";
   if (
-    canonicalSerialize(threatOutcomes.map(({ tick }) => tick)) !==
+    canonicalSerialize(interruptedOutcomes.map(({ tick }) => tick)) !==
       canonicalSerialize(THREAT_TICKS) ||
-    threatOutcomes.some(
+    interruptedOutcomes.some(
       (outcome) =>
-        canonicalSerialize(outcome.migrationBlockers) !== canonicalSerialize(["threat"]) ||
+        canonicalSerialize(outcome.migrationBlockers) !== canonicalSerialize([expectedBlocker]) ||
         outcome.migrationAuthorized ||
         outcome.removalProposals !== 0 ||
         outcome.removalIntents !== 0 ||
         outcome.destroyCalls !== 0 ||
         outcome.removalReceiptPresent ||
         !outcome.firstReplacementPresent ||
-        !outcome.obsoletePresent,
+        !outcome.obsoletePresent ||
+        (interruption === "threat" && (!outcome.activeThreat || outcome.controllerLevel !== 3)) ||
+        (interruption === "rcl-downgrade" &&
+          (outcome.activeThreat ||
+            outcome.controllerLevel !== 2 ||
+            outcome.activeExtensions !== 5 ||
+            outcome.extensionAllowance !== 5 ||
+            outcome.energyCapacityAvailable !== 550)),
     )
   ) {
-    throw new Error("temporary threat did not pause migration without side effects");
+    throw new Error(`temporary ${interruption} did not pause migration without side effects`);
   }
   const resumed = result.outcomes.find(({ tick }) => tick === THREAT_END_TICK);
-  if (resumed?.activeThreat !== false || resumed.destroyCalls !== 1) {
-    throw new Error("migration did not resume once after threat clearance");
+  if (
+    resumed?.activeThreat !== false ||
+    resumed.controllerLevel !== 3 ||
+    resumed.destroyCalls !== 1
+  ) {
+    throw new Error(`migration did not resume once after ${interruption} clearance`);
   }
   if (variantName === "reset") {
     if (
@@ -775,7 +855,7 @@ function verifyScenario(
       RESET_TICK > milestones.firstBuildCompletedAt ||
       !variant.resetTicks.includes(THREAT_RESET_TICK)
     ) {
-      throw new Error("reset coverage did not include first build and temporary threat");
+      throw new Error(`reset coverage did not include first build and temporary ${interruption}`);
     }
   }
   if (milestones.destroyCommandAt < milestones.firstCompletedReplacementObservedAt) {
@@ -814,6 +894,39 @@ function summarizeThreatInterruption(
     removalReceiptCount: blocked.filter(({ removalReceiptPresent }) => removalReceiptPresent)
       .length,
     resetDuringThreatAt: THREAT_RESET_TICK,
+    resumedAt: result.finalWorld.milestones.destroyCommandAt,
+  };
+}
+
+function summarizeRclDowngradeInterruption(
+  result: ScenarioRunResult<LayoutWorld, LayoutInput, LayoutOutcome>,
+) {
+  const blocked = result.outcomes.filter(({ controllerLevel }) => controllerLevel === 2);
+  return {
+    authorizationCount: blocked.filter(({ migrationAuthorized }) => migrationAuthorized).length,
+    blockers: blocked.every(
+      ({ migrationBlockers }) =>
+        canonicalSerialize(migrationBlockers) === canonicalSerialize(["rcl-downgrade"]),
+    )
+      ? ["rcl-downgrade"]
+      : ["unexpected"],
+    blockedTicks: blocked.map(({ tick }) => tick),
+    bothStructuresPresent: blocked.every(
+      ({ firstReplacementPresent, obsoletePresent }) => firstReplacementPresent && obsoletePresent,
+    ),
+    controllerLevel: 2,
+    destroyCallCount: blocked.reduce((total, { destroyCalls }) => total + destroyCalls, 0),
+    energyCapacityAvailable: 550,
+    extensionAllowance: 5,
+    maximumActiveExtensions: maximum(blocked.map(({ activeExtensions }) => activeExtensions)),
+    removalIntentCount: blocked.reduce((total, { removalIntents }) => total + removalIntents, 0),
+    removalProposalCount: blocked.reduce(
+      (total, { removalProposals }) => total + removalProposals,
+      0,
+    ),
+    removalReceiptCount: blocked.filter(({ removalReceiptPresent }) => removalReceiptPresent)
+      .length,
+    resetDuringDowngradeAt: THREAT_RESET_TICK,
     resumedAt: result.finalWorld.milestones.destroyCommandAt,
   };
 }

@@ -8,7 +8,7 @@ const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 
-describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441)", () => {
+describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_SOURCES", FIND_SOURCES_VALUE);
@@ -23,7 +23,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441)", () =>
 
     expect(actual).toEqual(checkedEvidence);
     expect(actual).toMatchObject({
-      evidenceIssues: [365, 377, 383, 441],
+      evidenceIssues: [365, 377, 383, 441, 451],
       issue: 365,
       productionBuild: {
         buildEnergy: 100,
@@ -32,7 +32,7 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441)", () =>
         semanticBytesIdentical: true,
         siteObservedAbsentAfterCompletion: true,
       },
-      schemaVersion: 4,
+      schemaVersion: 5,
       status: "complete",
     });
     expect(actual.scenario).toMatchObject({
@@ -77,6 +77,26 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441)", () =>
       resetDuringThreatAt: 50_033,
       resumedAt: 50_035,
     });
+    expect(actual.scenario.rclDowngradeInterruption).toMatchObject({
+      authorizationCount: 0,
+      blockers: ["rcl-downgrade"],
+      blockedTicks: [50_031, 50_032, 50_033, 50_034],
+      bothStructuresPresent: true,
+      controllerLevel: 2,
+      destroyCallCount: 0,
+      energyCapacityAvailable: 550,
+      extensionAllowance: 5,
+      maximumActiveExtensions: 5,
+      removalIntentCount: 0,
+      removalProposalCount: 0,
+      removalReceiptCount: 0,
+      resetDuringDowngradeAt: 50_033,
+      resumedAt: 50_035,
+    });
+    expect(actual.scenario.rclDowngradeInterruption.equivalence.semanticBytesIdentical).toBe(true);
+    expect(
+      new Set(Object.values(actual.scenario.rclDowngradeInterruption.equivalence.outcomeHashes)),
+    ).toHaveLength(1);
     expect(actual.scenario.milestones).toEqual({
       destroyCommandAt: 50_035,
       destroyDisappearanceObservedAt: 50_036,

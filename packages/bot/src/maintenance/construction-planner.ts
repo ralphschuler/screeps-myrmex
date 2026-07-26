@@ -1,4 +1,4 @@
-import type { ColonyView } from "../colony";
+import type { ColonyRclUnlockAllowances, ColonyView } from "../colony";
 import { fingerprintLabLayout, type LabMigrationRoomView } from "../industry/lab-composition";
 import type { IndustryTerminalWorkRoomView } from "../industry/runtime";
 import { assignLabCluster } from "../industry/lab-cluster";
@@ -3817,6 +3817,11 @@ function migrationGlobalBlocker(input: {
     return "colony-unsafe";
   if (colony.activeThreat !== false || room.hostileCreeps.length > 0) return "threat";
   if (colony.controllerRisk !== false) return "controller-risk";
+  if (
+    colony.rclPolicy.unlocks !== null &&
+    exceedsCurrentRclAllowances(room, colony.rclPolicy.unlocks)
+  )
+    return "rcl-downgrade";
   if (colony.legalWorkforce !== true) return "workforce-unavailable";
   if (colony.rclPolicy.protectedSpawnReserve.state !== "restored") return "reserve-unrestored";
   if (
@@ -3837,6 +3842,27 @@ function migrationGlobalBlocker(input: {
   if (activeSites >= CONSTRUCTION_SITE_LIMITS.activeSitesPerRoom) return "room-site-cap";
   return null;
 }
+
+function exceedsCurrentRclAllowances(
+  room: RoomSnapshot,
+  unlocks: ColonyRclUnlockAllowances,
+): boolean {
+  return (
+    room.ownedSpawns.length > unlocks.spawns ||
+    room.ownedExtensions.length > unlocks.extensions ||
+    room.ownedTowers.length > unlocks.towers ||
+    (room.ownedLinks?.length ?? 0) > unlocks.links ||
+    (room.ownedStorages?.length ?? 0) > unlocks.storage ||
+    (room.ownedTerminals?.length ?? 0) > unlocks.terminal ||
+    (room.ownedLabs?.length ?? 0) > unlocks.labs ||
+    (room.ownedExtractors?.length ?? 0) > unlocks.extractor ||
+    (room.ownedFactories?.length ?? 0) > unlocks.factory ||
+    (room.ownedObservers?.length ?? 0) > unlocks.observer ||
+    (room.ownedPowerSpawns?.length ?? 0) > unlocks.powerSpawn ||
+    (room.ownedNukers?.length ?? 0) > unlocks.nuker
+  );
+}
+
 function pushMigrationBlocker(
   blockers: LayoutMigrationBlockerRecord[],
   blocker: LayoutMigrationBlockerRecord,
