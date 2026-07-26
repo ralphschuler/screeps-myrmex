@@ -1719,7 +1719,7 @@ describe("composed layout runtime", () => {
     ]);
   });
 
-  it("builds a replacement, evacuates stock, and removes one obsolete tower", () => {
+  it("builds a replacement, evacuates stock, and removes only one ramparted obsolete tower", () => {
     const towerPolicy = projectColonyRclPolicy({
       activeThreat: false,
       controllerLevel: 5,
@@ -1775,6 +1775,17 @@ describe("composed layout runtime", () => {
       },
       structureType: "tower",
     });
+    const protectiveRampart = {
+      hits: 100_000,
+      hitsMax: 300_000_000,
+      id: "rampart-obsolete",
+      isPublic: false,
+      ownerUsername: "me",
+      ownership: "owned" as const,
+      pos: pos(30, 30),
+      structureType: "rampart",
+      ticksToDecay: null,
+    };
     const room = (towers: readonly ReturnType<typeof tower>[], observedAt: number) =>
       ({
         constructionSites: [],
@@ -1789,7 +1800,7 @@ describe("composed layout runtime", () => {
         roads: [],
         sources: [],
         storedStructures: [],
-        structures: towers,
+        structures: [...towers, protectiveRampart],
       }) as unknown as Parameters<ConstructionPlanner["planMigration"]>[0]["room"];
     const operational = (value: ReturnType<typeof room>) =>
       value.ownedTowers.some(
@@ -1928,6 +1939,7 @@ describe("composed layout runtime", () => {
       proposals: ready.proposals,
     });
     const destroy = vi.fn(() => 0);
+    const rampartDestroy = vi.fn(() => 0);
     const liveRoom = { controller: { my: true }, name: roomName } as unknown as Room;
     const liveTower = (value: ReturnType<typeof tower>, command = vi.fn(() => 0)) => ({
       destroy: command,
@@ -1951,13 +1963,26 @@ describe("composed layout runtime", () => {
           ? (liveTower(obsoleteEmpty, destroy) as unknown as Structure)
           : id === deliveredReplacement.id
             ? (liveTower(deliveredReplacement) as unknown as Structure)
-            : null,
+            : id === protectiveRampart.id
+              ? ({
+                  destroy: rampartDestroy,
+                  id: protectiveRampart.id,
+                  my: true,
+                  pos: protectiveRampart.pos,
+                  room: liveRoom,
+                  structureType: "rampart",
+                } as unknown as Structure)
+              : null,
     });
     owner = reconcileStructureDestroyExecution(owner, execution, 103).owner;
     owner = parseLayoutsOwner(JSON.parse(JSON.stringify(owner))) ?? emptyLayoutsOwner();
     const receipt = owner.records[0]?.removalReceipt ?? null;
+    expect(removal.intents).toEqual([
+      expect.objectContaining({ targetId: "tower-obsolete", targetStructureType: "tower" }),
+    ]);
     expect(execution).toEqual([expect.objectContaining({ called: true, code: "OK" })]);
     expect(destroy).toHaveBeenCalledOnce();
+    expect(rampartDestroy).not.toHaveBeenCalled();
     expect(
       plan(room([deliveredReplacement, obsoleteEmpty], 104), towerEvacuation, receipt),
     ).toMatchObject({
@@ -1966,6 +1991,10 @@ describe("composed layout runtime", () => {
     });
 
     const followingRoom = room([deliveredReplacement], 105);
+    expect(followingRoom.structures).toContainEqual(protectiveRampart);
+    expect(followingRoom.structures).not.toContainEqual(
+      expect.objectContaining({ id: "tower-obsolete" }),
+    );
     expect(operational(followingRoom)).toBe(true);
     expect(plan(followingRoom, towerEvacuation, receipt)).toMatchObject({
       removalReceipt: null,

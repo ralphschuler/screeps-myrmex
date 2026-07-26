@@ -3488,8 +3488,7 @@ function towerMigrationEvidence(
     } {
   const occupying = (room.structures ?? []).filter(({ pos }) => samePosition(pos, target.pos));
   if (
-    occupying.length !== 1 ||
-    occupying[0]?.id !== target.id ||
+    !compatibleTowerRemovalOccupancy(occupying, target.id) ||
     room.constructionSites.some(({ pos }) => samePosition(pos, target.pos))
   )
     return { reason: "target-shared", replacement: null };
@@ -3522,6 +3521,25 @@ function towerMigrationEvidence(
   return replacementEnergy === null
     ? { reason: "replacement-pending", replacement: null }
     : { reason: null, replacement, replacementEnergy, targetEnergy };
+}
+
+function compatibleTowerRemovalOccupancy(
+  occupying: readonly StructureSnapshot[],
+  targetId: string,
+): boolean {
+  let targetCount = 0;
+  let ownedRampartCount = 0;
+  for (const structure of occupying) {
+    if (structure.id === targetId) {
+      targetCount += 1;
+      if (targetCount > 1 || structure.structureType !== "tower") return false;
+      continue;
+    }
+    if (structure.structureType !== "rampart" || structure.ownership !== "owned") return false;
+    ownedRampartCount += 1;
+    if (ownedRampartCount > 1) return false;
+  }
+  return targetCount === 1;
 }
 
 function exactTowerEnergy(tower: RoomSnapshot["ownedTowers"][number]): number | null {

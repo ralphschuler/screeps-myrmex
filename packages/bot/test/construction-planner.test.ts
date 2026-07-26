@@ -383,21 +383,46 @@ describe("ConstructionPlanner", () => {
     });
     const exact = tower("tower-exact", 15, 10);
     const obsolete = tower("tower-obsolete", 30, 0);
-    const room = (towers: readonly ReturnType<typeof tower>[]) =>
+    const protectiveRampart = structure(
+      "rampart-obsolete",
+      "rampart",
+      100_000,
+      300_000_000,
+      obsolete.pos.x,
+      obsolete.pos.y,
+    );
+    const room = (
+      towers: readonly ReturnType<typeof tower>[],
+      companions: readonly ReturnType<typeof structure>[] = [],
+    ) =>
       ({
         ...migrationRoom(),
         controller: { level: 5, ownership: "owned" as const },
         ownedTowers: towers,
-        structures: towers.map((value) =>
-          structure(value.id, "tower", 3_000, 3_000, value.pos.x, value.pos.y),
-        ),
+        structures: [
+          ...towers.map((value) =>
+            structure(value.id, "tower", 3_000, 3_000, value.pos.x, value.pos.y),
+          ),
+          ...companions,
+        ],
       }) as unknown as RoomSnapshot;
-    const ready = planMigration({ colony, placements, room: room([exact, obsolete]) });
+    const readyRoom = room([exact, obsolete], [protectiveRampart]);
+    const ready = planMigration({ colony, placements, room: readyRoom });
     const reordered = planMigration({
       colony,
       placements: [...placements].reverse(),
-      room: room([obsolete, exact]),
+      room: {
+        ...readyRoom,
+        ownedTowers: [...readyRoom.ownedTowers].reverse(),
+        structures: [...(readyRoom.structures ?? [])].reverse(),
+      },
     });
+    const reset = planMigration(
+      JSON.parse(JSON.stringify({ colony, placements, room: readyRoom })) as Pick<
+        Parameters<ConstructionPlanner["planMigration"]>[0],
+        "colony" | "placements" | "room"
+      >,
+    );
 
     expect(ready.proposals).toEqual([
       expect.objectContaining({
@@ -409,11 +434,81 @@ describe("ConstructionPlanner", () => {
       }),
     ]);
     expect(JSON.stringify(reordered)).toBe(JSON.stringify(ready));
+    expect(JSON.stringify(reset)).toBe(JSON.stringify(ready));
+    const threatened = planMigration({
+      colony: { ...colony, activeThreat: true },
+      placements,
+      room: readyRoom,
+    });
+    expect(threatened.proposals).toEqual([]);
+    expect(threatened.blockers).toContainEqual({
+      reason: "threat",
+      roomName: "W1N1",
+      targetId: null,
+    });
+
+    const foreignRampart = {
+      ...protectiveRampart,
+      ownerUsername: "enemy",
+      ownership: "foreign" as const,
+    };
+    const road = structure("road-obsolete", "road", 5_000, 5_000, obsolete.pos.x, obsolete.pos.y);
+    const wall = structure(
+      "wall-obsolete",
+      "constructedWall",
+      5_000,
+      300_000_000,
+      obsolete.pos.x,
+      obsolete.pos.y,
+    );
+    const duplicateRampart = { ...protectiveRampart, id: "rampart-obsolete-duplicate" };
+    const duplicateTarget = structure(
+      obsolete.id,
+      "tower",
+      3_000,
+      3_000,
+      obsolete.pos.x,
+      obsolete.pos.y,
+    );
+    for (const companions of [
+      [foreignRampart],
+      [road],
+      [wall],
+      [protectiveRampart, duplicateRampart],
+      [protectiveRampart, duplicateTarget],
+    ]) {
+      const blocked = planMigration({
+        colony,
+        placements,
+        room: room([exact, obsolete], companions),
+      });
+      expect(blocked.proposals).toEqual([]);
+      expect(blocked.blockers).toContainEqual({
+        reason: "target-shared",
+        roomName: "W1N1",
+        targetId: "tower-obsolete",
+      });
+    }
+    const siteBlocked = planMigration({
+      colony,
+      placements,
+      room: {
+        ...readyRoom,
+        constructionSites: [{ pos: obsolete.pos }],
+      } as unknown as RoomSnapshot,
+    });
+    expect(siteBlocked.proposals).toEqual([]);
+    expect(siteBlocked.blockers).toContainEqual({
+      reason: "target-shared",
+      roomName: "W1N1",
+      targetId: "tower-obsolete",
+    });
+
     for (const blocked of [
-      room([tower("tower-exact", 15, 9), obsolete]),
-      room([exact, tower("tower-obsolete", 30, 1)]),
-      room([tower("tower-exact", 15, 10, false), obsolete]),
-      room([obsolete]),
+      room([tower("tower-exact", 15, 9), obsolete], [protectiveRampart]),
+      room([exact, tower("tower-obsolete", 30, 1)], [protectiveRampart]),
+      room([tower("tower-exact", 15, 10, false), obsolete], [protectiveRampart]),
+      room([obsolete], [protectiveRampart]),
     ])
       expect(planMigration({ colony, placements, room: blocked }).proposals).toEqual([]);
   });

@@ -25,8 +25,10 @@ headroom therefore matter at both planning and command time.
   command path is added.
 - `ConstructionPlanner` remains the sole migration-priority owner. It may propose one obsolete tower
   only when current allowance is at least two and full, exactly allowance minus one active towers
-  occupy committed primary positions, and the target is one active owned empty tower on an unshared,
-  site-free external tile.
+  occupy committed primary positions, and the target is one active owned empty tower on a site-free
+  external tile. Issue #449 permits exactly one compatible companion there: one owned rampart. The
+  exact tower must appear once; a road, wall, foreign rampart, second rampart, other structure, or
+  malformed/duplicate occupant fails closed.
 - One deterministic committed replacement must be active and hold at least the official
   `TOWER_ENERGY_COST` of 10. The sole-tower case, stocked or inactive target, underfunded or
   inactive replacement, incomplete committed capacity, threat, controller risk, missing workforce,
@@ -45,9 +47,11 @@ headroom therefore matter at both planning and command time.
 ## Consequences
 
 A room can converge tower geometry as allowance grows without ever authorizing removal of its sole
-or last immediately operational tower. After observed target disappearance, ordinary site diffing
-can create the final committed tower. No tower target policy, energy evacuation, defense command,
-new authority, root schema, queue, or unbounded history is introduced.
+or last immediately operational tower. A tower beneath one owned rampart can use the same exact
+replacement-first path; the removal proposal and executor still identify only the tower, leaving the
+protective rampart observed. After target disappearance, ordinary site diffing can create the final
+committed tower. No tower target policy, energy evacuation, defense command, new authority, root
+schema, queue, or unbounded history is introduced.
 
 Rollback to V5 preserves V6 owner bytes and disables layout work as a future owner. Redeploying V6
 resumes from the bounded receipt.
@@ -56,12 +60,19 @@ resumes from the bounded receipt.
 
 - Official [`StructureTower`](https://docs.screeps.com/api/#StructureTower): RCL allowances are
   1/2/3/6 at RCL3/5/7/8, capacity is 1,000 energy, and each attack/heal/repair consumes 10 energy.
+- Official [`StructureRampart`](https://docs.screeps.com/api/#StructureRampart): a rampart defends
+  creeps and structures on the same tile.
 - Official [`Structure.destroy`](https://docs.screeps.com/api/#Structure.destroy): destruction is
   immediate; `OK` means scheduled; documented failures are `ERR_NOT_OWNER` and `ERR_BUSY`.
+- Official engine 4.3.2
+  [`room/destroy-structure.js`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/room/destroy-structure.js)
+  and
+  [`structures/_destroy.js`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/processor/intents/structures/_destroy.js)
+  resolve the exact intent ID and remove that object only.
 - Official [`Structure.isActive`](https://docs.screeps.com/api/#Structure.isActive): insufficient
   current RCL makes a structure unusable.
 - Official [Control guide](https://docs.screeps.com/control.html).
-- Official [Screeps documentation index](https://docs.screeps.com/) reviewed 2026-07-19.
+- Official [Screeps documentation index](https://docs.screeps.com/) reviewed 2026-07-24.
 - Screeps Wiki [Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/)
   supplies tower-geometry and refill-access terminology only. MYRMEX policy remains independently
   source-defined.

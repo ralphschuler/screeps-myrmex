@@ -95,7 +95,9 @@ active empty obsolete tower only after committed replacement-first geometry leav
 committed tower with at least one action's energy. Issue #314 lets one stocked obsolete tower
 persist an exact bounded evacuation only when that operational replacement has complete free
 capacity; `LogisticsPlanner` alone routes the energy, and removal waits for fresh empty-target,
-delivered-replacement, and retired-flow/endpoint evidence. Sole, over-capacity, inactive,
+delivered-replacement, and retired-flow/endpoint evidence. Issue #449 admits the target tile when
+its only companion is one owned rampart; exact tower-only removal leaves that protective layer
+intact, while every other companion, duplicate, or site fails closed. Sole, over-capacity, inactive,
 underfunded, unsafe, or pressured tower removals fail closed. Issue #316 restores committed RCL8
 link geometry, then permits one empty idle external reserve link only while canonical current/ideal
 role evidence retains exact active source, hub, and controller links plus an empty idle exact
