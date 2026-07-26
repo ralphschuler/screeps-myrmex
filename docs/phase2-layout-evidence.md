@@ -189,9 +189,12 @@ checked 70-tick RCL3→RCL2→RCL3 extension-migration evidence with one reset d
 exact reset/reorder recovery. Issue
 [#453](https://github.com/ralphschuler/screeps-myrmex/issues/453) composes one active 50-energy
 stale extension evacuation through the production Logistics, ContractLedger, layout
-settlement/handoff, direct-removal, construction-site, and current-geometry authorities. Parent
-issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
-migration.
+settlement/handoff, direct-removal, construction-site, and current-geometry authorities. Issue
+[#457](https://github.com/ralphschuler/screeps-myrmex/issues/457) composes the equivalent active
+500-energy stale-tower path while retaining one operational tower, then proves exact command-free
+settlement, later command-free handoff, one direct removal, and one 5,000-energy current-geometry
+rebuild. Parent issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns
+other structure migration.
 
 ## Runtime order
 
@@ -980,6 +983,22 @@ site. Warm, post-acquire real module reset, and reversed observation variants co
 no duplicate command, one 25,690-byte maximum persistent state, and the common semantic hash
 `fnv1a64-utf16:edcf117bef3d2adb`.
 
+The #457 production-runtime row begins at safe visible RCL5 with one V24 stale tower evacuation: an
+external exact source holds 500 energy and one exact committed active replacement holds the
+10-energy minimum for an immediate tower action. A 500-capacity adjacent hauler executes the
+existing funded Logistics/V3 acquire and deliver contracts. Source depletion leaves acquired cargo
+in the durable deliver lease while both tower endpoints remain suppressed; runtime now re-admits
+only that exact flow when it remains in the merged Logistics graph and its layout budget is active.
+Current Logistics admission still caps acquisition. The transfer raises the replacement to exactly
+510 energy, both stages retire, and fresh Store evidence clears only the evacuation command-free.
+The following tick performs the separate command-free revision handoff. Direct destroy removes the
+empty obsolete tower exactly once, fresh absence exposes one site, and scenario-modeled construction
+spends the official 5,000 energy at at most 100 per tick before the second exact tower appears.
+Warm, post-acquire JSON/module reset, and reversed-observation variants converge at tick 90,062 to
+two exact towers, zero stale records, sites, or proposals, one operational tower on every observed
+tick, no duplicate command, one 26,256-byte maximum persistent state, and the common semantic hash
+`fnv1a64-utf16:8de966fffe552ec0`.
+
 The #365 access result is deliberately scenario-level. Every tick, a deterministic flood fill on the
 scenario's open interior room grid checks reachability from the one owned spawn to a legal adjacent
 controller tile and at least one legal adjacent work tile for each of two sources while treating
@@ -1240,7 +1259,9 @@ lint, type, test, documentation, bundle, and package evidence.
   identity or removal; #423's singleton and #425's two-to-eight-row manifests use the existing Store
   resource projection.
 - Official [`StructureTower`](https://docs.screeps.com/api/#StructureTower) defines the 1/2/3/6
-  RCL3/5/7/8 allowances, 1,000 energy capacity, and 10-energy attack/heal/repair action cost.
+  RCL3/5/7/8 allowances, 5,000 build-energy cost, 1,000 energy capacity, and 10-energy
+  attack/heal/repair action cost. Issue #457 retains that action floor through exact evacuation,
+  direct removal, and reconstruction.
 - Official [`StructureLab`](https://docs.screeps.com/api/#StructureLab) defines the 3/6/10 RCL6/7/8
   allowances, 50,000 build cost, 2,000 energy and 3,000 mineral capacities, range-two reaction
   geometry, cooldown behavior, and 30-mineral/20-energy boost cost. Issue #401 consumes only fresh
@@ -1295,9 +1316,9 @@ lint, type, test, documentation, bundle, and package evidence.
   [`Creep.transfer`](https://docs.screeps.com/api/#Creep.transfer) define the existing scheduled
   acquire/deliver command boundary used by evacuation. The official
   [game loop](https://docs.screeps.com/game-loop.html) requires later fresh Store observation to
-  prove #421/#423/#425/#435/#437's exact delivery rather than treating `OK` as settlement. Issue
-  #441 likewise changes the beginning-of-tick threat input and observes any scheduled destruction
-  only on the following tick.
+  prove #421/#423/#425/#435/#437/#457's exact delivery rather than treating `OK` as settlement.
+  Issue #441 likewise changes the beginning-of-tick threat input and observes any scheduled
+  destruction only on the following tick.
 - Official [Control guide](https://docs.screeps.com/control.html) constrains RCL structure access.
 - Screeps engine 4.3.2
   [`checkConstructionSite`](https://github.com/screeps/engine/blob/80977824199a596d174d392fd0cf8c458c21fcbd/src/utils.js#L128-L189),

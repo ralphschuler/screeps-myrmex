@@ -36,7 +36,9 @@ replacement lateness, nonzero spawn utilization, full-row recovery time, replace
 and exact outcome equivalence across all variants. Issue #453's layout-command precommit correction
 makes one RCL1 site receipt durable in its command tick, reducing the checked RCL1 recovery row from
 1,401/1,332 total/recovery ticks to 1,400/1,331 without changing energy, Memory, telemetry, or
-reset/ reorder equivalence; the exact production-bundle receipt is updated with that runtime change.
+reset/reorder equivalence; the exact production-bundle receipt is updated with that runtime change.
+Issue #457's tower-only deliver authorization leaves every Phase 1 row unchanged; its runtime bundle
+change advances only the exact production-bundle receipt.
 
 Reproduce this slice and the checked aggregate with:
 

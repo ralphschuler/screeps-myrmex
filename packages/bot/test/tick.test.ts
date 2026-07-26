@@ -18,6 +18,7 @@ import {
   persistLayoutCommitment,
 } from "../src/layout";
 import {
+  authorizeLayoutTowerEvacuationFlowIds,
   projectActiveLeaseTargetIds,
   projectActiveSpawnClaimIds,
   orphanedSpawnEvacuationTransition,
@@ -27,6 +28,7 @@ import {
   withoutSuppressedLeaseTargets,
   withoutSuppressedSurvivalTransfers,
 } from "../src/runtime/tick";
+import { executableLogisticsView, logisticsAcquireAdmissionLimits } from "../src/logistics/runtime";
 import type { RuntimeGame } from "../src/runtime/context";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
 import {
@@ -184,8 +186,35 @@ describe("tick lifecycle", () => {
     expect(orphanedSpawnEvacuationTransition("suspended")).toBe("failed");
   });
 
-  it("allows only the authorized tower evacuation flow through suppressed stale endpoints", () => {
+  it("allows only a graph-present funded tower delivery through suppressed stale endpoints", () => {
     const exactFlowId = "layout-tower-evacuation:W1N1:tower-obsolete:tower-replacement";
+    const budgetIssuer = "layout-migration/W1N1/tower-obsolete/tower-replacement";
+    const projection = {
+      demands: {
+        edges: [
+          { budgetBinding: { category: "optional-growth", issuer: budgetIssuer }, id: exactFlowId },
+        ],
+      },
+    } as unknown as Parameters<typeof authorizeLayoutTowerEvacuationFlowIds>[0];
+    const graph = {
+      graph: {
+        edges: [
+          {
+            id: exactFlowId,
+            roundTripTicks: 2,
+            sinkNodeId: "tower-replacement:energy",
+            sourceNodeId: "tower-obsolete:energy",
+          },
+        ],
+        endpoints: [],
+        nodes: [],
+      },
+    } as Parameters<typeof authorizeLayoutTowerEvacuationFlowIds>[1];
+    const authorized = authorizeLayoutTowerEvacuationFlowIds(
+      projection,
+      graph,
+      new Set([budgetIssuer]),
+    );
     const execution = {
       status: "ready",
       leases: [
@@ -204,6 +233,22 @@ describe("tick lifecycle", () => {
             version: 3,
           },
           targetId: "tower-replacement",
+        },
+        {
+          actorId: "blocked-acquire",
+          execution: {
+            action: "withdraw",
+            completion: "target-depleted",
+            counterpartId: "tower-replacement",
+            flowId: exactFlowId,
+            recommendedCarry: 1,
+            recommendedMove: 1,
+            reservedAmount: 500,
+            resourceType: "energy",
+            stage: "acquire",
+            version: 3,
+          },
+          targetId: "tower-obsolete",
         },
         {
           actorId: "conflicting-refill",
@@ -235,13 +280,26 @@ describe("tick lifecycle", () => {
       ],
     } as unknown as ContractExecutionView;
 
-    const filtered = withoutSuppressedLeaseTargets(
+    const admissionCapped = executableLogisticsView(
       execution,
+      new Set(),
+      logisticsAcquireAdmissionLimits(execution, { plan: { projections: [] } }),
+    );
+    const filtered = withoutSuppressedLeaseTargets(
+      admissionCapped,
       new Set(["tower-obsolete", "tower-replacement"]),
-      new Set([exactFlowId]),
+      authorized,
     );
 
     expect(filtered.leases.map(({ actorId }) => actorId)).toEqual(["exact-hauler", "safe-worker"]);
+    expect(authorizeLayoutTowerEvacuationFlowIds(projection, graph, new Set())).toEqual(new Set());
+    expect(
+      authorizeLayoutTowerEvacuationFlowIds(
+        projection,
+        { graph: { edges: [], endpoints: [], nodes: [] } },
+        new Set([budgetIssuer]),
+      ),
+    ).toEqual(new Set());
   });
 
   it("fails spawn-removal claim evidence closed unless the broker completed planning", () => {

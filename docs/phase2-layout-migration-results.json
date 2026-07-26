@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 5,
-  "evidenceIssues": [365, 377, 383, 441, 451, 453],
+  "schemaVersion": 6,
+  "evidenceIssues": [365, 377, 383, 441, 451, 453, 457],
   "issue": 365,
   "status": "complete",
   "scenario": {
@@ -94,19 +94,6 @@
       "secondSiteCommandAt": 50036,
       "secondSiteObservedAt": 50037
     },
-    "deferredEffects": {
-      "firstSiteObservedNextTick": true,
-      "firstReplacementObservedNextTick": true,
-      "destroyDisappearanceObservedNextTick": true,
-      "secondSiteObservedNextTick": true,
-      "secondReplacementObservedNextTick": true
-    },
-    "final": {
-      "activeSites": 0,
-      "exactExtensions": 10,
-      "removalProposals": 0,
-      "siteProposals": 0
-    },
     "threatInterruption": {
       "authorizationCount": 0,
       "blockers": ["threat"],
@@ -147,6 +134,19 @@
           "reordered": "fnv1a64-utf16:f1ff5a7cbf71e7d4"
         }
       }
+    },
+    "deferredEffects": {
+      "firstSiteObservedNextTick": true,
+      "firstReplacementObservedNextTick": true,
+      "destroyDisappearanceObservedNextTick": true,
+      "secondSiteObservedNextTick": true,
+      "secondReplacementObservedNextTick": true
+    },
+    "final": {
+      "activeSites": 0,
+      "exactExtensions": 10,
+      "removalProposals": 0,
+      "siteProposals": 0
     }
   },
   "budgets": {
@@ -228,6 +228,78 @@
       "duplicateDestroyCommands": 0,
       "duplicateSiteCommands": 0,
       "exactEnergyConserved": true,
+      "resetAfterAcquire": true
+    }
+  },
+  "activeStaleTowerConvergence": {
+    "scenario": {
+      "id": "phase2-active-stale-tower-convergence-v1",
+      "variants": {
+        "warm": {
+          "resetAfterAcquire": false,
+          "reverseObservation": false
+        },
+        "reset": {
+          "resetAfterAcquire": true,
+          "reverseObservation": false
+        },
+        "reordered": {
+          "resetAfterAcquire": false,
+          "reverseObservation": true
+        }
+      }
+    },
+    "authority": {
+      "budgetAndFlowFunded": true,
+      "exactDeliveryObserved": true,
+      "flowRetiredBeforeSettlement": true,
+      "settlementCommandFree": true,
+      "handoffCommandFree": true,
+      "handoffAfterSettlement": true,
+      "destructionObservedNextTick": true,
+      "siteObservedNextTick": true
+    },
+    "budgets": {
+      "evacuationEnergy": 500,
+      "maximumActiveSites": 1,
+      "maximumPersistentBytes": 26256,
+      "modeledConstructionEnergy": 5000,
+      "modeledConstructionEnergyPerTick": 100
+    },
+    "equivalence": {
+      "semanticBytesIdentical": true,
+      "semanticHashes": {
+        "warm": "fnv1a64-utf16:8de966fffe552ec0",
+        "reset": "fnv1a64-utf16:8de966fffe552ec0",
+        "reordered": "fnv1a64-utf16:8de966fffe552ec0"
+      }
+    },
+    "final": {
+      "exactTowers": 2,
+      "removalProposals": 0,
+      "siteCount": 0,
+      "siteProposals": 0,
+      "staleRecords": 0,
+      "totalTowers": 2
+    },
+    "milestones": {
+      "destroyAt": 90011,
+      "evacuationSettledAt": 90009,
+      "flowFundedAt": 90002,
+      "flowRetiredAt": 90008,
+      "handoffAt": 90010,
+      "replacementObservedAt": 90062,
+      "siteAt": 90012,
+      "siteObservedAt": 90013,
+      "stableAt": 90062,
+      "transferAt": 90007,
+      "withdrawAt": 90004
+    },
+    "safety": {
+      "duplicateDestroyCommands": 0,
+      "duplicateSiteCommands": 0,
+      "exactEnergyConserved": true,
+      "minimumOperationalTowers": 1,
       "resetAfterAcquire": true
     }
   },

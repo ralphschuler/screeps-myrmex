@@ -3327,6 +3327,28 @@ export function orphanedSpawnEvacuationTransition(
   return "failed";
 }
 
+/**
+ * Re-admits one exact funded tower flow through durable endpoint suppression while it remains in the
+ * merged Logistics graph. A completed acquire may leave only an in-flight deliver lease; current
+ * Logistics admission limits still cap every acquire in `agents.plan`.
+ */
+export function authorizeLayoutTowerEvacuationFlowIds(
+  projection: Pick<LayoutTowerEvacuationProjection, "demands">,
+  logistics: Pick<LogisticsRuntimeProjection, "graph">,
+  activeBudgetIssuers: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const graphFlowIds = new Set(logistics.graph.edges.map(({ id }) => id));
+  return new Set(
+    projection.demands.edges.flatMap(({ budgetBinding, id }) =>
+      graphFlowIds.has(id) &&
+      budgetBinding !== undefined &&
+      activeBudgetIssuers.has(budgetBinding.issuer)
+        ? [id]
+        : [],
+    ),
+  );
+}
+
 export function withoutSuppressedLeaseTargets(
   execution: ContractExecutionView,
   suppressedTargetIds: ReadonlySet<string>,
@@ -4047,9 +4069,6 @@ function colonyDirectorSystem(
       const projectedContainerMigrationFlowIds = new Set(
         layoutContainerMigrations.edges.map(({ id }) => id),
       );
-      const projectedTowerEvacuationFlowIds = new Set(
-        layoutTowerEvacuations.demands.edges.map(({ id }) => id),
-      );
       const fundedIndustryBudgetIds = new Set(
         priorLedger
           .filter(
@@ -4199,10 +4218,6 @@ function colonyDirectorSystem(
           projectedFlowIds: currentContainerMigrationFlowIds,
           records: containerMigrationRecords,
         });
-      const logisticsExecutableTowerEvacuationFlowIds = currentlyExecutableLogisticsFlowIds(
-        projectedTowerEvacuationFlowIds,
-        logistics,
-      );
       const provisionalMaintenance = projectMaintenanceBudgets({
         existing: resolveColoniesOwner(owner).owner?.ledger ?? [],
         planning: isFeatureEnabled(context.config, "phase2.maintenance")
@@ -4633,14 +4648,10 @@ function colonyDirectorSystem(
           category === "optional-growth" && status === "active" ? [issuer] : [],
         ),
       );
-      const executableTowerEvacuationFlowIds = new Set(
-        layoutTowerEvacuations.demands.edges.flatMap(({ budgetBinding, id }) =>
-          logisticsExecutableTowerEvacuationFlowIds.has(id) &&
-          budgetBinding !== undefined &&
-          activeTowerEvacuationBudgetIssuers.has(budgetBinding.issuer)
-            ? [id]
-            : [],
-        ),
+      const authorizedTowerEvacuationFlowIds = authorizeLayoutTowerEvacuationFlowIds(
+        layoutTowerEvacuations,
+        logistics,
+        activeTowerEvacuationBudgetIssuers,
       );
       publishCandidates(
         economyCandidates,
@@ -4669,7 +4680,7 @@ function colonyDirectorSystem(
         persistedLayoutTerminalEvacuationFlowIds(input.manager),
         executableTerminalEvacuationFlowIds,
         persistedLayoutTerminalEvacuationTargetIds(input.manager, context.tick),
-        executableTowerEvacuationFlowIds,
+        authorizedTowerEvacuationFlowIds,
         new Set(towerEvacuationSuppressedSinkTargetIds),
       );
       const intents = authorizedSpawnIntents(session, selections, context.tick);

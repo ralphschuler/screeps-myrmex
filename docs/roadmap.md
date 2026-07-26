@@ -310,14 +310,20 @@ sustained-RCL8 maturity belong to [#225](https://github.com/ralphschuler/screeps
   and revision handoff, direct removal, and exact ten-extension reconstruction. It also pins
   precommits every layout command result before root commit, permits sequential Logistics stages to
   reuse one stable budget binding, and limits below-target spawn-pool recovery construction to
-  spawns/extensions. Issue #443 preserves one compatible external storage as the convergent
-  RCL4-RCL8 placement, so no new evacuation, removal, or 30,000-energy rebuild starts solely for
-  canonical coordinates; grandfathered exact evacuation/removal terms retain their bounded
-  continuation. Issue #445 applies the same continuity-over-geometry policy to one compatible
-  external owned terminal at RCL6-RCL8, avoiding a new service outage and 100,000-energy rebuild
-  while grandfathering exact existing terminal evacuation/removal terms. Broad dynamic
-  movement/pathfinding proof, autonomous boost manifest production, and defensive or other active
-  revision migrations remain issue #99.
+  spawns/extensions. Issue #457 composes the equivalent active 500-energy stale-tower path through
+  exact delivery, command-free settlement and later revision handoff, one direct removal, and one
+  5,000-energy current-geometry rebuild while retaining an operational 10-energy tower throughout.
+  An exact deliver-stage lease remains authorized through both suppressed endpoints only while its
+  flow is present in the merged Logistics graph and its layout budget is active; acquire remains
+  capped by current Logistics admission. Warm, post-acquire reset, and reordered variants converge
+  with one site, no duplicate command, and bounded persistent state. Issue #443 preserves one
+  compatible external storage as the convergent RCL4-RCL8 placement, so no new evacuation, removal,
+  or 30,000-energy rebuild starts solely for canonical coordinates; grandfathered exact
+  evacuation/removal terms retain their bounded continuation. Issue #445 applies the same
+  continuity-over-geometry policy to one compatible external owned terminal at RCL6-RCL8, avoiding a
+  new service outage and 100,000-energy rebuild while grandfathering exact existing terminal
+  evacuation/removal terms. Broad dynamic movement/pathfinding proof, autonomous boost manifest
+  production, and defensive or other active revision migrations remain issue #99.
 - Issue #46 defines static extraction contracts, stationary workforce projection, and composed
   reset/reorder recovery evidence in [`phase2-mining-evidence.md`](phase2-mining-evidence.md).
   `phase2.mining` activates only behind layout and telemetry prerequisites. Hauling remains #47,
