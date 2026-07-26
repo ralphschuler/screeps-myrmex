@@ -853,6 +853,8 @@ export interface RoomConstructionSiteCount {
 export interface ConstructionProgressionAuthorization {
   readonly authorized: boolean;
   readonly colonyId: string;
+  /** Narrow recovery exception while spawn-pool capacity is below the current RCL target. */
+  readonly recoveryStructureTypes?: readonly ("extension" | "spawn")[];
   readonly roomName: string;
 }
 export type ConstructionSiteDeferredReason =

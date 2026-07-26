@@ -196,6 +196,7 @@ import {
   staleLayoutStorageEvacuationSettlementBlocker,
   staleLayoutTerminalEvacuationSettlementBlocker,
   staleLayoutTowerEvacuationSettlementBlocker,
+  type ConstructionProgressionAuthorization,
   type ConstructionSiteArbitrationResult,
   type ConstructionSiteExecutionResult,
   type LayoutCommitment,
@@ -1578,6 +1579,8 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
         layoutDraft.execution = execution;
         layoutDraft.migrationExecution = migrationExecution;
+        layoutDraft.ownerPrecommitRequired ||=
+          execution.length > 0 || migrationExecution.length > 0;
         return staged(() => {
           input.runtime.publishLayout(layoutRuntimeResult(layoutDraft, 0));
         });
@@ -2483,11 +2486,7 @@ function layoutPlanningSystem(
       const migrationInputs: Parameters<ConstructionPlanner["planMigration"]>[0][] = [];
       const activeSpawnClaimIds = projectActiveSpawnClaimIds(context.spawn.broker);
       const proposals = [] as ReturnType<typeof diffOwnedRoomLayout>["proposals"][number][];
-      const authorizations: {
-        authorized: boolean;
-        colonyId: string;
-        roomName: string;
-      }[] = [];
+      const authorizations: ConstructionProgressionAuthorization[] = [];
       const eligibleColonies = [...context.colony.colonies]
         .filter(({ state, visibility }) => state !== "lost" && visibility === "visible")
         .sort((a, b) => a.id.localeCompare(b.id));
@@ -2506,6 +2505,9 @@ function layoutPlanningSystem(
           authorized:
             colony.rclPolicy.progression.authorized || isInfrastructureRecoveryAuthorized(colony),
           colonyId: colony.id,
+          ...(colony.rclPolicy.progression.reasonCode === "spawn-pool-capacity-below-target"
+            ? { recoveryStructureTypes: ["extension", "spawn"] as const }
+            : {}),
           roomName: room.name,
         });
         if (room.terrain === undefined || room.exits === undefined) {

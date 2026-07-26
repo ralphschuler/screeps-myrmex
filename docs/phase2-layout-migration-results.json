@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "evidenceIssues": [365, 377, 383, 441, 451],
+  "evidenceIssues": [365, 377, 383, 441, 451, 453],
   "issue": 365,
   "status": "complete",
   "scenario": {
@@ -161,6 +161,75 @@
     "accessWitnessPreserved": true,
     "accessWitnessScope": "scenario-level",
     "duplicateDestroyCommands": 0
+  },
+  "activeStaleExtensionConvergence": {
+    "scenario": {
+      "id": "phase2-active-stale-extension-convergence-v1",
+      "variants": {
+        "warm": {
+          "resetAfterAcquire": false,
+          "reverseObservation": false
+        },
+        "reset": {
+          "resetAfterAcquire": true,
+          "reverseObservation": false
+        },
+        "reordered": {
+          "resetAfterAcquire": false,
+          "reverseObservation": true
+        }
+      }
+    },
+    "authority": {
+      "budgetAndFlowFunded": true,
+      "exactDeliveryObserved": true,
+      "flowRetiredBeforeSettlement": true,
+      "settlementCommandFree": true,
+      "handoffCommandFree": true,
+      "handoffAfterSettlement": true
+    },
+    "budgets": {
+      "evacuationEnergy": 50,
+      "maximumActiveSites": 1,
+      "maximumPersistentBytes": 25690,
+      "modeledConstructionEnergy": 3000,
+      "modeledConstructionEnergyPerTick": 100
+    },
+    "equivalence": {
+      "semanticBytesIdentical": true,
+      "semanticHashes": {
+        "warm": "fnv1a64-utf16:edcf117bef3d2adb",
+        "reset": "fnv1a64-utf16:edcf117bef3d2adb",
+        "reordered": "fnv1a64-utf16:edcf117bef3d2adb"
+      }
+    },
+    "final": {
+      "exactExtensions": 10,
+      "removalProposals": 0,
+      "siteCount": 0,
+      "siteProposals": 0,
+      "staleRecords": 0,
+      "totalExtensions": 10
+    },
+    "milestones": {
+      "destroyAt": 80011,
+      "evacuationSettledAt": 80009,
+      "flowFundedAt": 80002,
+      "flowRetiredAt": 80008,
+      "handoffAt": 80010,
+      "replacementObservedAt": 80042,
+      "siteAt": 80012,
+      "siteObservedAt": 80013,
+      "stableAt": 80042,
+      "transferAt": 80007,
+      "withdrawAt": 80004
+    },
+    "safety": {
+      "duplicateDestroyCommands": 0,
+      "duplicateSiteCommands": 0,
+      "exactEnergyConserved": true,
+      "resetAfterAcquire": true
+    }
   },
   "productionBuild": {
     "scenario": {

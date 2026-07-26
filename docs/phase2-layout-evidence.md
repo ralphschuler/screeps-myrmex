@@ -186,8 +186,11 @@ rampart; direct destruction still names only the tower and leaves that protectiv
 Issue [#451](https://github.com/ralphschuler/screeps-myrmex/issues/451) blocks all removal
 authorization when fresh normalized owned counts exceed the current RCL-policy allowances, then adds
 checked 70-tick RCL3→RCL2→RCL3 extension-migration evidence with one reset during downgrade and
-exact reset/reorder recovery. Parent issue
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
+exact reset/reorder recovery. Issue
+[#453](https://github.com/ralphschuler/screeps-myrmex/issues/453) composes one active 50-energy
+stale extension evacuation through the production Logistics, ContractLedger, layout
+settlement/handoff, direct-removal, construction-site, and current-geometry authorities. Parent
+issue [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) still owns other structure
 migration.
 
 ## Runtime order
@@ -958,6 +961,24 @@ exactly 6,000 modeled extension build energy, retain at most one active site and
 active extensions, and converge to ten exact RCL3 extensions with no remaining proposal. Warm,
 two-reset, and reversed-observation outcomes are byte-identical at the semantic and outcome
 boundaries.
+
+The #453 production-runtime row begins with one V24 stale extension evacuation containing exactly 50
+energy and one already-empty exact replacement. The existing layout migration budget funds one V3
+Logistics flow: acquire withdraws all 50 energy, deliver transfers all 50 to the replacement, and
+both contract stages retire before command-free evacuation settlement. Contract reconciliation
+applies an already-active predecessor's terminal transition before admitting a same-binding next
+stage, while retaining canonical result order and ordinary later funding transitions. Every
+construction-site or removal execution result activates the existing layout owner precommit, so its
+receipt cannot move behind the root commit under scheduler health drift. The following command-free
+revision handoff exposes the current layout, direct removal destroys the now-empty obsolete
+extension exactly once, and the site chain creates the missing tenth committed extension once. While
+that missing extension lowers spawn-pool capacity below the RCL3 target, construction authorization
+admits only `extension`/`spawn` recovery sites; roads and other progression work remain denied.
+Scenario-modeled construction spends exactly 3,000 energy at at most 100 per tick and one active
+site. Warm, post-acquire real module reset, and reversed observation variants converge at tick
+80,042 to ten exact extensions, zero stale records, sites, or proposals, exact energy conservation,
+no duplicate command, one 25,690-byte maximum persistent state, and the common semantic hash
+`fnv1a64-utf16:edcf117bef3d2adb`.
 
 The #365 access result is deliberately scenario-level. Every tick, a deterministic flood fill on the
 scenario's open interior room grid checks reachability from the one owned spawn to a legal adjacent

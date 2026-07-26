@@ -44,26 +44,26 @@
       "status": "evidenced",
       "scope": "focused-runtime-export",
       "measurements": {
-        "ticks": 1401,
+        "ticks": 1400,
         "modeledCpu": 0.12700000000000009,
         "persistentBytes": 30285,
         "persistentGrowth": 5360,
         "telemetryBytes": 7824,
         "telemetryCardinality": 30,
-        "spawnUtilizationPct": 1.28,
+        "spawnUtilizationPct": 1.29,
         "energyFlow": 250,
         "replacementLateness": 0,
-        "controllerMargin": 8599,
+        "controllerMargin": 8600,
         "controllerRisk": 0,
-        "recoveryTime": 1332
+        "recoveryTime": 1331
       },
       "hashes": {
-        "warmOutcome": "09e32b5c",
-        "resetOutcome": "09e32b5c",
-        "reorderedOutcome": "09e32b5c",
-        "warmTranscript": "c48dfb44",
-        "resetTranscript": "f9ac6755",
-        "reorderedTranscript": "dbe08d4f"
+        "warmOutcome": "09dc6f97",
+        "resetOutcome": "09dc6f97",
+        "reorderedOutcome": "09dc6f97",
+        "warmTranscript": "cc3923b0",
+        "resetTranscript": "1b9dadd5",
+        "reorderedTranscript": "b3879456"
       },
       "unevidenced": []
     },
@@ -184,7 +184,7 @@
       "status": "evidenced",
       "scope": "composed-runtime-equivalence",
       "measurements": {
-        "ticks": 1448,
+        "ticks": 1447,
         "modeledCpu": 5,
         "persistentBytes": 30285,
         "persistentGrowth": 5360,
@@ -193,17 +193,17 @@
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
-        "controllerMargin": 8599,
+        "controllerMargin": 8600,
         "controllerRisk": 0,
-        "recoveryTime": 1332
+        "recoveryTime": 1331
       },
       "hashes": {
-        "warmOutcome": "92710e0a",
-        "resetOutcome": "92710e0a",
-        "reorderedOutcome": "92710e0a",
-        "warmTranscript": "3dfff30c",
-        "resetTranscript": "3855504e",
-        "reorderedTranscript": "02bea8b8"
+        "warmOutcome": "26ce3703",
+        "resetOutcome": "26ce3703",
+        "reorderedOutcome": "26ce3703",
+        "warmTranscript": "5d46fad4",
+        "resetTranscript": "1f9f5fa6",
+        "reorderedTranscript": "251949b5"
       },
       "unevidenced": []
     },
@@ -212,7 +212,7 @@
       "status": "evidenced",
       "scope": "local-composed-runtime",
       "measurements": {
-        "ticks": 1448,
+        "ticks": 1447,
         "modeledCpu": 5,
         "persistentBytes": 30285,
         "persistentGrowth": 5360,
@@ -221,25 +221,25 @@
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
-        "controllerMargin": 8599,
+        "controllerMargin": 8600,
         "controllerRisk": 0,
-        "recoveryTime": 1332
+        "recoveryTime": 1331
       },
       "hashes": {
-        "warmOutcome": "b5987958",
-        "resetOutcome": "b5987958",
-        "reorderedOutcome": "b5987958",
-        "warmTranscript": "3dfff30c",
-        "resetTranscript": "3855504e",
-        "reorderedTranscript": "02bea8b8"
+        "warmOutcome": "cde101b9",
+        "resetOutcome": "cde101b9",
+        "reorderedOutcome": "cde101b9",
+        "warmTranscript": "5d46fad4",
+        "resetTranscript": "1f9f5fa6",
+        "reorderedTranscript": "251949b5"
       },
       "unevidenced": []
     }
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 1570761,
+    "bytes": 1572129,
     "inputCount": 152,
-    "sha256": "sha256:199a085085baddd0ab6b08bc39501ade1769799c44ad149ef4d63d261900b861"
+    "sha256": "sha256:e415c1656db2c9e0c9b8df7e7a4bce28e1d04a3de6b2cc54f21d3238354df4f3"
   }
 }

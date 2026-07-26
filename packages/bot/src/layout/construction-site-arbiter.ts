@@ -24,10 +24,7 @@ export function arbitrateConstructionSites(
     roomInspected = new Map<string, number>();
   const roomCounts = new Map(input.perRoomSiteCounts.map((item) => [item.roomName, item.count]));
   const authorization = new Map(
-    input.progressionAuthorizations.map((item) => [
-      `${item.colonyId}:${item.roomName}`,
-      item.authorized,
-    ]),
+    input.progressionAuthorizations.map((item) => [`${item.colonyId}:${item.roomName}`, item]),
   );
   const receipts = applicableReceiptMap(input.priorReceipts),
     ceiling = limits.officialHardCap - limits.reservedGlobalHeadroom;
@@ -39,7 +36,11 @@ export function arbitrateConstructionSites(
       continue;
     }
     roomInspected.set(room, inspected + 1);
-    if (authorization.get(`${proposal.colonyId}:${room}`) !== true) {
+    const progression = authorization.get(`${proposal.colonyId}:${room}`);
+    const recoveryAuthorized =
+      (proposal.structureType === "extension" || proposal.structureType === "spawn") &&
+      progression?.recoveryStructureTypes?.includes(proposal.structureType) === true;
+    if (progression?.authorized !== true && !recoveryAuthorized) {
       rejected.push(record(proposal, "rejected", "progression-not-authorized"));
       continue;
     }

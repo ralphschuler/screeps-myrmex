@@ -46,7 +46,10 @@ level alone: it requires current canonical layout, source, logistics, link, main
 lab, and mature-industry health. Missing or stale direct evidence returns an established mature room
 to recovery while an incomplete room remains developing; telemetry never authorizes that transition.
 Recovery may rebuild committed owned sites through the existing layout, budget, contract, and
-executor chain, but it cannot reopen controller upgrading or unrelated optional growth.
+executor chain, but it cannot reopen controller upgrading or unrelated optional growth. When
+progression is blocked only because spawn-pool capacity is below the current RCL target, layout site
+admission is restricted to committed `spawn` and `extension` proposals; roads and other optional
+structures remain blocked until capacity recovers.
 
 A complete production layout requires one distinct semantic service on a legal adjacent work tile
 for every observed owned source and proves that each tile is reachable from the planned
