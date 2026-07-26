@@ -90,17 +90,18 @@ Operational Memory may disable available work but can never activate an unfinish
 
 ## Phase 2 — Complete Colony
 
-**Status:** implementation complete; [issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54)
-is the sole remaining Phase 2 outcome gate.
+**Status:** implementation complete;
+[issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54) is the sole remaining Phase 2
+outcome gate.
 
 Phase 2 extends the survival kernel into one deterministic RCL2–RCL8 colony authority covering
-layouts, mining, logistics, links, maintenance, resources, labs, mature infrastructure,
-cross-domain recovery, and bounded observer-only telemetry.
+layouts, mining, logistics, links, maintenance, resources, labs, mature infrastructure, cross-domain
+recovery, and bounded observer-only telemetry.
 
 ### Authoritative completed implementation leaves
 
-- [#44](https://github.com/ralphschuler/screeps-myrmex/issues/44) — RCL2–RCL8 lifecycle,
-  population, and reserves.
+- [#44](https://github.com/ralphschuler/screeps-myrmex/issues/44) — RCL2–RCL8 lifecycle, population,
+  and reserves.
 - [#45](https://github.com/ralphschuler/screeps-myrmex/issues/45) — versioned layouts and
   construction-site arbitration.
 - [#46](https://github.com/ralphschuler/screeps-myrmex/issues/46) — static source mining and
@@ -128,9 +129,8 @@ expanded into a merge-by-merge changelog.
 
 ### Completed layout-migration audit
 
-Additional audited leaf
-[#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) is complete against its original five
-acceptance criteria:
+Additional audited leaf [#99](https://github.com/ralphschuler/screeps-myrmex/issues/99) is complete
+against its original five acceptance criteria:
 
 1. Replacement-first removal, stock evacuation, cooldown/activity checks, ownership checks,
    protected-capacity checks, and the sole direct-destroy authority are recorded in
@@ -156,8 +156,7 @@ are enhancements, not unfinished #99 or Phase 2 requirements.
 
 The Phase 2 dependency set is frozen to #44–#53, #225, and #99. Those implementation leaves are
 complete. Issue #54 is the only remaining Phase 2 gate and uses the already-defined acceptance
-criteria and numeric thresholds in
-[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md).
+criteria and numeric thresholds in [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md).
 
 Until #54 closes:
 
@@ -203,4 +202,3 @@ Until #54 closes:
   strongholds, portals, and cross-shard strategy.
 
 **Exit:** operations meet objective, budget, loss-rate, and retaliation-risk targets.
-
