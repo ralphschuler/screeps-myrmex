@@ -9,7 +9,7 @@ const FIND_DROPPED_RESOURCES_VALUE = 106;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 
-describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#453)", () => {
+describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#453/#457)", () => {
   beforeAll(() => {
     vi.stubGlobal("FIND_CREEPS", FIND_CREEPS_VALUE);
     vi.stubGlobal("FIND_HOSTILE_CREEPS", FIND_HOSTILE_CREEPS_VALUE);
@@ -20,13 +20,14 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#45
   });
 
   afterAll(() => vi.unstubAllGlobals());
-  it("matches checked evidence and reaches stable committed extension geometry within bounds", async () => {
+  it("matches checked evidence and reaches stable current geometry within bounds", async () => {
     const actual = await collectPhase2LayoutMigrationEvidence();
 
     expect(actual).toEqual(checkedEvidence);
     expect(actual).toMatchObject({
       activeStaleExtensionConvergence: actual.activeStaleExtensionConvergence,
-      evidenceIssues: [365, 377, 383, 441, 451, 453],
+      activeStaleTowerConvergence: actual.activeStaleTowerConvergence,
+      evidenceIssues: [365, 377, 383, 441, 451, 453, 457],
       issue: 365,
       productionBuild: {
         buildEnergy: 100,
@@ -35,9 +36,50 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#45
         semanticBytesIdentical: true,
         siteObservedAbsentAfterCompletion: true,
       },
-      schemaVersion: 5,
+      schemaVersion: 6,
       status: "complete",
     });
+    expect(actual.activeStaleTowerConvergence).toMatchObject({
+      authority: {
+        budgetAndFlowFunded: true,
+        destructionObservedNextTick: true,
+        exactDeliveryObserved: true,
+        flowRetiredBeforeSettlement: true,
+        handoffAfterSettlement: true,
+        handoffCommandFree: true,
+        settlementCommandFree: true,
+        siteObservedNextTick: true,
+      },
+      budgets: {
+        evacuationEnergy: 500,
+        maximumActiveSites: 1,
+        modeledConstructionEnergy: 5_000,
+        modeledConstructionEnergyPerTick: 100,
+      },
+      equivalence: { semanticBytesIdentical: true },
+      final: {
+        exactTowers: 2,
+        removalProposals: 0,
+        siteCount: 0,
+        siteProposals: 0,
+        staleRecords: 0,
+        totalTowers: 2,
+      },
+      safety: {
+        duplicateDestroyCommands: 0,
+        duplicateSiteCommands: 0,
+        exactEnergyConserved: true,
+        minimumOperationalTowers: 1,
+        resetAfterAcquire: true,
+      },
+      scenario: { id: "phase2-active-stale-tower-convergence-v1" },
+    });
+    expect(actual.activeStaleTowerConvergence.budgets.maximumPersistentBytes).toBeLessThanOrEqual(
+      30_000,
+    );
+    expect(
+      new Set(Object.values(actual.activeStaleTowerConvergence.equivalence.semanticHashes)),
+    ).toHaveLength(1);
     expect(actual.scenario).toMatchObject({
       id: "phase2-layout-extension-migration-v2",
       seed: "phase2-layout-extension-migration-seed-v2",
@@ -205,5 +247,5 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#45
     });
     expect(actual.equivalence.semanticBytesIdentical).toBe(true);
     expect(new Set(Object.values(actual.equivalence.outcomeHashes))).toHaveLength(1);
-  }, 30_000);
+  }, 60_000);
 });

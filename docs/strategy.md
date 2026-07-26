@@ -365,19 +365,24 @@ two-to-eight-row source-specific manifest enters lease execution only when every
 executable resource-qualified row retains active funding; no row executes from a partial funding
 group. The container requires two exact non-foreign 2,000-capacity general-purpose Stores and
 suppresses the target source and both refill endpoints even when optional continuation is denied.
-Tower continuation also preserves the operational replacement's 10-energy action floor. Spawn
-continuation additionally requires exact active idle 300-capacity endpoints and a completed current
-SpawnBroker plan selecting neither; source refill stays suppressed, while replacement refill returns
-only after exact source emptiness. Reserve-link continuation accepts only known source-defined V1
-geometry and fresh RCL8 proof that each unique stale service remains adjacent to its exact source,
-all productive roles remain intact, one external reserve source and one exact reserve replacement
-exist, and exact zero-cooldown 800-capacity energy Stores exclude both endpoints from native
-transfers. Durable endpoint suppression survives denied optional work; creep Logistics is the only
-resource path. Fresh source emptiness, every exact replacement gain, complete flow/endpoint
-retirement, active funding, and unchanged safe policy clear only that term in a command-free tick;
-current-layout handoff remains a separate following tick. A safe quiescent RCL8 record may use the
-existing bounded infrastructure-recovery authorization for that command-free source-defined handoff.
-Every other unfinished stale migration stays inert.
+Tower continuation also preserves the operational replacement's 10-energy action floor. Once its
+acquire stage empties the source, the exact funded V3 deliver lease may pass both durably suppressed
+tower endpoints only while its flow remains in the merged Logistics graph and the current layout
+budget stays active; current admission still caps acquisition. Checked production composition then
+settles that stock command-free, performs the revision handoff on a later command-free tick, removes
+the obsolete tower once, and rebuilds the 5,000-energy current tower while one operational tower
+remains available throughout. Spawn continuation additionally requires exact active idle
+300-capacity endpoints and a completed current SpawnBroker plan selecting neither; source refill
+stays suppressed, while replacement refill returns only after exact source emptiness. Reserve-link
+continuation accepts only known source-defined V1 geometry and fresh RCL8 proof that each unique
+stale service remains adjacent to its exact source, all productive roles remain intact, one external
+reserve source and one exact reserve replacement exist, and exact zero-cooldown 800-capacity energy
+Stores exclude both endpoints from native transfers. Durable endpoint suppression survives denied
+optional work; creep Logistics is the only resource path. Fresh source emptiness, every exact
+replacement gain, complete flow/endpoint retirement, active funding, and unchanged safe policy clear
+only that term in a command-free tick; current-layout handoff remains a separate following tick. A
+safe quiescent RCL8 record may use the existing bounded infrastructure-recovery authorization for
+that command-free source-defined handoff. Every other unfinished stale migration stays inert.
 [ADR 0076](adr/0076-command-free-stale-layout-revision-handoff.md) records this revision boundary.
 
 Every owned room has one survival lifecycle and one local ledger. A bootstrapping or recovering

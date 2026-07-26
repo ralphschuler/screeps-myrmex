@@ -4,7 +4,7 @@ Status: **Normative target architecture**
 
 Applies to: `packages/bot`
 
-Last updated: 2026-07-24
+Last updated: 2026-07-26
 
 This document defines the core systems of MYRMEX, the authority each system owns, and the only
 supported ways those systems integrate. It is deliberately specific so that human and AI
@@ -80,59 +80,63 @@ energy to the replacement and suppresses refill competition. Removal still requi
 delivered/empty observation and no active evacuation flow. Issue #453 composes this path through the
 production runtime: sequential V3 stages may reuse the layout-owned budget binding, every site or
 removal result uses the existing layout precommit before root commit, and a narrow spawn-pool
-recovery exception can rebuild the missing committed extension after removal. Issue #290 permits one
-empty, unselected source-adjacent container only while a different exact committed container remains
-the reachable semantic service for the same source. Issue #292 permits one empty compatible-external
-general container only after committed replacement capacity exists; one compact layout-owned handoff
-suppresses its refill and waits for active logistics endpoints to retire. Issue #294 extends that
-handoff to exact energy-only stock. Issue #296 permits a compact binary-ordered manifest of two to
-eight resource kinds and one distinct funded flow per kind. Issue #298 permits the same manifest for
-one non-energy kind while preserving the legacy energy-only identity. Issue #300 reuses that bounded
-evacuation for one stocked, unselected redundant source-adjacent container while preserving its
-different exact selected service and static-mining identity; at most 2,000 total units move, and
-fresh empty-target, every delivered replacement gain, and retired-flow evidence remain mandatory.
-Issue #310 persists one compact exact receipt for every current extension/container destroy result;
-`OK` waits for fresh disappearance, failures back off and stop after three attempts, and a blocked
-room emits no proposal that could consume the global slot. Issue #312 reuses that authority for one
-active empty obsolete tower only after committed replacement-first geometry leaves an exact active
-committed tower with at least one action's energy. Issue #314 lets one stocked obsolete tower
-persist an exact bounded evacuation only when that operational replacement has complete free
-capacity; `LogisticsPlanner` alone routes the energy, and removal waits for fresh empty-target,
-delivered-replacement, and retired-flow/endpoint evidence. Issue #449 admits the target tile when
-its only companion is one owned rampart; exact tower-only removal leaves that protective layer
-intact, while every other companion, duplicate, or site fails closed. Sole, over-capacity, inactive,
-underfunded, unsafe, or pressured tower removals fail closed. Issue #316 restores committed RCL8
-link geometry, then permits one empty idle external reserve link only while canonical current/ideal
-role evidence retains exact active source, hub, and controller links plus an empty idle exact
-reserve replacement. Issue #318 permits one positive energy-only reserve target to persist a bounded
-creep-logistics evacuation when the exact replacement can hold the complete amount. Removal waits
-for exact target emptiness, baseline-plus-amount replacement energy, retired flow/endpoints, zero
-cooldown, unchanged reserve roles, and no accepted native link transfer. Productive roles, malformed
-stock, capacity loss, cooldown, drift, or pressure fail closed. Issue #320 restores committed RCL8
-lab geometry and permits one active empty zero-cooldown external lab only while the industry-owned
-current view is quiescent, no logistics endpoint names any room lab, and the remaining nine exact
-labs still derive a valid cluster. Issue #322 permits that target to hold energy only when one
-bounded funded creep-logistics evacuation can deliver the complete amount to the canonical exact
-replacement; removal requires fresh empty/delivered/retired-work and unchanged quiescence, cluster,
-and safety evidence. Issue #324 permits one zero-energy, single-kind mineral target only when the
-industry-owned view publishes one exact active owned storage with complete aggregate capacity. The
-sole logistics path moves the mineral; removal requires fresh empty/delivered/retired-work and
-unchanged destination, quiescence, cluster, and safety evidence. Issue #326 admits both resources in
-one bounded record, atomically publishes distinct energy/replacement-lab and mineral/storage flows,
-and requires both exact destination gains plus complete work retirement before removal. Issue #330
-permits one active reaction commitment to rebind onto a role-identical nine-committed-lab assignment
-before the unused external lab is removed. The prior Industry owner must already contain that
-fingerprint. A uniquely reconstructible durable rebound enters a non-staging, non-executable blocked
-view during temporary source-layout evidence loss or retained-lab staging, and layout planning pins
-that source record or degrades. Issue #333 permits the initial target to contain one exact energy-
-only amount, then reuses the V13 funded lab-energy evacuation during the durable ready handoff.
-Issue #335 permits one zero-energy, single-kind-mineral target and reuses the V13 mineral evacuation
-to the exact Industry-published active storage. Issue #337 permits one target containing both exact
-forms and atomically reuses both V13 flows after the same durable handoff. Issue #341 permits one
-explicit funded boost commitment to use the same role identical handoff while preserving its creep,
-compound, body target, deadline, and settled part terms. The first rebound emits no staging or lab
-intent; prior Industry owner plus current intent or pending attempt evidence makes it executable.
-The current boost intent and any pending lab attempt block removal. Removal also waits for every
+recovery exception can rebuild the missing committed extension after removal. Issue #457 composes
+one active stale stocked-tower evacuation through those production authorities, exact command-free
+settlement, a later command-free revision handoff, one direct removal, and one 5,000-energy tower
+rebuild while at least one exact active tower retains the 10-energy action floor. Issue #290 permits
+one empty, unselected source-adjacent container only while a different exact committed container
+remains the reachable semantic service for the same source. Issue #292 permits one empty
+compatible-external general container only after committed replacement capacity exists; one compact
+layout-owned handoff suppresses its refill and waits for active logistics endpoints to retire. Issue
+\#294 extends that handoff to exact energy-only stock. Issue #296 permits a compact binary-ordered
+manifest of two to eight resource kinds and one distinct funded flow per kind. Issue #298 permits
+the same manifest for one non-energy kind while preserving the legacy energy-only identity. Issue
+\#300 reuses that bounded evacuation for one stocked, unselected redundant source-adjacent container
+while preserving its different exact selected service and static-mining identity; at most 2,000
+total units move, and fresh empty-target, every delivered replacement gain, and retired-flow
+evidence remain mandatory. Issue #310 persists one compact exact receipt for every current
+extension/container destroy result; `OK` waits for fresh disappearance, failures back off and stop
+after three attempts, and a blocked room emits no proposal that could consume the global slot. Issue
+\#312 reuses that authority for one active empty obsolete tower only after committed
+replacement-first geometry leaves an exact active committed tower with at least one action's energy.
+Issue #314 lets one stocked obsolete tower persist an exact bounded evacuation only when that
+operational replacement has complete free capacity; `LogisticsPlanner` alone routes the energy, and
+removal waits for fresh empty-target, delivered-replacement, and retired-flow/endpoint evidence.
+Issue #449 admits the target tile when its only companion is one owned rampart; exact tower-only
+removal leaves that protective layer intact, while every other companion, duplicate, or site fails
+closed. Sole, over-capacity, inactive, underfunded, unsafe, or pressured tower removals fail closed.
+Issue #316 restores committed RCL8 link geometry, then permits one empty idle external reserve link
+only while canonical current/ideal role evidence retains exact active source, hub, and controller
+links plus an empty idle exact reserve replacement. Issue #318 permits one positive energy-only
+reserve target to persist a bounded creep-logistics evacuation when the exact replacement can hold
+the complete amount. Removal waits for exact target emptiness, baseline-plus-amount replacement
+energy, retired flow/endpoints, zero cooldown, unchanged reserve roles, and no accepted native link
+transfer. Productive roles, malformed stock, capacity loss, cooldown, drift, or pressure fail
+closed. Issue #320 restores committed RCL8 lab geometry and permits one active empty zero-cooldown
+external lab only while the industry-owned current view is quiescent, no logistics endpoint names
+any room lab, and the remaining nine exact labs still derive a valid cluster. Issue #322 permits
+that target to hold energy only when one bounded funded creep-logistics evacuation can deliver the
+complete amount to the canonical exact replacement; removal requires fresh
+empty/delivered/retired-work and unchanged quiescence, cluster, and safety evidence. Issue #324
+permits one zero-energy, single-kind mineral target only when the industry-owned view publishes one
+exact active owned storage with complete aggregate capacity. The sole logistics path moves the
+mineral; removal requires fresh empty/delivered/retired-work and unchanged destination, quiescence,
+cluster, and safety evidence. Issue #326 admits both resources in one bounded record, atomically
+publishes distinct energy/replacement-lab and mineral/storage flows, and requires both exact
+destination gains plus complete work retirement before removal. Issue #330 permits one active
+reaction commitment to rebind onto a role-identical nine-committed-lab assignment before the unused
+external lab is removed. The prior Industry owner must already contain that fingerprint. A uniquely
+reconstructible durable rebound enters a non-staging, non-executable blocked view during temporary
+source-layout evidence loss or retained-lab staging, and layout planning pins that source record or
+degrades. Issue #333 permits the initial target to contain one exact energy-only amount, then reuses
+the V13 funded lab-energy evacuation during the durable ready handoff. Issue #335 permits one
+zero-energy, single-kind-mineral target and reuses the V13 mineral evacuation to the exact
+Industry-published active storage. Issue #337 permits one target containing both exact forms and
+atomically reuses both V13 flows after the same durable handoff. Issue #341 permits one explicit
+funded boost commitment to use the same role identical handoff while preserving its creep, compound,
+body target, deadline, and settled part terms. The first rebound emits no staging or lab intent;
+prior Industry owner plus current intent or pending attempt evidence makes it executable. The
+current boost intent and any pending lab attempt block removal. Removal also waits for every
 applicable exact destination gain and retired flow/endpoints. Source assignment attempts settle
 before rebound; pending retained assignment attempts, unresolved explicit boost work, role drift,
 malformed stock, cooldown, logistics drift, or unsafe colony evidence preserve the target. Issue
@@ -808,10 +812,14 @@ Lab source/replacement endpoint suppression and applicable terminal-send suppres
 optional denial. Extension and spawn replacement refill remain suppressed while source energy
 remains; malformed spawn evidence suppresses both endpoints. During an unexpired tower or
 reserve-link attempt, both source and replacement refill remain suppressed so in-flight delivery
-cannot compete. Spawn, link, or tower expiry restores ordinary service but preserves removal- and
-handoff-blocking evidence. Existing stale leases additionally require the current safe policy, exact
-projected flow, active budget reservation, and, for spawn work, current broker exclusion before
-execution; link work also requires current role, Store, cooldown, and native-exclusion evidence.
+cannot compete. For a tower, source depletion may leave the exact acquired cargo in one durable V3
+deliver lease: issue #457 permits that lease through endpoint suppression only while the exact flow
+remains present in the merged Logistics graph and its layout budget is active. Current Logistics
+admission still caps acquisition, so zero or omitted admission cannot withdraw deferred stock.
+Spawn, link, or tower expiry restores ordinary service but preserves removal- and handoff-blocking
+evidence. Existing stale leases additionally require the current safe policy, exact projected flow,
+active budget reservation, and, for spawn work, current broker exclusion before execution; link work
+also requires current role, Store, cooldown, and native-exclusion evidence.
 
 `contracts.reconcile` runs only when the effective `phase1.contracts` gate is enabled and the
 current colony result can supply a bounded authorization view. A disabled or prerequisite-blocked

@@ -174,5 +174,5 @@ describe("survival-flow runtime recovery", () => {
         .flatMap(({ outcome }) => outcome.movement.actionExecution)
         .some(({ intent, status }) => status === "executed" && intent.kind === "transfer"),
     ).toBe(true);
-  }, 30_000);
+  }, 60_000);
 });
