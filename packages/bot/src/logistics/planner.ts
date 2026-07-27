@@ -23,8 +23,27 @@ export interface LogisticsPriority {
 }
 
 export interface LogisticsBudgetBinding {
-  readonly category: "industry" | "optional-growth";
+  readonly category: "harvesting-filling" | "industry" | "optional-growth";
   readonly issuer: string;
+}
+
+export interface LogisticsRouteLeg {
+  readonly originRoomName: string;
+  readonly roomNames: readonly string[];
+  readonly travelTicks: number;
+}
+
+export interface RoutedLogisticsEdge {
+  readonly acquire: LogisticsRouteLeg;
+  readonly deliver: LogisticsRouteLeg;
+  readonly predictedLossBasisPoints: number;
+  readonly productionMilliPerTick: number;
+}
+
+export interface RoutedLogisticsBodySize {
+  readonly carry: number;
+  readonly move: number;
+  readonly predictedTransitLoss: number;
 }
 
 export interface LogisticsNode {
@@ -47,6 +66,7 @@ export interface LogisticsEdge {
   readonly roundTripTicks: number;
   readonly maximumAmount?: number;
   readonly budgetBinding?: LogisticsBudgetBinding;
+  readonly routed?: RoutedLogisticsEdge;
 }
 
 export interface LogisticsPlanningInput {
@@ -58,6 +78,7 @@ export interface LogisticsPlanningInput {
 }
 
 export type LogisticsBlockerReason =
+  | "capacity-limit"
   | "duplicate-id"
   | "edge-cap"
   | "empty-source"
@@ -87,6 +108,9 @@ export interface LogisticsProjection {
   readonly roundTripTicks: number;
   readonly blocker: LogisticsBlockerReason | null;
   readonly budgetBinding?: LogisticsBudgetBinding;
+  readonly recommendedCarry?: number;
+  readonly recommendedMove?: number;
+  readonly routed?: RoutedLogisticsEdge;
 }
 
 export interface LogisticsReservation {
@@ -149,29 +173,46 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
 
   candidates.sort(compareCandidates);
   let admittedFlows = 0;
-  const admittedByColony = new Map<string, { amount: number; carryLoad: number }>();
+  const admittedByColony = new Map<
+    string,
+    { amount: number; carryLoad: number; minimumCarry: number }
+  >();
   for (const candidate of candidates) {
     const { edge, source, sink } = candidate;
     const available = sourceRemaining.get(source.id) ?? 0;
     const sinkKey = capacityKey(sink);
     const capacity = sinkRemaining.get(sinkKey) ?? 0;
+    const routedBody = edge.routed === undefined ? null : sizeRoutedLogisticsEdge(edge);
     let blocker: LogisticsBlockerReason | null = null;
-    if (available === 0) blocker = "empty-source";
+    if (edge.routed !== undefined && routedBody === null) blocker = "capacity-limit";
+    else if (available === 0) blocker = "empty-source";
     else if (capacity === 0) blocker = "full-sink";
     else if (admittedFlows >= MAX_ADMITTED_LOGISTICS_FLOWS) blocker = "flow-cap";
     const admittedAmount =
       blocker === null
-        ? Math.min(available, capacity, edge.maximumAmount ?? Number.MAX_SAFE_INTEGER)
+        ? Math.min(
+            available,
+            capacity,
+            edge.maximumAmount ?? Number.MAX_SAFE_INTEGER,
+            routedBody === null ? Number.MAX_SAFE_INTEGER : routedBody.carry * 50,
+          )
         : 0;
     if (admittedAmount > 0) {
       admittedFlows += 1;
       sourceRemaining.set(source.id, available - admittedAmount);
       sinkRemaining.set(sinkKey, capacity - admittedAmount);
-      const colony = admittedByColony.get(source.colonyId) ?? { amount: 0, carryLoad: 0 };
+      const colony = admittedByColony.get(source.colonyId) ?? {
+        amount: 0,
+        carryLoad: 0,
+        minimumCarry: 0,
+      };
       colony.amount += admittedAmount;
       colony.carryLoad +=
-        (admittedAmount * Math.min(edge.roundTripTicks, input.planningHorizon)) /
-        input.planningHorizon;
+        routedBody === null
+          ? (admittedAmount * Math.min(edge.roundTripTicks, input.planningHorizon)) /
+            input.planningHorizon
+          : routedBody.carry * 50;
+      colony.minimumCarry += routedBody?.carry ?? 0;
       admittedByColony.set(source.colonyId, colony);
     } else {
       blocker ??= edge.maximumAmount === 0 ? "invalid-edge" : "empty-source";
@@ -187,6 +228,10 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
       roundTripTicks: edge.roundTripTicks,
       blocker,
       ...(edge.budgetBinding === undefined ? {} : { budgetBinding: edge.budgetBinding }),
+      ...(routedBody === null
+        ? {}
+        : { recommendedCarry: routedBody.carry, recommendedMove: routedBody.move }),
+      ...(edge.routed === undefined ? {} : { routed: edge.routed }),
     });
   }
 
@@ -216,8 +261,7 @@ export function planLogistics(input: LogisticsPlanningInput): LogisticsPlan {
       const usefulCarry = Math.ceil(flow.amount / 50);
       const carry = Math.min(
         MAX_LOGISTICS_BODY_PARTS / 2,
-        usefulCarry,
-        Math.ceil(flow.carryLoad / 50),
+        Math.max(flow.minimumCarry, Math.min(usefulCarry, Math.ceil(flow.carryLoad / 50))),
       );
       return { colonyId, carry, move: carry, admittedAmount: flow.amount };
     })
@@ -283,6 +327,8 @@ function edgeBlocker(
     return "stale-node";
   if (source.kind === "sink" || sink.kind === "source") return "invalid-edge";
   if (source.colonyId !== sink.colonyId) return "wrong-colony";
+  if (edge.routed !== undefined && !routedEndpointsMatch(edge.routed, source, sink))
+    return "invalid-edge";
   if (source.resourceType !== sink.resourceType) return "resource-mismatch";
   if (source.observedAmount === 0) return "empty-source";
   if (sink.freeCapacity === 0) return "full-sink";
@@ -323,7 +369,59 @@ function validEdge(edge: LogisticsEdge): boolean {
     edge.sinkNodeId.length > 0 &&
     edge.sourceNodeId !== edge.sinkNodeId &&
     positiveInteger(edge.roundTripTicks) &&
-    (edge.maximumAmount === undefined || positiveInteger(edge.maximumAmount))
+    (edge.maximumAmount === undefined || positiveInteger(edge.maximumAmount)) &&
+    (edge.routed === undefined || validRoutedEdge(edge.routed, edge.roundTripTicks))
+  );
+}
+
+export function sizeRoutedLogisticsEdge(
+  edge: Pick<LogisticsEdge, "roundTripTicks" | "routed">,
+): RoutedLogisticsBodySize | null {
+  const routed = edge.routed;
+  if (routed === undefined || !validRoutedEdge(routed, edge.roundTripTicks)) return null;
+  const denominator = 1_000 * (10_000 - routed.predictedLossBasisPoints);
+  const numerator = routed.productionMilliPerTick * edge.roundTripTicks * 10_000;
+  if (!Number.isSafeInteger(numerator) || numerator <= 0 || denominator <= 0) return null;
+  const grossAmount = Math.ceil(numerator / denominator);
+  const expectedAmount = Math.ceil((routed.productionMilliPerTick * edge.roundTripTicks) / 1_000);
+  const carry = Math.ceil(grossAmount / 50);
+  if (!positiveInteger(carry) || carry > MAX_LOGISTICS_BODY_PARTS / 2) return null;
+  return { carry, move: carry, predictedTransitLoss: Math.max(0, grossAmount - expectedAmount) };
+}
+
+function validRoutedEdge(routed: RoutedLogisticsEdge, roundTripTicks: number): boolean {
+  return (
+    validRouteLeg(routed.acquire) &&
+    validRouteLeg(routed.deliver) &&
+    routed.acquire.travelTicks + routed.deliver.travelTicks === roundTripTicks &&
+    positiveInteger(routed.productionMilliPerTick) &&
+    nonnegativeInteger(routed.predictedLossBasisPoints) &&
+    routed.predictedLossBasisPoints < 10_000
+  );
+}
+
+function validRouteLeg(route: LogisticsRouteLeg): boolean {
+  return (
+    route.originRoomName.length > 0 &&
+    route.roomNames.length > 0 &&
+    route.roomNames.length <= 16 &&
+    route.roomNames.every((room) => room.length > 0) &&
+    new Set(route.roomNames).size === route.roomNames.length &&
+    !route.roomNames.includes(route.originRoomName) &&
+    positiveInteger(route.travelTicks)
+  );
+}
+
+function routedEndpointsMatch(
+  routed: RoutedLogisticsEdge,
+  source: LogisticsNode,
+  sink: LogisticsNode,
+): boolean {
+  return (
+    routed.acquire.originRoomName === sink.position.roomName &&
+    routed.acquire.roomNames[routed.acquire.roomNames.length - 1] === source.position.roomName &&
+    routed.deliver.originRoomName === source.position.roomName &&
+    routed.deliver.roomNames[routed.deliver.roomNames.length - 1] === sink.position.roomName
   );
 }
 

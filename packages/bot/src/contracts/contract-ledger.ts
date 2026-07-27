@@ -253,6 +253,7 @@ export class ContractLedger {
           {
             budgetBinding: { ...record.budgetBinding },
             contractId: record.id,
+            earliestStart: record.earliestStart,
             execution: { ...record.execution },
             issuer: record.issuer,
             issuerSequence: record.issuerSequence,
@@ -284,7 +285,7 @@ export class ContractLedger {
       )
       .flatMap((record): NormalizedPopulationLoad[] => {
         const execution = record.execution;
-        if (execution?.version === 3) {
+        if (execution?.version === 3 || execution?.version === 6) {
           return [
             {
               backlogWorkTicks: 0,

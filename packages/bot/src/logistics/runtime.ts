@@ -1,5 +1,9 @@
 import type { BudgetCategory, BudgetRequest } from "../colony";
-import type { ContractExecutionView, ContractPlanningView } from "../contracts";
+import type {
+  ContractExecutionTerms,
+  ContractExecutionView,
+  ContractPlanningView,
+} from "../contracts";
 import type { WorldSnapshot } from "../world/snapshot";
 import {
   projectLogisticsContracts,
@@ -230,7 +234,7 @@ export function planLogisticsRuntime(input: {
   const previous = previousCommitments(input, graph, plan, observed);
   const progress = flowProgress(input, previous);
   const contracts = projectLogisticsContracts({
-    endpoints: graph.endpoints,
+    endpoints: continuationEndpoints(graph.endpoints, previous, input.snapshot, input.tick),
     nodes: graph.nodes,
     plan,
     previous,
@@ -242,11 +246,15 @@ export function planLogisticsRuntime(input: {
     const { request, priorityClass } = commitment;
     const persisted = input.planning.contracts.find(
       ({ execution }) =>
-        execution.version === 3 &&
+        isLogisticsExecution(execution) &&
         execution.flowId === commitment.flowId &&
         execution.stage === commitment.stage,
     );
-    if (request?.execution?.version !== 3 && persisted === undefined) return [];
+    if (
+      (request?.execution === undefined || !isLogisticsExecution(request.execution)) &&
+      persisted === undefined
+    )
+      return [];
     const budgetBinding = request?.budgetBinding ?? persisted?.budgetBinding;
     const colonyId = request?.owner.id ?? persisted?.owner.id;
     if (budgetBinding === undefined || colonyId === undefined) return [];
@@ -366,7 +374,7 @@ export function logisticsAcquireAdmissionLimits(
   const limits = new Map<string, number>();
   if (execution.status !== "ready") return limits;
   for (const { execution: terms } of execution.leases) {
-    if (terms.version === 3 && terms.stage === "acquire") limits.set(terms.flowId, 0);
+    if (isLogisticsExecution(terms) && terms.stage === "acquire") limits.set(terms.flowId, 0);
   }
   for (const { admittedAmount, id } of projection.plan.projections) {
     if (!limits.has(id)) continue;
@@ -389,7 +397,7 @@ export function executableLogisticsView(
   return freeze({
     leases: execution.leases.flatMap((lease) => {
       const terms = lease.execution;
-      if (terms.version !== 3) return [lease];
+      if (!isLogisticsExecution(terms)) return [lease];
       if (blockedFlowIds.has(terms.flowId)) return [];
       if (terms.stage !== "acquire") return [lease];
       const maximum = maximumAcquireAmounts.get(terms.flowId);
@@ -465,26 +473,89 @@ function previousCommitments(
   const observedNodes = uniqueById(observed.nodes);
   const leases = new Map(
     input.execution.leases
-      .filter(({ execution }) => execution.version === 3)
-      .map((lease) => [lease.execution.version === 3 ? lease.execution.flowId : "", lease]),
+      .filter(({ execution }) => isLogisticsExecution(execution))
+      .map((lease) => [isLogisticsExecution(lease.execution) ? lease.execution.flowId : "", lease]),
   );
   return input.planning.contracts.flatMap((contract): readonly LogisticsCommitmentState[] => {
-    if (contract.execution.version !== 3 || !contract.issuer.startsWith("logistics/")) return [];
     const execution = contract.execution;
+    if (!isLogisticsExecution(execution) || !contract.issuer.startsWith("logistics/")) return [];
+    const routedFlow: LogisticsProjection | undefined =
+      execution.version === 6
+        ? {
+            admittedAmount: execution.reservedAmount,
+            blocker: null,
+            colonyId: contract.owner.id,
+            id: execution.flowId,
+            recommendedCarry: execution.recommendedCarry,
+            recommendedMove: execution.recommendedMove,
+            resourceType: execution.resourceType,
+            roundTripTicks: execution.acquireRouteTravelTicks + execution.deliverRouteTravelTicks,
+            routed: {
+              acquire: {
+                originRoomName: execution.acquireOriginRoomName,
+                roomNames: execution.acquireRouteRoomNames,
+                travelTicks: execution.acquireRouteTravelTicks,
+              },
+              deliver: {
+                originRoomName: execution.deliverOriginRoomName,
+                roomNames: execution.deliverRouteRoomNames,
+                travelTicks: execution.deliverRouteTravelTicks,
+              },
+              predictedLossBasisPoints: 0,
+              productionMilliPerTick: 1,
+            },
+            sinkNodeId: execution.sinkNodeId,
+            sourceNodeId: execution.sourceNodeId,
+          }
+        : undefined;
     const flow =
       projections.get(execution.flowId) ??
+      routedFlow ??
       observedFlowProjection(execution.flowId, observedEdges, observedNodes);
     if (flow === undefined || flow.colonyId === null || flow.resourceType === null) return [];
     const lease = leases.get(execution.flowId);
     const cargo =
       lease === undefined ? 0 : actorCargo(input, lease.actorId, execution.resourceType);
+    const routedState =
+      execution.version === 6
+        ? {
+            routed: {
+              acquire: {
+                originRoomName: execution.acquireOriginRoomName,
+                roomNames: execution.acquireRouteRoomNames,
+                travelTicks: execution.acquireRouteTravelTicks,
+              },
+              deliver: {
+                originRoomName: execution.deliverOriginRoomName,
+                roomNames: execution.deliverRouteRoomNames,
+                travelTicks: execution.deliverRouteTravelTicks,
+              },
+              predictedLossBasisPoints: 0,
+              productionMilliPerTick: 1,
+            },
+            sinkBaselineAmount: execution.sinkBaselineAmount,
+            sinkPosition: execution.sinkPosition,
+            sinkTargetId: execution.sinkTargetId,
+            sourcePosition: execution.sourcePosition,
+            sourceTargetId: execution.sourceTargetId,
+          }
+        : {};
     return [
       {
         colonyId: flow.colonyId,
-        cycle: 0,
-        cycleAmount: execution.stage === "deliver" ? Math.max(1, cargo) : execution.reservedAmount,
+        cycle: Math.floor((contract.issuerSequence ?? 0) / 2),
+        cycleAmount:
+          execution.version === 6
+            ? execution.reservedAmount
+            : execution.stage === "deliver"
+              ? Math.max(1, cargo)
+              : execution.reservedAmount,
         deliveredAmount:
-          execution.stage === "deliver" ? Math.max(0, execution.reservedAmount - cargo) : 0,
+          execution.version === 6
+            ? 0
+            : execution.stage === "deliver"
+              ? Math.max(0, execution.reservedAmount - cargo)
+              : 0,
         flowId: execution.flowId,
         priorityClass:
           graph.nodes.find(({ id }) => id === flow.sinkNodeId)?.priority.class ?? "normal",
@@ -496,8 +567,10 @@ function previousCommitments(
         sinkNodeId: flow.sinkNodeId,
         sourceNodeId: flow.sourceNodeId,
         stage: execution.stage,
-        stageStartedAt: input.tick,
+        stageStartedAt: contract.earliestStart ?? input.tick,
+        ...routedState,
         ...(contract.budgetBinding.category === "industry" ||
+        (execution.version === 6 && contract.budgetBinding.category === "harvesting-filling") ||
         (contract.budgetBinding.category === "optional-growth" &&
           contract.budgetBinding.issuer.startsWith("layout-migration/"))
           ? {
@@ -608,14 +681,14 @@ function flowProgress(
     const activeStage = input.planning.contracts.some(
       ({ execution, state: contractState }) =>
         contractState === "active" &&
-        execution.version === 3 &&
+        isLogisticsExecution(execution) &&
         execution.flowId === state.flowId &&
         execution.stage === state.stage,
     );
     const lease = activeStage
       ? input.execution.leases.find(
           ({ execution }) =>
-            execution.version === 3 &&
+            isLogisticsExecution(execution) &&
             execution.flowId === state.flowId &&
             execution.stage === state.stage,
         )
@@ -635,12 +708,103 @@ function flowProgress(
               : "alive",
       cargoAmount,
       deliveredAmount:
-        state.stage === "deliver"
-          ? Math.max(state.deliveredAmount, state.reservedAmount - cargoAmount)
-          : state.deliveredAmount,
+        state.routed !== undefined
+          ? state.stage === "deliver" && actor !== undefined
+            ? Math.max(
+                state.deliveredAmount,
+                observedStateSinkDelivery(input.snapshot, state, cargoAmount),
+              )
+            : state.deliveredAmount
+          : state.stage === "deliver"
+            ? Math.max(state.deliveredAmount, state.reservedAmount - cargoAmount)
+            : state.deliveredAmount,
       flowId: state.flowId,
     };
   });
+}
+
+function continuationEndpoints(
+  endpoints: readonly LogisticsContractEndpoint[],
+  previous: readonly LogisticsCommitmentState[],
+  snapshot: WorldSnapshot,
+  tick: number,
+): readonly LogisticsContractEndpoint[] {
+  const byNode = new Map(endpoints.map((item) => [item.nodeId, item]));
+  for (const state of previous) {
+    if (
+      state.routed === undefined ||
+      state.sinkTargetId === undefined ||
+      state.sinkPosition === undefined ||
+      byNode.has(state.sinkNodeId)
+    )
+      continue;
+    const observed = observedStoredTarget(snapshot, state.sinkTargetId, state.sinkPosition);
+    if (observed === null || observed.observedAt !== tick) continue;
+    byNode.set(state.sinkNodeId, {
+      freeCapacity: observed.freeCapacity,
+      nodeId: state.sinkNodeId,
+      observedAmount: observed.amount,
+      observedAt: observed.observedAt,
+      position: state.sinkPosition,
+      resourceType: state.resourceType,
+      targetId: state.sinkTargetId,
+    });
+  }
+  return freeze([...byNode.values()].sort((a, b) => a.nodeId.localeCompare(b.nodeId)));
+}
+function observedStateSinkDelivery(
+  snapshot: WorldSnapshot,
+  state: LogisticsCommitmentState,
+  cargoAmount: number,
+): number {
+  if (
+    state.sinkTargetId === undefined ||
+    state.sinkPosition === undefined ||
+    state.sinkBaselineAmount === undefined
+  )
+    return 0;
+  const observed = observedStoredTarget(snapshot, state.sinkTargetId, state.sinkPosition);
+  return observed === null
+    ? 0
+    : Math.min(
+        state.reservedAmount,
+        Math.max(0, state.reservedAmount - cargoAmount),
+        Math.max(0, observed.amount - state.sinkBaselineAmount),
+      );
+}
+function observedStoredTarget(
+  snapshot: WorldSnapshot,
+  targetId: string,
+  position: LogisticsNode["position"],
+): { readonly amount: number; readonly freeCapacity: number; readonly observedAt: number } | null {
+  const room = snapshot.rooms.find(({ name }) => name === position.roomName);
+  const target = room?.storedStructures.find(
+    ({ id, ownership, pos, structureType }) =>
+      id === targetId &&
+      ownership === "owned" &&
+      (structureType === "storage" || structureType === "terminal") &&
+      pos.roomName === position.roomName &&
+      pos.x === position.x &&
+      pos.y === position.y,
+  );
+  if (
+    room === undefined ||
+    room.controller?.ownership !== "owned" ||
+    target === undefined ||
+    target.store.freeCapacity === null
+  )
+    return null;
+  return {
+    amount:
+      target.store.resources.find(({ resourceType }) => resourceType === "energy")?.amount ?? 0,
+    freeCapacity: target.store.freeCapacity,
+    observedAt: room.observedAt,
+  };
+}
+function isLogisticsExecution(
+  execution: ContractExecutionTerms,
+): execution is Extract<ContractExecutionTerms, { readonly version: 3 | 6 }> {
+  return execution.version === 3 || execution.version === 6;
 }
 
 function actorCargo(

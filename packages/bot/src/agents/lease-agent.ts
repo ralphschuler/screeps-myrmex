@@ -555,7 +555,7 @@ function actionAmount(
   actor: CreepSnapshot,
   target: TargetView,
 ): number | null {
-  if (lease.execution.version !== 3) {
+  if (lease.execution.version !== 3 && lease.execution.version !== 6) {
     return lease.execution.action === "transfer" && lease.execution.completion === "continuous"
       ? null
       : lease.quantity;
@@ -636,8 +636,9 @@ function dynamicMovementBlockers(
 }
 
 function crossRoomRouteIndex(lease: LeasedWorkExecution, roomName: string): number {
-  if (!isCrossRoomExecution(lease.execution)) return -1;
-  return [lease.execution.originRoomName, ...lease.execution.routeRoomNames].indexOf(roomName);
+  const route = executionRoute(lease.execution);
+  if (route === null) return -1;
+  return [route.originRoomName, ...route.routeRoomNames].indexOf(roomName);
 }
 
 function crossRoomStep(
@@ -649,8 +650,9 @@ function crossRoomStep(
   readonly direction: DirectionConstant;
   readonly exit: PositionSnapshot;
 } | null {
-  if (!isCrossRoomExecution(lease.execution)) return null;
-  const route = [lease.execution.originRoomName, ...lease.execution.routeRoomNames];
+  const execution = executionRoute(lease.execution);
+  if (execution === null) return null;
+  const route = [execution.originRoomName, ...execution.routeRoomNames];
   const index = route.indexOf(origin.roomName);
   const nextRoom = index < 0 ? undefined : route[index + 1];
   if (nextRoom === undefined) return null;
@@ -719,10 +721,32 @@ function crossingDestination(
   return null;
 }
 
-function isCrossRoomExecution(
-  execution: ContractExecutionTerms,
-): execution is Extract<ContractExecutionTerms, { readonly version: 4 | 5 }> {
-  return execution.version === 4 || execution.version === 5;
+function isCrossRoomExecution(execution: ContractExecutionTerms): boolean {
+  return executionRoute(execution) !== null;
+}
+function executionRoute(execution: ContractExecutionTerms): {
+  readonly originRoomName: string;
+  readonly routeRoomNames: readonly string[];
+  readonly routeTravelTicks: number;
+} | null {
+  if (execution.version === 4 || execution.version === 5)
+    return {
+      originRoomName: execution.originRoomName,
+      routeRoomNames: execution.routeRoomNames,
+      routeTravelTicks: execution.routeTravelTicks,
+    };
+  if (execution.version !== 6) return null;
+  return execution.stage === "acquire"
+    ? {
+        originRoomName: execution.acquireOriginRoomName,
+        routeRoomNames: execution.acquireRouteRoomNames,
+        routeTravelTicks: execution.acquireRouteTravelTicks,
+      }
+    : {
+        originRoomName: execution.deliverOriginRoomName,
+        routeRoomNames: execution.deliverRouteRoomNames,
+        routeTravelTicks: execution.deliverRouteTravelTicks,
+      };
 }
 
 function isStaticMiningExecution(
