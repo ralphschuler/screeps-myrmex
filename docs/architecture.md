@@ -16,11 +16,11 @@ implemented. Phase 1 also implements validated runtime configuration, fail-close
 relations, the owned-room survival lifecycle, the local budget ledger, the persistent contract
 ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration, narrow spawn
 command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
-substrate, bounded room-intelligence retention and freshness queries, and one data-only
-vision-demand boundary; route costing and remote-portfolio consumers remain unavailable. Systems
-assigned to later roadmap gates remain normative targets. Their absence is an implementation task,
-not permission to invent a different boundary. If a requirement cannot fit this architecture, write
-an ADR before changing the architecture.
+substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
+boundary, and deterministic threat-aware room-route cost/travel estimates; remote-portfolio
+consumers remain unavailable. Systems assigned to later roadmap gates remain normative targets.
+Their absence is an implementation task, not permission to invent a different boundary. If a
+requirement cannot fit this architecture, write an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -340,6 +340,15 @@ authorized observer request or a separately BudgetLedger-authorized data-only sc
 no root Memory, game command, threat decision, remote selection, or budget. Over-cap, malformed,
 inactive, missing, corrupt, cross-shard, future-tick, or CPU-skipped evidence fails closed.
 [ADR 0080](adr/0080-segment-backed-room-intelligence.md) records the payload and vision boundary.
+
+`RoutePlanner` is the sole room-route selection, cost, and body-dependent travel-estimate authority.
+A bounded world adapter observes caller-selected current map exits/status; IntelService supplies
+freshness-qualified terrain; diplomacy and threat owners supply only their detached relation and
+risk projections. The planner performs one deterministic bounded graph search, emits immutable
+ready/stale/unsafe/no-route/deferred results, and owns the sole `world.route-plan.v1`
+reconstructible heap cache. Every cache hit revalidates current route-chain evidence. It creates no
+budget, reservation, persistent owner, route target, tile path, contract, intent, or command.
+[ADR 0081](adr/0081-threat-aware-route-planner.md) records this boundary.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1211,6 +1220,32 @@ only until later existing contract/spawn/movement authorities consume it. Insuff
 authorization defers or rejects rather than silently using stale data. Exact caps and reset/eviction
 evidence are recorded in [`phase3-intel-evidence.md`](phase3-intel-evidence.md).
 
+### 9.3 RoutePlanner
+
+`RoutePlanner` admits at most eight valid requests per tick and consumes at most 64 detached room
+rows per request. Current map observation supplies up to four canonical cardinal exits plus
+`normal`, `closed`, `novice`, or `respawn` status. IntelService supplies
+current/fresh/stale/expired/unknown quality and terrain; diplomacy/threat authorities supply one
+identity-free relation and bounded risk score. Routing never reclassifies a player or interprets an
+engine hostile collection as policy.
+
+Search ranks fresh safe paths before fresh over-risk and stale/partial paths, then uses policy cost,
+hop count, and full lexical route as tie-breakers. Closed rooms always block. Protected rooms
+require explicit source policy. A ready route has at most 16 entered rooms, consumes at most 64
+expanded states, a 50,000-tick deadline horizon, and 250 milli-CPU of caller admission for a cold
+search, and fits at most 8,192 code units. The route estimates a fixed 50 terrain-sampled crossing
+steps per entered room using unboosted movement fatigue and explicit outbound/return load. It
+reports conservative ticks, capacity throughput, and road body-part-step exposure; exact tile paths
+remain MovementArbiter's domain.
+
+The sole `world.route-plan.v1` cache retains at most 64 reconstructible plans for 25 ticks and keys
+validity to topology, intel, diplomacy, threat, and policy revisions. A hit revalidates the complete
+route chain, fresh-safe evidence, cost, risk, and travel estimate. Missing heap, stale evidence,
+status change, risk breach, malformed input, or budget denial produces a typed non-ready result and
+no durable state. Because issue #57 does not yet produce candidates, routing is a request-driven
+service rather than an idle scheduled system. Exact contracts and evidence are recorded in
+[`phase3-routes-evidence.md`](phase3-routes-evidence.md).
+
 ## 10. Strategy and Objective Hierarchy
 
 Decisions flow down a strict hierarchy:
@@ -1511,6 +1546,7 @@ The following table is the canonical ownership map.
 | `BudgetLedger`             | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend          |
 | `ContractLedger`           | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands          |
 | `IntelService`             | historical room facts and freshness            | snapshot, typed segment store, demands    | room/route views, vision requests        | select remotes/routes or issue commands |
+| `RoutePlanner`             | room-route choice, cost, travel estimate       | map, intel, relation/threat projections   | immutable route plans and reasons        | select remotes or issue commands        |
 | `EconomyPlanner`           | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps                  |
 | `SpawnBroker`              | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger     |
 | `SpawnExecutor`            | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy       |
@@ -2971,6 +3007,10 @@ Required architecture assertions include:
 - raw `segments` owner reads occur only in runtime composition and writes only in `SegmentManager`;
 - `IntelService` registers only the typed `world.room-intel.v1` store, stores no root-Memory owner,
   computes no route/remote choice, and emits no game command;
+- `RoutePlanner` has one canonical declaration, observes no live world object, owns only the bounded
+  `world.route-plan.v1` heap cache, and emits no remote choice, reservation, intent, or command;
+- route selection is deterministic across evidence reorder and heap reset; closed/protected,
+  stale/partial, unsafe, over-budget, and disconnected evidence stays typed and fail-closed;
 - current observation outranks IntelService history; every room/route read has explicit age and
   expiry, and malformed, partial, unavailable, corrupt, cross-shard, future, or over-cap evidence
   remains typed and fail-closed;
@@ -3249,7 +3289,7 @@ roadmap gate.
 | Phase 0       | kernel, scheduler contract, state schema/migrations, snapshot, telemetry, scenario DSL     |
 | Phase 1       | config/relations, survival lifecycle/ledger, contracts, workforce, spawn, economy, defense |
 | Phase 2       | complete-colony layouts, structures, stock policy, industry, and RCL8 optimization         |
-| Phase 3       | typed SegmentManager, segment intel, scouting, route costing, remote portfolio             |
+| Phase 3       | typed SegmentManager, segment intel, threat-aware route costing, remote portfolio          |
 | Phase 4       | empire graph, expansion portfolio, bootstrap operations                                    |
 | Phase 5       | diplomacy evidence, full threat model, reinforcements, boosts, hard-target defense         |
 | Phase 6       | market, MMO deployment/canary policy, richer operational telemetry                         |

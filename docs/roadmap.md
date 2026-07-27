@@ -174,7 +174,13 @@ and MMO deployment remain gated by their own evidence.
   [issue #55](https://github.com/ralphschuler/screeps-myrmex/issues/55) and
   [`phase3-intel-evidence.md`](phase3-intel-evidence.md). Current vision, verified history,
   previous-tick events, observer requests, and budget-authorized data-only scout requests share one
-  bounded interface; route costing and remote selection remain unavailable.
+  bounded interface; remote selection remains unavailable.
+- Deterministic threat-aware room routes, reconstructible cache invalidation, and body-dependent
+  travel/cost estimates are tracked by
+  [issue #56](https://github.com/ralphschuler/screeps-myrmex/issues/56) and
+  [`phase3-routes-evidence.md`](phase3-routes-evidence.md). The immutable source policy creates no
+  gameplay gate. The authority emits data only; remote admission and cross-room movement execution
+  remain unavailable.
 - Remote discovery, reservation, mining, hauling, suspension, evacuation, and resumption.
 - Full-cost profitability and threat-adjusted routing.
 
