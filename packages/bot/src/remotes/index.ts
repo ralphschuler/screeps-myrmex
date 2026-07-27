@@ -34,3 +34,17 @@ export {
 } from "./persistence";
 export { DEFAULT_REMOTE_PORTFOLIO_POLICY_V1 } from "./policy";
 export { RemotePortfolio } from "./portfolio";
+export {
+  REMOTE_RESERVATION_LIMITS,
+  type RemoteReservationBudgetEntry,
+  type RemoteReservationDisposition,
+  type RemoteReservationMetrics,
+  type RemoteReservationObjectiveEvidence,
+  type RemoteReservationPlan,
+  type RemoteReservationPlanInput,
+  type RemoteReservationPlanStatus,
+  type RemoteReservationPolicyV1,
+  type RemoteReservationReason,
+} from "./reservation-contracts";
+export { DEFAULT_REMOTE_RESERVATION_POLICY_V1 } from "./reservation-policy";
+export { RemoteReservationPlanner } from "./reservation";

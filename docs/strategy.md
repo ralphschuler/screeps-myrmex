@@ -498,6 +498,19 @@ probes before resumption; fresh source disappearance or expiry retires terminall
 abstract objectives, not claims of reservation, mining, hauling, evacuation, commands, or realized
 profit; issues #58–#62 retain those outcomes.
 
+One active profitable objective may now request remote controller reservation. Current/fresh
+complete intel, a ready zero-risk route, healthy donor, and mechanically neutral or authoritatively
+self-reserved controller are mandatory. The donor's existing survival-preempted ledger must then
+fund the complete 1,300-energy/two-`CLAIM`/two-`MOVE` contract; the portfolio's 12-spawn-tick
+commitment and SpawnBroker's exact slot arbitration remain separate required gates. Work starts only
+when remaining reservation is inside route plus spawn plus 25 safety ticks and stops at 450 observed
+ticks. The assigned reserver may spend one primary-action tick on the bounded source sign, then
+reserves while active. Missing vision, route loss, foreign or policy-protected reservation, threat,
+donor pressure, budget loss, controller ownership change, timeout, or three command failures
+suspends or terminates without a second role, queue, route cache, or command path. Current-room
+local paths and exact cardinal border intents consume the room route; they do not create a
+persistent cross-room tile path.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

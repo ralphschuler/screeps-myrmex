@@ -115,6 +115,7 @@ No predecessor-bot or public-bot implementation was consulted.
 - Same-tick replay or heap reset: no duplicate transition or reservation.
 
 Rollback removes `packages/bot/src/remotes`, its tests, ADR, evidence, and documentation references.
-The production runtime has not staged a remote objective, so no controller reservation, creep,
-contract, command, or Memory migration requires cleanup. Issues #58–#63 remain blocked until an
-accepted portfolio authority exists.
+The production runtime has not staged a remote objective, so rollback first requires cancelling any
+issue #58 reservation contracts supplied by an external request-driven composition; no controller
+reservation owner or remotes migration requires cleanup. Removing this authority would invalidate
+issue #58 and block #59–#63.

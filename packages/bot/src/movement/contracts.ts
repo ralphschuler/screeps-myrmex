@@ -16,6 +16,8 @@ export interface MovementIntent {
   readonly id: string;
   readonly priority: number;
   readonly range: number;
+  /** True only for an authorized exact cardinal room-border step. */
+  readonly roomTransition?: boolean;
   readonly stuckAge: number;
 }
 
@@ -39,7 +41,15 @@ export interface MovementExecutionResult {
 }
 
 export type CreepActionKind =
-  "build" | "harvest" | "pickup" | "repair" | "transfer" | "upgrade-controller" | "withdraw";
+  | "build"
+  | "harvest"
+  | "pickup"
+  | "repair"
+  | "reserve-controller"
+  | "sign-controller"
+  | "transfer"
+  | "upgrade-controller"
+  | "withdraw";
 
 export interface CreepActionIntent {
   readonly actorId: string;
@@ -53,6 +63,8 @@ export interface CreepActionIntent {
   readonly priority: number;
   readonly resourceType: ResourceConstant | null;
   readonly targetId: string;
+  /** Present only for a bounded controller-sign intent. */
+  readonly text?: string;
 }
 
 export interface CreepActionDecision {

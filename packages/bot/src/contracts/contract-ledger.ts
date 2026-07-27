@@ -259,6 +259,9 @@ export class ContractLedger {
             owner: { ...record.owner },
             requestSignature: record.requestSignature,
             repairRetry: repairRetryEvidence(record),
+            ...(record.execution.action === "reserve-controller"
+              ? { reservationRetry: reservationRetryEvidence(record) }
+              : {}),
             state: record.state,
             targetId: record.targetId,
           },
@@ -884,12 +887,26 @@ function repairRetryEvidence(
   record: WorkContractRecord,
 ): { readonly attempts: number; readonly eligibleAt: number } | null {
   if (record.execution?.action !== "repair" || record.state !== "suspended") return null;
-  const failures = record.history.filter(({ reason }) =>
-    ["agent-adapter-fault", "agent-unexpected-game-rejection"].includes(reason),
-  );
+  return commandRetryEvidence(record);
+}
+
+function reservationRetryEvidence(
+  record: WorkContractRecord,
+): { readonly attempts: number; readonly eligibleAt: number } | null {
+  if (record.execution?.action !== "reserve-controller" || record.state !== "suspended")
+    return null;
+  return commandRetryEvidence(record);
+}
+
+function commandRetryEvidence(
+  record: WorkContractRecord,
+): { readonly attempts: number; readonly eligibleAt: number } | null {
+  const reasons = ["agent-adapter-fault", "agent-out-of-range", "agent-unexpected-game-rejection"];
+  const latestEvent = record.history[record.history.length - 1];
+  if (latestEvent === undefined || !reasons.includes(latestEvent.reason)) return null;
+  const failures = record.history.filter(({ reason }) => reasons.includes(reason));
   const latest = failures[failures.length - 1];
-  if (latest === undefined) return null;
-  return { attempts: failures.length, eligibleAt: latest.tick };
+  return latest === undefined ? null : { attempts: failures.length, eligibleAt: latest.tick };
 }
 
 function normalizeFundingView(value: ContractFundingView): ContractFundingView {

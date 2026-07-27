@@ -130,6 +130,30 @@ describe("runtime local-path travel estimates", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("consumes only v4 RoutePlanner terms for cross-room reservation travel", () => {
+    const paths: LocalPathPlanningService = {
+      plan: () => ({ cost: 2, directions: [3, 3], source: "cache", status: "ready" }),
+    };
+    const travel = createLocalPathTravelEstimateView({
+      availableCpu: 0,
+      paths,
+      snapshot: SNAPSHOT,
+      tick: TICK,
+    });
+    const reservation = reservationContract();
+
+    expect(travel.estimate(actor(), reservation)).toBe(50);
+    expect(
+      travel.estimate({ ...actor(), pos: { roomName: "W0N1", x: 10, y: 10 } }, reservation),
+    ).toBe(25);
+    expect(
+      travel.estimate({ ...actor(), pos: { roomName: "E0N1", x: 10, y: 10 } }, reservation),
+    ).toBe(6);
+    expect(
+      travel.estimate({ ...actor(), pos: { roomName: "W9N9", x: 10, y: 10 } }, reservation),
+    ).toBeNull();
+  });
+
   it("fails closed on malformed or non-finite runtime inputs", () => {
     const calls: LocalPathPlanningRequest[] = [];
     const paths: LocalPathPlanningService = {
@@ -259,6 +283,26 @@ function contract(
     state: "funded",
     target: { roomName: position.roomName, x, y: 10 },
     targetId: null,
+  };
+}
+
+function reservationContract(): WorkContractRecord {
+  return {
+    ...contract("contract:reservation", 25, { roomName: "E0N1" }),
+    execution: {
+      action: "reserve-controller",
+      completion: "work-complete",
+      counterpartId: null,
+      originRoomName: "W1N1",
+      resourceType: null,
+      routeRoomNames: ["W0N1", "E0N1"],
+      routeTravelTicks: 50,
+      signText: null,
+      targetReservationTicks: 450,
+      version: 4,
+    },
+    kind: "reserve",
+    targetId: "controller-a",
   };
 }
 
