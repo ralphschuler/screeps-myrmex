@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import checked from "../../../docs/phase2-colony-health-results.json";
 import {
   COLONY_DOMAIN_HEALTH_DOMAINS,
   ColonyDirector,
@@ -22,8 +21,48 @@ const CPU_BUDGET = Object.freeze({
 });
 
 describe("Phase 2 colony domain-health deterministic evidence (#225)", () => {
-  it("matches checked recovery, maturity, reset, and reorder evidence", () => {
-    expect(collectColonyHealthEvidence()).toEqual(checked);
+  it("preserves recovery, maturity, reset, and reorder invariants", () => {
+    const actual = collectColonyHealthEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: { resetAndReorderEquivalent: true },
+      nominal: {
+        domainStatus: "healthy",
+        lifecycle: "mature",
+        persistedDomainHealth: false,
+        policy: { authorized: true, status: "sustaining" },
+      },
+      schemaVersion: 1,
+    });
+    expect(Object.keys(actual.failures.domains)).toEqual([...COLONY_DOMAIN_HEALTH_DOMAINS]);
+    expect(actual.deterministic.canonicalDomainOrder).toEqual([...COLONY_DOMAIN_HEALTH_DOMAINS]);
+    for (const domain of COLONY_DOMAIN_HEALTH_DOMAINS) {
+      expect(actual.failures.domains[domain]).toEqual({
+        blocker: { domain, reasonCode: "failed" },
+        objectiveCount: 0,
+        state: "recovering",
+      });
+    }
+    expect(actual.failures).toMatchObject({
+      jointBlocker: { domain: "layout", reasonCode: "failed" },
+      reserve: { reason: "mandatory-floor-unrestored", state: "recovering" },
+      stale: { domain: "logistics", reasonCode: "stale" },
+      workforce: { objectiveCount: 1, state: "recovering" },
+    });
+    expect(actual.recovery).toEqual({
+      exitState: "mature",
+      objectiveCount: 0,
+      ownerRevision: 3,
+      repairBuildStatus: "granted",
+      repairUpgradeReason: "posture-preempted",
+      reservationCount: 0,
+    });
+    expect(actual.bounds).toEqual({
+      domainCount: 8,
+      layoutWindowCoverage: ["W1N1", "W2N2", "W3N3"],
+      persistentBytesAdded: 0,
+      telemetryDecisionInputs: 0,
+    });
   });
 });
 

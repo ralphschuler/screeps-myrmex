@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import checked from "../../../docs/phase2-telemetry-results.json";
 import {
   MAX_PHASE2_TELEMETRY_SAMPLES,
   PHASE2_AUTHORITY_IDS,
@@ -11,8 +10,70 @@ import {
 import { canonicalHash } from "../src";
 
 describe("Phase 2 bounded outcome telemetry evidence (#275)", () => {
-  it("matches checked deterministic accounting and window evidence", () => {
-    expect(collectTelemetryEvidence()).toEqual(checked);
+  it("preserves deterministic accounting and bounded-window invariants", () => {
+    const actual = collectTelemetryEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: { reorderedEquivalent: true, resetEquivalent: true },
+      schemaVersion: 1,
+    });
+    expect(actual.authorities).toEqual([
+      { admitted: 1, deferred: 1, failed: 1, id: "colony" },
+      { admitted: 1, deferred: 1, failed: 1, id: "spawn" },
+      { admitted: 1, deferred: 1, failed: 0, id: "mining" },
+      { admitted: 2, deferred: 1, failed: 0, id: "logistics" },
+      { admitted: 1, deferred: 2, failed: 2, id: "layout" },
+      { admitted: 1, deferred: 2, failed: 1, id: "links" },
+      { admitted: 2, deferred: 1, failed: 1, id: "maintenance" },
+      { admitted: 2, deferred: 1, failed: 1, id: "resources" },
+      { admitted: 1, deferred: 1, failed: 1, id: "labs" },
+      { admitted: 1, deferred: 1, failed: 1, id: "mature" },
+      { admitted: 1, deferred: 1, failed: 1, id: "observer" },
+    ]);
+    expect(actual.authorities.map(({ id }) => id)).toEqual([...PHASE2_AUTHORITY_IDS]);
+    expect(actual.identities).toEqual([
+      { balanced: true, id: "links-sent", residual: 0 },
+      { balanced: true, id: "logistics-requested", residual: 0 },
+      { balanced: true, id: "maintenance-budget", residual: 5 },
+    ]);
+    expect(actual.identities.map(({ id }) => id)).toEqual([...PHASE2_FLOW_IDENTITY_IDS]);
+    expect(actual.gateInputs).toEqual({
+      authorityFailures: 10,
+      controllers: 2,
+      harvestedEnergy: 20,
+      industryEnergyInput: 190,
+      industryOutput: 18,
+      industryResourceInput: 113,
+      linkDelivered: 38,
+      logisticsDelivered: 50,
+      measuredCpuMilli: 250,
+      rcl8Controllers: 1,
+      reserveViolations: 1,
+      spawnUtilizationBasisPoints: 5_000,
+      sustainingColonies: 1,
+    });
+    expect(actual.window).toEqual({
+      authorityFailures: 40,
+      droppedSamples: 2,
+      firstTick: 102,
+      harvestedEnergy: 94,
+      industryEnergyInput: 760,
+      industryOutput: 72,
+      industryResourceInput: 452,
+      lastTick: 105,
+      linkDelivered: 152,
+      logisticsDelivered: 200,
+      measuredCpuMilli: 1_000,
+      reserveViolations: 4,
+      samples: 4,
+    });
+    expect(actual.window.samples).toBeLessThanOrEqual(MAX_PHASE2_TELEMETRY_SAMPLES);
+    expect(actual.bounds).toMatchObject({
+      authorityCount: PHASE2_AUTHORITY_IDS.length,
+      identityCount: PHASE2_FLOW_IDENTITY_IDS.length,
+      telemetryDecisionInputs: 0,
+      unboundedLabels: 0,
+    });
   });
 });
 

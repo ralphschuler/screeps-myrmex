@@ -3294,17 +3294,24 @@ complete over-cap rejection, V2-to-V3 observer-state migration, and atomic basel
 without causal labels or a telemetry gameplay reader.
 
 The Phase 2 progression and steady-state boundaries are predeclared in
-[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md). The issue #54 streaming collector executes
-the complete progression and RCL8 tick counts without retaining per-tick transcripts, conservatively
-derives all 58 measurements, and reproduces the checked
-[`phase2-gate-results.json`](phase2-gate-results.json). Manifest, measurement,
-prerequisite-artifact, production-bundle, runtime-config, and RCL-policy SHA-256 receipts bind the
-result. Warm, reset, and reordered variants must have equal semantic hashes, and every injection
-must record restored direct health within its frozen deadline before the collector upgrades zero
-evaluator blockers to a gate pass. The complete method, rollback, and residual live-world risks are
-recorded in [`phase2-gate-evidence.md`](phase2-gate-evidence.md). Scenario Kit remains
-development-only: no gate manifest, result, collector, or evaluator is bundled, persisted, or
-exposed to a gameplay authority.
+[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md). The issue #54 streaming collector iterates
+the complete progression and RCL8 counts as an analytical model; it does not call production
+`runTick`. Its 58 measurements and receipts are frozen in the immutable historical
+[`phase2-gate-results.json`](phase2-gate-results.json), not refreshed when later phases change the
+bundle or prerequisite files. Warm, reset, and reordered analytical variants retain equal semantic
+hashes.
+
+Current compatibility is enforced independently. The RCL3 build and RCL8 mature-command fixtures
+stream production `runTick` across warm/reset/reordered variants, assert actual commands and
+next-observation settlement, and retain the RCL8 fixture's explicit `developing` layout blocker. The
+current deployable CJS bundle is rebuilt, checked for forbidden Scenario Kit inputs, evaluated in a
+clean VM, and invoked through its exported `loop()`. These bounded witnesses do not claim a complete
+healthy RCL8 runtime soak. The complete method and residual risks are recorded in
+[`phase2-gate-evidence.md`](phase2-gate-evidence.md). Scenario Kit remains development-only: no gate
+manifest, result, collector, or evaluator is bundled, persisted, or exposed to gameplay authority.
+Consequently the historical pass artifact is not valid proof of #54's runtime exit criterion. Phase
+3 continues only under the maintainer's 2026-07-27 Phase-3-limited administrative override, not
+because this evidence marks the runtime gate passed.
 
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,

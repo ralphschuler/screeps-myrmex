@@ -127,8 +127,9 @@ The scenarios prove direct outcomes, exact settled industry accounting, and boun
 utilization. Issue #277 separately proves bounded reset-safe RCL transition duration, and issue #279
 proves bounded reset-safe road/container net attrition. Issue #53 fixes the numeric pass/fail
 contract in [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md) and its machine-readable
-manifest. Issue #54 now composes this prerequisite into the complete checked progression and
-steady-state result; this focused evidence document alone claims no Phase 2 pass.
+manifest. Issue #54 historically composed this prerequisite into its checked analytical progression
+and steady-state result; neither that composition nor this focused evidence document proves the
+Phase 2 runtime exit.
 
 ## Research receipt
 

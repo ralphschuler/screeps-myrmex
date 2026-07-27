@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import checked from "../../../docs/phase2-attrition-results.json";
 import { utf8ByteLength } from "../../bot/src/config/canonical";
 import { runTick } from "../../bot/src/runtime/tick";
 import { establishedRcl2World } from "../../bot/test/support/established-rcl2-fixture";
@@ -24,8 +23,57 @@ describe("Phase 2 bounded road/container attrition evidence (#279)", () => {
 
   afterAll(() => vi.unstubAllGlobals());
 
-  it("matches checked reset, reorder, gap, replay, persistence, migration, and cap outcomes", () => {
-    expect(collectPhase2AttritionEvidence()).toEqual(checked);
+  it("preserves reset, reorder, gap, replay, persistence, migration, and cap invariants", () => {
+    const actual = collectPhase2AttritionEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: { resetAndReorderEquivalent: true, sameTickReplayEquivalent: true },
+      schemaVersion: 1,
+      safety: {
+        causalLabels: 0,
+        droppedObservations: 0,
+        gapPreservedRows: true,
+        interruptedAssets: 3,
+        overCapDroppedObservations: 130,
+        overCapReportedLoss: false,
+        persistedRoomNames: 0,
+      },
+    });
+    expect(actual.outcomes).toEqual([
+      {
+        assetTicks: 1,
+        assetType: "road",
+        capacityHitTicks: 5_000,
+        hitsLost: 3_100,
+        hitsRestored: 0,
+        structuresAdded: 1,
+        structuresLost: 1,
+      },
+      {
+        assetTicks: 1,
+        assetType: "container",
+        capacityHitTicks: 250_000,
+        hitsLost: 0,
+        hitsRestored: 5_000,
+        structuresAdded: 0,
+        structuresLost: 0,
+      },
+    ]);
+    expect(actual.migration).toEqual({
+      attritionOmittedWhileEmpty: true,
+      fromSchemaVersion: 2,
+      samplesPreserved: false,
+      toSchemaVersion: 5,
+    });
+    expect(actual.persistence).toMatchObject({
+      attritionSchemaVersion: 1,
+      causalLabels: 0,
+      persistedRoomNames: 0,
+      resetContainerRow: [1, 250_000, 0, 5_000, 0, 0],
+      resetRoadRow: [1, 5_000, 100, 0, 0, 0],
+      statusHashMatches: true,
+    });
+    expect(actual.persistence.ownerBytes).toBeLessThanOrEqual(actual.bounds.telemetryOwnerBytes);
   });
 });
 

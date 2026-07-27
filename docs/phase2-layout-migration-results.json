@@ -191,7 +191,7 @@
     "budgets": {
       "evacuationEnergy": 50,
       "maximumActiveSites": 1,
-      "maximumPersistentBytes": 26083,
+      "maximumPersistentBytes": 25690,
       "modeledConstructionEnergy": 3000,
       "modeledConstructionEnergyPerTick": 100
     },
@@ -262,7 +262,7 @@
     "budgets": {
       "evacuationEnergy": 500,
       "maximumActiveSites": 1,
-      "maximumPersistentBytes": 26649,
+      "maximumPersistentBytes": 26256,
       "modeledConstructionEnergy": 5000,
       "modeledConstructionEnergyPerTick": 100
     },
@@ -398,8 +398,8 @@
     },
     "directProgressMutation": false,
     "finalGameplayPersistentHash": "fnv1a64-utf16:e5bb7a6328e23747",
-    "maximumModeledCpuPerTick": 0.137,
-    "maximumPersistentBytes": 13784,
+    "maximumModeledCpuPerTick": 0.125,
+    "maximumPersistentBytes": 13391,
     "semanticBytesIdentical": true,
     "semanticHashes": {
       "reordered": "fnv1a64-utf16:de8d75befdca010b",

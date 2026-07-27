@@ -28,15 +28,16 @@ reserve restoration.
 
 Every ceiling is `ceil(progress / 9)`. These are MYRMEX policy deadlines, not engine deadlines. The
 existing scenario runner's 10,000-tick bound cannot represent the complete 1,820,000-tick timeline.
-Issue #54 adds a bounded streaming collector that preserves ordinary source, controller, spawn, and
-deferred-command mechanics. Accelerating controller progress does not prove this gate.
+Issue #54 added a bounded streaming analytical collector. It preserves the declared source and
+controller arithmetic but does not execute production `runTick`, spawn commands, or deferred-command
+mechanics. Accelerating controller progress does not satisfy the declared projection.
 
 ## Pinned steady state
 
-The RCL8 soak lasts 15,000 consecutive observed ticks: 50 ordinary source regeneration cycles and
-ten normal creep lifetimes. At least 13,500 ticks must report the colony's direct domain-health
-state as `sustaining`, including one final uninterrupted 1,500-tick interval. Recovery-injection
-ticks may consume the 1,500-tick allowance, but every injection also has its own deadline.
+The declared RCL8 projection spans 15,000 consecutive model steps: 50 ordinary source-regeneration
+cycles and ten normal creep lifetimes. At least 13,500 steps must be classified as `sustaining`,
+including one final uninterrupted 1,500-step interval. Recovery-injection steps may consume the
+1,500-step allowance, but every injection also has its own deadline.
 
 The steady-state fixture may preload finite lab, factory, and power inputs. That exercises the
 already-authorized Phase 2 structure paths without requiring market, remote, or expansion systems.
@@ -57,8 +58,9 @@ Observer readiness is required, but Phase 3 observer target production remains f
 | Telemetry owner / tick telemetry                      | at most 8,192 bytes each            |
 | Registered heap cache                                 | at most 384 entries in 3 namespaces |
 
-Total kernel CPU comes from `KernelTickReport`, not Phase 2's lower-bound domain CPU tuple. Memory
-is measured from canonical serialized persistent state. The growth metric is
+The declaration expected total kernel CPU from `KernelTickReport`; the issue #54 collector instead
+assigned deterministic modeled CPU values. Those results therefore prove threshold arithmetic, not
+runtime CPU. Modeled Memory is measured from canonical serialized state. The growth metric is
 `max(0, finalBytes - initialBytes)` over the pinned final window; compaction may make it zero but a
 negative delta is not required. Cache limits come from the three currently registered source-owned
 namespaces. Any legitimate contract change must revise this declaration before, not after, a soak.
@@ -144,10 +146,11 @@ exceed total sustaining ticks, and cooldown continuity cannot exceed the observe
 blocker order remains fixed.
 
 A zero-blocker evaluation returns `within-thresholds`, never `pass`. Structural hashes are not an
-independent proof that a run occurred. Issue #54's collector derives measurements and hashes from
-canonical per-variant artifacts, compares them with checked results, verifies the exact
-bundle/config/policy revisions, and emits the final pass/fail artifact. Telemetry remains
-observer-only; neither this manifest nor its evaluator is available to runtime gameplay code.
+independent proof that production runtime executed. Issue #54's collector derives measurements and
+hashes from canonical analytical variants and emitted the historical pass/fail artifact. The
+separate current compatibility gate executes production `runTick` command paths and the compiled
+bundle entrypoint without updating that artifact. Telemetry remains observer-only; neither this
+manifest nor its evaluator is available to runtime gameplay code.
 
 ## Foundation receipt
 

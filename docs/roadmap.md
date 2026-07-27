@@ -90,8 +90,8 @@ Operational Memory may disable available work but can never activate an unfinish
 
 ## Phase 2 — Complete Colony
 
-**Status:** complete. [Issue #54](https://github.com/ralphschuler/screeps-myrmex/issues/54) records
-the passing deterministic progression and steady-state outcome gate.
+**Status:** implementation leaves complete; runtime outcome gate not demonstrated. Phase 3 is
+continuing under the bounded maintainer override recorded below.
 
 Phase 2 extends the survival kernel into one deterministic RCL2–RCL8 colony authority covering
 layouts, mining, logistics, links, maintenance, resources, labs, mature infrastructure, cross-domain
@@ -151,17 +151,25 @@ against its original five acceptance criteria:
 Further structure variants, alternative migration strategies, or newly imagined completeness work
 are enhancements, not unfinished #99 or Phase 2 requirements.
 
-### Completed outcome gate
+### Outcome gate status and continuation override
 
-The dependency set remained frozen to #44–#53, #225, and #99. Issue #54 executed the predeclared
-numeric contract without adding another implementation leaf. Its streaming warm/reset/reordered
-progression and steady-state collector evaluates all 58 measurements with zero blockers, binds the
-exact production bundle and current configuration/policy revisions, and records rollback and
-remaining live-world risks in [`phase2-gate-evidence.md`](phase2-gate-evidence.md).
+The dependency set remained frozen to #44–#53, #225, and #99. Issue #54 evaluated the predeclared
+numeric contract without adding another implementation leaf. Its warm/reset/reordered progression
+and steady-state collector is an analytical projection: all 58 measurements have zero blockers, but
+the collector does not execute production `runTick`. The closure artifact and its then-current
+bundle/configuration/policy receipts are immutable.
 
-**Exit:** passed — repeatedly reaches and sustains RCL8 within CPU and energy budgets. Phase 3 issue
-[#10](https://github.com/ralphschuler/screeps-myrmex/issues/10) is unblocked; later-phase gameplay
-and MMO deployment remain gated by their own evidence.
+Current HEAD compatibility separately executes 30 production `runTick` calls across commandful RCL3
+construction and RCL8 industry settlement, plus one invocation of the current compiled bundle's
+`loop()`. This does not prove a complete healthy RCL8 runtime soak; details and remaining risks are
+in [`phase2-gate-evidence.md`](phase2-gate-evidence.md).
+
+**Exit:** not demonstrated by production runtime. The historical analytical thresholds and bounded
+current runtime witnesses pass, but they do not satisfy #54's repeated healthy-RCL8 soak criterion.
+On 2026-07-27 the maintainer explicitly directed the autonomous agent to continue
+[Phase 3 issue #10](https://github.com/ralphschuler/screeps-myrmex/issues/10). That administrative
+override is limited to Phase 3 and does not mark #54 passed; no transition beyond Phase 3 is
+authorized without an explicit maintainer resolution of this gap.
 
 ## Phase 3 — Remote Portfolio
 

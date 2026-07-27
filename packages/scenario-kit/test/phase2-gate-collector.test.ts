@@ -1,12 +1,8 @@
 import { describe, expect, it } from "vitest";
-import checkedResult from "../../../docs/phase2-gate-results.json";
 import checkedThresholds from "../../../docs/phase2-gate-thresholds.json";
-import { COLONY_RCL_POLICY_TABLE } from "../../bot/src/colony";
-import { buildRuntimeConfig } from "../../bot/src/config/runtime-config";
 import {
   PHASE2_GATE_REQUIRED_LIMIT_IDS,
   collectPhase2GateEvidence,
-  phase2GateSha256,
   validatePhase2GateThresholds,
 } from "../src";
 
@@ -40,8 +36,8 @@ const PRODUCTION_BUNDLE = {
   sha256: `sha256:${"a".repeat(64)}`,
 };
 
-describe("Phase 2 complete-colony gate collector (#54)", () => {
-  it("streams the frozen progression and steady-state matrix within every declared bound", () => {
+describe("Phase 2 analytical complete-colony projection (#54)", () => {
+  it("streams the frozen modeled progression and steady-state matrix within every declared bound", () => {
     const manifest = validatePhase2GateThresholds(checkedThresholds);
     const result = collectPhase2GateEvidence({
       completedPrerequisites: COMPLETED_PREREQUISITES,
@@ -87,22 +83,6 @@ describe("Phase 2 complete-colony gate collector (#54)", () => {
     expect(
       new Set(Object.values(result.measurements.attestation.steadyState).slice(1)),
     ).toHaveLength(1);
-  });
-
-  it("exactly reproduces the checked Phase 2 evidence artifact", () => {
-    expect(checkedResult.configuration).toEqual({
-      colonyRclPolicySha256: phase2GateSha256(COLONY_RCL_POLICY_TABLE),
-      runtimeConfigSha256: phase2GateSha256(buildRuntimeConfig()),
-    });
-    const result = collectPhase2GateEvidence({
-      completedPrerequisites: checkedResult.completedPrerequisites,
-      configuration: checkedResult.configuration,
-      evidenceReceipts: checkedResult.evidenceReceipts,
-      manifest: validatePhase2GateThresholds(checkedThresholds),
-      productionBundle: checkedResult.productionBundle,
-    });
-
-    expect(result).toEqual(checkedResult);
   });
 
   it("is repeatable and rejects incomplete frozen evidence", () => {
