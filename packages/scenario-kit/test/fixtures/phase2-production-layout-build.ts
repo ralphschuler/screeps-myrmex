@@ -166,6 +166,40 @@ export async function collectPhase2ProductionLayoutBuildEvidence() {
   });
 }
 
+export async function collectPhase2ProductionLayoutRuntimeReceipt() {
+  const warm = await runVariant("warm");
+  const reset = await runVariant("reset");
+  const reordered = await runVariant("reordered");
+  const variants = [warm, reset, reordered];
+  const semanticHashes = Object.freeze({
+    reordered: canonicalHash(reordered.summary),
+    reset: canonicalHash(reset.summary),
+    warm: canonicalHash(warm.summary),
+  });
+
+  return Object.freeze({
+    command: Object.freeze({
+      callsPerVariant: warm.summary.buildCalls.length,
+      energyPerVariant: warm.summary.buildCalls.reduce((sum, call) => sum + call.energy, 0),
+      kind: "Creep.build",
+    }),
+    completeColonySoak: false,
+    controllerLevel: SITE.controllerLevel,
+    executor: "packages/bot/src/runtime/tick.runTick",
+    executedVariants: Object.freeze(variants.map(({ kind }) => kind)),
+    id: "rcl3-production-build",
+    kernelFaults: variants.reduce((sum, variant) => sum + variant.kernelFaults, 0),
+    memoryResetObserved: reset.resetApplied,
+    semanticHashes,
+    worldStateSettled:
+      warm.summary.finalProgress === SITE.progressTotal &&
+      warm.summary.siteCount === 0 &&
+      warm.siteObservedAbsentAfterCompletion,
+    ticksPerVariant: variants.map(({ executedTicks }) => executedTicks),
+    totalExecutedTicks: variants.reduce((sum, { executedTicks }) => sum + executedTicks, 0),
+  });
+}
+
 async function runVariant(kind: "reordered" | "reset" | "warm") {
   vi.resetModules();
   const world = establishedRcl2World({
@@ -178,11 +212,15 @@ async function runVariant(kind: "reordered" | "reset" | "warm") {
   let maximumModeledCpuPerTick = 0;
   let maximumPersistentBytes = 0;
   let firstBuildAt: number | null = null;
+  let executedTicks = 0;
+  let kernelFaults = 0;
   const trace = emptyAuthorityTrace();
 
   for (let tick = FIRST_TICK; tick < FIRST_TICK + MAXIMUM_TICKS; tick += 1) {
     const priorBuildCalls = world.buildCalls().length;
     const outcome = executeTick({ game: world.game(tick), memory });
+    executedTicks += 1;
+    kernelFaults += outcome.kernel.faults.length;
     observeAuthority(outcome, trace, tick);
     maximumModeledCpuPerTick = Math.max(maximumModeledCpuPerTick, outcome.kernel.cpuUsed);
     maximumPersistentBytes = Math.max(
@@ -206,8 +244,12 @@ async function runVariant(kind: "reordered" | "reset" | "warm") {
       const summary = summaryOf(world, memory, trace, firstBuildAt);
       validateVariant(summary, siteObservedAbsentAfterCompletion, kind, resetApplied);
       return {
+        executedTicks,
+        kernelFaults,
+        kind,
         maximumModeledCpuPerTick,
         maximumPersistentBytes,
+        resetApplied,
         siteObservedAbsentAfterCompletion,
         summary,
       };

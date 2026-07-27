@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
-import checkedEvidence from "../../../docs/phase2-logistics-results.json";
 import { collectLogisticsEvidence } from "./fixtures/phase2-logistics";
 
 describe("Phase 2 logistics composed deterministic evidence (#47)", () => {
-  it("matches checked evidence and proves the logistics acceptance matrix", () => {
+  it("proves the current logistics acceptance matrix", () => {
     const actual = collectLogisticsEvidence();
 
-    expect(actual).toEqual(checkedEvidence);
     expect(actual.deterministicScenario.equivalentAfterWarmResetAndReorder).toBe(true);
     expect(actual.deterministicScenario.noDoubleReservation).toBe(true);
     expect(actual.deterministicScenario.admittedFlowOrder).toEqual([

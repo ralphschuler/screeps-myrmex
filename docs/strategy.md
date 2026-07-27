@@ -455,14 +455,20 @@ stock, cooldown is not proof of useful output, and lab/factory/power output requ
 observation settlement. Missing history reduces evidence and can never authorize work or RCL8
 maturity.
 
-The final Phase 2 boundary was fixed before execution. The checked deterministic soak reaches RCL8
-in 1,820,000 ticks at nine controller energy per tick, then observes 15,000 RCL8 ticks with 14,628
-sustaining ticks and a final 12,981-tick continuous sustaining interval. All source, CPU, reserve,
-flow, bounded-state, industry, cooldown, and eleven recovery measurements remain within the numeric
-limits in [`phase2-gate-thresholds.md`](phase2-gate-thresholds.md); exact results, rollback, and
-live risks are in [`phase2-gate-evidence.md`](phase2-gate-evidence.md). This unblocks Phase 3
-planning but does not authorize later-phase actions or MMO deployment. Thresholds, telemetry, and
-Scenario Kit remain observer/test inputs and cannot authorize gameplay.
+The final Phase 2 boundary was fixed before evaluation. The checked analytical projection reaches
+RCL8 in 1,820,000 model steps at nine controller energy per step, then projects 15,000 RCL8 steps
+with 14,628 sustaining steps and a final 12,981-step sustaining interval. Its source, CPU, reserve,
+flow, bounded-state, industry, cooldown, and recovery values remain within the numeric limits in
+[`phase2-gate-thresholds.md`](phase2-gate-thresholds.md), but those long-horizon values are not
+production `runTick` observations.
+
+Current compatibility separately streams production `runTick` through bounded RCL3 build and RCL8
+industry-settlement paths and invokes the current compiled bundle. Exact classification, rollback,
+and unverified complete-RCL8/live risks are in [`phase2-gate-evidence.md`](phase2-gate-evidence.md).
+The repeated healthy-RCL8 exit remains unproved. The maintainer's 2026-07-27 administrative override
+permits Phase 3 planning only; it neither marks #54 passed nor authorizes Phase 4, later-phase
+actions, or MMO deployment. Thresholds, telemetry, and Scenario Kit remain observer/test inputs and
+cannot authorize gameplay.
 
 Phase 3 room intelligence is evidence only. Current vision outranks segment history; every caller
 supplies an age and expiry bound, and partial, inactive, missing, corrupt, cross-shard, or future

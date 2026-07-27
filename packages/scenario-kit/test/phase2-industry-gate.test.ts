@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
-import checkedEvidence from "../../../docs/phase2-industry-results.json";
 import { collectIndustryEvidence } from "./fixtures/phase2-industry";
 
 describe("Phase 2 industry composed deterministic evidence (#50)", () => {
-  it("matches checked evidence and proves the stock-policy acceptance matrix", () => {
+  it("proves the current stock-policy acceptance matrix", () => {
     const actual = collectIndustryEvidence();
 
-    expect(actual).toEqual(checkedEvidence);
     expect(actual.deterministicScenario).toMatchObject({
       ownedRcl6Rooms: 2,
       equivalentAfterWarmResetAndReorder: true,

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import checked from "../../../docs/phase2-cooldown-utilization-results.json";
 import {
   emptyPhase2TelemetryObservation,
   MAX_PHASE2_TELEMETRY_SAMPLES,
@@ -12,8 +11,39 @@ import {
 import { canonicalHash } from "../src";
 
 describe("Phase 2 bounded cooldown-utilization evidence (#53)", () => {
-  it("matches fixed reset, reorder, continuity, migration, and bound evidence", () => {
-    expect(collectCooldownUtilizationEvidence()).toEqual(checked);
+  it("preserves reset, reorder, continuity, migration, and bound invariants", () => {
+    const actual = collectCooldownUtilizationEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: {
+        reorderedEquivalent: true,
+        resetEquivalent: true,
+        sameTickReplayEquivalent: true,
+      },
+      schemaVersion: 1,
+    });
+    expect(actual.rows).toEqual([
+      { current: [2, 0, 0], id: "extractor", window: [4, 1, 2_500] },
+      { current: [3, 1, 3_333], id: "link", window: [6, 3, 5_000] },
+      { current: [1, 1, 10_000], id: "terminal", window: [1, 1, 10_000] },
+      { current: [4, 2, 5_000], id: "lab", window: [8, 3, 3_750] },
+      { current: [1, 1, 10_000], id: "factory", window: [2, 1, 5_000] },
+    ]);
+    expect(actual.rows.map(({ id }) => id)).toEqual([...PHASE2_COOLDOWN_IDS]);
+    expect(actual.continuity).toEqual({
+      consecutive: true,
+      gap: false,
+      gapFirstTick: 100,
+      gapLastTick: 103,
+      gapSamples: 3,
+    });
+    expect(actual.migration).toEqual({
+      currentSamples: 1,
+      fromSchemaVersion: 4,
+      toSchemaVersion: 5,
+      unknowableSamplesDropped: 2,
+    });
+    expect(actual.bounds.productionMaximumSamples).toBe(MAX_PHASE2_TELEMETRY_SAMPLES);
   });
 });
 

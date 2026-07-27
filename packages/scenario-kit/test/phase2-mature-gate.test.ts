@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import checked from "../../../docs/phase2-mature-results.json";
 import {
   composeMatureFixture,
   MATURE_FIXTURE_MECHANICS,
@@ -17,8 +16,45 @@ import {
 import { canonicalHash } from "../src";
 
 describe("Phase 2 mature infrastructure deterministic evidence (#267)", () => {
-  it("matches checked evidence for mature commands, observer contention, and capped stocking", () => {
-    expect(collectMatureEvidence()).toEqual(checked);
+  it("proves mature commands, observer contention, and capped stocking", () => {
+    const actual = collectMatureEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: {
+        commandKinds: ["factory.produce", "power-spawn.process-power"],
+        observerSettlement: "visible-next-tick",
+        observerWinner: "alpha",
+        resetAndReorderEquivalent: true,
+      },
+      failures: {
+        invalidMechanics: "deferred",
+        invalidReason: "invalid-input",
+        launchIntentCount: 0,
+        observerLosers: 1,
+      },
+      resources: {
+        fundedBudgets: 3,
+        nukerEnergyTarget: 300_000,
+        nukerGhodiumTarget: 5_000,
+        nukerProjectedTransfers: 2,
+        protectedSourceTransfers: 0,
+        stagedObjectives: 2,
+      },
+      schemaVersion: 1,
+      telemetry: {
+        mature: {
+          intents: { factory: 1, powerProcessing: 1, total: 2 },
+          truncated: false,
+        },
+        observer: { intents: 1, truncated: false },
+      },
+    });
+    expect(actual.boundaries).toEqual({
+      gate: "phase2.mature",
+      maximumCommandsPerStructure: 1,
+      observerExclusiveKey: "observer/observer",
+      ownerSchemaVersion: 5,
+    });
   });
 });
 

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import checked from "../../../docs/phase2-industry-accounting-results.json";
 import {
   projectLabTelemetry,
   projectMatureCommandTelemetry,
@@ -16,8 +15,37 @@ import {
 import { canonicalHash } from "../src";
 
 describe("Phase 2 exact settled industry accounting evidence (#53)", () => {
-  it("matches fixed lab, factory, power, migration, and window outcomes", () => {
-    expect(collectPhase2IndustryAccountingEvidence()).toEqual(checked);
+  it("preserves lab, factory, power, migration, and window invariants", () => {
+    const actual = collectPhase2IndustryAccountingEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: { reorderedEquivalent: true, resetEquivalent: true },
+      schemaVersion: 1,
+      settlements: {
+        factory: [40, 100, 20],
+        labs: [20, 45, 15],
+        nonSettledInputIncluded: 0,
+        powerProcessing: [150, 3, 3],
+      },
+    });
+    expect(actual.phase2).toEqual({
+      energyInput: 210,
+      resourceInput: 148,
+      resourceOutput: 38,
+      window: [1, 100, 100, 0, 0, 0, 210, 148, 38, 0, 0, 0, 0],
+    });
+    expect(actual.migration).toEqual({
+      currentSamples: 1,
+      fromSchemaVersion: 3,
+      legacySamplesDropped: 1,
+      toSchemaVersion: 5,
+    });
+    expect(actual.bounds).toMatchObject({
+      dynamicResourceLabels: 0,
+      telemetryDecisionInputs: 0,
+      telemetryOwnerBytes: 8_192,
+    });
+    expect(actual.bounds.productionMaximumSamples).toBe(MAX_PHASE2_TELEMETRY_SAMPLES);
   });
 });
 

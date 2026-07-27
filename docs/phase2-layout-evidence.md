@@ -621,6 +621,11 @@ bounds. The existing #377 row separately retains exact production funding, Contr
 action-arbitration, and live `Creep.build` proof for the generic owned-site execution path;
 scenario-kit does not claim to emulate that runtime command chain.
 
+The checked JSON is the immutable Phase 2 closure receipt under
+`sha256:552494e69e7ac6d38bf6dd7d3cdd4240b43397edaa46c55a75ebc70915cf41e0`. Current HEAD runs the
+same collectors against semantic command, safety, equivalence, and budget bounds without rewriting
+that receipt when unrelated telemetry or persistent-state bytes change.
+
 Issue #439 retains #365's exact `create-site → destroy-structure → create-site` outcome across warm,
 reset, and reordered variants while making its command choice enforceable. The architecture checker
 rejects direct, computed, destructured, transitive, bound, `call`, and `apply` forms of

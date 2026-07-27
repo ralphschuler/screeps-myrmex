@@ -164,6 +164,19 @@ more child work. The autonomous loop may not add a new acceptance criterion, dep
 item, or coverage category as a closure blocker. Such a change requires an explicit maintainer
 decision that records the reason, the bounded addition, and its finite completion condition.
 
+Once a gate closes, its checked result and closure receipts are immutable historical evidence.
+Later-phase changes must run current semantic/runtime compatibility checks without rewriting the
+closed result's bundle, configuration, policy, or prerequisite hashes. If a closed result is
+misclassified, mark its pass claim invalid or superseded and add a separate bounded witness; that
+witness does not satisfy the frozen contract unless it proves the contract's actual outcome. Do not
+silently turn the historical artifact into a rolling HEAD cache.
+
+Work may continue in a later phase despite an unproved earlier exit only under an explicit
+maintainer continuation override. Record the reason, allowed phase scope, and stop condition in the
+roadmap. Treat the earlier phase as administratively bypassed within that scope, never as passed;
+when the scope ends, resolve the gap or obtain another explicit maintainer decision before
+advancing.
+
 Broad category language does not imply exhaustive coverage of every structure type, resource
 combination, world permutation, or reset ordering. A complete matrix is required only when the
 frozen closure contract explicitly enumerates a finite matrix and its completion condition.

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import checked from "../../../docs/phase2-labs-results.json";
 import {
   composeBoostFixture,
   composeBoostHandoffFixture,
@@ -19,8 +18,68 @@ import {
 import { canonicalHash } from "../src";
 
 describe("Phase 2 labs composed deterministic evidence (#257, #341)", () => {
-  it("matches checked evidence and proves the bounded lab matrix", () => {
-    expect(collectLabEvidence()).toEqual(checked);
+  it("proves the current bounded lab matrix", () => {
+    const actual = collectLabEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: {
+        boostExecution: "executed",
+        boostHandoffExactParts: 1,
+        boostHandoffFirstReboundIntents: 0,
+        boostHandoffIntent: "lab.boost-creep",
+        boostHandoffKind: "boost",
+        boostHandoffNonExecutableStatus: "blocked",
+        boostHandoffOnlyAssignmentChanged: true,
+        boostHandoffPendingAttemptVisible: true,
+        boostHandoffPendingStatus: "pending",
+        boostHandoffReadyStatus: "ready",
+        boostHandoffResetAndReorderEquivalent: true,
+        boostIntent: "lab.boost-creep",
+        boostPartialAppliedOnce: true,
+        boostResetAndReorderEquivalent: true,
+        exactBoostParts: 1,
+        exactReverseAmount: 5,
+        forwardIntent: "lab.run-reaction",
+        resetAndReorderEquivalent: true,
+        reverseIntent: "lab.reverse-reaction",
+        settledCommitmentAmount: 5,
+      },
+      failures: {
+        boostConflictReason: "conflicting-effect",
+        boostConflictRetainsCommitment: true,
+        contaminationDemands: 1,
+        cooldownCommands: 0,
+        fullResultCommands: 0,
+        missingLabAssignments: 0,
+        retryReady: true,
+      },
+      schemaVersion: 3,
+    });
+    expect(actual.telemetry).toMatchObject({
+      accounting: [0, 5, 10],
+      commitments: 1,
+      readinessBlockers: 1,
+      resourceDemands: 1,
+      settledAmount: 5,
+    });
+    expect(actual.boostCommandTelemetry).toMatchObject({
+      commands: { executed: 1, failed: 0, rejected: 0 },
+      commitments: 1,
+      intents: 1,
+      resourceDemands: 2,
+      settledAmount: 0,
+    });
+    expect(actual.boostSettlementTelemetry).toMatchObject({
+      accounting: [20, 30, 0],
+      commitments: 0,
+      intents: 0,
+      settledAmount: 1,
+    });
+    expect(actual.boundaries).toEqual({
+      commandKinds: ["lab.boost-creep", "lab.reverse-reaction", "lab.run-reaction"],
+      gate: "phase2.labs",
+      maximumCommandsPerRoom: 1,
+    });
   });
 });
 

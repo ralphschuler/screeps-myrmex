@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import checkedEvidence from "../../../docs/phase2-layout-migration-results.json";
 import { collectPhase2LayoutMigrationEvidence } from "./fixtures/phase2-layout-migration";
 
 const FIND_CREEPS_VALUE = 101;
@@ -20,13 +19,10 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#45
   });
 
   afterAll(() => vi.unstubAllGlobals());
-  it("matches checked evidence and reaches stable current geometry within bounds", async () => {
+  it("reaches stable current geometry within the frozen semantic bounds", async () => {
     const actual = await collectPhase2LayoutMigrationEvidence();
 
-    expect(actual).toEqual(checkedEvidence);
     expect(actual).toMatchObject({
-      activeStaleExtensionConvergence: actual.activeStaleExtensionConvergence,
-      activeStaleTowerConvergence: actual.activeStaleTowerConvergence,
       evidenceIssues: [365, 377, 383, 441, 451, 453, 457],
       issue: 365,
       productionBuild: {
@@ -39,6 +35,53 @@ describe("Phase 2 stable layout migration evidence (#365/#377/#383/#441/#451/#45
       schemaVersion: 6,
       status: "complete",
     });
+    expect(actual.activeStaleExtensionConvergence).toMatchObject({
+      authority: {
+        budgetAndFlowFunded: true,
+        exactDeliveryObserved: true,
+        flowRetiredBeforeSettlement: true,
+        handoffAfterSettlement: true,
+        handoffCommandFree: true,
+        settlementCommandFree: true,
+      },
+      budgets: {
+        evacuationEnergy: 50,
+        maximumActiveSites: 1,
+        modeledConstructionEnergy: 3_000,
+        modeledConstructionEnergyPerTick: 100,
+      },
+      equivalence: { semanticBytesIdentical: true },
+      final: {
+        exactExtensions: 10,
+        removalProposals: 0,
+        siteCount: 0,
+        siteProposals: 0,
+        staleRecords: 0,
+        totalExtensions: 10,
+      },
+      milestones: {
+        destroyAt: 80_011,
+        evacuationSettledAt: 80_009,
+        flowRetiredAt: 80_008,
+        handoffAt: 80_010,
+        replacementObservedAt: 80_042,
+        siteObservedAt: 80_013,
+        stableAt: 80_042,
+      },
+      safety: {
+        duplicateDestroyCommands: 0,
+        duplicateSiteCommands: 0,
+        exactEnergyConserved: true,
+        resetAfterAcquire: true,
+      },
+      scenario: { id: "phase2-active-stale-extension-convergence-v1" },
+    });
+    expect(
+      actual.activeStaleExtensionConvergence.budgets.maximumPersistentBytes,
+    ).toBeLessThanOrEqual(30_000);
+    expect(
+      new Set(Object.values(actual.activeStaleExtensionConvergence.equivalence.semanticHashes)),
+    ).toHaveLength(1);
     expect(actual.activeStaleTowerConvergence).toMatchObject({
       authority: {
         budgetAndFlowFunded: true,

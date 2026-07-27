@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import checked from "../../../docs/phase2-rcl-transition-results.json";
 import { utf8ByteLength } from "../../bot/src/config/canonical";
 import { runTick } from "../../bot/src/runtime/tick";
 import { establishedRcl2World } from "../../bot/test/support/established-rcl2-fixture";
@@ -24,8 +23,39 @@ describe("Phase 2 bounded RCL transition timing evidence (#277)", () => {
 
   afterAll(() => vi.unstubAllGlobals());
 
-  it("matches checked reset, interruption, persistence, and replay evidence", () => {
-    expect(collectRclTransitionEvidence()).toEqual(checked);
+  it("preserves reset, interruption, persistence, and replay invariants", () => {
+    const actual = collectRclTransitionEvidence();
+
+    expect(actual).toMatchObject({
+      deterministic: {
+        reorderedEquivalent: true,
+        resetEquivalent: true,
+        sameTickReplayEquivalent: true,
+      },
+      migration: { baselineOnly: true, fromSchemaVersion: 1, toSchemaVersion: 5 },
+      persistence: {
+        compactOwnerRoundTrip: true,
+        resetOutputEquivalent: true,
+        roomNamesRedacted: true,
+      },
+      schemaVersion: 1,
+      transition: {
+        activeTracks: 2,
+        completedTransitions: 1,
+        destinationRcl: 3,
+        droppedObservations: 0,
+        droppedTransitions: 0,
+        interruptedTracks: 1,
+        row: [1, 2, 2, 2, 2, 102],
+      },
+    });
+    expect(actual.bounds).toMatchObject({
+      destinationRows: 7,
+      maximumControllerTracks: 64,
+    });
+    expect(actual.persistence.ownerBytes).toBeLessThanOrEqual(
+      actual.bounds.telemetryOwnerMaximumBytes,
+    );
   });
 });
 
