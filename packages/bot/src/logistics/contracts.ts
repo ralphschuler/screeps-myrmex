@@ -2,6 +2,7 @@ import {
   contractIdFor,
   type CapabilityVector,
   type ContractExecutionTermsV3,
+  type ContractExecutionTermsV6,
   type ContractTransitionRequest,
   type WorkContractRequest,
 } from "../contracts";
@@ -9,8 +10,10 @@ import type {
   LogisticsNode,
   LogisticsBudgetBinding,
   LogisticsPlan,
+  LogisticsPosition,
   LogisticsPriorityClass,
   LogisticsProjection,
+  RoutedLogisticsEdge,
 } from "./planner";
 
 export const MAX_LOGISTICS_COMMITMENTS = 128;
@@ -66,6 +69,12 @@ export interface LogisticsCommitmentState {
   readonly sourceNodeId: string;
   readonly stage: LogisticsCommitmentStage;
   readonly stageStartedAt: number;
+  readonly routed?: RoutedLogisticsEdge;
+  readonly sinkBaselineAmount?: number;
+  readonly sinkPosition?: LogisticsPosition;
+  readonly sinkTargetId?: string;
+  readonly sourcePosition?: LogisticsPosition;
+  readonly sourceTargetId?: string;
 }
 
 export interface LogisticsCommitmentProjection extends LogisticsCommitmentState {
@@ -137,16 +146,33 @@ export function projectLogisticsContracts(
         flow as LogisticsProjection,
         recommendations.get(flowId),
         nodes.get((flow as LogisticsProjection).sinkNodeId)?.priority.class ?? "normal",
+        source,
+        sink,
         input.tick,
       );
     if (deliveredAmount >= state.reservedAmount) {
       if (old !== undefined)
         retirements.push(retirement(old, input.tick, "logistics-flow-complete", "completed"));
-      commitments.push({ ...state, deliveredAmount, reason: "complete", request: null });
+      if (old?.routed === undefined) {
+        commitments.push({ ...state, deliveredAmount, reason: "complete", request: null });
+        continue;
+      }
+      const next = nextRoutedCycle(
+        old,
+        flow,
+        recommendations.get(flowId),
+        nodes.get(flow?.sinkNodeId ?? "")?.priority.class ?? old.priorityClass,
+        source,
+        sink,
+        input.tick,
+      );
+      const reason = blocker(next, flow, source, sink, observed, input.tick);
+      commitments.push({ ...next, reason, request: requestFor(next, source, sink) });
       continue;
     }
     const nextStage: LogisticsCommitmentStage = cargoAmount > 0 ? "deliver" : "acquire";
     const stageChanged = old !== undefined && old.stage !== nextStage;
+    const enteredDelivery = old?.stage === "acquire" && nextStage === "deliver";
     const lostDelivery =
       old?.stage === "deliver" && nextStage === "acquire" && deliveredAmount < old.reservedAmount;
     if (stageChanged) {
@@ -161,12 +187,34 @@ export function projectLogisticsContracts(
     }
     const cycle = state.cycle + (lostDelivery ? 1 : 0);
     const stageStartedAt = stageChanged || lostDelivery ? input.tick : state.stageStartedAt;
-    const cycleAmount = lostDelivery ? state.reservedAmount - deliveredAmount : state.cycleAmount;
-    state = { ...state, cycle, cycleAmount, deliveredAmount, stage: nextStage, stageStartedAt };
+    const routedEnteredDelivery = state.routed !== undefined && enteredDelivery;
+    const cycleAmount = routedEnteredDelivery
+      ? cargoAmount
+      : lostDelivery
+        ? state.reservedAmount - deliveredAmount
+        : state.cycleAmount;
+    const routedCycleChanged = state.routed !== undefined && (enteredDelivery || lostDelivery);
+    state = {
+      ...state,
+      cycle,
+      cycleAmount,
+      deliveredAmount: lostDelivery && state.routed !== undefined ? 0 : deliveredAmount,
+      ...(routedCycleChanged
+        ? {
+            reservedAmount: cycleAmount,
+            sinkBaselineAmount: sink?.observedAmount ?? state.sinkBaselineAmount,
+          }
+        : {}),
+      stage: nextStage,
+      stageStartedAt,
+    };
     const reason = blocker(state, flow, source, sink, observed, input.tick);
+    const pressuredRoutedDelivery =
+      reason === "sink-full" && state.routed !== undefined && state.stage === "deliver";
     if (
       old !== undefined &&
       !stageChanged &&
+      !pressuredRoutedDelivery &&
       [
         "planner-not-admitted",
         "resource-mismatch",
@@ -185,12 +233,11 @@ export function projectLogisticsContracts(
       ...state,
       reason,
       request:
-        reason === "active" || reason === "actor-dead" || reason === "lease-expired"
-          ? requestFor(
-              state,
-              source as LogisticsContractEndpoint,
-              sink as LogisticsContractEndpoint,
-            )
+        reason === "active" ||
+        reason === "actor-dead" ||
+        reason === "lease-expired" ||
+        pressuredRoutedDelivery
+          ? requestFor(state, source, sink)
           : null,
     });
   }
@@ -204,8 +251,21 @@ function createState(
   flow: LogisticsProjection,
   recommendation: { carry: number; move: number } | undefined,
   priorityClass: LogisticsPriorityClass,
+  source: LogisticsContractEndpoint | undefined,
+  sink: LogisticsContractEndpoint | undefined,
   tick: number,
 ): LogisticsCommitmentState {
+  const routed =
+    flow.routed !== undefined && source?.targetId != null && sink?.targetId != null
+      ? {
+          routed: flow.routed,
+          sinkBaselineAmount: sink.observedAmount,
+          sinkPosition: sink.position,
+          sinkTargetId: sink.targetId,
+          sourcePosition: source.position,
+          sourceTargetId: source.targetId,
+        }
+      : {};
   return {
     ...(flow.budgetBinding === undefined ? {} : { budgetBinding: flow.budgetBinding }),
     colonyId: flow.colonyId ?? "",
@@ -214,13 +274,41 @@ function createState(
     deliveredAmount: 0,
     flowId: flow.id,
     priorityClass,
-    recommendedCarry: recommendation?.carry ?? 0,
-    recommendedMove: recommendation?.move ?? 0,
+    recommendedCarry: flow.recommendedCarry ?? recommendation?.carry ?? 0,
+    recommendedMove: flow.recommendedMove ?? recommendation?.move ?? 0,
     reservedAmount: flow.admittedAmount,
     resourceType: flow.resourceType ?? "",
     roundTripTicks: flow.roundTripTicks,
     sinkNodeId: flow.sinkNodeId,
     sourceNodeId: flow.sourceNodeId,
+    stage: "acquire",
+    stageStartedAt: tick,
+    ...routed,
+  };
+}
+
+function nextRoutedCycle(
+  previous: LogisticsCommitmentState,
+  flow: LogisticsProjection | undefined,
+  recommendation: { readonly carry: number; readonly move: number } | undefined,
+  priorityClass: LogisticsPriorityClass,
+  source: LogisticsContractEndpoint | undefined,
+  sink: LogisticsContractEndpoint | undefined,
+  tick: number,
+): LogisticsCommitmentState {
+  const projected =
+    flow === undefined
+      ? previous
+      : createState(flow, recommendation, priorityClass, source, sink, tick);
+  const amount = flow?.admittedAmount ?? previous.reservedAmount;
+  const sinkBaselineAmount = sink?.observedAmount ?? previous.sinkBaselineAmount;
+  return {
+    ...projected,
+    cycle: previous.cycle + 1,
+    cycleAmount: amount,
+    deliveredAmount: 0,
+    reservedAmount: amount,
+    ...(sinkBaselineAmount === undefined ? {} : { sinkBaselineAmount }),
     stage: "acquire",
     stageStartedAt: tick,
   };
@@ -234,13 +322,19 @@ function blocker(
   progress: LogisticsFlowProgress | undefined,
   tick: number,
 ): LogisticsCommitmentReason {
-  if (source === undefined || source.targetId === null || source.observedAt !== tick)
+  if (
+    state.stage === "acquire" &&
+    (source === undefined || source.targetId === null || source.observedAt !== tick)
+  )
     return "source-vanished";
   if (sink === undefined || sink.targetId === null || sink.observedAt !== tick)
     return "sink-vanished";
-  if (source.resourceType !== state.resourceType || sink.resourceType !== state.resourceType)
+  if (
+    (source !== undefined && source.resourceType !== state.resourceType) ||
+    sink.resourceType !== state.resourceType
+  )
     return "resource-mismatch";
-  if (state.stage === "acquire" && source.observedAmount <= 0) return "source-empty";
+  if (state.stage === "acquire" && (source?.observedAmount ?? 0) <= 0) return "source-empty";
   if (state.stage === "deliver" && sink.freeCapacity <= 0) return "sink-full";
   if (flow === undefined && state.stage === "acquire") return "planner-not-admitted";
   if (progress?.actorState === "dead") return "actor-dead";
@@ -250,25 +344,65 @@ function blocker(
 
 function requestFor(
   state: LogisticsCommitmentState,
-  source: LogisticsContractEndpoint,
-  sink: LogisticsContractEndpoint,
+  source: LogisticsContractEndpoint | undefined,
+  sink: LogisticsContractEndpoint | undefined,
 ): WorkContractRequest {
   const acquire = state.stage === "acquire";
-  const endpoint = acquire ? source : sink;
-  const counterpart = acquire ? sink : source;
-  const action = acquire ? (source.acquireAction ?? "withdraw") : "transfer";
-  const execution: ContractExecutionTermsV3 = {
-    action,
-    completion: acquire ? "target-depleted" : "target-full",
-    counterpartId: counterpart.targetId as string,
-    flowId: state.flowId,
-    recommendedCarry: state.recommendedCarry,
-    recommendedMove: state.recommendedMove,
-    reservedAmount: state.cycleAmount,
-    resourceType: state.resourceType as ResourceConstant,
-    stage: state.stage,
-    version: 3,
-  };
+  const sourceTargetId = source?.targetId ?? state.sourceTargetId;
+  const sinkTargetId = sink?.targetId ?? state.sinkTargetId;
+  const sourcePosition = source?.position ?? state.sourcePosition;
+  const sinkPosition = sink?.position ?? state.sinkPosition;
+  if (
+    sourceTargetId == null ||
+    sinkTargetId == null ||
+    sourcePosition === undefined ||
+    sinkPosition === undefined
+  )
+    throw new Error("validated logistics endpoint disappeared");
+  const endpoint = acquire
+    ? { position: sourcePosition, targetId: sourceTargetId }
+    : { position: sinkPosition, targetId: sinkTargetId };
+  const counterpartId = acquire ? sinkTargetId : sourceTargetId;
+  const action = acquire ? (source?.acquireAction ?? "withdraw") : "transfer";
+  const routed = state.routed !== undefined && state.sinkBaselineAmount !== undefined;
+  const execution: ContractExecutionTermsV3 | ContractExecutionTermsV6 = routed
+    ? {
+        acquireOriginRoomName: state.routed.acquire.originRoomName,
+        acquireRouteRoomNames: state.routed.acquire.roomNames,
+        acquireRouteTravelTicks: state.routed.acquire.travelTicks,
+        action,
+        completion: acquire ? "target-depleted" : "target-full",
+        counterpartId,
+        deliverOriginRoomName: state.routed.deliver.originRoomName,
+        deliverRouteRoomNames: state.routed.deliver.roomNames,
+        deliverRouteTravelTicks: state.routed.deliver.travelTicks,
+        flowId: state.flowId,
+        recommendedCarry: state.recommendedCarry,
+        recommendedMove: state.recommendedMove,
+        reservedAmount: state.cycleAmount,
+        resourceType: state.resourceType as ResourceConstant,
+        sinkBaselineAmount: state.sinkBaselineAmount,
+        sinkNodeId: state.sinkNodeId,
+        sinkPosition,
+        sinkTargetId,
+        sourceNodeId: state.sourceNodeId,
+        sourcePosition,
+        sourceTargetId,
+        stage: state.stage,
+        version: 6,
+      }
+    : {
+        action,
+        completion: acquire ? "target-depleted" : "target-full",
+        counterpartId,
+        flowId: state.flowId,
+        recommendedCarry: state.recommendedCarry,
+        recommendedMove: state.recommendedMove,
+        reservedAmount: state.cycleAmount,
+        resourceType: state.resourceType as ResourceConstant,
+        stage: state.stage,
+        version: 3,
+      };
   const mandatory = state.priorityClass === "mandatory";
   const identity = flowIssuer(state.flowId);
   return {
@@ -290,14 +424,24 @@ function requestFor(
     issuerKey: `${String(state.cycle)}/${state.stage}`,
     issuerSequence: state.cycle * 2 + (acquire ? 0 : 1),
     kind: "haul",
-    leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 3 },
-    maxAssignmentCost: Math.max(1, state.roundTripTicks),
+    leasePolicy: {
+      duration: routed ? Math.max(10, state.roundTripTicks + 50) : 10,
+      switchingPenalty: routed ? state.roundTripTicks : 1,
+      ttlSafetyMargin: 3,
+    },
+    maxAssignmentCost: routed
+      ? acquire
+        ? state.routed.acquire.travelTicks
+        : state.routed.deliver.travelTicks
+      : Math.max(1, state.roundTripTicks),
     owner: { id: state.colonyId, kind: "colony" },
     preconditionKeys: ["fresh-source-reservation", "fresh-sink-reservation"],
     priority: { class: mandatory ? "survival" : "growth", value: mandatory ? 850 : 350 },
     quantity: state.cycleAmount,
     range: 1,
-    requiredCapability: carryMoveCapability(),
+    requiredCapability: routed
+      ? carryMoveCapability(state.recommendedCarry, state.recommendedMove)
+      : carryMoveCapability(),
     target: { ...endpoint.position },
     targetId: endpoint.targetId,
   };
@@ -325,15 +469,32 @@ function allocateRecommendations(
   flows: readonly LogisticsProjection[],
   plan: LogisticsPlan,
 ): ReadonlyMap<string, { carry: number; move: number }> {
-  const result = new Map(flows.map(({ id }) => [id, { carry: 0, move: 0 }]));
+  const result = new Map(
+    flows.map((flow) => [
+      flow.id,
+      { carry: flow.recommendedCarry ?? 0, move: flow.recommendedMove ?? 0 },
+    ]),
+  );
   for (const recommendation of plan.recommendations) {
-    const colonyFlows = flows.filter(({ colonyId }) => colonyId === recommendation.colonyId);
-    for (let slot = 0; slot < recommendation.carry; slot += 1) {
-      const flow = colonyFlows[slot % Math.max(1, colonyFlows.length)];
+    const colonyFlows = flows.filter(
+      ({ colonyId, routed }) => colonyId === recommendation.colonyId && routed === undefined,
+    );
+    const routedCarry = flows
+      .filter(
+        ({ colonyId, routed }) => colonyId === recommendation.colonyId && routed !== undefined,
+      )
+      .reduce((total, flow) => total + (flow.recommendedCarry ?? 0), 0);
+    const routedMove = flows
+      .filter(
+        ({ colonyId, routed }) => colonyId === recommendation.colonyId && routed !== undefined,
+      )
+      .reduce((total, flow) => total + (flow.recommendedMove ?? 0), 0);
+    for (let slot = routedCarry; slot < recommendation.carry; slot += 1) {
+      const flow = colonyFlows[(slot - routedCarry) % Math.max(1, colonyFlows.length)];
       if (flow !== undefined) (result.get(flow.id) as { carry: number; move: number }).carry += 1;
     }
-    for (let slot = 0; slot < recommendation.move; slot += 1) {
-      const flow = colonyFlows[slot % Math.max(1, colonyFlows.length)];
+    for (let slot = routedMove; slot < recommendation.move; slot += 1) {
+      const flow = colonyFlows[(slot - routedMove) % Math.max(1, colonyFlows.length)];
       if (flow !== undefined) (result.get(flow.id) as { carry: number; move: number }).move += 1;
     }
   }
@@ -364,8 +525,8 @@ function hash(value: string): string {
   }
   return (result >>> 0).toString(16).padStart(8, "0");
 }
-function carryMoveCapability(): CapabilityVector {
-  return { attack: 0, carry: 1, claim: 0, heal: 0, move: 1, rangedAttack: 0, tough: 0, work: 0 };
+function carryMoveCapability(carry = 1, move = 1): CapabilityVector {
+  return { attack: 0, carry, claim: 0, heal: 0, move, rangedAttack: 0, tough: 0, work: 0 };
 }
 function counts<T>(values: readonly T[], key: (value: T) => string): ReadonlyMap<string, number> {
   const result = new Map<string, number>();

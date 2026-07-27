@@ -19,11 +19,11 @@ command execution, and atomic command-to-budget settlement. Phase 3 adds the typ
 substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
 boundary, deterministic threat-aware room-route cost/travel estimates, one command-free full-cost
 `RemotePortfolio`, just-in-time budgeted remote controller reservation, and request-driven budgeted
-remote source mining/capital through existing contract, spawn, movement, action, and construction
-site authorities; remote hauling remains unavailable. Systems assigned to later roadmap gates remain
-normative targets. Their absence is an implementation task, not permission to invent a different
-boundary. If a requirement cannot fit this architecture, write an ADR before changing the
-architecture.
+remote source mining/capital plus loss-aware routed remote hauling through existing logistics,
+contract, spawn, movement, action, and construction-site authorities. Systems assigned to later
+roadmap gates remain normative targets. Their absence is an implementation task, not permission to
+invent a different boundary. If a requirement cannot fit this architecture, write an ADR before
+changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -390,6 +390,19 @@ the sole construction-site arbiter/executor; the executor freshly verifies neutr
 self-reserved controller evidence. `RemotePortfolio`, ContractLedger, population/spawn,
 movement/action, and site authorities remain sole.
 [ADR 0084](adr/0084-budgeted-remote-source-mining.md) records this boundary.
+
+`projectRemoteHauling` is a graph-only adapter inside the sole `LogisticsPlanner` authority. It
+consumes exact active portfolio/mining evidence, current remote pickup stock, current owned
+storage/terminal capacity, two independently ready directional routes, detached loss/threat
+projections, and an exact donor grant. LogisticsPlanner alone reserves stock/capacity and sizes
+`CARRY`/`MOVE` from production, round trip, and predicted loss. Routed V6 terms persist both room
+sequences, exact endpoints, and one sink baseline; ContractLedger, population/spawn,
+movement/action, and executors retain sole authority. Delivery is fresh gain at the exact
+still-owned sink capped by the same live actor's cargo reduction, never inferred from cargo
+disappearance or unrelated sink gain alone. Successful and failed cycles advance monotonic issuer
+coordinates. Missing remote vision may not start acquisition, but cannot strand already-authorized
+cargo bound for a current owned sink; sink pressure retains that bounded delivery work without
+opening another pickup. [ADR 0085](adr/0085-loss-aware-remote-hauling.md) records this boundary.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1586,36 +1599,37 @@ facts—not a successful command return—prove target completion. ADR 0008 reco
 
 The following table is the canonical ownership map.
 
-| System                     | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                              |
-| -------------------------- | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | --------------------------------------- |
-| `RuntimeConfigAuthority`   | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners        |
-| `EmpireDirector`           | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands          |
-| `ColonyDirector`           | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache            |
-| `BudgetLedger`             | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend          |
-| `ContractLedger`           | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands          |
-| `IntelService`             | historical room facts and freshness            | snapshot, typed segment store, demands    | room/route views, vision requests        | select remotes/routes or issue commands |
-| `RoutePlanner`             | room-route choice, cost, travel estimate       | map, intel, relation/threat projections   | immutable route plans and reasons        | select remotes or issue commands        |
-| `EconomyPlanner`           | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps                  |
-| `SpawnBroker`              | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger     |
-| `SpawnExecutor`            | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy       |
-| `WorkforceAllocator`       | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands      |
-| `LogisticsPlanner`         | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly               |
-| `MovementArbiter`          | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels              |
-| `LayoutPlanner`            | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites               |
-| `ConstructionPlanner`      | build/repair/migration priorities              | layout, structures, reserves              | construction, work, removal proposals    | issue commands                          |
-| `StructureRemovalArbiter`  | owned-structure removal authorization          | typed proposals, current safety evidence  | at most one accepted removal intent      | call the game API                       |
-| `StructureDestroyExecutor` | direct owned-structure destroy command         | one accepted intent, narrow live adapter  | typed destroy result                     | select migration policy                 |
-| `DefenseDirector`          | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war                 |
-| `DiplomacyLedger`          | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions            |
-| `RemotePortfolio`          | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly              |
-| `RemoteMiningPlanner`      | remote source extraction/capital projection    | active objective, intel, route, grants    | contracts and site proposals             | own lifecycle, leases, sites, commands  |
-| `ExpansionDirector`        | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets             |
-| `IndustryDirector`         | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls       |
-| `MarketPlanner`            | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly            |
-| `OperationsController`     | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies                |
-| `ExecutorRegistry`         | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices                  |
-| `Reconciler`               | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                     |
-| `TelemetryService`         | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store             |
+| System                     | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                                |
+| -------------------------- | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| `RuntimeConfigAuthority`   | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners          |
+| `EmpireDirector`           | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands            |
+| `ColonyDirector`           | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache              |
+| `BudgetLedger`             | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend            |
+| `ContractLedger`           | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands            |
+| `IntelService`             | historical room facts and freshness            | snapshot, typed segment store, demands    | room/route views, vision requests        | select remotes/routes or issue commands   |
+| `RoutePlanner`             | room-route choice, cost, travel estimate       | map, intel, relation/threat projections   | immutable route plans and reasons        | select remotes or issue commands          |
+| `EconomyPlanner`           | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps                    |
+| `SpawnBroker`              | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger       |
+| `SpawnExecutor`            | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy         |
+| `WorkforceAllocator`       | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands        |
+| `LogisticsPlanner`         | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly                 |
+| `MovementArbiter`          | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels                |
+| `LayoutPlanner`            | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites                 |
+| `ConstructionPlanner`      | build/repair/migration priorities              | layout, structures, reserves              | construction, work, removal proposals    | issue commands                            |
+| `StructureRemovalArbiter`  | owned-structure removal authorization          | typed proposals, current safety evidence  | at most one accepted removal intent      | call the game API                         |
+| `StructureDestroyExecutor` | direct owned-structure destroy command         | one accepted intent, narrow live adapter  | typed destroy result                     | select migration policy                   |
+| `DefenseDirector`          | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war                   |
+| `DiplomacyLedger`          | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions              |
+| `RemotePortfolio`          | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly                |
+| `RemoteMiningPlanner`      | remote source extraction/capital projection    | active objective, intel, route, grants    | contracts and site proposals             | own lifecycle, leases, sites, commands    |
+| `projectRemoteHauling`     | remote graph evidence adapter                  | active mining, stock, routes, grant       | logistics nodes, edges, dispositions     | admit flows, persist work, issue commands |
+| `ExpansionDirector`        | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets               |
+| `IndustryDirector`         | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls         |
+| `MarketPlanner`            | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly              |
+| `OperationsController`     | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies                  |
+| `ExecutorRegistry`         | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices                    |
+| `Reconciler`               | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                       |
+| `TelemetryService`         | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store               |
 
 ### 12.1 ColonyDirector
 
@@ -2627,6 +2641,18 @@ funded positive capital may emit at most eight container/road proposals per obje
 existing global site arbiter; controller drift blocks the sole executor. Source/route/objective loss
 stops new capital and suspends or replaces exact work. Exact evidence is in
 [`phase3-mining-evidence.md`](phase3-mining-evidence.md).
+
+Issue #60 composes those active sources into the sole LogisticsPlanner. Current container or
+loss-adjusted dropped stock and current owned storage/terminal capacity become ordinary graph nodes;
+independent donor-to-remote and remote-to-donor routes supply one V6 contract's stage-specific room
+sequence. Production over round-trip time plus predicted loss fixes required `CARRY`/`MOVE`, then
+portfolio dimensions and an exact donor grant gate the flow. ContractLedger population requires that
+exact body. Delivery settles only from fresh gain above the cycle baseline at the exact current
+owned sink, capped by the same live actor's cargo reduction, so unrelated deposits and hauler death
+are not ghost income. Full sinks retain already-loaded bounded delivery work but authorize no new
+pickup. Stale/unsafe evidence, route drift, timeout, endpoint change, and production/loss revisions
+stop or replace bounded work through monotonic cycle identities. Exact evidence is in
+[`phase3-hauling-evidence.md`](phase3-hauling-evidence.md).
 
 ### 12.9 ExpansionDirector
 

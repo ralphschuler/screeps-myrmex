@@ -140,13 +140,34 @@ function routedContractTravelTicks(
   contract: WorkContractRecord,
 ): number | null {
   const execution = contract.execution;
-  if (execution?.version !== 4 && execution?.version !== 5) return null;
-  const route = [execution.originRoomName, ...execution.routeRoomNames];
+  if (execution === undefined) return null;
+  const routed =
+    execution.version === 4 || execution.version === 5
+      ? {
+          originRoomName: execution.originRoomName,
+          routeRoomNames: execution.routeRoomNames,
+          routeTravelTicks: execution.routeTravelTicks,
+        }
+      : execution.version === 6
+        ? execution.stage === "acquire"
+          ? {
+              originRoomName: execution.acquireOriginRoomName,
+              routeRoomNames: execution.acquireRouteRoomNames,
+              routeTravelTicks: execution.acquireRouteTravelTicks,
+            }
+          : {
+              originRoomName: execution.deliverOriginRoomName,
+              routeRoomNames: execution.deliverRouteRoomNames,
+              routeTravelTicks: execution.deliverRouteTravelTicks,
+            }
+        : null;
+  if (routed === null) return null;
+  const route = [routed.originRoomName, ...routed.routeRoomNames];
   const index = route.indexOf(actorRoomName);
   const remainingRooms = route.length - 1 - index;
-  if (index < 0 || remainingRooms <= 0 || execution.routeRoomNames.length === 0) return null;
+  if (index < 0 || remainingRooms <= 0 || routed.routeRoomNames.length === 0) return null;
   const ticks = Math.ceil(
-    (execution.routeTravelTicks * remainingRooms) / execution.routeRoomNames.length,
+    (routed.routeTravelTicks * remainingRooms) / routed.routeRoomNames.length,
   );
   return Number.isSafeInteger(ticks) && ticks > 0 ? ticks : null;
 }

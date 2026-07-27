@@ -182,6 +182,7 @@ export const CONTRACT_EXECUTION_TERM_VERSION_V2 = 2 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V3 = 3 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V4 = 4 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V5 = 5 as const;
+export const CONTRACT_EXECUTION_TERM_VERSION_V6 = 6 as const;
 
 export const CONTRACT_EXECUTION_ACTIONS = [
   "build",
@@ -264,12 +265,39 @@ export interface ContractExecutionTermsV5 {
   readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V5;
   readonly workPosition: PositionSnapshot;
 }
+/** Routed two-stage remote hauling through LogisticsPlanner and MovementArbiter. */
+export interface ContractExecutionTermsV6 {
+  readonly acquireOriginRoomName: string;
+  readonly acquireRouteRoomNames: readonly string[];
+  readonly acquireRouteTravelTicks: number;
+  readonly action: "pickup" | "transfer" | "withdraw";
+  readonly completion: ContractExecutionDisposition;
+  readonly counterpartId: string;
+  readonly deliverOriginRoomName: string;
+  readonly deliverRouteRoomNames: readonly string[];
+  readonly deliverRouteTravelTicks: number;
+  readonly flowId: string;
+  readonly recommendedCarry: number;
+  readonly recommendedMove: number;
+  readonly reservedAmount: number;
+  readonly resourceType: ResourceConstant;
+  readonly sinkBaselineAmount: number;
+  readonly sinkNodeId: string;
+  readonly sinkPosition: PositionSnapshot;
+  readonly sinkTargetId: string;
+  readonly sourceNodeId: string;
+  readonly sourcePosition: PositionSnapshot;
+  readonly sourceTargetId: string;
+  readonly stage: "acquire" | "deliver";
+  readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V6;
+}
 export type ContractExecutionTerms =
   | ContractExecutionTermsV1
   | ContractExecutionTermsV2
   | ContractExecutionTermsV3
   | ContractExecutionTermsV4
-  | ContractExecutionTermsV5;
+  | ContractExecutionTermsV5
+  | ContractExecutionTermsV6;
 
 export interface WorkContractRequest {
   readonly budgetBinding: ContractBudgetBinding;
@@ -353,6 +381,8 @@ export interface ContractExecutionView {
 /** Bounded, data-only active-contract projection for planners that must renew or retire work. */
 export interface ContractPlanningRecord {
   readonly budgetBinding: ContractBudgetBinding;
+  /** Original stage start retained for deterministic request reconstruction. */
+  readonly earliestStart?: number;
   readonly contractId: string;
   readonly execution: ContractExecutionTerms;
   readonly issuer: string;
@@ -694,9 +724,22 @@ function normalizeExecutionTerms(
     readonly resourceType: unknown;
     readonly flowId?: unknown;
     readonly offload?: unknown;
+    readonly acquireOriginRoomName?: unknown;
+    readonly acquireRouteRoomNames?: unknown;
+    readonly acquireRouteTravelTicks?: unknown;
+    readonly deliverOriginRoomName?: unknown;
+    readonly deliverRouteRoomNames?: unknown;
+    readonly deliverRouteTravelTicks?: unknown;
     readonly recommendedCarry?: unknown;
     readonly recommendedMove?: unknown;
     readonly reservedAmount?: unknown;
+    readonly sinkBaselineAmount?: unknown;
+    readonly sinkNodeId?: unknown;
+    readonly sinkPosition?: unknown;
+    readonly sinkTargetId?: unknown;
+    readonly sourceNodeId?: unknown;
+    readonly sourcePosition?: unknown;
+    readonly sourceTargetId?: unknown;
     readonly routeRoomNames?: unknown;
     readonly routeTravelTicks?: unknown;
     readonly signText?: unknown;
@@ -735,9 +778,10 @@ function normalizeExecutionTerms(
     value.version !== 2 &&
     value.version !== 3 &&
     value.version !== 4 &&
-    value.version !== 5
+    value.version !== 5 &&
+    value.version !== 6
   ) {
-    invalid("invalid-execution-version", "$.execution.version", "must equal 1, 2, 3, 4, or 5");
+    invalid("invalid-execution-version", "$.execution.version", "must equal 1, 2, 3, 4, 5, or 6");
   }
   if (!actionMatchesContractKind(action, kind)) {
     invalid("execution-kind-mismatch", "$.execution.action", "is not authorized by contract kind");
@@ -768,7 +812,8 @@ function normalizeExecutionTerms(
           1,
           64,
         ) as ResourceConstant);
-  const resourceRequired = value.version === 3 || action === "transfer" || action === "withdraw";
+  const resourceRequired =
+    value.version === 3 || value.version === 6 || action === "transfer" || action === "withdraw";
   if (resourceRequired !== (resourceType !== null)) {
     invalid(
       "execution-resource-mismatch",
@@ -839,6 +884,129 @@ function normalizeExecutionTerms(
       resourceType,
       stage,
       version: 3,
+    };
+  }
+  if (value.version === 6) {
+    if (
+      kind !== "haul" ||
+      (action !== "pickup" && action !== "withdraw" && action !== "transfer") ||
+      resourceType === null ||
+      counterpartId === null
+    )
+      invalid("execution-v6-action-mismatch", "$.execution", "v6 is routed haul-only");
+    const stage = value.stage;
+    if (stage !== "acquire" && stage !== "deliver")
+      invalid("invalid-execution-stage", "$.execution.stage", "must be acquire or deliver");
+    if ((stage === "acquire") !== (action === "pickup" || action === "withdraw"))
+      invalid("execution-stage-action-mismatch", "$.execution.action", "must match haul stage");
+    const recommendedCarry = integerInRange(
+      value.recommendedCarry,
+      "$.execution.recommendedCarry",
+      1,
+      25,
+    );
+    const recommendedMove = integerInRange(
+      value.recommendedMove,
+      "$.execution.recommendedMove",
+      1,
+      25,
+    );
+    if (recommendedCarry + recommendedMove > 50)
+      invalid("execution-v6-capability-too-large", "$.execution", "may recommend at most 50 parts");
+    const sourceNodeId = validateBoundedString(
+      value.sourceNodeId,
+      "$.execution.sourceNodeId",
+      1,
+      128,
+    );
+    const sinkNodeId = validateBoundedString(value.sinkNodeId, "$.execution.sinkNodeId", 1, 128);
+    if (sourceNodeId === sinkNodeId)
+      invalid("execution-v6-endpoint-mismatch", "$.execution", "source and sink nodes must differ");
+    const sourceTargetId = validateBoundedString(
+      value.sourceTargetId,
+      "$.execution.sourceTargetId",
+      1,
+      128,
+    );
+    const sinkTargetId = validateBoundedString(
+      value.sinkTargetId,
+      "$.execution.sinkTargetId",
+      1,
+      128,
+    );
+    const sourcePosition = normalizePosition(
+      value.sourcePosition as PositionSnapshot,
+      "$.execution.sourcePosition",
+    );
+    const sinkPosition = normalizePosition(
+      value.sinkPosition as PositionSnapshot,
+      "$.execution.sinkPosition",
+    );
+    const acquire = normalizeExecutionRoute(
+      value.acquireOriginRoomName,
+      value.acquireRouteRoomNames,
+      value.acquireRouteTravelTicks,
+      sourcePosition.roomName,
+      "acquire",
+    );
+    const deliver = normalizeExecutionRoute(
+      value.deliverOriginRoomName,
+      value.deliverRouteRoomNames,
+      value.deliverRouteTravelTicks,
+      sinkPosition.roomName,
+      "deliver",
+    );
+    if (
+      acquire.originRoomName !== sinkPosition.roomName ||
+      deliver.originRoomName !== sourcePosition.roomName
+    )
+      invalid(
+        "execution-v6-route-mismatch",
+        "$.execution",
+        "route origins must match opposite endpoint rooms",
+      );
+    const expectedTargetId = stage === "acquire" ? sourceTargetId : sinkTargetId;
+    const expectedCounterpartId = stage === "acquire" ? sinkTargetId : sourceTargetId;
+    const expectedPosition = stage === "acquire" ? sourcePosition : sinkPosition;
+    if (
+      targetId !== expectedTargetId ||
+      counterpartId !== expectedCounterpartId ||
+      target.roomName !== expectedPosition.roomName ||
+      target.x !== expectedPosition.x ||
+      target.y !== expectedPosition.y
+    )
+      invalid(
+        "execution-v6-target-mismatch",
+        "$.execution",
+        "target/counterpart must match active stage",
+      );
+    return {
+      acquireOriginRoomName: acquire.originRoomName,
+      acquireRouteRoomNames: acquire.roomNames,
+      acquireRouteTravelTicks: acquire.travelTicks,
+      action,
+      completion,
+      counterpartId,
+      deliverOriginRoomName: deliver.originRoomName,
+      deliverRouteRoomNames: deliver.roomNames,
+      deliverRouteTravelTicks: deliver.travelTicks,
+      flowId: validateBoundedString(value.flowId, "$.execution.flowId", 1, 128),
+      recommendedCarry,
+      recommendedMove,
+      reservedAmount: positiveInteger(value.reservedAmount, "$.execution.reservedAmount"),
+      resourceType,
+      sinkBaselineAmount: nonNegativeInteger(
+        value.sinkBaselineAmount,
+        "$.execution.sinkBaselineAmount",
+      ),
+      sinkNodeId,
+      sinkPosition,
+      sinkTargetId,
+      sourceNodeId,
+      sourcePosition,
+      sourceTargetId,
+      stage,
+      version: 6,
     };
   }
   if (value.version === 4 || value.version === 5) {
@@ -994,6 +1162,44 @@ function normalizeStringSet(value: unknown, path: string, maximum: number): read
 
 function nullableBoundedString(value: unknown, path: string, maximum: number): string | null {
   return value === null ? null : validateBoundedString(value, path, 1, maximum);
+}
+
+function normalizeExecutionRoute(
+  originValue: unknown,
+  roomsValue: unknown,
+  travelValue: unknown,
+  destinationRoomName: string,
+  key: "acquire" | "deliver",
+): {
+  readonly originRoomName: string;
+  readonly roomNames: readonly string[];
+  readonly travelTicks: number;
+} {
+  const originRoomName = validateRoomName(originValue, `$.execution.${key}OriginRoomName`);
+  if (!Array.isArray(roomsValue) || roomsValue.length < 1 || roomsValue.length > 16)
+    invalid(
+      "invalid-execution-route",
+      `$.execution.${key}RouteRoomNames`,
+      "must contain 1-16 rooms",
+    );
+  const roomNames = roomsValue.map((room, index) =>
+    validateRoomName(room, `$.execution.${key}RouteRoomNames[${String(index)}]`),
+  );
+  if (
+    new Set(roomNames).size !== roomNames.length ||
+    roomNames.includes(originRoomName) ||
+    roomNames[roomNames.length - 1] !== destinationRoomName
+  )
+    invalid(
+      "invalid-execution-route",
+      `$.execution.${key}RouteRoomNames`,
+      "must be unique, exclude origin, and end at endpoint",
+    );
+  return {
+    originRoomName,
+    roomNames: Object.freeze(roomNames),
+    travelTicks: integerInRange(travelValue, `$.execution.${key}RouteTravelTicks`, 1, 50_000),
+  };
 }
 
 function validateRoomName(value: unknown, path: string): string {

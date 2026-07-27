@@ -524,9 +524,21 @@ bounded use evidence whose fatigue value exceeds official terrain build cost. Ev
 fits remaining portfolio capacity, receives a separate donor grant, and enters the sole global site
 arbiter after owned progression. Neutral/self-reserved controller evidence is rechecked at the sole
 executor. Threat, source/controller/route loss, budget loss, site pressure, or timeout stops new
-capital and suspends or replaces exact mining work; command retries stop after three attempts. This
-proves extraction, not delivered income: #60 owns remote hauling, #61 evacuation, and #62 realized
-accounting.
+capital and suspends or replaces exact mining work; command retries stop after three attempts.
+
+Remote hauling now realizes that extraction through the sole LogisticsPlanner. Current container or
+decay-adjusted dropped stock competes for current owned storage, then terminal capacity. Production
+multiplied by independently routed round-trip time fixes useful cargo; predicted transit loss grows
+the required body before the 25-pair ceiling. Every source consumes portfolio energy, spawn-time,
+CPU, and Memory once, then needs an exact donor grant. A routed V6 contract requires the exact
+`CARRY`/`MOVE` body and follows separate acquisition and loaded-return room sequences through the
+existing local-path and movement authorities. Partial delivery is measured only from fresh gain at
+the exact still-owned sink, capped by the same live actor's cargo reduction. Unrelated deposits and
+hauler death therefore cannot become ghost income; death records loss and a monotonic bounded
+replacement cycle. Full sinks retain loaded work without opening another pickup. Stale or unsafe
+evidence, route/endpoint or production/loss change, timeout, and budget loss stop new pickup;
+already-loaded cargo may still reach its current owned sink after remote vision disappears. This
+proves delivery mechanics, not strict evacuation (#61) or realized rolling profit (#62).
 
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU

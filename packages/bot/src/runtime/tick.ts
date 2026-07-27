@@ -1131,6 +1131,20 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
             .filter(({ status }) => status === "active")
             .map(({ category, colonyId, issuer }) => `${colonyId}\u0000${category}\u0000${issuer}`),
         );
+        const authorizedRoutedAcquireFlowIds = new Set(
+          logisticsRuntime.plan.projections.flatMap(({ admittedAmount, blocker, id }) =>
+            blocker === null && admittedAmount > 0 ? [id] : [],
+          ),
+        );
+        const authorizedRoutedDeliveryFlowIds = new Set(
+          logisticsRuntime.contracts.commitments.flatMap(({ flowId, reason, request, stage }) =>
+            request?.execution?.version === 6 &&
+            stage === "deliver" &&
+            (reason === "active" || reason === "sink-full")
+              ? [flowId]
+              : [],
+          ),
+        );
         const scope = input.contractChannel.openProducer("logistics.contracts");
         for (const commitment of logisticsRuntime.contracts.commitments) {
           const request = commitment.request;
@@ -1234,6 +1248,39 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
               tick: context.tick,
               to: "funded",
             });
+          if (contract.execution.version === 6 && contract.issuer.startsWith("logistics/")) {
+            const authorized =
+              (contract.execution.stage === "acquire" &&
+                authorizedRoutedAcquireFlowIds.has(contract.execution.flowId)) ||
+              (contract.execution.stage === "deliver" &&
+                authorizedRoutedDeliveryFlowIds.has(contract.execution.flowId));
+            if (
+              !authorized &&
+              contract.execution.stage === "acquire" &&
+              contract.state !== "proposed" &&
+              contract.state !== "suspended" &&
+              !retiringContractIds.has(contract.contractId)
+            )
+              scope.producer.transition({
+                contractId: contract.contractId,
+                reason: "remote-hauling-not-authorized",
+                tick: context.tick,
+                to: "suspended",
+              });
+            else if (
+              authorized &&
+              (contract.state === "proposed" || contract.state === "suspended") &&
+              funded.has(
+                `${contract.owner.id}\u0000${contract.budgetBinding.category}\u0000${contract.budgetBinding.issuer}`,
+              )
+            )
+              scope.producer.transition({
+                contractId: contract.contractId,
+                reason: "logistics-funded",
+                tick: context.tick,
+                to: "funded",
+              });
+          }
         }
         const requests = scope.stage();
         return staged(
@@ -2406,7 +2453,8 @@ function layoutPlanningSystem(
             ? [
                 {
                   counterpartId: execution.counterpartId,
-                  flowId: execution.version === 3 ? execution.flowId : null,
+                  flowId:
+                    execution.version === 3 || execution.version === 6 ? execution.flowId : null,
                   targetId,
                   version: execution.version,
                 },
@@ -2420,7 +2468,12 @@ function layoutPlanningSystem(
       const activeTerminalLogisticsTargetIds = new Set(activeLogisticsTargetIds);
       for (const commitment of logistics.contracts.commitments) {
         const request = commitment.request;
-        if (request?.execution?.version !== 3 || request.targetId === null) continue;
+        if (
+          request?.execution === undefined ||
+          (request.execution.version !== 3 && request.execution.version !== 6) ||
+          request.targetId === null
+        )
+          continue;
         activeLogisticsFlowIds.add(request.execution.flowId);
         activeLogisticsTargetIds.add(request.targetId);
         activeLogisticsTargetIds.add(request.execution.counterpartId);
@@ -4344,7 +4397,7 @@ function colonyDirectorSystem(
       });
       const logisticsActorIds = new Set(
         context.contractExecution.leases.flatMap(({ actorId, execution }) =>
-          execution.version === 3 ? [actorId] : [],
+          execution.version === 3 || execution.version === 6 ? [actorId] : [],
         ),
       );
       const logisticsPickupTargetIds = new Set(
@@ -5859,7 +5912,9 @@ function logisticsObservations(
       );
       const activeContract = context.contractPlanning.contracts.find(
         ({ execution, state }) =>
-          state === "active" && execution.version === 3 && execution.flowId === projection.id,
+          state === "active" &&
+          (execution.version === 3 || execution.version === 6) &&
+          execution.flowId === projection.id,
       );
       const loss = commitment === undefined || commitment.cycle === 0 ? 0 : commitment.cycleAmount;
       return Object.freeze({

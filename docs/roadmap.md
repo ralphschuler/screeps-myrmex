@@ -203,8 +203,13 @@ authorized without an explicit maintainer resolution of this gap.
   [issue #59](https://github.com/ralphschuler/screeps-myrmex/issues/59) and
   [`phase3-mining-evidence.md`](phase3-mining-evidence.md). The request-driven projection reuses
   donor budgets, contracts, population/spawn, movement/action, and global site authorities; it does
-  not claim delivered energy. Hauling, threat evacuation, operational suspension, and cautious
-  resumption remain issues #60–#61.
+  not claim delivered energy by itself.
+- Loss-aware remote pickup, production/round-trip/predicted-loss capacity sizing, exact donor
+  funding, independent routed acquisition/delivery, sink-pressure fallback, and observed-gain-only
+  settlement are tracked by [issue #60](https://github.com/ralphschuler/screeps-myrmex/issues/60)
+  and [`phase3-hauling-evidence.md`](phase3-hauling-evidence.md). V6 reuses LogisticsPlanner,
+  ContractLedger, population/spawn, movement/action, and executor authorities; strict threat
+  evacuation/resumption remains #61.
 - Realized per-remote full-cost profitability and outcome telemetry remain issue #62.
 
 **Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.

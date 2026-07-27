@@ -122,6 +122,31 @@ const EXECUTION_V5_KEYS = [
   "version",
   "workPosition",
 ] as const;
+const EXECUTION_V6_KEYS = [
+  "acquireOriginRoomName",
+  "acquireRouteRoomNames",
+  "acquireRouteTravelTicks",
+  "action",
+  "completion",
+  "counterpartId",
+  "deliverOriginRoomName",
+  "deliverRouteRoomNames",
+  "deliverRouteTravelTicks",
+  "flowId",
+  "recommendedCarry",
+  "recommendedMove",
+  "reservedAmount",
+  "resourceType",
+  "sinkBaselineAmount",
+  "sinkNodeId",
+  "sinkPosition",
+  "sinkTargetId",
+  "sourceNodeId",
+  "sourcePosition",
+  "sourceTargetId",
+  "stage",
+  "version",
+] as const;
 
 const RECORD_KEYS = [
   ...REQUEST_KEYS,
@@ -422,7 +447,9 @@ function parseRequest(
                 ? EXECUTION_V4_KEYS
                 : isRecord(record.execution) && record.execution.version === 5
                   ? EXECUTION_V5_KEYS
-                  : EXECUTION_KEYS,
+                  : isRecord(record.execution) && record.execution.version === 6
+                    ? EXECUTION_V6_KEYS
+                    : EXECUTION_KEYS,
         );
   const request = {
     budgetBinding,
