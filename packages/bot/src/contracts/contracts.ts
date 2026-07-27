@@ -181,6 +181,7 @@ export const CONTRACT_EXECUTION_TERM_VERSION = 1 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V2 = 2 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V3 = 3 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V4 = 4 as const;
+export const CONTRACT_EXECUTION_TERM_VERSION_V5 = 5 as const;
 
 export const CONTRACT_EXECUTION_ACTIONS = [
   "build",
@@ -250,11 +251,25 @@ export interface ContractExecutionTermsV4 {
   readonly targetReservationTicks: number;
   readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V4;
 }
+/** Cross-room static extraction terms. Full/no CARRY stores deliberately fall back to drops. */
+export interface ContractExecutionTermsV5 {
+  readonly action: "harvest";
+  readonly completion: "continuous";
+  readonly counterpartId: null;
+  readonly offload: "container-or-drop";
+  readonly originRoomName: string;
+  readonly resourceType: null;
+  readonly routeRoomNames: readonly string[];
+  readonly routeTravelTicks: number;
+  readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V5;
+  readonly workPosition: PositionSnapshot;
+}
 export type ContractExecutionTerms =
   | ContractExecutionTermsV1
   | ContractExecutionTermsV2
   | ContractExecutionTermsV3
-  | ContractExecutionTermsV4;
+  | ContractExecutionTermsV4
+  | ContractExecutionTermsV5;
 
 export interface WorkContractRequest {
   readonly budgetBinding: ContractBudgetBinding;
@@ -350,6 +365,8 @@ export interface ContractPlanningRecord {
   readonly repairRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
   /** Reservation-only command failure evidence; actor/route loss is deliberately not an attempt. */
   readonly reservationRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
+  /** Routed remote-harvest command failure evidence; actor/route loss is not an attempt. */
+  readonly remoteMiningRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
   readonly state: ActiveWorkContractState;
   readonly targetId: string;
 }
@@ -676,6 +693,7 @@ function normalizeExecutionTerms(
     readonly counterpartId: unknown;
     readonly resourceType: unknown;
     readonly flowId?: unknown;
+    readonly offload?: unknown;
     readonly recommendedCarry?: unknown;
     readonly recommendedMove?: unknown;
     readonly reservedAmount?: unknown;
@@ -712,8 +730,14 @@ function normalizeExecutionTerms(
       "must be a supported disposition",
     );
   }
-  if (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) {
-    invalid("invalid-execution-version", "$.execution.version", "must equal 1, 2, 3, or 4");
+  if (
+    value.version !== 1 &&
+    value.version !== 2 &&
+    value.version !== 3 &&
+    value.version !== 4 &&
+    value.version !== 5
+  ) {
+    invalid("invalid-execution-version", "$.execution.version", "must equal 1, 2, 3, 4, or 5");
   }
   if (!actionMatchesContractKind(action, kind)) {
     invalid("execution-kind-mismatch", "$.execution.action", "is not authorized by contract kind");
@@ -817,15 +841,27 @@ function normalizeExecutionTerms(
       version: 3,
     };
   }
-  if (value.version === 4) {
+  if (value.version === 4 || value.version === 5) {
+    const remoteHarvest = value.version === 5;
     if (
-      kind !== "reserve" ||
-      action !== "reserve-controller" ||
-      completion !== "work-complete" ||
-      counterpartId !== null ||
-      resourceType !== null
+      remoteHarvest
+        ? kind !== "harvest" ||
+          action !== "harvest" ||
+          completion !== "continuous" ||
+          counterpartId !== null ||
+          resourceType !== null ||
+          value.offload !== "container-or-drop"
+        : kind !== "reserve" ||
+          action !== "reserve-controller" ||
+          completion !== "work-complete" ||
+          counterpartId !== null ||
+          resourceType !== null
     ) {
-      invalid("execution-v4-action-mismatch", "$.execution", "v4 is controller-reservation-only");
+      invalid(
+        remoteHarvest ? "execution-v5-action-mismatch" : "execution-v4-action-mismatch",
+        "$.execution",
+        remoteHarvest ? "v5 is routed harvest-only" : "v4 is controller-reservation-only",
+      );
     }
     const originRoomName = validateRoomName(value.originRoomName, "$.execution.originRoomName");
     if (
@@ -849,6 +885,37 @@ function normalizeExecutionTerms(
         "must be unique, exclude origin, and end in the target room",
       );
     }
+    const routeTravelTicks = integerInRange(
+      value.routeTravelTicks,
+      "$.execution.routeTravelTicks",
+      1,
+      50_000,
+    );
+    if (remoteHarvest) {
+      const workPosition = normalizePosition(
+        value.workPosition as PositionSnapshot,
+        "$.execution.workPosition",
+      );
+      if (workPosition.roomName !== target.roomName) {
+        invalid(
+          "invalid-execution-work-position",
+          "$.execution.workPosition",
+          "must be in the target room",
+        );
+      }
+      return {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        offload: "container-or-drop",
+        originRoomName,
+        resourceType: null,
+        routeRoomNames: Object.freeze(routeRoomNames),
+        routeTravelTicks,
+        version: 5,
+        workPosition,
+      };
+    }
     const signText = value.signText;
     if (signText !== null && (typeof signText !== "string" || signText.length > 100)) {
       invalid(
@@ -864,12 +931,7 @@ function normalizeExecutionTerms(
       originRoomName,
       resourceType: null,
       routeRoomNames: Object.freeze(routeRoomNames),
-      routeTravelTicks: integerInRange(
-        value.routeTravelTicks,
-        "$.execution.routeTravelTicks",
-        1,
-        50_000,
-      ),
+      routeTravelTicks,
       signText,
       targetReservationTicks: integerInRange(
         value.targetReservationTicks,

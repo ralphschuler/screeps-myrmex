@@ -6,6 +6,7 @@ import type {
 
 export interface ConstructionSiteExecutionAdapter {
   isCurrentCommitment(roomName: string, fingerprint: string): boolean;
+  readonly isSelfUsername?: (username: string) => boolean;
   resolveRoom(roomName: string): Room | null;
 }
 
@@ -26,8 +27,20 @@ export class ConstructionSiteExecutor {
         return result(intent, false, "ERR_INVALID_TARGET", "stale-commitment");
       const room = adapter.resolveRoom(intent.roomName);
       if (room === null) return result(intent, false, "ERR_NOT_OWNER", "room-unavailable");
-      if (room.controller?.my !== true)
-        return result(intent, false, "ERR_NOT_OWNER", "room-not-owned");
+      if (intent.remoteAuthorization === undefined) {
+        if (room.controller?.my !== true)
+          return result(intent, false, "ERR_NOT_OWNER", "room-not-owned");
+      } else if (intent.structureType !== "container" && intent.structureType !== "road") {
+        return result(intent, false, "ERR_INVALID_TARGET", "remote-structure-forbidden");
+      } else if (
+        !remoteControllerMatches(
+          room.controller,
+          intent.remoteAuthorization,
+          adapter.isSelfUsername,
+        )
+      ) {
+        return result(intent, false, "ERR_NOT_OWNER", "remote-controller-mismatch");
+      }
       const code = normalizeReturnCode(
         room.createConstructionSite(
           intent.x,
@@ -40,6 +53,21 @@ export class ConstructionSiteExecutor {
       return result(intent, false, "UNEXPECTED", "adapter-fault");
     }
   }
+}
+
+function remoteControllerMatches(
+  controller: StructureController | undefined,
+  authorization: NonNullable<CreateConstructionSiteIntent["remoteAuthorization"]>,
+  isSelfUsername: ConstructionSiteExecutionAdapter["isSelfUsername"],
+): boolean {
+  if (controller === undefined || controller.owner !== undefined) return false;
+  if (authorization.controller === "neutral")
+    return authorization.reservationUsername === null && controller.reservation === undefined;
+  return (
+    authorization.reservationUsername !== null &&
+    controller.reservation?.username === authorization.reservationUsername &&
+    isSelfUsername?.(authorization.reservationUsername) === true
+  );
 }
 
 function normalizeReturnCode(code: number): ConstructionSiteAttemptCode {

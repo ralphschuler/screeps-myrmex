@@ -130,7 +130,7 @@ describe("runtime local-path travel estimates", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("consumes only v4 RoutePlanner terms for cross-room reservation travel", () => {
+  it("consumes only V4/V5 RoutePlanner terms for routed cross-room travel", () => {
     const paths: LocalPathPlanningService = {
       plan: () => ({ cost: 2, directions: [3, 3], source: "cache", status: "ready" }),
     };
@@ -141,8 +141,10 @@ describe("runtime local-path travel estimates", () => {
       tick: TICK,
     });
     const reservation = reservationContract();
+    const mining = remoteMiningContract();
 
     expect(travel.estimate(actor(), reservation)).toBe(50);
+    expect(travel.estimate(actor(), mining)).toBe(50);
     expect(
       travel.estimate({ ...actor(), pos: { roomName: "W0N1", x: 10, y: 10 } }, reservation),
     ).toBe(25);
@@ -303,6 +305,25 @@ function reservationContract(): WorkContractRecord {
     },
     kind: "reserve",
     targetId: "controller-a",
+  };
+}
+
+function remoteMiningContract(): WorkContractRecord {
+  return {
+    ...contract("contract:remote-mining", 25, { roomName: "E0N1" }),
+    execution: {
+      action: "harvest",
+      completion: "continuous",
+      counterpartId: null,
+      offload: "container-or-drop",
+      originRoomName: "W1N1",
+      resourceType: null,
+      routeRoomNames: ["W0N1", "E0N1"],
+      routeTravelTicks: 50,
+      version: 5,
+      workPosition: { roomName: "E0N1", x: 24, y: 25 },
+    },
+    targetId: "source-a",
   };
 }
 

@@ -496,7 +496,7 @@ Threat, donor pressure, stale/partial vision, route loss, controller conflict, c
 non-positive value releases the whole commitment. Safe evidence must pass suspension and cooldown
 probes before resumption; fresh source disappearance or expiry retires terminally. These are funded
 abstract objectives, not claims of reservation, mining, hauling, evacuation, commands, or realized
-profit; issues #58–#62 retain those outcomes.
+profit; issues #58–#62 consume them through their existing authorities.
 
 One active profitable objective may now request remote controller reservation. Current/fresh
 complete intel, a ready zero-risk route, healthy donor, and mechanically neutral or authoritatively
@@ -510,6 +510,23 @@ donor pressure, budget loss, controller ownership change, timeout, or three comm
 suspends or terminates without a second role, queue, route cache, or command path. Current-room
 local paths and exact cardinal border intents consume the room route; they do not create a
 persistent cross-room tile path.
+
+That same active objective may now fund remote source miners without creating a remote role or task
+queue. Observed 1,500/3,000 source capacity requests three/five `WORK` with equal `MOVE`, while the
+portfolio envelope first fits every source's body, spawn, CPU, and bounded Memory commitment. Each
+source then needs its exact donor grant. Replacement begins at route travel plus body spawn time
+plus 25 safety ticks. One routed V5 contract reuses local paths and cardinal border movement, then
+holds a canonical legal adjacent tile. Zero `CARRY`, full containers, and disrupted hauling
+intentionally fall back to dropped energy instead of stopping extraction; empty sources wait for
+regeneration. Current vision may justify a 5,000-energy container only when remaining forecast
+profit also covers its 0.5-energy/tick unowned-room upkeep. Roads additionally need current-route
+bounded use evidence whose fatigue value exceeds official terrain build cost. Every capital item
+fits remaining portfolio capacity, receives a separate donor grant, and enters the sole global site
+arbiter after owned progression. Neutral/self-reserved controller evidence is rechecked at the sole
+executor. Threat, source/controller/route loss, budget loss, site pressure, or timeout stops new
+capital and suspends or replaces exact mining work; command retries stop after three attempts. This
+proves extraction, not delivered income: #60 owns remote hauling, #61 evacuation, and #62 realized
+accounting.
 
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU

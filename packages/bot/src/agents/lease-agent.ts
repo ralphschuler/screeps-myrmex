@@ -1,4 +1,5 @@
 import type {
+  ContractExecutionTerms,
   ContractExecutionView,
   ContractTransitionRequest,
   LeasedWorkExecution,
@@ -101,10 +102,10 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
     if (actor === undefined) continue;
     const target = targets.get(lease.targetId);
     const routeStep =
-      lease.execution.version === 4 && actor.pos.roomName !== lease.target.roomName
+      isCrossRoomExecution(lease.execution) && actor.pos.roomName !== lease.target.roomName
         ? crossRoomStep(lease, actor.pos, input.snapshot)
         : null;
-    if (lease.execution.version === 4 && actor.pos.roomName !== lease.target.roomName) {
+    if (isCrossRoomExecution(lease.execution) && actor.pos.roomName !== lease.target.roomName) {
       if (routeStep === null) {
         dispositions.push({
           contractId: lease.contractId,
@@ -148,15 +149,15 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       }
     }
     if (target === undefined && routeStep === null) continue;
-    if (lease.execution.version === 2 && target?.amount === 0) continue;
     const goal =
       routeStep?.exit ??
-      (lease.execution.version === 2 ? lease.execution.workPosition : target?.pos);
+      (isStaticMiningExecution(lease.execution) ? lease.execution.workPosition : target?.pos);
     if (goal === undefined) continue;
-    const range = routeStep === null ? (lease.execution.version === 2 ? 0 : lease.range) : 0;
+    const range =
+      routeStep === null ? (isStaticMiningExecution(lease.execution) ? 0 : lease.range) : 0;
     if (inRange(actor.pos, goal, range)) {
       if (target === undefined) continue;
-      if (lease.execution.version === 2 && !inRange(actor.pos, target.pos, 1)) {
+      if (isStaticMiningExecution(lease.execution) && !inRange(actor.pos, target.pos, 1)) {
         dispositions.push({
           contractId: lease.contractId,
           contractRevision: lease.revision,
@@ -165,6 +166,7 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
         });
         continue;
       }
+      if (isStaticMiningExecution(lease.execution) && target.amount === 0) continue;
       actions.push(actionIntent(lease, actor, target));
       continue;
     }
@@ -412,7 +414,7 @@ function validateLease(
   if (actor.ticksToLive === null || actor.ticksToLive <= 1)
     return suspend("actor-ttl-insufficient");
   const target = targets.get(lease.targetId);
-  if (lease.execution.version === 4 && actor.pos.roomName !== lease.target.roomName) {
+  if (isCrossRoomExecution(lease.execution) && actor.pos.roomName !== lease.target.roomName) {
     if (crossRoomRouteIndex(lease, actor.pos.roomName) < 0) return suspend("route-unavailable");
     if (!canPerform(actor, lease.execution.action)) return suspend("actor-capability-lost");
     return null;
@@ -450,13 +452,14 @@ function validateLease(
       lease.execution.action === "withdraw" ||
       lease.execution.action === "pickup") &&
     actor.store.freeCapacity !== null &&
-    actor.store.freeCapacity <= 0
+    actor.store.freeCapacity <= 0 &&
+    lease.execution.version !== 5
   )
     return suspend("actor-store-full");
   if (lease.execution.action === "harvest" && target.type !== "source")
     return unavailableTarget(lease, suspend, "target-depleted");
   if (lease.execution.action === "harvest" && target.amount === 0)
-    return lease.execution.version === 2
+    return isStaticMiningExecution(lease.execution)
       ? null
       : unavailableTarget(lease, suspend, "target-depleted");
   if (
@@ -633,7 +636,7 @@ function dynamicMovementBlockers(
 }
 
 function crossRoomRouteIndex(lease: LeasedWorkExecution, roomName: string): number {
-  if (lease.execution.version !== 4) return -1;
+  if (!isCrossRoomExecution(lease.execution)) return -1;
   return [lease.execution.originRoomName, ...lease.execution.routeRoomNames].indexOf(roomName);
 }
 
@@ -646,7 +649,7 @@ function crossRoomStep(
   readonly direction: DirectionConstant;
   readonly exit: PositionSnapshot;
 } | null {
-  if (lease.execution.version !== 4) return null;
+  if (!isCrossRoomExecution(lease.execution)) return null;
   const route = [lease.execution.originRoomName, ...lease.execution.routeRoomNames];
   const index = route.indexOf(origin.roomName);
   const nextRoom = index < 0 ? undefined : route[index + 1];
@@ -714,6 +717,18 @@ function crossingDestination(
   if (direction === 5) return { roomName, x: exit.x, y: 0 };
   if (direction === 7) return { roomName, x: 49, y: exit.y };
   return null;
+}
+
+function isCrossRoomExecution(
+  execution: ContractExecutionTerms,
+): execution is Extract<ContractExecutionTerms, { readonly version: 4 | 5 }> {
+  return execution.version === 4 || execution.version === 5;
+}
+
+function isStaticMiningExecution(
+  execution: ContractExecutionTerms,
+): execution is Extract<ContractExecutionTerms, { readonly version: 2 | 5 }> {
+  return execution.version === 2 || execution.version === 5;
 }
 
 function firstPathDirection(result: LocalPathPlanResult): DirectionConstant | null {

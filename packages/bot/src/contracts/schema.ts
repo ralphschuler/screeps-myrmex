@@ -110,6 +110,18 @@ const EXECUTION_V4_KEYS = [
   "targetReservationTicks",
   "version",
 ] as const;
+const EXECUTION_V5_KEYS = [
+  "action",
+  "completion",
+  "counterpartId",
+  "offload",
+  "originRoomName",
+  "resourceType",
+  "routeRoomNames",
+  "routeTravelTicks",
+  "version",
+  "workPosition",
+] as const;
 
 const RECORD_KEYS = [
   ...REQUEST_KEYS,
@@ -408,7 +420,9 @@ function parseRequest(
               ? EXECUTION_V3_KEYS
               : isRecord(record.execution) && record.execution.version === 4
                 ? EXECUTION_V4_KEYS
-                : EXECUTION_KEYS,
+                : isRecord(record.execution) && record.execution.version === 5
+                  ? EXECUTION_V5_KEYS
+                  : EXECUTION_KEYS,
         );
   const request = {
     budgetBinding,

@@ -189,6 +189,9 @@ function intent(p: LayoutSiteProposal): CreateConstructionSiteIntent {
     structureType: p.structureType,
     x: p.pos.x,
     y: p.pos.y,
+    ...(p.remoteAuthorization === undefined
+      ? {}
+      : { remoteAuthorization: { ...p.remoteAuthorization } }),
   };
 }
 function record(

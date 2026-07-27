@@ -18,11 +18,12 @@ ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration,
 command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
 substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
 boundary, deterministic threat-aware room-route cost/travel estimates, one command-free full-cost
-`RemotePortfolio`, and just-in-time budgeted remote controller reservation through existing
-contract, spawn, movement, and action authorities; mining/hauling consumers remain unavailable.
-Systems assigned to later roadmap gates remain normative targets. Their absence is an implementation
-task, not permission to invent a different boundary. If a requirement cannot fit this architecture,
-write an ADR before changing the architecture.
+`RemotePortfolio`, just-in-time budgeted remote controller reservation, and request-driven budgeted
+remote source mining/capital through existing contract, spawn, movement, action, and construction
+site authorities; remote hauling remains unavailable. Systems assigned to later roadmap gates remain
+normative targets. Their absence is an implementation task, not permission to invent a different
+boundary. If a requirement cannot fit this architecture, write an ADR before changing the
+architecture.
 
 Normative words have their usual meanings:
 
@@ -376,6 +377,19 @@ primary-action tick; reservation follows only after typed settlement. Command fa
 ContractLedger history and three-attempt backoff. No remote owner, route cache, budget ledger,
 queue, or creep task state is added. [ADR 0083](adr/0083-remote-controller-reservation.md) records
 this boundary.
+
+`RemoteMiningPlanner` is the sole active-portfolio-to-remote-source extraction and capital
+projection. It is pure and ownerless: one active exact objective plus current/fresh complete source
+intel, a ready matching route, detached safe controller/donor/threat evidence, and exact donor
+grants may emit one routed V5 harvest contract per source plus bounded positive-value container/road
+site proposals. V5 reuses current-room local paths and cardinal border movement, preserves one exact
+adjacent work position, and explicitly allows zero-`CARRY` or full-Store drop fallback. Semantic
+stationary population terms include route, body spawn, and safety lead. Capital additionally
+requires current vision, remaining objective value/capacity, an exact `optional-growth` grant, and
+the sole construction-site arbiter/executor; the executor freshly verifies neutral or exact
+self-reserved controller evidence. `RemotePortfolio`, ContractLedger, population/spawn,
+movement/action, and site authorities remain sole.
+[ADR 0084](adr/0084-budgeted-remote-source-mining.md) records this boundary.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1526,7 +1540,9 @@ closed to no command. Issue [#114](https://github.com/ralphschuler/screeps-myrme
 this projection; issue [#38](https://github.com/ralphschuler/screeps-myrmex/issues/38) consumes it
 as a pure producer. Execution terms V4 add only remote reservation: the target controller, donor
 origin, one immutable ordered RoutePlanner room sequence, conservative outbound ticks, reservation
-target, and bounded optional sign. They introduce no route, movement, spawn, or persistence
+target, and bounded optional sign. Execution terms V5 add only remote extraction: donor origin, the
+same immutable room sequence/outbound estimate, exact source/work positions, and explicit
+container-or-drop fallback. Neither version introduces route, movement, spawn, or persistence
 authority.
 
 Repair terms may additionally declare an observed `completionHits` threshold. The threshold is
@@ -1592,6 +1608,7 @@ The following table is the canonical ownership map.
 | `DefenseDirector`          | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war                 |
 | `DiplomacyLedger`          | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions            |
 | `RemotePortfolio`          | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly              |
+| `RemoteMiningPlanner`      | remote source extraction/capital projection    | active objective, intel, route, grants    | contracts and site proposals             | own lifecycle, leases, sites, commands  |
 | `ExpansionDirector`        | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets             |
 | `IndustryDirector`         | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls       |
 | `MarketPlanner`            | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly            |
@@ -1821,7 +1838,8 @@ cross-room consumer without adding another path authority. A V4 reservation leas
 ready room route into current-room work: the local path service selects one canonical legal exit,
 then one exact cardinal border intent preserves the crossing coordinate in the adjacent route room.
 The arbiter admits only that adjacent border transition; missing exits, route drift, stale vision,
-or CPU denial suspends the contract. Exact multi-room tile paths remain unavailable.
+or CPU denial suspends the contract. Issue #59's V5 remote miner reuses exactly this decomposition
+before approaching its static source position. Exact multi-room tile paths remain unavailable.
 
 Issue [#447](https://github.com/ralphschuler/screeps-myrmex/issues/447) adds bounded local
 congestion recovery without another state authority. One 128-entry, two-tick heap cache records only
@@ -2583,10 +2601,10 @@ Owner-local schema V1 stores at most 32 records and exact latest forecasts, not 
 Exact `{}` initializes it; malformed/future/future-tick evidence authorizes no objective. Same-tick
 replay is idempotent, only unfunded candidates and retired records are evictable under the
 16,384-code-unit ceiling, and a heap reset changes no decision. `RemotePortfolio.stage` is the only
-remotes-owner write boundary. Runtime composition remains deferred until reservation/mining work
-supplies post-survival executable budgets. Later remote planners emit normal contracts; they do not
-fork colony budgets, economy, spawn, movement, diplomacy, threat, defense, or command authorities.
-Exact evidence is in [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md).
+remotes-owner write boundary. Runtime composition remains request-driven until autonomous candidate
+and post-survival donor-grant composition is scheduled. Later remote planners emit normal contracts;
+they do not fork colony budgets, economy, spawn, movement, diplomacy, threat, defense, or command
+authorities. Exact evidence is in [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md).
 
 Issue #58's `RemoteReservationPlanner` consumes only active objectives paired with their exact
 candidate evidence. It revalidates current/fresh complete intel, a ready route, controller
@@ -2597,6 +2615,18 @@ exact 12-tick slot claim. Reservation starts when observed ticks are within rout
 and safety lead, ends at 450 ticks, and retries command failures at most three times. Reserver death
 or route suspension does not create a command attempt. Exact evidence is in
 [`phase3-reservation-evidence.md`](phase3-reservation-evidence.md).
+
+Issue #59's `RemoteMiningPlanner` consumes the same exact active objective/evidence boundary without
+becoming a reservation or portfolio owner. Observed 1,500/3,000 source capacity produces three/five
+`WORK` plus equal `MOVE`; the portfolio envelope first covers every source atomically, then one
+exact donor grant funds each 450/750-energy body and 50 milli-CPU contract. Routed V5 terms use the
+existing V4 room sequence/cardinal crossing boundary, one canonical adjacent work position,
+continuous container/drop fallback, and bounded ContractLedger command retry. Population replacement
+includes route travel, exact body spawn time, and 25 safety ticks. Current vision and separate
+funded positive capital may emit at most eight container/road proposals per objective under the
+existing global site arbiter; controller drift blocks the sole executor. Source/route/objective loss
+stops new capital and suspends or replaces exact work. Exact evidence is in
+[`phase3-mining-evidence.md`](phase3-mining-evidence.md).
 
 ### 12.9 ExpansionDirector
 
@@ -3087,6 +3117,14 @@ Required architecture assertions include:
   an exact active donor budget; spawn-plus-route lead, two-`CLAIM`/two-`MOVE` body, 450-tick target,
   cardinal border movement, one assigned-state sign, three-attempt command backoff, death recovery,
   timeout, reset, and reorder outcomes remain bounded without another owner or command path;
+- remote mining starts only from one exact active positive objective, current/fresh complete bounded
+  source evidence, a ready safe route, detached legal controller/donor/threat evidence, an
+  atomically sufficient portfolio envelope, and exact per-source donor grants; observed source
+  capacity fixes body throughput, semantic stationary replacement includes route/spawn/safety lead,
+  V5 uses only the existing route/local-path/movement/action authorities, zero-`CARRY` and full
+  Store fall back to drops, and source/route/threat/budget loss plus three-attempt command backoff
+  remain bounded across reset/reorder; current funded positive-value container/road proposals retain
+  the sole global site arbiter/executor and fail immediately on controller drift;
 - current observation outranks IntelService history; every room/route read has explicit age and
   expiry, and malformed, partial, unavailable, corrupt, cross-shard, future, or over-cap evidence
   remains typed and fail-closed;

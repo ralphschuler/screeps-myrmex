@@ -48,3 +48,19 @@ export {
 } from "./reservation-contracts";
 export { DEFAULT_REMOTE_RESERVATION_POLICY_V1 } from "./reservation-policy";
 export { RemoteReservationPlanner } from "./reservation";
+export {
+  REMOTE_MINING_LIMITS,
+  type RemoteMiningBudgetEntry,
+  type RemoteMiningDisposition,
+  type RemoteMiningMetrics,
+  type RemoteMiningObjectiveEvidence,
+  type RemoteMiningOffload,
+  type RemoteMiningPlan,
+  type RemoteMiningPlanInput,
+  type RemoteMiningPlanStatus,
+  type RemoteMiningPolicyV1,
+  type RemoteMiningReason,
+  type RemoteMiningRoadCandidate,
+} from "./mining-contracts";
+export { DEFAULT_REMOTE_MINING_POLICY_V1 } from "./mining-policy";
+export { RemoteMiningPlanner } from "./mining";
