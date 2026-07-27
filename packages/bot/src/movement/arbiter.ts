@@ -82,13 +82,74 @@ function decision(intent: MovementIntent, reason: MovementDecision["reason"]): M
 }
 
 function isValidIntent(intent: MovementIntent, actor: MovementActor, tick: number): boolean {
-  return (
-    tick <= intent.deadline &&
-    intent.direction !== null &&
-    intent.range >= 0 &&
+  if (tick > intent.deadline || intent.direction === null || intent.range < 0) return false;
+  if (
     intent.destination.roomName === actor.pos.roomName &&
     intent.goal.roomName === actor.pos.roomName
-  );
+  )
+    return true;
+  return validRoomBoundaryCrossing(intent, actor);
+}
+
+function validRoomBoundaryCrossing(intent: MovementIntent, actor: MovementActor): boolean {
+  if (
+    intent.roomTransition !== true ||
+    intent.range !== 0 ||
+    intent.destination.roomName !== intent.goal.roomName ||
+    intent.destination.x !== intent.goal.x ||
+    intent.destination.y !== intent.goal.y
+  )
+    return false;
+  const originRoom = roomCoordinates(actor.pos.roomName);
+  const destinationRoom = roomCoordinates(intent.destination.roomName);
+  if (originRoom === null || destinationRoom === null) return false;
+  const roomX = destinationRoom.x - originRoom.x;
+  const roomY = destinationRoom.y - originRoom.y;
+  if (intent.direction === 1)
+    return (
+      roomX === 0 &&
+      roomY === -1 &&
+      actor.pos.y === 0 &&
+      intent.destination.y === 49 &&
+      intent.destination.x === actor.pos.x
+    );
+  if (intent.direction === 3)
+    return (
+      roomX === 1 &&
+      roomY === 0 &&
+      actor.pos.x === 49 &&
+      intent.destination.x === 0 &&
+      intent.destination.y === actor.pos.y
+    );
+  if (intent.direction === 5)
+    return (
+      roomX === 0 &&
+      roomY === 1 &&
+      actor.pos.y === 49 &&
+      intent.destination.y === 0 &&
+      intent.destination.x === actor.pos.x
+    );
+  if (intent.direction === 7)
+    return (
+      roomX === -1 &&
+      roomY === 0 &&
+      actor.pos.x === 0 &&
+      intent.destination.x === 49 &&
+      intent.destination.y === actor.pos.y
+    );
+  return false;
+}
+
+function roomCoordinates(value: string): { readonly x: number; readonly y: number } | null {
+  const match = /^(W|E)(\d+)(N|S)(\d+)$/u.exec(value);
+  if (match === null) return null;
+  const horizontal = Number(match[2]);
+  const vertical = Number(match[4]);
+  if (!Number.isSafeInteger(horizontal) || !Number.isSafeInteger(vertical)) return null;
+  return {
+    x: match[1] === "W" ? -horizontal - 1 : horizontal,
+    y: match[3] === "N" ? -vertical - 1 : vertical,
+  };
 }
 
 function permitsSwap(

@@ -32,7 +32,8 @@ export function reconcileLeaseAgentActions(
       result.reason === "adapter-fault" ||
       result.reason === "stale-actor" ||
       result.reason === "stale-target" ||
-      result.reason === "unexpected-game-rejection"
+      result.reason === "unexpected-game-rejection" ||
+      (lease.execution.action === "reserve-controller" && result.reason === "out-of-range")
     ) {
       transitions.push({ contractId, reason: `agent-${result.reason}`, tick, to: "suspended" });
       submitted.add(contractId);

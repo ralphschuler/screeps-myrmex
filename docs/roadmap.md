@@ -193,8 +193,11 @@ authorized without an explicit maintainer resolution of this gap.
   [issue #57](https://github.com/ralphschuler/screeps-myrmex/issues/57) and
   [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md). The command-free authority emits
   funded abstract objectives only; it does not claim delivered energy or satisfy the phase exit.
-- Remote controller reservation, source mining, hauling, threat evacuation, operational suspension,
-  and cautious resumption remain issues #58–#61.
+- Just-in-time remote controller reservation, funded reserver contracts, bounded cross-room route
+  consumption, and sole-executor signing/reservation are tracked by
+  [issue #58](https://github.com/ralphschuler/screeps-myrmex/issues/58) and
+  [`phase3-reservation-evidence.md`](phase3-reservation-evidence.md). Remote source mining, hauling,
+  threat evacuation, operational suspension, and cautious resumption remain issues #59–#61.
 - Realized per-remote full-cost profitability and outcome telemetry remain issue #62.
 
 **Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.

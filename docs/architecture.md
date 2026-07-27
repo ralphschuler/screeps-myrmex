@@ -17,11 +17,12 @@ relations, the owned-room survival lifecycle, the local budget ledger, the persi
 ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration, narrow spawn
 command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
 substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
-boundary, deterministic threat-aware room-route cost/travel estimates, and one command-free
-full-cost `RemotePortfolio`; reservation/mining/hauling consumers remain unavailable. Systems
-assigned to later roadmap gates remain normative targets. Their absence is an implementation task,
-not permission to invent a different boundary. If a requirement cannot fit this architecture, write
-an ADR before changing the architecture.
+boundary, deterministic threat-aware room-route cost/travel estimates, one command-free full-cost
+`RemotePortfolio`, and just-in-time budgeted remote controller reservation through existing
+contract, spawn, movement, and action authorities; mining/hauling consumers remain unavailable.
+Systems assigned to later roadmap gates remain normative targets. Their absence is an implementation
+task, not permission to invent a different boundary. If a requirement cannot fit this architecture,
+write an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -362,6 +363,19 @@ none. Owner-local V1 retains at most 32 canonical records in 16,384 code units a
 immutable objectives and fixed metrics only; no colony grant, contract, intent, command, player
 classification, or realized-profit history. [ADR 0082](adr/0082-remote-portfolio-authority.md)
 records this boundary.
+
+`RemoteReservationPlanner` is the sole active-portfolio-to-controller-reservation projection. It is
+pure and ownerless: one active profitable objective plus current/fresh complete controller evidence,
+a ready matching route, detached safety/diplomacy disposition, and an exact active donor-colony
+grant may emit one ordinary reservation `WorkContract`. Source policy requests two `CLAIM` and two
+`MOVE` parts, starts inside spawn-plus-route replacement lead, and stops at 450 observed reservation
+ticks. Contract execution V4 retains the immutable RoutePlanner room sequence; lease agents consume
+it through current-room local paths and exact cardinal border movement intents. `MovementArbiter`
+and `CreepActionExecutor` retain sole command authority. Signing occupies the assigned lease's first
+primary-action tick; reservation follows only after typed settlement. Command failures use bounded
+ContractLedger history and three-attempt backoff. No remote owner, route cache, budget ledger,
+queue, or creep task state is added. [ADR 0083](adr/0083-remote-controller-reservation.md) records
+this boundary.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1510,7 +1524,10 @@ deadlines, but never raw contract-owner bytes, live objects, budget authority, r
 occupancy, or command capabilities. Records without explicit terms, including legacy contracts, fail
 closed to no command. Issue [#114](https://github.com/ralphschuler/screeps-myrmex/issues/114) owns
 this projection; issue [#38](https://github.com/ralphschuler/screeps-myrmex/issues/38) consumes it
-as a pure producer.
+as a pure producer. Execution terms V4 add only remote reservation: the target controller, donor
+origin, one immutable ordered RoutePlanner room sequence, conservative outbound ticks, reservation
+target, and bounded optional sign. They introduce no route, movement, spawn, or persistence
+authority.
 
 Repair terms may additionally declare an observed `completionHits` threshold. The threshold is
 repair-only and optional, retaining full-hit completion for older terms. ContractLedger derives
@@ -1798,6 +1815,13 @@ search when the enclosing system's `CpuScheduler` budget is insufficient. Static
 direction lists are reconstructible heap-cache values; live objects, creep occupancy, reservations,
 and task state never enter those values or keys. The Execute-phase arbiter resolves current-tick
 reservations only after cache lookup.
+
+Issue [#58](https://github.com/ralphschuler/screeps-myrmex/issues/58) permits the first bounded
+cross-room consumer without adding another path authority. A V4 reservation lease decomposes its
+ready room route into current-room work: the local path service selects one canonical legal exit,
+then one exact cardinal border intent preserves the crossing coordinate in the adjacent route room.
+The arbiter admits only that adjacent border transition; missing exits, route drift, stale vision,
+or CPU denial suspends the contract. Exact multi-room tile paths remain unavailable.
 
 Issue [#447](https://github.com/ralphschuler/screeps-myrmex/issues/447) adds bounded local
 congestion recovery without another state authority. One 128-entry, two-tick heap cache records only
@@ -2564,6 +2588,16 @@ supplies post-survival executable budgets. Later remote planners emit normal con
 fork colony budgets, economy, spawn, movement, diplomacy, threat, defense, or command authorities.
 Exact evidence is in [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md).
 
+Issue #58's `RemoteReservationPlanner` consumes only active objectives paired with their exact
+candidate evidence. It revalidates current/fresh complete intel, a ready route, controller
+availability/self-reservation, donor health, threat limits, objective expiry, and portfolio capacity
+before asking the existing donor `BudgetLedger` for 1,300 energy and 100 milli-CPU. Only an active
+exact grant may produce one two-`CLAIM`/two-`MOVE` reservation contract. SpawnBroker retains the
+exact 12-tick slot claim. Reservation starts when observed ticks are within route travel plus spawn
+and safety lead, ends at 450 ticks, and retries command failures at most three times. Reserver death
+or route suspension does not create a command attempt. Exact evidence is in
+[`phase3-reservation-evidence.md`](phase3-reservation-evidence.md).
+
 ### 12.9 ExpansionDirector
 
 Expansion ranks claims as scarce portfolio positions. It owns candidate scoring, donor budgets,
@@ -3048,6 +3082,11 @@ Required architecture assertions include:
   timeout, malformed/future state, or owner/input bounds;
 - route selection is deterministic across evidence reorder and heap reset; closed/protected,
   stale/partial, unsafe, over-budget, and disconnected evidence stays typed and fail-closed;
+- remote reservation starts only from one active positive portfolio objective, current/fresh
+  complete controller evidence, one ready route, detached safe diplomacy/threat/donor evidence, and
+  an exact active donor budget; spawn-plus-route lead, two-`CLAIM`/two-`MOVE` body, 450-tick target,
+  cardinal border movement, one assigned-state sign, three-attempt command backoff, death recovery,
+  timeout, reset, and reorder outcomes remain bounded without another owner or command path;
 - current observation outranks IntelService history; every room/route read has explicit age and
   expiry, and malformed, partial, unavailable, corrupt, cross-shard, future, or over-cap evidence
   remains typed and fail-closed;
@@ -3068,6 +3107,8 @@ Required architecture assertions include:
 - `SpawnBroker` and `SpawnExecutor` each have one declaration at their canonical `spawn/` path;
 - direct or aliased `spawnCreep` calls occur only in `SpawnExecutor`;
 - direct or aliased `observeRoom` calls occur only in `ObserverExecutor`;
+- direct or aliased `reserveController` and `signController` calls occur only in
+  `CreepActionExecutor`;
 - direct or aliased `destroy` calls occur only in `StructureDestroyExecutor`;
 - every direct or aliased `dismantle` call is rejected before a later explicit funded policy exists;
 - the sole observed traversal projection and layout access share one rampart rule: private foreign

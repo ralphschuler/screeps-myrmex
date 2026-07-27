@@ -44,6 +44,7 @@ export const WORK_CONTRACT_KINDS = [
   "repair",
   "build",
   "upgrade",
+  "reserve",
   "scout",
   "other",
 ] as const;
@@ -179,12 +180,14 @@ export interface ContractLeasePolicy {
 export const CONTRACT_EXECUTION_TERM_VERSION = 1 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V2 = 2 as const;
 export const CONTRACT_EXECUTION_TERM_VERSION_V3 = 3 as const;
+export const CONTRACT_EXECUTION_TERM_VERSION_V4 = 4 as const;
 
 export const CONTRACT_EXECUTION_ACTIONS = [
   "build",
   "harvest",
   "pickup",
   "repair",
+  "reserve-controller",
   "transfer",
   "upgrade-controller",
   "withdraw",
@@ -234,8 +237,24 @@ export interface ContractExecutionTermsV3 {
   readonly stage: "acquire" | "deliver";
   readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V3;
 }
+/** Cross-room reservation terms consume one immutable RoutePlanner result without owning routing. */
+export interface ContractExecutionTermsV4 {
+  readonly action: "reserve-controller";
+  readonly completion: "work-complete";
+  readonly counterpartId: null;
+  readonly originRoomName: string;
+  readonly resourceType: null;
+  readonly routeRoomNames: readonly string[];
+  readonly routeTravelTicks: number;
+  readonly signText: string | null;
+  readonly targetReservationTicks: number;
+  readonly version: typeof CONTRACT_EXECUTION_TERM_VERSION_V4;
+}
 export type ContractExecutionTerms =
-  ContractExecutionTermsV1 | ContractExecutionTermsV2 | ContractExecutionTermsV3;
+  | ContractExecutionTermsV1
+  | ContractExecutionTermsV2
+  | ContractExecutionTermsV3
+  | ContractExecutionTermsV4;
 
 export interface WorkContractRequest {
   readonly budgetBinding: ContractBudgetBinding;
@@ -329,6 +348,8 @@ export interface ContractPlanningRecord {
   readonly requestSignature?: string;
   /** Retry evidence derived by ContractLedger from bounded durable transition history. */
   readonly repairRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
+  /** Reservation-only command failure evidence; actor/route loss is deliberately not an attempt. */
+  readonly reservationRetry?: { readonly attempts: number; readonly eligibleAt: number } | null;
   readonly state: ActiveWorkContractState;
   readonly targetId: string;
 }
@@ -497,7 +518,7 @@ export function normalizeContractRequest(request: WorkContractRequest): WorkCont
   const execution =
     request.execution === undefined
       ? undefined
-      : normalizeExecutionTerms(request.execution, request.kind, targetId);
+      : normalizeExecutionTerms(request.execution, request.kind, targetId, target);
 
   return deepFreeze({
     budgetBinding,
@@ -658,12 +679,18 @@ function normalizeExecutionTerms(
     readonly recommendedCarry?: unknown;
     readonly recommendedMove?: unknown;
     readonly reservedAmount?: unknown;
+    readonly routeRoomNames?: unknown;
+    readonly routeTravelTicks?: unknown;
+    readonly signText?: unknown;
     readonly stage?: unknown;
+    readonly targetReservationTicks?: unknown;
     readonly version: unknown;
     readonly workPosition?: unknown;
+    readonly originRoomName?: unknown;
   }>,
   kind: WorkContractKind,
   targetId: string | null,
+  target: PositionSnapshot,
 ): ContractExecutionTerms {
   if (targetId === null) {
     invalid("execution-target-required", "$.targetId", "must identify the action target");
@@ -685,8 +712,8 @@ function normalizeExecutionTerms(
       "must be a supported disposition",
     );
   }
-  if (value.version !== 1 && value.version !== 2 && value.version !== 3) {
-    invalid("invalid-execution-version", "$.execution.version", "must equal 1, 2, or 3");
+  if (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) {
+    invalid("invalid-execution-version", "$.execution.version", "must equal 1, 2, 3, or 4");
   }
   if (!actionMatchesContractKind(action, kind)) {
     invalid("execution-kind-mismatch", "$.execution.action", "is not authorized by contract kind");
@@ -790,6 +817,69 @@ function normalizeExecutionTerms(
       version: 3,
     };
   }
+  if (value.version === 4) {
+    if (
+      kind !== "reserve" ||
+      action !== "reserve-controller" ||
+      completion !== "work-complete" ||
+      counterpartId !== null ||
+      resourceType !== null
+    ) {
+      invalid("execution-v4-action-mismatch", "$.execution", "v4 is controller-reservation-only");
+    }
+    const originRoomName = validateRoomName(value.originRoomName, "$.execution.originRoomName");
+    if (
+      !Array.isArray(value.routeRoomNames) ||
+      value.routeRoomNames.length < 1 ||
+      value.routeRoomNames.length > 16
+    ) {
+      invalid("invalid-execution-route", "$.execution.routeRoomNames", "must contain 1-16 rooms");
+    }
+    const routeRoomNames = value.routeRoomNames.map((room, index) =>
+      validateRoomName(room, `$.execution.routeRoomNames[${String(index)}]`),
+    );
+    if (
+      new Set(routeRoomNames).size !== routeRoomNames.length ||
+      routeRoomNames.includes(originRoomName) ||
+      routeRoomNames[routeRoomNames.length - 1] !== target.roomName
+    ) {
+      invalid(
+        "invalid-execution-route",
+        "$.execution.routeRoomNames",
+        "must be unique, exclude origin, and end in the target room",
+      );
+    }
+    const signText = value.signText;
+    if (signText !== null && (typeof signText !== "string" || signText.length > 100)) {
+      invalid(
+        "invalid-controller-sign",
+        "$.execution.signText",
+        "must contain at most 100 code units",
+      );
+    }
+    return {
+      action: "reserve-controller",
+      completion: "work-complete",
+      counterpartId: null,
+      originRoomName,
+      resourceType: null,
+      routeRoomNames: Object.freeze(routeRoomNames),
+      routeTravelTicks: integerInRange(
+        value.routeTravelTicks,
+        "$.execution.routeTravelTicks",
+        1,
+        50_000,
+      ),
+      signText,
+      targetReservationTicks: integerInRange(
+        value.targetReservationTicks,
+        "$.execution.targetReservationTicks",
+        1,
+        5_000,
+      ),
+      version: 4,
+    };
+  }
   return {
     action,
     completion,
@@ -817,6 +907,8 @@ function actionMatchesContractKind(
       return action === "build";
     case "upgrade":
       return action === "upgrade-controller";
+    case "reserve":
+      return action === "reserve-controller";
     case "defend":
     case "scout":
     case "other":
@@ -840,6 +932,13 @@ function normalizeStringSet(value: unknown, path: string, maximum: number): read
 
 function nullableBoundedString(value: unknown, path: string, maximum: number): string | null {
   return value === null ? null : validateBoundedString(value, path, 1, maximum);
+}
+
+function validateRoomName(value: unknown, path: string): string {
+  const room = validateBoundedString(value, path, 1, 16);
+  if (!/^(W|E)\d+(N|S)\d+$/u.test(room))
+    invalid("invalid-room-name", path, "must be a Screeps room name");
+  return room;
 }
 
 function validateBoundedString(

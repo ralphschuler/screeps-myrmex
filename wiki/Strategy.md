@@ -31,6 +31,13 @@ contract. Grant renewal preserves contract identity; released, consumed, expired
 authorization suspends known work and removes its lease. Unknown vision authorizes no new assignment
 without inventing revocation evidence.
 
+A profitable active remote may reserve its controller only from current/fresh complete evidence, a
+ready safe route, a healthy donor, and an exact post-survival grant. The two-`CLAIM`/two-`MOVE`
+reserver starts inside spawn-plus-route replacement lead, stops at the bounded reservation target,
+and follows the room route through existing local movement and action authorities. Foreign or
+policy-protected controllers, stale vision, route loss, threat, budget loss, or bounded retry
+exhaustion fail closed.
+
 Diplomacy follows observable states and an escalation ladder. Offensive operations require fresh
 intelligence, a positive strategic margin, a complete resource budget, retreat conditions, and
 diplomatic authorization.

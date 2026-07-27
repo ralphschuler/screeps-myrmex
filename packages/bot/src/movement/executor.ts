@@ -15,6 +15,8 @@ export interface ActionActor {
   harvest(target: Source | Mineral | Deposit): number;
   pickup(target: Resource): number;
   repair(target: Structure): number;
+  reserveController(target: StructureController): number;
+  signController(target: StructureController, text: string): number;
   transfer(
     target: Creep | PowerCreep | Structure,
     resource: ResourceConstant,
@@ -149,6 +151,10 @@ function issueAction(actor: ActionActor, target: unknown, intent: CreepActionInt
       return actor.pickup(target as Resource);
     case "repair":
       return actor.repair(target as Structure);
+    case "reserve-controller":
+      return actor.reserveController(target as StructureController);
+    case "sign-controller":
+      return actor.signController(target as StructureController, requiredSignText(intent));
     case "transfer":
       return actor.transfer(
         target as Creep | PowerCreep | Structure,
@@ -169,6 +175,11 @@ function issueAction(actor: ActionActor, target: unknown, intent: CreepActionInt
 function requiredResource(intent: CreepActionIntent): ResourceConstant {
   if (intent.resourceType === null) throw new Error("resource action requires a resource type");
   return intent.resourceType;
+}
+function requiredSignText(intent: CreepActionIntent): string {
+  if (typeof intent.text !== "string" || intent.text.length > 100)
+    throw new Error("controller sign requires at most 100 code units");
+  return intent.text;
 }
 function optionalAmount(intent: CreepActionIntent): number | undefined {
   return intent.amount === null ? undefined : intent.amount;

@@ -88,6 +88,26 @@ describe("MovementArbiter", () => {
     ]);
   });
 
+  it("admits only an exact cardinal room-boundary crossing", () => {
+    const actor = { fatigue: 0, id: "creep-a", pos: { roomName: "W1N1", x: 49, y: 10 } };
+    const crossing = moveIntent({
+      destination: { roomName: "W0N1", x: 0, y: 10 },
+      direction: 3,
+      goal: { roomName: "W0N1", x: 0, y: 10 },
+      range: 0,
+      roomTransition: true,
+    });
+    const accepted = new MovementArbiter().arbitrate(1, [actor], [crossing]);
+    const rejected = new MovementArbiter().arbitrate(
+      1,
+      [{ ...actor, pos: { roomName: "W1N1", x: 48, y: 10 } }],
+      [crossing],
+    );
+
+    expect(accepted[0]).toMatchObject({ status: "accepted", reason: "accepted" });
+    expect(rejected[0]).toMatchObject({ status: "rejected", reason: "invalid-goal" });
+  });
+
   it("issues the accepted direction once and isolates adapter faults", () => {
     const decision = new MovementArbiter().arbitrate(
       1,
@@ -161,6 +181,8 @@ describe("CreepActionArbiter", () => {
         harvest: () => -9,
         pickup: () => -7,
         repair: () => -7,
+        reserveController: () => -7,
+        signController: () => -7,
         transfer: () => -7,
         upgradeController: () => -7,
         withdraw: () => -7,
@@ -169,5 +191,50 @@ describe("CreepActionArbiter", () => {
     );
 
     expect(result[0]).toMatchObject({ status: "rejected", reason: "out-of-range" });
+  });
+
+  it("routes reservation and bounded signing through the sole creep action executor", () => {
+    const reserve = actionIntent({
+      id: "reserve",
+      kind: "reserve-controller",
+      targetId: "controller-a",
+    });
+    const sign = actionIntent({
+      id: "sign",
+      kind: "sign-controller",
+      targetId: "controller-a",
+      text: "MYRMEX",
+    });
+    const decisions = new CreepActionArbiter().arbitrate(
+      1,
+      new Set(["creep-a", "creep-b"]),
+      new Set(["controller-a"]),
+      [reserve, { ...sign, actorId: "creep-b" }],
+    );
+    const calls: string[] = [];
+    const result = new CreepActionExecutor().execute(
+      decisions,
+      (actorId) => ({
+        build: () => -7,
+        harvest: () => -7,
+        pickup: () => -7,
+        repair: () => -7,
+        reserveController: () => {
+          calls.push(`${actorId}:reserve`);
+          return 0;
+        },
+        signController: (_target, text) => {
+          calls.push(`${actorId}:sign:${text}`);
+          return 0;
+        },
+        transfer: () => -7,
+        upgradeController: () => -7,
+        withdraw: () => -7,
+      }),
+      () => ({}),
+    );
+
+    expect(calls).toEqual(["creep-a:reserve", "creep-b:sign:MYRMEX"]);
+    expect(result.map(({ status }) => status)).toEqual(["executed", "executed"]);
   });
 });

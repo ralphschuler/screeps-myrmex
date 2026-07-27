@@ -685,6 +685,26 @@ describe("runtime architecture boundaries", () => {
     }
   });
 
+  it("allows controller reservation and signing only in the exact CreepActionExecutor", () => {
+    expect(
+      findArchitectureViolations([
+        {
+          path: "movement/executor.ts",
+          contents: "actor.reserveController(controller); actor.signController(controller, text);",
+        },
+      ]),
+    ).toEqual([]);
+
+    for (const path of ["remotes/reservation.ts", "execution/controller-executor.ts"]) {
+      expect(
+        findArchitectureViolations([{ path, contents: "creep.reserveController(controller);" }]),
+      ).toContainEqual({
+        path,
+        rule: "controller-reservation-command-outside-creep-action-executor",
+      });
+    }
+  });
+
   it("allows owned-structure destroy only in the exact StructureDestroyExecutor", () => {
     expect(
       findArchitectureViolations([

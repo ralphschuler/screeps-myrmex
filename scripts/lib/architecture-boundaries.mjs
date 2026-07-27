@@ -353,6 +353,15 @@ function inspectSource(contents, path) {
         if (commandMethodCall.methods.has("dismantle")) {
           rules.add("creep-dismantle-before-funded-policy-forbidden");
         }
+        if (
+          commandMethodCall.methods.has("reserveController") ||
+          commandMethodCall.methods.has("signController")
+        ) {
+          addUnlessAllowed(
+            "controller-reservation-command-outside-creep-action-executor",
+            path === MOVEMENT_EXECUTOR_PATH,
+          );
+        }
         if (commandMethodCall.methods.has("move")) {
           addUnlessAllowed(
             "move-command-outside-movement-executor",

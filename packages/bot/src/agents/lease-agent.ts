@@ -29,8 +29,10 @@ export type AgentDispositionReason =
   | "actor-store-full"
   | "actor-ttl-insufficient"
   | "contract-expired"
+  | "controller-blocked"
   | "movement-blocked"
   | "path-unavailable"
+  | "route-unavailable"
   | "work-position-invalid"
   | "target-depleted"
   | "target-full"
@@ -98,11 +100,62 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
     }
     if (actor === undefined) continue;
     const target = targets.get(lease.targetId);
-    if (target === undefined) continue;
-    if (lease.execution.version === 2 && target.amount === 0) continue;
-    const goal = lease.execution.version === 2 ? lease.execution.workPosition : target.pos;
-    const range = lease.execution.version === 2 ? 0 : lease.range;
+    const routeStep =
+      lease.execution.version === 4 && actor.pos.roomName !== lease.target.roomName
+        ? crossRoomStep(lease, actor.pos, input.snapshot)
+        : null;
+    if (lease.execution.version === 4 && actor.pos.roomName !== lease.target.roomName) {
+      if (routeStep === null) {
+        dispositions.push({
+          contractId: lease.contractId,
+          contractRevision: lease.revision,
+          reason: "route-unavailable",
+          to: "suspended",
+        });
+        continue;
+      }
+      if (samePosition(actor.pos, routeStep.exit)) {
+        const stuckAge = input.progress.stuckAge({
+          actorId: actor.id,
+          actorPosition: actor.pos,
+          contractId: lease.contractId,
+          contractRevision: lease.revision,
+          goal: routeStep.destination,
+          range: 0,
+          tick: input.tick,
+        });
+        if (stuckAge >= input.movementPolicy.blockedReleaseTicks) {
+          dispositions.push({
+            contractId: lease.contractId,
+            contractRevision: lease.revision,
+            reason: "movement-blocked",
+            to: "suspended",
+          });
+        } else {
+          movement.push(
+            movementIntent(
+              lease,
+              routeStep.destination,
+              routeStep.direction,
+              routeStep.destination,
+              0,
+              stuckAge,
+              true,
+            ),
+          );
+        }
+        continue;
+      }
+    }
+    if (target === undefined && routeStep === null) continue;
+    if (lease.execution.version === 2 && target?.amount === 0) continue;
+    const goal =
+      routeStep?.exit ??
+      (lease.execution.version === 2 ? lease.execution.workPosition : target?.pos);
+    if (goal === undefined) continue;
+    const range = routeStep === null ? (lease.execution.version === 2 ? 0 : lease.range) : 0;
     if (inRange(actor.pos, goal, range)) {
+      if (target === undefined) continue;
       if (lease.execution.version === 2 && !inRange(actor.pos, target.pos, 1)) {
         dispositions.push({
           contractId: lease.contractId,
@@ -225,6 +278,8 @@ function actorIndex(snapshot: WorldSnapshot): ReadonlyMap<string, CreepSnapshot>
 
 interface TargetView {
   readonly amount: number | null;
+  readonly controllerOwnership: "foreign" | "neutral" | "owned" | "reserved" | null;
+  readonly controllerReservationUsername: string | null;
   readonly hits: number | null;
   readonly hitsMax: number | null;
   readonly id: string;
@@ -245,98 +300,98 @@ function targetIndex(snapshot: WorldSnapshot): ReadonlyMap<string, TargetView> {
   const targets: TargetView[] = [];
   for (const room of snapshot.rooms) {
     if (room.controller !== null)
-      targets.push({
-        amount: null,
-        hits: null,
-        hitsMax: null,
-        id: room.controller.id,
-        pos: room.controller.pos,
-        store: null,
-        type: "controller",
-      });
+      targets.push(
+        targetView({
+          id: room.controller.id,
+          pos: room.controller.pos,
+          type: "controller",
+          controllerOwnership: room.controller.ownership,
+          controllerReservationUsername: room.controller.reservationUsername,
+        }),
+      );
     for (const source of room.sources)
-      targets.push({
-        amount: source.energy,
-        hits: null,
-        hitsMax: null,
-        id: source.id,
-        pos: source.pos,
-        store: null,
-        type: "source",
-      });
+      targets.push(
+        targetView({ amount: source.energy, id: source.id, pos: source.pos, type: "source" }),
+      );
     for (const resource of room.droppedResources ?? [])
-      targets.push({
-        amount: resource.amount,
-        hits: null,
-        hitsMax: null,
-        id: resource.id,
-        pos: resource.pos,
-        store: null,
-        type: "resource",
-      });
+      targets.push(
+        targetView({
+          amount: resource.amount,
+          id: resource.id,
+          pos: resource.pos,
+          type: "resource",
+        }),
+      );
     for (const ruin of room.ruins ?? [])
-      targets.push({
-        amount: null,
-        hits: null,
-        hitsMax: null,
-        id: ruin.id,
-        pos: ruin.pos,
-        store: ruin.store,
-        type: "ruin",
-      });
+      targets.push(targetView({ id: ruin.id, pos: ruin.pos, store: ruin.store, type: "ruin" }));
     for (const tombstone of room.tombstones ?? [])
-      targets.push({
-        amount: null,
-        hits: null,
-        hitsMax: null,
-        id: tombstone.id,
-        pos: tombstone.pos,
-        store: tombstone.store,
-        type: "tombstone",
-      });
+      targets.push(
+        targetView({
+          id: tombstone.id,
+          pos: tombstone.pos,
+          store: tombstone.store,
+          type: "tombstone",
+        }),
+      );
     for (const site of room.constructionSites)
-      targets.push({
-        amount: site.progressTotal - site.progress,
-        hits: null,
-        hitsMax: null,
-        id: site.id,
-        pos: site.pos,
-        store: null,
-        type: "construction",
-      });
+      targets.push(
+        targetView({
+          amount: site.progressTotal - site.progress,
+          id: site.id,
+          pos: site.pos,
+          type: "construction",
+        }),
+      );
     for (const creep of [...room.ownedCreeps, ...room.hostileCreeps])
-      targets.push({
-        amount: null,
-        hits: creep.hits,
-        hitsMax: creep.hitsMax,
-        id: creep.id,
-        pos: creep.pos,
-        store: creep.store,
-        type: "creep",
-      });
+      targets.push(
+        targetView({
+          hits: creep.hits,
+          hitsMax: creep.hitsMax,
+          id: creep.id,
+          pos: creep.pos,
+          store: creep.store,
+          type: "creep",
+        }),
+      );
     for (const structure of room.storedStructures)
-      targets.push({
-        amount: null,
-        hits: structure.hits,
-        hitsMax: structure.hitsMax,
-        id: structure.id,
-        pos: structure.pos,
-        store: structure.store,
-        type: "structure",
-      });
+      targets.push(
+        targetView({
+          hits: structure.hits,
+          hitsMax: structure.hitsMax,
+          id: structure.id,
+          pos: structure.pos,
+          store: structure.store,
+          type: "structure",
+        }),
+      );
     for (const structure of [...room.ownedExtensions, ...room.ownedSpawns, ...room.ownedTowers])
-      targets.push({
-        amount: null,
-        hits: structure.hits,
-        hitsMax: structure.hitsMax,
-        id: structure.id,
-        pos: structure.pos,
-        store: structure.store,
-        type: "structure",
-      });
+      targets.push(
+        targetView({
+          hits: structure.hits,
+          hitsMax: structure.hitsMax,
+          id: structure.id,
+          pos: structure.pos,
+          store: structure.store,
+          type: "structure",
+        }),
+      );
   }
   targets.sort((left, right) => compareStrings(left.id, right.id));
   return new Map(targets.map((target) => [target.id, target]));
+}
+
+function targetView(
+  value: Pick<TargetView, "id" | "pos" | "type"> & Partial<Omit<TargetView, "id" | "pos" | "type">>,
+): TargetView {
+  return {
+    amount: null,
+    controllerOwnership: null,
+    controllerReservationUsername: null,
+    hits: null,
+    hitsMax: null,
+    store: null,
+    ...value,
+  };
 }
 
 function validateLease(
@@ -357,9 +412,24 @@ function validateLease(
   if (actor.ticksToLive === null || actor.ticksToLive <= 1)
     return suspend("actor-ttl-insufficient");
   const target = targets.get(lease.targetId);
+  if (lease.execution.version === 4 && actor.pos.roomName !== lease.target.roomName) {
+    if (crossRoomRouteIndex(lease, actor.pos.roomName) < 0) return suspend("route-unavailable");
+    if (!canPerform(actor, lease.execution.action)) return suspend("actor-capability-lost");
+    return null;
+  }
   if (target === undefined || !samePosition(target.pos, lease.target))
     return suspend("target-missing");
   if (!canPerform(actor, lease.execution.action)) return suspend("actor-capability-lost");
+  if (
+    lease.execution.version === 4 &&
+    (target.type !== "controller" ||
+      (target.controllerOwnership !== "neutral" &&
+        !(
+          target.controllerOwnership === "reserved" &&
+          target.controllerReservationUsername === actor.ownerUsername
+        )))
+  )
+    return suspend("controller-blocked");
   const resource = lease.execution.resourceType;
   const carried = resource === null ? 0 : resourceAmount(actor.store, resource);
   if (needsEnergy(lease.execution.action) && resourceAmount(actor.store, "energy") <= 0)
@@ -439,6 +509,8 @@ function canPerform(
   actor: CreepSnapshot,
   action: LeasedWorkExecution["execution"]["action"],
 ): boolean {
+  if (action === "reserve-controller")
+    return actor.body.claim.active > 0 && actor.body.move.active > 0;
   if (action === "transfer" || action === "withdraw" || action === "pickup")
     return actor.body.carry.active > 0;
   return actor.body.work.active > 0 && (action === "harvest" || actor.body.carry.active > 0);
@@ -453,6 +525,10 @@ function actionIntent(
   actor: CreepSnapshot,
   target: TargetView,
 ): CreepActionIntent {
+  const signing =
+    lease.execution.version === 4 &&
+    lease.state === "assigned" &&
+    lease.execution.signText !== null;
   return {
     actorId: lease.actorId,
     // A continuous fill lease owns a sink slot, not one energy unit. Omitting the Screeps amount
@@ -463,10 +539,11 @@ function actionIntent(
     contractRevision: lease.revision,
     deadline: actionDeadline(lease),
     id: `lease:${lease.contractId}:r${String(lease.revision)}:action`,
-    kind: lease.execution.action,
+    kind: signing ? "sign-controller" : lease.execution.action,
     priority: lease.priority.value,
     resourceType: lease.execution.resourceType,
     targetId: lease.targetId,
+    ...(signing ? { text: lease.execution.signText } : {}),
   };
 }
 
@@ -506,6 +583,7 @@ function movementIntent(
   goal: PositionSnapshot,
   range: number,
   stuckAge: number,
+  roomTransition = false,
 ): MovementIntent {
   return {
     actorId: lease.actorId,
@@ -518,6 +596,7 @@ function movementIntent(
     id: `lease:${lease.contractId}:r${String(lease.revision)}:move`,
     priority: lease.priority.value,
     range,
+    ...(roomTransition ? { roomTransition: true } : {}),
     stuckAge,
   };
 }
@@ -551,6 +630,90 @@ function dynamicMovementBlockers(
   return canonical.length <= MAX_DYNAMIC_MOVEMENT_BLOCKERS
     ? Object.freeze(canonical.map((position) => Object.freeze({ ...position })))
     : null;
+}
+
+function crossRoomRouteIndex(lease: LeasedWorkExecution, roomName: string): number {
+  if (lease.execution.version !== 4) return -1;
+  return [lease.execution.originRoomName, ...lease.execution.routeRoomNames].indexOf(roomName);
+}
+
+function crossRoomStep(
+  lease: LeasedWorkExecution,
+  origin: PositionSnapshot,
+  snapshot: WorldSnapshot,
+): {
+  readonly destination: PositionSnapshot;
+  readonly direction: DirectionConstant;
+  readonly exit: PositionSnapshot;
+} | null {
+  if (lease.execution.version !== 4) return null;
+  const route = [lease.execution.originRoomName, ...lease.execution.routeRoomNames];
+  const index = route.indexOf(origin.roomName);
+  const nextRoom = index < 0 ? undefined : route[index + 1];
+  if (nextRoom === undefined) return null;
+  const direction = roomDirection(origin.roomName, nextRoom);
+  const room = snapshot.rooms.find(({ name }) => name === origin.roomName);
+  if (direction === null || room?.exits === undefined) return null;
+  const exits = room.exits
+    .filter((position) => exitMatchesDirection(position, direction))
+    .sort(
+      (left, right) =>
+        Math.max(Math.abs(left.x - origin.x), Math.abs(left.y - origin.y)) -
+          Math.max(Math.abs(right.x - origin.x), Math.abs(right.y - origin.y)) ||
+        left.y - right.y ||
+        left.x - right.x,
+    );
+  const exit = exits[0];
+  if (exit === undefined) return null;
+  const destination = crossingDestination(exit, nextRoom, direction);
+  return destination === null ? null : { destination, direction, exit };
+}
+
+function roomDirection(left: string, right: string): DirectionConstant | null {
+  const origin = roomCoordinates(left);
+  const destination = roomCoordinates(right);
+  if (origin === null || destination === null) return null;
+  const x = destination.x - origin.x;
+  const y = destination.y - origin.y;
+  if (x === 0 && y === -1) return 1;
+  if (x === 1 && y === 0) return 3;
+  if (x === 0 && y === 1) return 5;
+  if (x === -1 && y === 0) return 7;
+  return null;
+}
+
+function roomCoordinates(value: string): { readonly x: number; readonly y: number } | null {
+  const match = /^(W|E)(\d+)(N|S)(\d+)$/u.exec(value);
+  if (match === null) return null;
+  const horizontal = Number(match[2]);
+  const vertical = Number(match[4]);
+  if (!Number.isSafeInteger(horizontal) || !Number.isSafeInteger(vertical)) return null;
+  return {
+    x: match[1] === "W" ? -horizontal - 1 : horizontal,
+    y: match[3] === "N" ? -vertical - 1 : vertical,
+  };
+}
+
+function exitMatchesDirection(position: PositionSnapshot, direction: DirectionConstant): boolean {
+  return (
+    (direction === 1 && position.y === 0) ||
+    (direction === 3 && position.x === 49) ||
+    (direction === 5 && position.y === 49) ||
+    (direction === 7 && position.x === 0)
+  );
+}
+
+function crossingDestination(
+  exit: PositionSnapshot,
+  roomName: string,
+  direction: DirectionConstant,
+): PositionSnapshot | null {
+  if (!exitMatchesDirection(exit, direction)) return null;
+  if (direction === 1) return { roomName, x: exit.x, y: 49 };
+  if (direction === 3) return { roomName, x: 0, y: exit.y };
+  if (direction === 5) return { roomName, x: exit.x, y: 0 };
+  if (direction === 7) return { roomName, x: 49, y: exit.y };
+  return null;
 }
 
 function firstPathDirection(result: LocalPathPlanResult): DirectionConstant | null {
