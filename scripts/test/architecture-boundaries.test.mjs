@@ -320,6 +320,7 @@ describe("runtime architecture boundaries", () => {
   it.each([
     ["BudgetLedger", "economy/budget.ts", "duplicate-authority:BudgetLedger"],
     ["ColonyDirector", "economy/colony.ts", "duplicate-authority:ColonyDirector"],
+    ["RoutePlanner", "remotes/routes.ts", "duplicate-authority:RoutePlanner"],
   ])("keeps %s at its canonical declaration", (authority, path, rule) => {
     expect(
       findArchitectureViolations([{ path, contents: `export class ${authority} {}` }]),

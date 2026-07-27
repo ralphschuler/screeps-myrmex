@@ -470,6 +470,14 @@ evidence authorizes nothing. Previous-tick events retain that exact temporal mea
 prefers an already authorized observer, then a separately BudgetLedger-authorized data-only scout;
 IntelService neither selects a remote or route nor creates a budget, contract, spawn, or command.
 
+Room routing is likewise data only. One `RoutePlanner` ranks fresh safe routes ahead of unsafe or
+stale alternatives, applies current closed/protected status, highway, terrain, authoritative
+relation, and threat costs, and returns typed denial under risk, CPU, search, cost, result-size, or
+deadline pressure. Its body/load estimate conservatively prices outbound and return fatigue,
+capacity throughput, and road exposure. Heap cache loss changes computation cost only; identical
+evidence still produces the same route. It neither selects a remote nor bypasses MovementArbiter
+with a tile path or command.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

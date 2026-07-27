@@ -171,6 +171,7 @@ const AUTHORITY_DECLARATIONS = new Map([
   ["MemoryManager", "state/manager.ts"],
   ["RuntimeConfigAuthority", "config/authority.ts"],
   ["RuntimeKernel", "runtime/kernel/runtime-kernel.ts"],
+  ["RoutePlanner", "world/routes/planner.ts"],
   ["SegmentManager", SEGMENT_MANAGER_PATH],
   ["SpawnBroker", SPAWN_BROKER_PATH],
   ["SpawnExecutor", SPAWN_EXECUTOR_PATH],
