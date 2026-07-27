@@ -16,6 +16,7 @@ import type { WorldSnapshot } from "../world/snapshot";
 import type { LayoutRuntimeResult } from "../layout";
 import type { LinkRuntimeResult } from "../links";
 import type { SegmentManagerMetrics, SegmentService } from "../segments";
+import type { IntelRuntimeResult } from "../world/intel";
 
 export interface RuntimeGame {
   readonly cpu: {
@@ -70,6 +71,8 @@ export interface TickContext {
   readonly segmentStorage: SegmentService;
   /** Bounded observer-only segment health for the current tick. */
   readonly segments: SegmentManagerMetrics;
+  /** Freshness-qualified room intelligence; no physical segment IDs or strategy decisions. */
+  readonly intel: IntelRuntimeResult;
   /** Tick-local layout planning, arbitration, execution, and durable reconciliation evidence. */
   readonly layout: LayoutRuntimeResult;
   /** Tick-local link classification, arbitration, and command settlement evidence. */

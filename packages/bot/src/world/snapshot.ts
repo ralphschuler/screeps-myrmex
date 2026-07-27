@@ -258,6 +258,18 @@ export interface OwnedTerminalSnapshot extends OwnedStorageSnapshot {
   readonly cooldown: number;
 }
 
+export interface PortalDestinationSnapshot {
+  readonly destinationRoomName: string;
+  readonly destinationShard: string | null;
+  readonly x: number | null;
+  readonly y: number | null;
+}
+
+export interface InvaderCoreSnapshot {
+  readonly level: number;
+  readonly ticksToDeploy: number | null;
+}
+
 export interface StructureSnapshot {
   readonly hits: number;
   readonly hitsMax: number;
@@ -268,9 +280,28 @@ export interface StructureSnapshot {
   readonly structureType: string;
   /** Present for ramparts; null for other runtime-observed structures. */
   readonly isPublic?: boolean | null;
-  /** Present for decaying roads, containers, and ramparts; null otherwise. */
+  /** Present only for invader cores. */
+  readonly invaderCore?: InvaderCoreSnapshot;
+  /** Present only for portals. */
+  readonly portal?: PortalDestinationSnapshot;
+  /** Present for structures with engine-provided decay evidence; null otherwise. */
   readonly ticksToDecay?: number | null;
 }
+
+/** Security-bounded scalar projection of one previous-tick Room event. */
+export interface RoomEventSnapshot {
+  readonly event: number;
+  readonly objectId: string;
+  readonly targetId: string | null;
+  readonly amount: number | null;
+  readonly attackType: number | null;
+  readonly resourceType: string | null;
+  readonly structureType: string | null;
+  readonly x: number | null;
+  readonly y: number | null;
+}
+
+export type RoomEventLogStatus = "observed" | "unavailable" | "limit-exceeded";
 
 export interface TerrainSnapshot {
   /** Exactly 2,500 y-major cells encoded as 0 plain, 1 wall, or 2 swamp. */
@@ -326,6 +357,10 @@ export interface RoomSnapshot {
   readonly energyAvailable: number;
   readonly energyCapacityAvailable: number;
   readonly droppedResources?: readonly DroppedResourceSnapshot[];
+  /** Previous-tick events; absent only for legacy fixtures. */
+  readonly events?: readonly RoomEventSnapshot[];
+  /** Explicit completeness for the previous-tick event batch. */
+  readonly eventLogStatus?: RoomEventLogStatus;
   readonly hostileCreeps: readonly CreepSnapshot[];
   readonly exits?: readonly PositionSnapshot[];
   readonly mineral?: MineralSnapshot | null;

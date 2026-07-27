@@ -170,6 +170,11 @@ and MMO deployment remain gated by their own evidence.
   [`phase3-segments-evidence.md`](phase3-segments-evidence.md). It provides bounded asynchronous
   storage and recovery for later intelligence, routes, and accounting without selecting remotes or
   satisfying the phase exit itself.
+- Segment-backed room intelligence and freshness-qualified vision demand are tracked by
+  [issue #55](https://github.com/ralphschuler/screeps-myrmex/issues/55) and
+  [`phase3-intel-evidence.md`](phase3-intel-evidence.md). Current vision, verified history,
+  previous-tick events, observer requests, and budget-authorized data-only scout requests share one
+  bounded interface; route costing and remote selection remain unavailable.
 - Remote discovery, reservation, mining, hauling, suspension, evacuation, and resumption.
 - Full-cost profitability and threat-adjusted routing.
 

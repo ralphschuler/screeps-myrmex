@@ -345,6 +345,7 @@ import {
   type ObserverCommand,
   type ObserverRuntimeProjection,
 } from "../observer";
+import { IntelService, emptyIntelRuntimeResult, type IntelRuntimeResult } from "../world/intel";
 import {
   SegmentManager,
   unavailableSegmentMetrics,
@@ -394,6 +395,8 @@ export interface TickOutcome {
   readonly localPathPlanning: LocalPathPlanningService;
   /** Fixed-cardinality status from the sole segment authority. */
   readonly segments: SegmentManagerMetrics;
+  /** Freshness-qualified segment-backed room intelligence. */
+  readonly intel: IntelRuntimeResult;
   readonly layout: LayoutRuntimeResult;
   readonly links: LinkRuntimeResult;
   readonly spawn: SpawnRuntimeResult;
@@ -415,6 +418,8 @@ interface TickRuntimeControl {
   publishExecution(batch: ArbitrationBatch): void;
   publishMovement(result: MovementRuntimeResult): void;
   publishSegments(result: SegmentManagerMetrics): void;
+  publishIntel(result: IntelRuntimeResult): void;
+  clearIntel(): void;
   clearMovement(): void;
   publishLayout(result: LayoutRuntimeResult): void;
   publishLinks(result: LinkRuntimeResult): void;
@@ -538,6 +543,7 @@ export function runTick(input: TickInput): TickOutcome {
     movement: runtime.context.movement,
     localPathPlanning: runtime.context.localPathPlanning,
     segments: runtime.context.segments,
+    intel: runtime.context.intel,
     layout: runtime.context.layout,
     links: runtime.context.links,
     spawn: runtime.context.spawn,
@@ -930,6 +936,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       },
     },
     defenseSafetySystem(input),
+    intelPlanSystem(input),
     colonyDirectorSystem(
       input,
       spawnDraft,
@@ -4231,11 +4238,11 @@ function colonyDirectorSystem(
         mature.catalog === null
           ? emptyObserverRuntimeProjection()
           : composeObserverRuntime({
-              authorizations: [],
+              authorizations: context.intel.refresh.observerAuthorizations,
               capabilities: mature.capabilities,
               catalog: mature.catalog,
               pendingAttempts: industryDraft.owner.observerAttempts,
-              requests: [],
+              requests: context.intel.refresh.observerRequests,
               snapshot: context.snapshot,
               snapshotRevision: snapshotRevision(context.snapshot),
             });
@@ -6412,6 +6419,40 @@ function contractFundingView(colony: ColonyPlanningResult): ContractFundingView 
   });
 }
 
+function intelPlanSystem(input: CompositionInput): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "world.observe-intel",
+      phase: "observe",
+      criticality: "operational",
+      cadence: 1,
+      estimate: 0.5,
+      admitInRecovery: false,
+      mandatoryTail: false,
+    },
+    run: ({ context }) => {
+      const service = new IntelService(context.segmentStorage);
+      const result = service.plan({
+        observerAuthorizations: [],
+        queries: [],
+        routeQueries: [],
+        scoutAuthorizations: [],
+        snapshot: context.snapshot,
+        snapshotRevision: snapshotRevision(context.snapshot),
+        visionDemands: [],
+      });
+      return staged(
+        () => {
+          input.runtime.publishIntel(result);
+        },
+        () => {
+          input.runtime.clearIntel();
+        },
+      );
+    },
+  };
+}
+
 function configBootSystem(input: CompositionInput): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -6476,6 +6517,7 @@ function createTickRuntime(
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
   let segments = initialSegmentMetrics;
+  let intel: IntelRuntimeResult = emptyIntelRuntimeResult();
   const context = Object.freeze({
     tick: game.time,
     shard: game.shard.name,
@@ -6502,6 +6544,9 @@ function createTickRuntime(
     segmentStorage,
     get segments(): SegmentManagerMetrics {
       return segments;
+    },
+    get intel(): IntelRuntimeResult {
+      return intel;
     },
     get movement(): MovementRuntimeResult {
       return movement;
@@ -6548,6 +6593,12 @@ function createTickRuntime(
     },
     publishSegments(value: SegmentManagerMetrics): void {
       segments = value;
+    },
+    publishIntel(value: IntelRuntimeResult): void {
+      intel = value;
+    },
+    clearIntel(): void {
+      intel = emptyIntelRuntimeResult();
     },
     clearMovement(): void {
       movement = emptyMovementRuntimeResult();

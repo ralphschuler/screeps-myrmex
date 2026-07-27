@@ -41,6 +41,10 @@ describe("SegmentManager runtime composition", () => {
     });
     expect(outcome.telemetry?.segments).toEqual(projectSegmentTelemetry(outcome.segments));
     expect(outcome.telemetry?.segments).toHaveLength(20);
+    expect(outcome.intel).toMatchObject({
+      status: "ready",
+      metrics: { visibleRooms: 0, queried: 0, writeOffers: 0 },
+    });
     expect(Object.isFrozen(outcome.telemetry?.segments)).toBe(true);
     expect(memory.myrmex?.segments).toMatchObject({
       schemaVersion: 1,
@@ -53,10 +57,32 @@ describe("SegmentManager runtime composition", () => {
       .filter(({ status }) => status === "completed")
       .map(({ systemId }) => systemId);
     expect(completed).toContain("segments.ingest");
+    expect(completed).toContain("world.observe-intel");
     expect(completed).toContain("segments.reconcile");
+    expect(completed.indexOf("world.observe")).toBeLessThan(
+      completed.indexOf("world.observe-intel"),
+    );
+    expect(completed.indexOf("world.observe-intel")).toBeLessThan(
+      completed.indexOf("colony.director"),
+    );
     expect(completed.indexOf("segments.reconcile")).toBeLessThan(
       completed.indexOf("state.reconcile"),
     );
+  });
+
+  it("reports intel unavailable when CPU admission skips the optional projection", () => {
+    const memory = {} as Memory;
+    const segments = new RuntimeSegments();
+    segments.start();
+
+    const outcome = runTick({ game: emptyGame(705, 0), memory });
+
+    expect(outcome.kernel.systems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ systemId: "world.observe-intel", status: "skipped" }),
+      ]),
+    );
+    expect(outcome.intel).toMatchObject({ status: "unavailable", rooms: [], routes: [] });
   });
 
   it("preserves a future segment owner and reports optional service unavailable", () => {
@@ -79,9 +105,9 @@ describe("SegmentManager runtime composition", () => {
   });
 });
 
-function emptyGame(time: number): RuntimeGame {
+function emptyGame(time: number, bucket = 10_000): RuntimeGame {
   return {
-    cpu: { bucket: 10_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+    cpu: { bucket, limit: 20, tickLimit: 500, getUsed: () => 0 },
     creeps: {},
     rooms: {},
     shard: { name: "shard0" },
