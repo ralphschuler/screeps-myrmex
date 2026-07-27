@@ -1585,10 +1585,16 @@ this boundary.
 The Phase 1 `SurvivalGrowthPlanner` is likewise a pure snapshot selector with no layout, placement,
 or durable queue. A downgrade-risk controller may request `controller-risk` upgrade work; optional
 controller upgrading and owned spawn, extension, container, road, and tower construction sites need
-both the protected spawn reserve and configured surplus. `ColonyDirector` remains the sole budget
-authority, so controller risk is admitted ahead of optional construction and constrained CPU,
-threat, or recovery posture fails optional growth closed. Lease agents and executors retain the only
-Screeps work-command path.
+both the protected spawn reserve and configured surplus. One bounded RCL2 exception admits only
+observed owned extension sites while capacity remains below that normal floor, the full protected
+reserve remains available, and a viable `WORK`/`CARRY`/`MOVE` worker carries energy. Its distinct
+`rcl2-infrastructure-bootstrap` candidate claims CPU but no room energy because `Creep.build` spends
+creep cargo; current actor-energy eligibility prevents an empty worker from taking that lease, and a
+stable contract survives temporary worker/cargo loss and retires when the site or bootstrap phase
+ends. `ColonyDirector` remains the sole budget authority, so controller risk is admitted ahead of
+optional construction and constrained CPU, threat, or recovery posture fails optional growth closed.
+Lease agents and executors retain the only Screeps work-command path.
+[ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md) records the exception.
 
 Lease agents retain no task or role Memory. They correlate each proposal with contract ID and
 revision; the runtime's Reconcile phase feeds typed executor evidence through the existing contract

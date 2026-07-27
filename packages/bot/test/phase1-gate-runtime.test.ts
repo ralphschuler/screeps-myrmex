@@ -22,6 +22,68 @@ describe("Phase 1 gate established RCL2 row", () => {
 
   afterAll(() => vi.unstubAllGlobals());
 
+  it("builds the first RCL2 extension from carried energy while preserving the spawn reserve", async () => {
+    const world = establishedRcl2World({
+      constructionSite: {
+        controllerLevel: 2,
+        id: "first-extension-site",
+        initialProgress: 45,
+        pos: { x: 10, y: 11 },
+        progressTotal: 50,
+        structureType: "extension",
+        workerBody: ["work", "carry", "move"],
+        workerEnergy: 50,
+        workerPos: { x: 11, y: 10 },
+      },
+      initialExtensionCount: 0,
+    });
+    let memory = {} as Memory;
+    const outcomes = [runTick({ game: world.game(START_TICK), memory })];
+    const config = memory.myrmex?.config as unknown as { candidate: unknown } | undefined;
+    if (config === undefined) throw new Error("expected initialized config owner");
+    // Keep this regression on the existing-site growth path; #476 owns layout-to-movement proof.
+    config.candidate = {
+      revision: 1,
+      overrides: { features: { disabled: ["phase2.layout"] } },
+    };
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    const executeTick = (await import("../src/runtime/tick")).runTick;
+
+    for (let tick = START_TICK + 1; tick < START_TICK + 30 && world.siteCount() > 0; tick += 1) {
+      outcomes.push(executeTick({ game: world.game(tick), memory }));
+      expect(world.spawnEnergy()).toBe(300);
+    }
+
+    expect(world.buildCalls()).toEqual([
+      expect.objectContaining({ energy: 5, targetId: "first-extension-site" }),
+    ]);
+    expect(world.siteCount()).toBe(0);
+    expect(world.roomEnergyCapacity()).toBe(350);
+    expect(world.spawnEnergy()).toBe(300);
+    expect(
+      outcomes
+        .flatMap(({ colony }) => colony.reservations)
+        .find(({ issuer }) => issuer === "growth/W1N1/rcl2-bootstrap/build/first-extension-site"),
+    ).toMatchObject({
+      category: "optional-growth",
+      grant: { energy: 0 },
+      reasonCode: "granted",
+      status: "active",
+    });
+    expect(
+      outcomes
+        .flatMap(({ movement }) => movement.actionExecution)
+        .some(
+          ({ intent, status }) =>
+            intent.kind === "build" &&
+            intent.targetId === "first-extension-site" &&
+            status === "executed",
+        ),
+    ).toBe(true);
+    expect(outcomes.flatMap(({ kernel }) => kernel.faults)).toEqual([]);
+  });
+
   it("replaces its established worker once and resumes useful RCL2 work", () => {
     const world = establishedRcl2World();
     const memory = {} as Memory;

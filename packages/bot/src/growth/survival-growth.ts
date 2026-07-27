@@ -13,7 +13,11 @@ export interface GrowthCandidate {
   readonly budgetRequest: BudgetRequest;
   readonly colonyId: string;
   readonly order: number;
-  readonly reasonCode: "controller-risk" | "optional-growth" | "rcl1-bootstrap-controller";
+  readonly reasonCode:
+    | "controller-risk"
+    | "optional-growth"
+    | "rcl1-bootstrap-controller"
+    | "rcl2-infrastructure-bootstrap";
   readonly target: PositionSnapshot;
   readonly targetId: string;
 }
@@ -25,7 +29,7 @@ export interface GrowthPlan {
 
 const EXPIRY = 1_000_000_000;
 const MAX_GROWTH_CANDIDATES = 64;
-const RCL1_BOOTSTRAP_MAX_ASSIGNMENT_COST = 1_500;
+const BOOTSTRAP_MAX_ASSIGNMENT_COST = 1_500;
 const GROWTH_MAX_ASSIGNMENT_COST = 50;
 
 /**
@@ -53,11 +57,6 @@ export function planSurvivalGrowth(
       candidates.push(bootstrapCandidate(room.name, controller.id, controller.pos, config));
       continue;
     }
-    if (
-      room.energyAvailable <
-      config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy
-    )
-      continue;
     const sites = room.constructionSites
       .filter(({ ownership }) => ownership === "owned")
       .slice()
@@ -66,6 +65,19 @@ export function planSurvivalGrowth(
           siteRank(left.structureType) - siteRank(right.structureType) ||
           left.id.localeCompare(right.id),
       );
+    if (qualifiesRcl2InfrastructureBootstrap(room, config)) {
+      for (const site of sites
+        .filter(({ structureType }) => structureType === "extension")
+        .slice(0, config.policy.growth.maximumActiveContractsPerRoom)) {
+        candidates.push(rcl2InfrastructureBootstrapCandidate(room.name, site.id, site.pos, config));
+      }
+      continue;
+    }
+    if (
+      room.energyAvailable <
+      config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy
+    )
+      continue;
     for (const site of sites.slice(0, config.policy.growth.maximumActiveContractsPerRoom)) {
       candidates.push(
         buildCandidate(room.name, site.id, site.pos, siteRank(site.structureType), config),
@@ -125,6 +137,7 @@ export function authorizedSurvivalGrowth(
   planning: ContractPlanningView,
   tick: number,
   snapshot?: WorldSnapshot,
+  config?: RuntimeConfig,
 ): GrowthPlan {
   const roomByName =
     snapshot === undefined
@@ -140,10 +153,38 @@ export function authorizedSurvivalGrowth(
     ),
   );
   const issuers = new Set(authorized.map((candidate) => candidate.budgetRequest.issuer));
+  const existingIssuers = new Set(
+    planning.status === "ready" ? planning.contracts.map(({ issuer }) => issuer) : [],
+  );
   const transitions: ContractTransitionRequest[] = [];
   if (planning.status === "ready")
     for (const contract of planning.contracts) {
       if (!contract.issuer.startsWith("growth/") || contract.owner.kind !== "colony") continue;
+      if (isRcl2InfrastructureBootstrap(contract.issuer)) {
+        const reusable = reusabilityConfirmedForRcl2InfrastructureBootstrap(
+          contract,
+          roomByName,
+          config ?? null,
+        );
+        if (!issuers.has(contract.issuer) && !reusable)
+          transitions.push({
+            contractId: contract.contractId,
+            reason: "growth-target-resolved",
+            tick,
+            to: "cancelled",
+          });
+        else if (
+          issuers.has(contract.issuer) &&
+          (contract.state === "proposed" || contract.state === "suspended")
+        )
+          transitions.push({
+            contractId: contract.contractId,
+            reason: "growth-work-remains",
+            tick,
+            to: "funded",
+          });
+        continue;
+      }
       if (
         !issuers.has(contract.issuer) &&
         contract.budgetBinding.category !== "bootstrap-controller"
@@ -175,7 +216,14 @@ export function authorizedSurvivalGrowth(
   return Object.freeze({
     candidates: Object.freeze(authorized),
     requests: Object.freeze(
-      authorized.map(contractFor).sort((a, b) => a.issuer.localeCompare(b.issuer)),
+      authorized
+        .filter(
+          ({ budgetRequest }) =>
+            !isRcl2InfrastructureBootstrap(budgetRequest.issuer) ||
+            !existingIssuers.has(budgetRequest.issuer),
+        )
+        .map(contractFor)
+        .sort((a, b) => a.issuer.localeCompare(b.issuer)),
     ),
     transitions: Object.freeze(
       transitions.sort((a, b) => a.contractId.localeCompare(b.contractId)),
@@ -217,6 +265,17 @@ function bootstrapCandidate(
     config,
   );
 }
+function rcl2InfrastructureBootstrapCandidate(
+  colonyId: string,
+  targetId: string,
+  target: PositionSnapshot,
+  config: RuntimeConfig,
+): GrowthCandidate {
+  return candidate(colonyId, "build", targetId, target, "optional-growth", 0, config, {
+    issuer: `growth/${colonyId}/rcl2-bootstrap/build/${targetId}`,
+    reasonCode: "rcl2-infrastructure-bootstrap",
+  });
+}
 function candidate(
   colonyId: string,
   action: GrowthAction,
@@ -225,13 +284,19 @@ function candidate(
   category: "bootstrap-controller" | "controller-risk" | "optional-growth",
   order: number,
   config: RuntimeConfig,
+  overrides: {
+    readonly issuer?: string;
+    readonly reasonCode?: GrowthCandidate["reasonCode"];
+  } = {},
 ): GrowthCandidate {
-  const issuer = `growth/${colonyId}/${action}/${targetId}`;
+  const issuer = overrides.issuer ?? `growth/${colonyId}/${action}/${targetId}`;
   return {
     action,
     colonyId,
     order,
-    reasonCode: category === "bootstrap-controller" ? "rcl1-bootstrap-controller" : category,
+    reasonCode:
+      overrides.reasonCode ??
+      (category === "bootstrap-controller" ? "rcl1-bootstrap-controller" : category),
     target,
     targetId,
     budgetRequest: {
@@ -240,10 +305,11 @@ function candidate(
       issuer,
       revision: 1,
       expiresAt: EXPIRY,
-      // Controller work spends creep cargo, not room energy. This leaves the full recovery
-      // reserve untouched while a newly harvested batch bridges RCL1 to RCL2.
+      // Bootstrap work spends creep cargo, not room energy. This leaves the full recovery
+      // reserve untouched while carried energy bridges RCL1 or builds initial RCL2 capacity.
       energy:
-        category === "bootstrap-controller"
+        category === "bootstrap-controller" ||
+        overrides.reasonCode === "rcl2-infrastructure-bootstrap"
           ? null
           : { minimum: 1, desired: config.policy.growth.maximumEnergyPerTick },
       cpu: { minimum: 1, desired: 1 },
@@ -281,8 +347,9 @@ function contractFor(candidate: GrowthCandidate): WorkContractRequest {
     kind: controller ? "upgrade" : "build",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 1 },
     maxAssignmentCost:
-      candidate.budgetRequest.category === "bootstrap-controller"
-        ? RCL1_BOOTSTRAP_MAX_ASSIGNMENT_COST
+      candidate.budgetRequest.category === "bootstrap-controller" ||
+      candidate.reasonCode === "rcl2-infrastructure-bootstrap"
+        ? BOOTSTRAP_MAX_ASSIGNMENT_COST
         : GROWTH_MAX_ASSIGNMENT_COST,
     owner: { id: candidate.colonyId, kind: "colony" },
     preconditionKeys: ["visible-growth-target"],
@@ -291,7 +358,8 @@ function contractFor(candidate: GrowthCandidate): WorkContractRequest {
       value:
         candidate.budgetRequest.category === "controller-risk"
           ? 1_600
-          : candidate.budgetRequest.category === "bootstrap-controller"
+          : candidate.budgetRequest.category === "bootstrap-controller" ||
+              candidate.reasonCode === "rcl2-infrastructure-bootstrap"
             ? 1_200
             : 500,
     },
@@ -372,6 +440,64 @@ function qualifiesRcl1Bootstrap(
       creep.store.resources.some(
         ({ resourceType, amount }) => resourceType === "energy" && amount > 0,
       ),
+  );
+}
+
+function qualifiesRcl2InfrastructureBootstrap(
+  room: WorldSnapshot["rooms"][number],
+  config: RuntimeConfig,
+): boolean {
+  const controller = room.controller;
+  const normalGrowthFloor =
+    config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy;
+  if (
+    controller?.ownership !== "owned" ||
+    controller.level !== 2 ||
+    room.energyCapacityAvailable >= normalGrowthFloor ||
+    room.energyAvailable < config.policy.recovery.protectedSpawnEnergy ||
+    room.ownedSpawns.filter(({ active }) => active).length !== 1
+  )
+    return false;
+  const replacementLeadTicks = 3 * 3 + config.policy.spawn.replacementSafetyMarginTicks;
+  return room.ownedCreeps.some(
+    (creep) =>
+      !creep.spawning &&
+      creep.body.work.active >= 1 &&
+      creep.body.carry.active >= 1 &&
+      creep.body.move.active >= 1 &&
+      (creep.ticksToLive === null || creep.ticksToLive > replacementLeadTicks) &&
+      creep.store.resources.some(
+        ({ resourceType, amount }) => resourceType === "energy" && amount > 0,
+      ),
+  );
+}
+
+function isRcl2InfrastructureBootstrap(issuer: string): boolean {
+  return issuer.includes("/rcl2-bootstrap/build/");
+}
+
+function reusabilityConfirmedForRcl2InfrastructureBootstrap(
+  contract: {
+    readonly owner: { readonly id: string };
+    readonly targetId: string;
+  },
+  roomsByName: ReadonlyMap<string, WorldSnapshot["rooms"][number]> | null,
+  config: RuntimeConfig | null,
+): boolean {
+  if (roomsByName === null || config === null) return true;
+  const room = roomsByName.get(contract.owner.id);
+  if (room === undefined) return true;
+  const normalGrowthFloor =
+    config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy;
+  return (
+    room.controller?.ownership === "owned" &&
+    room.controller.level === 2 &&
+    room.energyCapacityAvailable < normalGrowthFloor &&
+    room.ownedSpawns.filter(({ active }) => active).length === 1 &&
+    room.constructionSites.some(
+      ({ id, ownership, structureType }) =>
+        id === contract.targetId && ownership === "owned" && structureType === "extension",
+    )
   );
 }
 

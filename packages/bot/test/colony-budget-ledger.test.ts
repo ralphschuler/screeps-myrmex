@@ -79,6 +79,28 @@ describe("BudgetLedger", () => {
     expect(result.totals.energyReserved).toBe(0);
   });
 
+  it("funds carried-energy growth without reducing the protected room-energy floor", () => {
+    const growth = request("optional-growth", "rcl2-infrastructure-bootstrap", {
+      cpu: claim(1, 1),
+      energy: null,
+    });
+    const result = new BudgetLedger().reconcile({
+      tick: 100,
+      capacity: capacities({ available: 300, protected: 300, cpu: 1 }),
+      requests: [growth],
+    });
+
+    expect(result.decisions).toEqual([
+      expect.objectContaining({
+        issuer: "rcl2-infrastructure-bootstrap",
+        reasonCode: "granted",
+        status: "granted",
+        grant: { cpu: 1, energy: 0, spawn: null },
+      }),
+    ]);
+    expect(result.totals).toMatchObject({ cpuReserved: 1, energyReserved: 0 });
+  });
+
   it("uses half-open spawn intervals and reports observed and allocated conflicts", () => {
     const replacement = request("replacement", "replacement", {
       energy: claim(100, 100),

@@ -163,6 +163,248 @@ describe("survival growth", () => {
     ).toEqual([]);
   });
 
+  it("bootstraps RCL2 extension work from carried energy without claiming the protected reserve", () => {
+    const config = buildRuntimeConfig();
+    const planned = planSurvivalGrowth(
+      world({
+        controllerLevel: 2,
+        energy: 300,
+        energyCapacity: 300,
+        extensionSite: true,
+        spawn: true,
+        workerEnergy: 5,
+      }),
+      config,
+    );
+
+    expect(planned).toMatchObject([
+      {
+        action: "build",
+        reasonCode: "rcl2-infrastructure-bootstrap",
+        targetId: "site-extension",
+        budgetRequest: {
+          category: "optional-growth",
+          energy: null,
+          issuer: "growth/W1N1/rcl2-bootstrap/build/site-extension",
+        },
+      },
+    ]);
+    const funded = renewGrowthBudgets(
+      planned,
+      [],
+      100,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    );
+    const authorized = authorizedSurvivalGrowth(
+      funded,
+      funded.map(({ budgetRequest }) => ({
+        category: budgetRequest.category,
+        colonyId: budgetRequest.colonyId,
+        issuer: budgetRequest.issuer,
+        status: "active" as const,
+      })),
+      { status: "ready", contracts: [] },
+      100,
+    );
+    expect(authorized.requests).toEqual([
+      expect.objectContaining({
+        maxAssignmentCost: 1_500,
+        priority: { class: "growth", value: 1_200 },
+      }),
+    ]);
+
+    expect(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 2,
+          energy: 299,
+          energyCapacity: 300,
+          extensionSite: true,
+          spawn: true,
+          workerEnergy: 5,
+        }),
+        config,
+      ),
+    ).toEqual([]);
+    expect(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 2,
+          energy: 300,
+          energyCapacity: 300,
+          extensionSite: true,
+          hostile: true,
+          spawn: true,
+          workerEnergy: 5,
+        }),
+        config,
+      ),
+    ).toEqual([]);
+    expect(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 2,
+          energy: 400,
+          energyCapacity: 400,
+          extensionSite: true,
+          spawn: true,
+          workerEnergy: 5,
+        }),
+        config,
+      ),
+    ).toMatchObject([
+      {
+        reasonCode: "optional-growth",
+        budgetRequest: {
+          issuer: "growth/W1N1/build/site-extension",
+        },
+      },
+    ]);
+  });
+
+  it("retains RCL2 bootstrap work through temporary worker loss and retires it when normal growth resumes", () => {
+    const config = buildRuntimeConfig();
+    const planning: ContractPlanningView = {
+      status: "ready",
+      contracts: [
+        {
+          budgetBinding: {
+            category: "optional-growth",
+            issuer: "growth/W1N1/rcl2-bootstrap/build/site-extension",
+          },
+          contractId: "bootstrap-RCL2-extension",
+          execution: {
+            action: "build",
+            completion: "work-complete",
+            counterpartId: null,
+            resourceType: null,
+            version: 1,
+          },
+          issuer: "growth/W1N1/rcl2-bootstrap/build/site-extension",
+          owner: { id: "W1N1", kind: "colony" },
+          state: "suspended",
+          targetId: "site-extension",
+        },
+      ],
+    };
+
+    expect(
+      authorizedSurvivalGrowth(
+        [],
+        [],
+        planning,
+        110,
+        world({
+          controllerLevel: 2,
+          energy: 300,
+          energyCapacity: 300,
+          extensionSite: true,
+          spawn: true,
+          workerEnergy: 0,
+        }),
+        config,
+      ).transitions,
+    ).toEqual([]);
+
+    const resumedCandidates = planSurvivalGrowth(
+      world({
+        controllerLevel: 2,
+        energy: 300,
+        energyCapacity: 300,
+        extensionSite: true,
+        spawn: true,
+        workerEnergy: 5,
+      }),
+      config,
+    );
+    const resumed = authorizedSurvivalGrowth(
+      resumedCandidates,
+      resumedCandidates.map(({ budgetRequest }) => ({
+        category: budgetRequest.category,
+        colonyId: budgetRequest.colonyId,
+        issuer: budgetRequest.issuer,
+        status: "active",
+      })),
+      planning,
+      111,
+      world({
+        controllerLevel: 2,
+        energy: 300,
+        energyCapacity: 300,
+        extensionSite: true,
+        spawn: true,
+        workerEnergy: 5,
+      }),
+      config,
+    );
+    expect(resumed.requests).toEqual([]);
+    expect(resumed.transitions).toEqual([
+      {
+        contractId: "bootstrap-RCL2-extension",
+        reason: "growth-work-remains",
+        tick: 111,
+        to: "funded",
+      },
+    ]);
+
+    const normalWorld = world({
+      controllerLevel: 2,
+      energy: 400,
+      energyCapacity: 400,
+      extensionSite: true,
+      spawn: true,
+      workerEnergy: 5,
+    });
+    const normalCandidates = planSurvivalGrowth(normalWorld, config);
+    const normal = authorizedSurvivalGrowth(
+      normalCandidates,
+      normalCandidates.map(({ budgetRequest }) => ({
+        category: budgetRequest.category,
+        colonyId: budgetRequest.colonyId,
+        issuer: budgetRequest.issuer,
+        status: "active",
+      })),
+      planning,
+      112,
+      normalWorld,
+      config,
+    );
+    expect(normal.requests).toMatchObject([{ issuer: "growth/W1N1/build/site-extension" }]);
+    expect(normal.transitions).toEqual([
+      {
+        contractId: "bootstrap-RCL2-extension",
+        reason: "growth-target-resolved",
+        tick: 112,
+        to: "cancelled",
+      },
+    ]);
+
+    expect(
+      authorizedSurvivalGrowth(
+        [],
+        [],
+        planning,
+        113,
+        world({
+          controllerLevel: 2,
+          energy: 300,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 5,
+        }),
+        config,
+      ).transitions,
+    ).toEqual([
+      {
+        contractId: "bootstrap-RCL2-extension",
+        reason: "growth-target-resolved",
+        tick: 113,
+        to: "cancelled",
+      },
+    ]);
+  });
+
   it("keeps bootstrap demand reusable across temporary infeasibility and cancels when bootstrap phase exits", () => {
     const config = buildRuntimeConfig();
     const candidates = planSurvivalGrowth(
@@ -250,6 +492,7 @@ function world(
     downgrade?: number;
     energy?: number;
     energyCapacity?: number;
+    extensionSite?: boolean;
     hostile?: boolean;
     sites?: boolean;
     spawn?: boolean;
@@ -259,50 +502,62 @@ function world(
   return {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 100 },
     observedAt: 100,
-    ownedConstructionSiteCount: options.sites ? 4 : 0,
+    ownedConstructionSiteCount: (options.sites ? 4 : 0) + (options.extensionSite ? 1 : 0),
     ownedRooms: [],
     rooms: [
       {
-        constructionSites: options.sites
+        constructionSites: options.extensionSite
           ? [
               {
-                id: "site-storage",
-                ownerUsername: "me",
-                ownership: "owned",
-                pos: position(13, 10),
-                progress: 0,
-                progressTotal: 100,
-                structureType: "storage",
-              },
-              {
-                id: "site-lab",
-                ownerUsername: "me",
-                ownership: "owned",
-                pos: position(14, 10),
-                progress: 0,
-                progressTotal: 100,
-                structureType: "lab",
-              },
-              {
-                id: "site-road",
-                ownerUsername: "me",
-                ownership: "owned",
-                pos: position(11, 10),
-                progress: 0,
-                progressTotal: 100,
-                structureType: "road",
-              },
-              {
-                id: "site-spawn",
+                id: "site-extension",
                 ownerUsername: "me",
                 ownership: "owned",
                 pos: position(12, 10),
-                progress: 0,
-                progressTotal: 100,
-                structureType: "spawn",
+                progress: 45,
+                progressTotal: 50,
+                structureType: "extension",
               },
             ]
-          : [],
+          : options.sites
+            ? [
+                {
+                  id: "site-storage",
+                  ownerUsername: "me",
+                  ownership: "owned",
+                  pos: position(13, 10),
+                  progress: 0,
+                  progressTotal: 100,
+                  structureType: "storage",
+                },
+                {
+                  id: "site-lab",
+                  ownerUsername: "me",
+                  ownership: "owned",
+                  pos: position(14, 10),
+                  progress: 0,
+                  progressTotal: 100,
+                  structureType: "lab",
+                },
+                {
+                  id: "site-road",
+                  ownerUsername: "me",
+                  ownership: "owned",
+                  pos: position(11, 10),
+                  progress: 0,
+                  progressTotal: 100,
+                  structureType: "road",
+                },
+                {
+                  id: "site-spawn",
+                  ownerUsername: "me",
+                  ownership: "owned",
+                  pos: position(12, 10),
+                  progress: 0,
+                  progressTotal: 100,
+                  structureType: "spawn",
+                },
+              ]
+            : [],
         controller: {
           id: "controller-a",
           level: options.controllerLevel ?? 1,
@@ -337,7 +592,7 @@ function world(
     schemaVersion: 1,
     stats: {
       entities: {
-        constructionSites: options.sites ? 4 : 0,
+        constructionSites: (options.sites ? 4 : 0) + (options.extensionSite ? 1 : 0),
         controllers: 1,
         hostileCreeps: options.hostile ? 1 : 0,
         ownedCreeps: 0,
