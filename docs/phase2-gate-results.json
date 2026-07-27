@@ -34,7 +34,7 @@
     },
     {
       "id": "layout-migration",
-      "sha256": "sha256:552494e69e7ac6d38bf6dd7d3cdd4240b43397edaa46c55a75ebc70915cf41e0"
+      "sha256": "sha256:bc7e75243718c75023bb34599eb05c2c3ca3a655327b5b85282951b66ea7d465"
     },
     {
       "id": "logistics",
@@ -63,9 +63,9 @@
   ],
   "productionBundle": {
     "buildSha": "phase2-gate-evidence",
-    "bytes": 1572088,
-    "inputCount": 152,
-    "sha256": "sha256:02ad1ac841a4c1934bf7b425064a707ceae561989f74894903cc033dd15b7ff7"
+    "bytes": 1620082,
+    "inputCount": 156,
+    "sha256": "sha256:0b9f4376101f44fccf737a216e05882c9a7d1f9a1653a14740b74ebc8db1ca91"
   },
   "progression": {
     "controllerEnergy": 16380000,
@@ -325,7 +325,7 @@
     "attestation": {
       "manifestSha256": "sha256:ecc728959ca26151df59f005fffee04dd7692502aedf71d008ccabe498912380",
       "measurementSha256": "sha256:3a3636c9c9291f02e2d724c40b9ac10d611f97bc2d88bea9b439d4ac2825d483",
-      "productionBundleSha256": "sha256:02ad1ac841a4c1934bf7b425064a707ceae561989f74894903cc033dd15b7ff7",
+      "productionBundleSha256": "sha256:0b9f4376101f44fccf737a216e05882c9a7d1f9a1653a14740b74ebc8db1ca91",
       "progression": {
         "seed": "phase2-progression-v1",
         "warmOutcomeHash": "fnv1a64-utf16:714e0bd9176f674c",

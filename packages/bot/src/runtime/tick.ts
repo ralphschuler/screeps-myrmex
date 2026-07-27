@@ -345,6 +345,13 @@ import {
   type ObserverCommand,
   type ObserverRuntimeProjection,
 } from "../observer";
+import {
+  SegmentManager,
+  unavailableSegmentMetrics,
+  unavailableSegmentService,
+  type SegmentManagerMetrics,
+  type SegmentService,
+} from "../segments";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
@@ -385,6 +392,8 @@ export interface TickOutcome {
   readonly movement: MovementRuntimeResult;
   /** Runtime-owned data-only local path capability. */
   readonly localPathPlanning: LocalPathPlanningService;
+  /** Fixed-cardinality status from the sole segment authority. */
+  readonly segments: SegmentManagerMetrics;
   readonly layout: LayoutRuntimeResult;
   readonly links: LinkRuntimeResult;
   readonly spawn: SpawnRuntimeResult;
@@ -405,6 +414,7 @@ interface TickRuntimeControl {
   clearContracts(): void;
   publishExecution(batch: ArbitrationBatch): void;
   publishMovement(result: MovementRuntimeResult): void;
+  publishSegments(result: SegmentManagerMetrics): void;
   clearMovement(): void;
   publishLayout(result: LayoutRuntimeResult): void;
   publishLinks(result: LinkRuntimeResult): void;
@@ -430,6 +440,15 @@ export function runTick(input: TickInput): TickOutcome {
   getMovementPathCache(cacheManager);
   const manager = opened.status === "ready" ? opened.manager : null;
   const state = manager?.view() ?? null;
+  const segmentOwner =
+    manager === null ? null : SegmentManager.open(manager.ownerView("segments"), input.game.time);
+  const segmentManager =
+    segmentOwner?.status === "unsupported" ? null : (segmentOwner?.manager ?? null);
+  const segmentStorage: SegmentService = segmentManager ?? unavailableSegmentService();
+  const initialSegmentMetrics =
+    segmentOwner?.status === "unsupported"
+      ? unavailableSegmentMetrics("unsupported")
+      : (segmentManager?.metrics() ?? unavailableSegmentMetrics());
   const contractExecution = readContractExecution(manager);
   const contractPlanning = readContractPlanning(manager);
   const contractPopulation = readContractPopulation(manager);
@@ -455,6 +474,8 @@ export function runTick(input: TickInput): TickOutcome {
     contractExecution,
     contractPlanning,
     localPathPlanning,
+    segmentStorage,
+    initialSegmentMetrics,
     movementRuntime.channels,
   );
   const intentChannel = createIntentChannel({
@@ -472,6 +493,7 @@ export function runTick(input: TickInput): TickOutcome {
     runtime,
     intentChannel,
     movementRuntime,
+    segmentManager,
     configReplacement: configResolution.replacementOwner,
     contractChannel,
     contractPopulation,
@@ -515,6 +537,7 @@ export function runTick(input: TickInput): TickOutcome {
     execution: runtime.context.execution,
     movement: runtime.context.movement,
     localPathPlanning: runtime.context.localPathPlanning,
+    segments: runtime.context.segments,
     layout: runtime.context.layout,
     links: runtime.context.links,
     spawn: runtime.context.spawn,
@@ -532,6 +555,7 @@ interface CompositionInput {
   readonly runtime: TickRuntimeControl;
   readonly intentChannel: IntentChannel;
   readonly movementRuntime: MovementRuntime;
+  readonly segmentManager: SegmentManager | null;
   readonly configReplacement: RuntimeConfigResolution["replacementOwner"];
   readonly contractChannel: ContractRequestChannel;
   readonly contractPopulation: ContractPopulationView;
@@ -710,8 +734,60 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let maintenanceTowerCommands: MaintenanceTelemetryInput["towerCommands"] = Object.freeze([]);
   let maintenanceTowerRejections: MaintenanceTelemetryInput["towerRejections"] = Object.freeze([]);
   let maintenanceDuplicateTargetsSuppressed = 0;
+  let segmentsIngested = false;
   return Object.freeze([
     configBootSystem(input),
+    {
+      descriptor: {
+        id: "segments.ingest",
+        phase: "boot",
+        criticality: "operational",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: true,
+        mandatoryTail: false,
+      },
+      run: () =>
+        staged(() => {
+          if (input.segmentManager === null) return;
+          input.segmentManager.beginTick();
+          segmentsIngested = true;
+          input.runtime.publishSegments(input.segmentManager.metrics());
+        }),
+    },
+    {
+      descriptor: {
+        id: "segments.reconcile",
+        phase: "reconcile",
+        criticality: "operational",
+        cadence: 1,
+        estimate: 0.25,
+        admitInRecovery: true,
+        mandatoryTail: false,
+      },
+      run: () => {
+        const segmentManager = input.segmentManager;
+        const memoryManager = input.manager;
+        if (segmentManager === null || memoryManager === null || !segmentsIngested) {
+          return staged(() => undefined);
+        }
+        return staged(
+          () => {
+            const metrics = segmentManager.reconcile();
+            if (segmentManager.changed) {
+              const stagedOwner = segmentManager.stage(memoryManager);
+              if (!stagedOwner.staged) {
+                throw new Error(stagedOwner.fault?.message ?? "segment state staging failed");
+              }
+            }
+            input.runtime.publishSegments(metrics);
+          },
+          () => {
+            memoryManager.discard("segments");
+          },
+        );
+      },
+    },
     {
       descriptor: {
         id: "agents.reconcile",
@@ -2119,6 +2195,7 @@ function telemetryBase(
     configResolution: context.configResolution,
     colony: context.colony,
     energyFlow: measureSurvivalEnergyFlow(context.snapshot, context.movement),
+    segments: context.segments,
   });
 }
 
@@ -6384,6 +6461,8 @@ function createTickRuntime(
   contractExecution: ContractExecutionView,
   contractPlanning: ContractPlanningView,
   localPathPlanning: LocalPathPlanningService,
+  segmentStorage: SegmentService,
+  initialSegmentMetrics: SegmentManagerMetrics,
   movementChannels: TickContext["movementChannels"],
 ): TickRuntimeControl {
   let snapshot = emptyWorldSnapshot(game.time, game.shard.name);
@@ -6396,6 +6475,7 @@ function createTickRuntime(
   let spawn: SpawnRuntimeResult = spawnRuntimeResult("not-run");
   let stateCommit: MemoryCommitResult | null = null;
   let telemetry: TickTelemetry | null = null;
+  let segments = initialSegmentMetrics;
   const context = Object.freeze({
     tick: game.time,
     shard: game.shard.name,
@@ -6419,6 +6499,10 @@ function createTickRuntime(
     },
     movementChannels,
     localPathPlanning,
+    segmentStorage,
+    get segments(): SegmentManagerMetrics {
+      return segments;
+    },
     get movement(): MovementRuntimeResult {
       return movement;
     },
@@ -6461,6 +6545,9 @@ function createTickRuntime(
     },
     publishMovement(value: MovementRuntimeResult): void {
       movement = value;
+    },
+    publishSegments(value: SegmentManagerMetrics): void {
+      segments = value;
     },
     clearMovement(): void {
       movement = emptyMovementRuntimeResult();

@@ -18,10 +18,10 @@
       "measurements": {
         "ticks": 33,
         "modeledCpu": 0,
-        "persistentBytes": 26200,
+        "persistentBytes": 26482,
         "persistentGrowth": 3140,
-        "telemetryBytes": 8135,
-        "telemetryCardinality": 30,
+        "telemetryBytes": 8189,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 200,
         "replacementLateness": 0,
@@ -45,11 +45,11 @@
       "scope": "focused-runtime-export",
       "measurements": {
         "ticks": 1400,
-        "modeledCpu": 0.12700000000000009,
-        "persistentBytes": 30285,
-        "persistentGrowth": 5360,
-        "telemetryBytes": 7824,
-        "telemetryCardinality": 30,
+        "modeledCpu": 0.1350000000000001,
+        "persistentBytes": 30569,
+        "persistentGrowth": 5642,
+        "telemetryBytes": 7878,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 1.29,
         "energyFlow": 250,
         "replacementLateness": 0,
@@ -61,9 +61,9 @@
         "warmOutcome": "09dc6f97",
         "resetOutcome": "09dc6f97",
         "reorderedOutcome": "09dc6f97",
-        "warmTranscript": "cc3923b0",
-        "resetTranscript": "1b9dadd5",
-        "reorderedTranscript": "b3879456"
+        "warmTranscript": "2a734600",
+        "resetTranscript": "219861b7",
+        "reorderedTranscript": "964db89e"
       },
       "unevidenced": []
     },
@@ -74,10 +74,10 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 2,
-        "persistentBytes": 6154,
+        "persistentBytes": 6436,
         "persistentGrowth": 842,
-        "telemetryBytes": 7553,
-        "telemetryCardinality": 30,
+        "telemetryBytes": 7607,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 25,
         "energyFlow": 200,
         "replacementLateness": 0,
@@ -89,9 +89,9 @@
         "warmOutcome": "87c8166f",
         "resetOutcome": "87c8166f",
         "reorderedOutcome": "87c8166f",
-        "warmTranscript": "fa78fa1c",
-        "resetTranscript": "d64100e5",
-        "reorderedTranscript": "4b10f79f"
+        "warmTranscript": "cf56f969",
+        "resetTranscript": "d58bc469",
+        "reorderedTranscript": "69710158"
       },
       "unevidenced": []
     },
@@ -102,10 +102,10 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 9250,
+        "persistentBytes": 9532,
         "persistentGrowth": 176,
-        "telemetryBytes": 7521,
-        "telemetryCardinality": 30,
+        "telemetryBytes": 7575,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
         "replacementLateness": 0,
@@ -117,9 +117,9 @@
         "warmOutcome": "df53697a",
         "resetOutcome": "df53697a",
         "reorderedOutcome": "df53697a",
-        "warmTranscript": "811f59aa",
-        "resetTranscript": "2186c0a5",
-        "reorderedTranscript": "2acdbf43"
+        "warmTranscript": "49205697",
+        "resetTranscript": "83bffea9",
+        "reorderedTranscript": "cbb53e0c"
       },
       "unevidenced": []
     },
@@ -130,10 +130,10 @@
       "measurements": {
         "ticks": 3,
         "modeledCpu": 2,
-        "persistentBytes": 9443,
+        "persistentBytes": 9725,
         "persistentGrowth": 151,
-        "telemetryBytes": 7313,
-        "telemetryCardinality": 30,
+        "telemetryBytes": 7367,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
         "replacementLateness": 0,
@@ -145,9 +145,9 @@
         "warmOutcome": "f329c328",
         "resetOutcome": "f329c328",
         "reorderedOutcome": "f329c328",
-        "warmTranscript": "005e4be9",
-        "resetTranscript": "042dfab4",
-        "reorderedTranscript": "d8a8f2cb"
+        "warmTranscript": "8e52eb0c",
+        "resetTranscript": "1c054054",
+        "reorderedTranscript": "e88724c4"
       },
       "unevidenced": []
     },
@@ -158,10 +158,10 @@
       "measurements": {
         "ticks": 4,
         "modeledCpu": 5,
-        "persistentBytes": 9645,
+        "persistentBytes": 9927,
         "persistentGrowth": 202,
-        "telemetryBytes": 7324,
-        "telemetryCardinality": 30,
+        "telemetryBytes": 7378,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 0,
         "energyFlow": 0,
         "replacementLateness": 0,
@@ -173,9 +173,9 @@
         "warmOutcome": "4b8c61be",
         "resetOutcome": "4b8c61be",
         "reorderedOutcome": "4b8c61be",
-        "warmTranscript": "0ecd43fc",
-        "resetTranscript": "73609a55",
-        "reorderedTranscript": "e309dd44"
+        "warmTranscript": "0671efc9",
+        "resetTranscript": "315b7239",
+        "reorderedTranscript": "5a8a48af"
       },
       "unevidenced": []
     },
@@ -186,10 +186,10 @@
       "measurements": {
         "ticks": 1447,
         "modeledCpu": 5,
-        "persistentBytes": 30285,
-        "persistentGrowth": 5360,
-        "telemetryBytes": 8135,
-        "telemetryCardinality": 30,
+        "persistentBytes": 30569,
+        "persistentGrowth": 5642,
+        "telemetryBytes": 8189,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
@@ -201,9 +201,9 @@
         "warmOutcome": "26ce3703",
         "resetOutcome": "26ce3703",
         "reorderedOutcome": "26ce3703",
-        "warmTranscript": "5d46fad4",
-        "resetTranscript": "1f9f5fa6",
-        "reorderedTranscript": "251949b5"
+        "warmTranscript": "feb688ec",
+        "resetTranscript": "595b38ab",
+        "reorderedTranscript": "38479ff6"
       },
       "unevidenced": []
     },
@@ -214,10 +214,10 @@
       "measurements": {
         "ticks": 1447,
         "modeledCpu": 5,
-        "persistentBytes": 30285,
-        "persistentGrowth": 5360,
-        "telemetryBytes": 8135,
-        "telemetryCardinality": 30,
+        "persistentBytes": 30569,
+        "persistentGrowth": 5642,
+        "telemetryBytes": 8189,
+        "telemetryCardinality": 31,
         "spawnUtilizationPct": 27.27272727272727,
         "energyFlow": 250,
         "replacementLateness": 0,
@@ -229,17 +229,17 @@
         "warmOutcome": "cde101b9",
         "resetOutcome": "cde101b9",
         "reorderedOutcome": "cde101b9",
-        "warmTranscript": "5d46fad4",
-        "resetTranscript": "1f9f5fa6",
-        "reorderedTranscript": "251949b5"
+        "warmTranscript": "feb688ec",
+        "resetTranscript": "595b38ab",
+        "reorderedTranscript": "38479ff6"
       },
       "unevidenced": []
     }
   ],
   "productionBundle": {
     "buildSha": "phase1-gate-evidence",
-    "bytes": 1572088,
-    "inputCount": 152,
-    "sha256": "sha256:b4c3dbe1d3da3832310ad60aa27c86ab7d2204b5952262ac37e18f0054bbb177"
+    "bytes": 1620082,
+    "inputCount": 156,
+    "sha256": "sha256:359e93c82025f31765d2344ec27a77d564747109b5034dfebd6d49b580e73cdf"
   }
 }

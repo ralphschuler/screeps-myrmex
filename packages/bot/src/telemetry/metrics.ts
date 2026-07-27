@@ -20,6 +20,7 @@ import type { LogisticsTelemetry } from "./logistics";
 import type { StaticMiningTelemetry } from "./static-mining";
 import type { Phase2Telemetry } from "./phase2";
 import type { IndustryTelemetry } from "../industry";
+import type { SegmentManagerMetrics } from "../segments";
 
 export interface FeatureGateTelemetry {
   readonly id: FeatureGateId;
@@ -46,6 +47,54 @@ export interface ColonyTelemetry {
   readonly spawnTicksReserved: number;
 }
 
+export const SEGMENT_TELEMETRY_INDEX = Object.freeze({
+  ownerStatus: 0,
+  rawMemoryAvailable: 1,
+  manifestCodeUnits: 2,
+  activatedSegments: 3,
+  readsReady: 4,
+  readsLoading: 5,
+  readsMissing: 6,
+  readsCorrupt: 7,
+  readCodeUnits: 8,
+  verifiedGenerations: 9,
+  verificationCodeUnits: 10,
+  writes: 11,
+  writeCodeUnits: 12,
+  deferredWrites: 13,
+  rejectedWrites: 14,
+  quarantined: 15,
+  fallbackReads: 16,
+  evictions: 17,
+  compactionSteps: 18,
+  pendingWrites: 19,
+} as const);
+
+/** Fixed-order packed projection; owner status is unavailable=0, unsupported=1, initialized=2,
+ * recovered=3, ready=4. Numeric packing preserves the closed Phase 1 telemetry-byte gate. */
+export type SegmentTelemetry = readonly [
+  ownerStatus: 0 | 1 | 2 | 3 | 4,
+  rawMemoryAvailable: 0 | 1,
+  manifestCodeUnits: number,
+  activatedSegments: number,
+  readsReady: number,
+  readsLoading: number,
+  readsMissing: number,
+  readsCorrupt: number,
+  readCodeUnits: number,
+  verifiedGenerations: number,
+  verificationCodeUnits: number,
+  writes: number,
+  writeCodeUnits: number,
+  deferredWrites: number,
+  rejectedWrites: number,
+  quarantined: number,
+  fallbackReads: number,
+  evictions: number,
+  compactionSteps: number,
+  pendingWrites: number,
+];
+
 export interface TickTelemetry {
   readonly tick: number;
   readonly shard: string;
@@ -55,6 +104,8 @@ export interface TickTelemetry {
   readonly snapshotBytes: number;
   readonly cacheEntries: number;
   readonly cacheNamespaces: number;
+  /** Packed fixed-cardinality SegmentManager health; no logical keys or physical IDs are exposed. */
+  readonly segments: SegmentTelemetry;
   readonly configSourceRevision: string;
   readonly configRevision: string;
   readonly policyRevision: string;
@@ -168,6 +219,7 @@ export interface TickTelemetryInput {
   readonly configResolution: RuntimeConfigResolutionMetadata;
   readonly colony: ColonyPlanningResult;
   readonly energyFlow: EnergyFlowTelemetry;
+  readonly segments: SegmentManagerMetrics;
 }
 
 /** Creates a bounded, immutable per-tick summary; durable history is a later telemetry policy. */
@@ -193,6 +245,7 @@ export function recordTickTelemetry(
     snapshotBytes: input.snapshot.stats.estimatedPayloadBytes,
     cacheEntries: input.cache.entries,
     cacheNamespaces: input.cache.namespaces.length,
+    segments: projectSegmentTelemetry(input.segments),
     configSourceRevision: input.config.sourceRevision,
     configRevision: input.config.revision,
     policyRevision: input.config.policyRevision,
@@ -248,6 +301,41 @@ export function recordTickTelemetry(
     observerDiagnostic: input.config.observer.diagnostic,
     energyFlow: Object.freeze({ ...input.energyFlow }),
   });
+}
+
+export function projectSegmentTelemetry(metrics: SegmentManagerMetrics): SegmentTelemetry {
+  const ownerStatus =
+    metrics.ownerStatus === "unavailable"
+      ? 0
+      : metrics.ownerStatus === "unsupported"
+        ? 1
+        : metrics.ownerStatus === "initialized"
+          ? 2
+          : metrics.ownerStatus === "recovered"
+            ? 3
+            : 4;
+  return Object.freeze([
+    ownerStatus,
+    metrics.rawMemoryAvailable ? 1 : 0,
+    metrics.manifestCodeUnits,
+    metrics.activatedSegments,
+    metrics.readsReady,
+    metrics.readsLoading,
+    metrics.readsMissing,
+    metrics.readsCorrupt,
+    metrics.readCodeUnits,
+    metrics.verifiedGenerations,
+    metrics.verificationCodeUnits,
+    metrics.writes,
+    metrics.writeCodeUnits,
+    metrics.deferredWrites,
+    metrics.rejectedWrites,
+    metrics.quarantined,
+    metrics.fallbackReads,
+    metrics.evictions,
+    metrics.compactionSteps,
+    metrics.pendingWrites,
+  ]);
 }
 
 /** Fixed observer-only recovery predicate shared by persistence and status projection. */

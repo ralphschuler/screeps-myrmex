@@ -568,7 +568,7 @@ describe("tick lifecycle", () => {
     );
     expect(initialized.stateCommit).toEqual({
       committed: true,
-      owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
+      owners: ["config", "kernel", "colonies", "contracts", "segments", "telemetry"],
       revision: 1,
     });
     expect(memory.myrmex?.meta.schemaVersion).toBe(4);
@@ -729,7 +729,7 @@ describe("tick lifecycle", () => {
     });
     expect(first.stateCommit).toEqual({
       committed: true,
-      owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
+      owners: ["config", "kernel", "colonies", "contracts", "segments", "telemetry"],
       revision: 1,
     });
     const scheduledName = first.spawn.execution[0]?.command.name;
@@ -1174,7 +1174,7 @@ describe("tick lifecycle", () => {
     ]);
     expect(outcome.stateCommit).toMatchObject({
       committed: true,
-      owners: ["config", "kernel", "colonies", "contracts", "telemetry"],
+      owners: ["config", "kernel", "colonies", "contracts", "segments", "telemetry"],
     });
 
     const fundedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
