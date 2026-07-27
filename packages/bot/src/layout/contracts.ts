@@ -766,6 +766,10 @@ export type LayoutDiffRejectionReason =
   | "rcl-locked"
   | "over-allowance";
 export type LayoutDiffSuppressionReason = "existing-structure" | "existing-owned-site";
+export interface RemoteConstructionSiteAuthorization {
+  readonly controller: "neutral" | "self-reserved";
+  readonly reservationUsername: string | null;
+}
 export interface LayoutSiteProposal {
   readonly colonyId: string;
   readonly layoutFingerprint: string;
@@ -776,6 +780,8 @@ export interface LayoutSiteProposal {
   readonly pos: PositionSnapshot;
   readonly stableId: string;
   readonly structureType: string;
+  /** Present only for a current profitable remote capital proposal. */
+  readonly remoteAuthorization?: RemoteConstructionSiteAuthorization;
 }
 export interface LayoutDiffDecision {
   readonly placement: LayoutPlacement;
@@ -837,6 +843,7 @@ export interface CreateConstructionSiteIntent {
   readonly structureType: string;
   readonly x: number;
   readonly y: number;
+  readonly remoteAuthorization?: RemoteConstructionSiteAuthorization;
 }
 export interface ConstructionSiteLimits {
   readonly officialHardCap: number;
@@ -894,7 +901,13 @@ export interface ConstructionSiteExecutionResult {
   readonly called: boolean;
   readonly code: ConstructionSiteAttemptCode;
   readonly fault:
-    "adapter-fault" | "room-not-owned" | "room-unavailable" | "stale-commitment" | null;
+    | "adapter-fault"
+    | "remote-controller-mismatch"
+    | "remote-structure-forbidden"
+    | "room-not-owned"
+    | "room-unavailable"
+    | "stale-commitment"
+    | null;
   readonly intent: CreateConstructionSiteIntent;
 }
 export interface LayoutRuntimePlanRecord {

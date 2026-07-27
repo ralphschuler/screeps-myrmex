@@ -172,6 +172,7 @@ const AUTHORITY_DECLARATIONS = new Map([
   ["MemoryManager", "state/manager.ts"],
   ["RuntimeConfigAuthority", "config/authority.ts"],
   ["RuntimeKernel", "runtime/kernel/runtime-kernel.ts"],
+  ["RemoteMiningPlanner", "remotes/mining.ts"],
   ["RemotePortfolio", REMOTE_PORTFOLIO_PATH],
   ["RoutePlanner", "world/routes/planner.ts"],
   ["SegmentManager", SEGMENT_MANAGER_PATH],

@@ -46,6 +46,74 @@ describe("ConstructionSiteExecutor", () => {
     expect(fixture.createConstructionSite).toHaveBeenCalledWith(10, 11, "extension");
     expect(result[0]).toMatchObject({ called: true, code: expected, intent });
   });
+  it("executes exact neutral/self-reserved remote capital and rejects controller drift", () => {
+    const remoteIntent: CreateConstructionSiteIntent = {
+      ...intent,
+      colonyId: "W1N1",
+      roomName: "W1N2",
+      structureType: "container",
+      remoteAuthorization: { controller: "self-reserved", reservationUsername: "self" },
+    };
+    const execute = (controller: object, self = true) => {
+      const createConstructionSite = vi.fn(() => 0);
+      const result = executor.execute([remoteIntent], {
+        isCurrentCommitment: () => true,
+        isSelfUsername: (username) => self && username === "self",
+        resolveRoom: () => ({ controller, createConstructionSite }) as unknown as Room,
+      });
+      return { createConstructionSite, result };
+    };
+    const reserved = execute({ my: false, reservation: { username: "self" } });
+    expect(reserved.result[0]).toMatchObject({ called: true, code: "OK" });
+    expect(reserved.createConstructionSite).toHaveBeenCalledOnce();
+
+    const neutralIntent: CreateConstructionSiteIntent = {
+      ...remoteIntent,
+      remoteAuthorization: { controller: "neutral", reservationUsername: null },
+    };
+    const neutralCreate = vi.fn(() => 0);
+    expect(
+      executor.execute([neutralIntent], {
+        isCurrentCommitment: () => true,
+        resolveRoom: () =>
+          ({ controller: { my: false }, createConstructionSite: neutralCreate }) as unknown as Room,
+      })[0],
+    ).toMatchObject({ called: true, code: "OK" });
+
+    const forbiddenCreate = vi.fn(() => 0);
+    expect(
+      executor.execute([{ ...remoteIntent, structureType: "extension" }], {
+        isCurrentCommitment: () => true,
+        isSelfUsername: () => true,
+        resolveRoom: () =>
+          ({
+            controller: { my: false, reservation: { username: "self" } },
+            createConstructionSite: forbiddenCreate,
+          }) as unknown as Room,
+      })[0],
+    ).toMatchObject({
+      called: false,
+      code: "ERR_INVALID_TARGET",
+      fault: "remote-structure-forbidden",
+    });
+    expect(forbiddenCreate).not.toHaveBeenCalled();
+
+    const drifted = execute({ my: false, reservation: { username: "other" } });
+    expect(drifted.result[0]).toMatchObject({
+      called: false,
+      code: "ERR_NOT_OWNER",
+      fault: "remote-controller-mismatch",
+    });
+    expect(drifted.createConstructionSite).not.toHaveBeenCalled();
+    const impersonated = execute({ my: false, reservation: { username: "self" } }, false);
+    expect(impersonated.result[0]).toMatchObject({
+      called: false,
+      code: "ERR_NOT_OWNER",
+      fault: "remote-controller-mismatch",
+    });
+    expect(impersonated.createConstructionSite).not.toHaveBeenCalled();
+  });
+
   it("does not call stale, unavailable, or unowned rooms and isolates faults", () => {
     const stale = adapter(0),
       unavailable = adapter(0),

@@ -94,6 +94,9 @@ export class ColonyPopulationPolicy {
       );
 
     const remainingSupply = { ...supplied };
+    const exclusiveActors = [...input.actors].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
     const target = ZERO();
     const deficit = ZERO();
     const candidates: ColonyCapabilityDemand[] = [];
@@ -140,18 +143,35 @@ export class ColonyPopulationPolicy {
               Math.floor((MAX_POPULATION_TARGET_PARTS - targetParts) / partsPerCopy),
             );
       if (boundedCopies === 0) continue;
-      const objectiveSupply: MutableCapability =
-        load.mode === "stationary" || load.mode === "logistics"
-          ? {
-              ...supply(
-                input.actors,
-                input.replacementLeadTicks +
-                  load.travelTicks +
-                  total(load.minimumCapability) * 3 +
-                  (input.spawnBusyTicks ?? 0),
-              ),
-            }
-          : remainingSupply;
+      const objectiveSupply =
+        load.mode === "stationary"
+          ? takeExclusiveSupply(
+              exclusiveActors,
+              remainingSupply,
+              load.minimumCapability,
+              input.replacementLeadTicks +
+                load.travelTicks +
+                total(load.minimumCapability) * 3 +
+                (input.spawnBusyTicks ?? 0),
+            )
+          : load.mode === "logistics"
+            ? {
+                ...supply(
+                  input.actors,
+                  input.replacementLeadTicks +
+                    load.travelTicks +
+                    total(load.minimumCapability) * 3 +
+                    (input.spawnBusyTicks ?? 0),
+                ),
+              }
+            : remainingSupply;
+      if (load.mode !== "stationary" && load.mode !== "logistics")
+        reserveActors(
+          exclusiveActors,
+          load.minimumCapability,
+          input.replacementLeadTicks,
+          boundedCopies,
+        );
       targetParts += partsPerCopy * boundedCopies;
       const missing = ZERO();
       for (const key of CAPABILITY_KEYS) {
@@ -244,6 +264,44 @@ export class ColonyPopulationPolicy {
           truncatedDemands,
         );
   }
+}
+
+function takeExclusiveSupply(
+  actors: WorkforceActor[],
+  remainingSupply: MutableCapability,
+  required: CapabilityVector,
+  lead: number,
+): MutableCapability {
+  const actor = takeActor(actors, required, lead);
+  if (actor === null) return ZERO();
+  for (const key of CAPABILITY_KEYS)
+    remainingSupply[key] = Math.max(0, remainingSupply[key] - actor.capability[key]);
+  return { ...required };
+}
+
+function reserveActors(
+  actors: WorkforceActor[],
+  required: CapabilityVector,
+  lead: number,
+  copies: number,
+): void {
+  for (let copy = 0; copy < copies; copy += 1)
+    if (takeActor(actors, required, lead) === null) break;
+}
+
+function takeActor(
+  actors: WorkforceActor[],
+  required: CapabilityVector,
+  lead: number,
+): WorkforceActor | null {
+  const index = actors.findIndex(
+    (actor) =>
+      !actor.spawning &&
+      actor.ticksToLive !== null &&
+      actor.ticksToLive > lead &&
+      CAPABILITY_KEYS.every((key) => actor.capability[key] >= required[key]),
+  );
+  return index < 0 ? null : (actors.splice(index, 1)[0] ?? null);
 }
 
 function preemption(

@@ -187,7 +187,8 @@ authorized without an explicit maintainer resolution of this gap.
   travel/cost estimates are tracked by
   [issue #56](https://github.com/ralphschuler/screeps-myrmex/issues/56) and
   [`phase3-routes-evidence.md`](phase3-routes-evidence.md). The immutable source policy creates no
-  gameplay gate. The authority emits data only; cross-room movement execution remains unavailable.
+  gameplay gate. The authority emits data only; issues #58–#59 consume its room sequence through
+  existing movement authority.
 - Positive-only full-cost remote scoring, deterministic admission, portfolio-capacity reservation,
   pressure shedding, bounded hysteresis, and terminal retirement are tracked by
   [issue #57](https://github.com/ralphschuler/screeps-myrmex/issues/57) and
@@ -196,8 +197,14 @@ authorized without an explicit maintainer resolution of this gap.
 - Just-in-time remote controller reservation, funded reserver contracts, bounded cross-room route
   consumption, and sole-executor signing/reservation are tracked by
   [issue #58](https://github.com/ralphschuler/screeps-myrmex/issues/58) and
-  [`phase3-reservation-evidence.md`](phase3-reservation-evidence.md). Remote source mining, hauling,
-  threat evacuation, operational suspension, and cautious resumption remain issues #59–#61.
+  [`phase3-reservation-evidence.md`](phase3-reservation-evidence.md).
+- Replacement-aware routed remote source extraction, container/drop fallback, and bounded
+  positive-value container/road capital are tracked by
+  [issue #59](https://github.com/ralphschuler/screeps-myrmex/issues/59) and
+  [`phase3-mining-evidence.md`](phase3-mining-evidence.md). The request-driven projection reuses
+  donor budgets, contracts, population/spawn, movement/action, and global site authorities; it does
+  not claim delivered energy. Hauling, threat evacuation, operational suspension, and cautious
+  resumption remain issues #60–#61.
 - Realized per-remote full-cost profitability and outcome telemetry remain issue #62.
 
 **Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.

@@ -160,6 +160,55 @@ describe("ColonyPopulationPolicy", () => {
       }).demands,
     ).toEqual([]);
   });
+  it("does not count one actor for two stationary source loads", () => {
+    const stationary = input({
+      actors: [actor(500)],
+      funded: {
+        loads: [
+          load({ mode: "stationary", objectiveId: "source/a" }),
+          load({
+            contractId: "contract-b",
+            mode: "stationary",
+            objectiveId: "source/b",
+            reservationId: "reservation-b",
+          }),
+        ],
+        status: "ready",
+      },
+    });
+    const projected = new ColonyPopulationPolicy().project(stationary);
+    expect(projected.demands).toHaveLength(1);
+    expect(projected.demands[0]?.objectiveId).toBe("source/b");
+  });
+
+  it("does not reuse ordinary-work supply for a later stationary load", () => {
+    const projected = new ColonyPopulationPolicy().project(
+      input({
+        actors: [actor(500)],
+        funded: {
+          loads: [
+            load({
+              backlogWorkTicks: 0,
+              measuredWorkTicks: 50,
+              objectiveId: "ordinary/a",
+              sourceCapacityWorkTicks: 50,
+              travelTicks: 0,
+            }),
+            load({
+              contractId: "contract-b",
+              mode: "stationary",
+              objectiveId: "source/b",
+              reservationId: "reservation-b",
+            }),
+          ],
+          status: "ready",
+        },
+      }),
+    );
+    expect(projected.demands).toHaveLength(1);
+    expect(projected.demands[0]?.objectiveId).toBe("source/b");
+  });
+
   it("keeps each logistics flow slot to one convergent replacement demand", () => {
     const logistics = input({
       funded: {

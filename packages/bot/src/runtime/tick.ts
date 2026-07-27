@@ -1645,8 +1645,22 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           owner?.records.some(
             (record) => record.roomName === roomName && record.fingerprint === fingerprint,
           ) === true;
+        const isCurrentSiteCommitment = (roomName: string, fingerprint: string) =>
+          isCurrentCommitment(roomName, fingerprint) ||
+          layoutDraft.arbitration?.accepted.some(
+            ({ proposal }) =>
+              proposal.remoteAuthorization !== undefined &&
+              proposal.pos.roomName === roomName &&
+              proposal.layoutFingerprint === fingerprint,
+          ) === true;
         const execution = constructionSiteExecutor.execute(layoutDraft.arbitration?.intents ?? [], {
-          isCurrentCommitment,
+          isCurrentCommitment: isCurrentSiteCommitment,
+          isSelfUsername: (username) =>
+            Object.values(input.game.creeps).some((creep) => creep.owner.username === username) ||
+            Object.values(input.game.rooms).some(
+              (room) =>
+                room.controller?.my === true && room.controller.owner?.username === username,
+            ),
           resolveRoom: (roomName) => input.game.rooms[roomName] ?? null,
         });
         const migrationExecution = structureDestroyExecutor.execute(

@@ -262,6 +262,9 @@ export class ContractLedger {
             ...(record.execution.action === "reserve-controller"
               ? { reservationRetry: reservationRetryEvidence(record) }
               : {}),
+            ...(record.execution.version === 5
+              ? { remoteMiningRetry: remoteMiningRetryEvidence(record) }
+              : {}),
             state: record.state,
             targetId: record.targetId,
           },
@@ -324,7 +327,9 @@ export class ContractLedger {
               record.estimatedWorkTicks + record.quantity,
             ),
             travelTicks: record.maxAssignmentCost,
-            ...(record.issuer.startsWith("mining/") ? { mode: "stationary" as const } : {}),
+            ...(record.execution?.version === 2 || record.execution?.version === 5
+              ? { mode: "stationary" as const }
+              : {}),
           },
         ];
       })
@@ -895,6 +900,13 @@ function reservationRetryEvidence(
 ): { readonly attempts: number; readonly eligibleAt: number } | null {
   if (record.execution?.action !== "reserve-controller" || record.state !== "suspended")
     return null;
+  return commandRetryEvidence(record);
+}
+
+function remoteMiningRetryEvidence(
+  record: WorkContractRecord,
+): { readonly attempts: number; readonly eligibleAt: number } | null {
+  if (record.execution?.version !== 5 || record.state !== "suspended") return null;
   return commandRetryEvidence(record);
 }
 

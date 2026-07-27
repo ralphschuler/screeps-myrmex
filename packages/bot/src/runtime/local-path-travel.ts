@@ -41,7 +41,7 @@ export function createLocalPathTravelEstimateView(
       const range = contractRange(contract);
       if (origin === null || goal === null || range === null) return null;
       if (origin.roomName !== goal.roomName)
-        return reservationRouteTravelTicks(origin.roomName, contract);
+        return routedContractTravelTicks(origin.roomName, contract);
       if (chebyshevRange(origin, goal) <= range) return 0;
 
       const key = geometryKey(origin, goal, range);
@@ -135,12 +135,12 @@ function contractRange(value: unknown): number | null {
     : null;
 }
 
-function reservationRouteTravelTicks(
+function routedContractTravelTicks(
   actorRoomName: string,
   contract: WorkContractRecord,
 ): number | null {
   const execution = contract.execution;
-  if (execution?.version !== 4) return null;
+  if (execution?.version !== 4 && execution?.version !== 5) return null;
   const route = [execution.originRoomName, ...execution.routeRoomNames];
   const index = route.indexOf(actorRoomName);
   const remainingRooms = route.length - 1 - index;
