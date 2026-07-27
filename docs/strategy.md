@@ -478,6 +478,20 @@ capacity throughput, and road exposure. Heap cache loss changes computation cost
 evidence still produces the same route. It neither selects a remote nor bypasses MovementArbiter
 with a tile path or command.
 
+One command-free `RemotePortfolio` now owns positive-only forecast admission. Current/fresh complete
+intel supplies observed source capacity and a ready donor-to-remote route supplies travel/risk
+terms; diplomacy, threat, and colony owners supply detached controller availability, risk, and donor
+posture. Revenue is source capacity over the 300-tick regeneration interval. Latency, spawn
+opportunity, body amortization, hauling, reservation, roads, repair, expected loss, and CPU shadow
+cost remain separate rates. Energy, spawn-time, CPU, Memory, and funded-count capacity reserve
+atomically only after owned-colony survival preemption. Equal candidates use stable identity;
+existing active work receives one bounded retention margin but yields to materially higher value.
+Threat, donor pressure, stale/partial vision, route loss, controller conflict, capacity loss, or
+non-positive value releases the whole commitment. Safe evidence must pass suspension and cooldown
+probes before resumption; fresh source disappearance or expiry retires terminally. These are funded
+abstract objectives, not claims of reservation, mining, hauling, evacuation, commands, or realized
+profit; issues #58–#62 retain those outcomes.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

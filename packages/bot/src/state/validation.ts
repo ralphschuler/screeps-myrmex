@@ -176,6 +176,7 @@ export function readonlyStateView(value: MyrmexMemory): StateView {
   delete clone.colonies;
   delete clone.contracts;
   delete clone.layouts;
+  delete clone.remotes;
   delete clone.segments;
   return freezeJson(clone) as StateView;
 }

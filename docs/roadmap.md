@@ -174,15 +174,20 @@ and MMO deployment remain gated by their own evidence.
   [issue #55](https://github.com/ralphschuler/screeps-myrmex/issues/55) and
   [`phase3-intel-evidence.md`](phase3-intel-evidence.md). Current vision, verified history,
   previous-tick events, observer requests, and budget-authorized data-only scout requests share one
-  bounded interface; remote selection remains unavailable.
+  bounded interface; IntelService itself selects no remote.
 - Deterministic threat-aware room routes, reconstructible cache invalidation, and body-dependent
   travel/cost estimates are tracked by
   [issue #56](https://github.com/ralphschuler/screeps-myrmex/issues/56) and
   [`phase3-routes-evidence.md`](phase3-routes-evidence.md). The immutable source policy creates no
-  gameplay gate. The authority emits data only; remote admission and cross-room movement execution
-  remain unavailable.
-- Remote discovery, reservation, mining, hauling, suspension, evacuation, and resumption.
-- Full-cost profitability and threat-adjusted routing.
+  gameplay gate. The authority emits data only; cross-room movement execution remains unavailable.
+- Positive-only full-cost remote scoring, deterministic admission, portfolio-capacity reservation,
+  pressure shedding, bounded hysteresis, and terminal retirement are tracked by
+  [issue #57](https://github.com/ralphschuler/screeps-myrmex/issues/57) and
+  [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md). The command-free authority emits
+  funded abstract objectives only; it does not claim delivered energy or satisfy the phase exit.
+- Remote controller reservation, source mining, hauling, threat evacuation, operational suspension,
+  and cautious resumption remain issues #58–#61.
+- Realized per-remote full-cost profitability and outcome telemetry remain issue #62.
 
 **Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.
 

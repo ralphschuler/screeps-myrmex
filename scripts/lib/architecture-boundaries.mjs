@@ -74,6 +74,7 @@ const RUNTIME_COMPOSITION_PATH = "runtime/tick.ts";
 const LOCAL_PATH_ADAPTER_PATH = "runtime/local-path-adapter.ts";
 const CONSOLE_REPORTER_PATH = "telemetry/console-reporter.ts";
 const SEGMENT_MANAGER_PATH = "segments/segment-manager.ts";
+const REMOTE_PORTFOLIO_PATH = "remotes/portfolio.ts";
 
 const COMPLETE_SOURCE_SENTINELS = new Set([
   "colony/director.ts",
@@ -171,6 +172,7 @@ const AUTHORITY_DECLARATIONS = new Map([
   ["MemoryManager", "state/manager.ts"],
   ["RuntimeConfigAuthority", "config/authority.ts"],
   ["RuntimeKernel", "runtime/kernel/runtime-kernel.ts"],
+  ["RemotePortfolio", REMOTE_PORTFOLIO_PATH],
   ["RoutePlanner", "world/routes/planner.ts"],
   ["SegmentManager", SEGMENT_MANAGER_PATH],
   ["SpawnBroker", SPAWN_BROKER_PATH],
@@ -418,6 +420,12 @@ function inspectSource(contents, path) {
       }
       if (calledTransaction && stringLiteralValue(ownerArgument) === "segments") {
         addUnlessAllowed("segments-state-write-outside-manager", path === SEGMENT_MANAGER_PATH);
+      }
+      if (calledOwnerView && stringLiteralValue(ownerArgument) === "remotes") {
+        addUnlessAllowed("remotes-owner-read-outside-runtime", path === RUNTIME_COMPOSITION_PATH);
+      }
+      if (calledTransaction && stringLiteralValue(ownerArgument) === "remotes") {
+        addUnlessAllowed("remotes-state-write-outside-portfolio", path === REMOTE_PORTFOLIO_PATH);
       }
 
       const rootCommitMethodCall = rootCommitMethodCalls.resolve(node);
