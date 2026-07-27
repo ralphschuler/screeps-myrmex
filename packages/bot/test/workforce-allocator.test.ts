@@ -245,6 +245,49 @@ describe("WorkforceAllocator", () => {
     expect(forward.acceptedAssignmentCost).toBe(2);
   });
 
+  it("assigns carried-energy work only to an actor that can execute it", () => {
+    const build = makeContract("contract:rcl2-bootstrap-build", {
+      deadline: 3_000,
+      estimatedWorkTicks: 1,
+      execution: {
+        action: "build",
+        completion: "work-complete",
+        completionHits: null,
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      expiresAt: 3_001,
+      issuer: "growth/W1N1/rcl2-bootstrap/build/site-extension",
+      kind: "build",
+      maxAssignmentCost: 1_500,
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+    });
+    const emptyNearWorker = makeActor("actor:empty", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 0,
+    });
+    const loadedDistantWorker = makeActor("actor:loaded", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 5,
+      ticksToLive: 2_000,
+    });
+
+    expect(
+      allocate(
+        [emptyNearWorker, loadedDistantWorker],
+        [build],
+        travelView((actor) => (actor.id === emptyNearWorker.id ? 1 : 111)),
+      ).assignments,
+    ).toEqual([
+      expect.objectContaining({
+        actorId: loadedDistantWorker.id,
+        assignmentCost: 111,
+        travelTicks: 111,
+      }),
+    ]);
+  });
+
   it("orders capability surplus, TTL slack, cost ceiling, and actor ID exactly", () => {
     const contract = makeContract("contract:bid-order", {
       leasePolicy: { duration: 10, switchingPenalty: 0, ttlSafetyMargin: 0 },

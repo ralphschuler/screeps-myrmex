@@ -61,7 +61,9 @@ merged.
   [`phase1-maintenance-evidence.md`](phase1-maintenance-evidence.md).
 - Survival-budgeted controller progress and existing critical construction are tracked by
   [issue #28](https://github.com/ralphschuler/screeps-myrmex/issues/28) and
-  [`phase1-growth-evidence.md`](phase1-growth-evidence.md).
+  [`phase1-growth-evidence.md`](phase1-growth-evidence.md). Spawn-only RCL2 carried-energy extension
+  bootstrap recovery is tracked by
+  [issue #473](https://github.com/ralphschuler/screeps-myrmex/issues/473).
 - Bounded survival accounting and explainable structured status are tracked by
   [issue #39](https://github.com/ralphschuler/screeps-myrmex/issues/39) and
   [`phase1-telemetry-evidence.md`](phase1-telemetry-evidence.md).

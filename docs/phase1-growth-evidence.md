@@ -24,6 +24,21 @@ site-placement authority.
 - Bootstrap growth uses a new `bootstrap-controller` budget category with a null room-energy claim
   so controller progress spends carried creep energy first and leaves the protected reserve intact
   until RCL2.
+- Issue #473 adds the bounded next transition: an owned RCL2 room below the configured normal-growth
+  floor may emit only observed owned extension-site work when one active spawn, the protected room
+  reserve, and one viable worker with carried energy are current. The distinct
+  `rcl2-infrastructure-bootstrap` candidate keeps the existing `optional-growth` posture gates but
+  claims no room energy and uses the extended 1,500 assignment-cost ceiling.
+- `survival-growth.test.ts` proves the low-capacity selection, null energy claim, stable distinct
+  issuer, normal-floor handoff without duplicate contract submission, hostile/reserve denial,
+  temporary worker-loss retention, and stale target retirement. `colony-budget-ledger.test.ts`
+  proves that the active request reserves one CPU unit and zero of the protected 300 room energy.
+  `workforce-allocator.test.ts` proves that a nearer empty worker cannot displace a loaded worker,
+  including a bounded 111-tick travel estimate.
+- `phase1-gate-runtime.test.ts` reconstructs Memory and the module heap, then executes the exact
+  production contract/action path against a first-extension site. Five carried energy completes the
+  bounded fixture while spawn energy remains 300 and capacity rises from 300 to 350. Layout-to-site,
+  static-mining handoff, and full movement/progression evidence remain issues #474 and #476.
 - `survival-flow-runtime.test.ts` composes the recovery and bootstrap paths from an empty Memory
   RCL1 world with one 300-capacity spawn: it accounts controller spend separately from room and
   creep energy, reaches RCL2 by tick 1,599 (a 1,500-tick replay deadline), and asserts the spawn
@@ -37,4 +52,8 @@ site-placement authority.
 - [Screeps documentation: Creep.upgradeController](https://docs.screeps.com/api/#Creep.upgradeController)
 - [Screeps documentation: Creep.build](https://docs.screeps.com/api/#Creep.build)
 - [Screeps documentation: Room.createConstructionSite](https://docs.screeps.com/api/#Room.createConstructionSite)
-- [Screeps Wiki](https://wiki.screepspl.us/)
+- [Screeps documentation: Room.energyAvailable](https://docs.screeps.com/api/#Room.energyAvailable)
+- [Screeps documentation: Room.energyCapacityAvailable](https://docs.screeps.com/api/#Room.energyCapacityAvailable)
+- [Screeps documentation: Control](https://docs.screeps.com/control.html)
+- [Screeps Wiki: Energy](https://wiki.screepspl.us/Energy/)
+- [Screeps Wiki: Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/)

@@ -427,6 +427,17 @@ execution and #49 owning container repair. The exact official Store, storage, te
 withdraw, Wiki Maturity Matrix, and Wiki Energy guidance consulted for this policy is recorded in
 [ADR 0018](adr/0018-logistics-planner-authority.md).
 
+A spawn-only RCL2 room cannot satisfy the normal 300-energy protected floor plus 100-energy growth
+surplus before extensions exist. While capacity remains below that configured normal-growth floor,
+MYRMEX may therefore fund only currently observed owned extension sites when one viable
+`WORK`/`CARRY`/`MOVE` worker already carries energy. The bootstrap contract claims no room energy,
+keeps the full spawn reserve available, uses the existing optional-growth posture and CPU gates, and
+survives temporary worker/cargo loss without duplicate issuer coordinates. Site loss, ownership or
+RCL drift, active-spawn drift, or sufficient capacity ends the exception; normal surplus-based
+growth then resumes. Layout placement, contracts, workforce, movement, action arbitration, and
+execution retain their sole authorities. [ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md)
+records the boundary.
+
 Spawn decisions use one deterministic broker across every eligible local spawn. Emergency recovery
 precedes replacement, which precedes upgrading and construction; stable deadline, body-cost, and
 identity tie-breakers remove observation-order accidents. Multiple spawns share the room's one

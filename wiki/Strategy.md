@@ -25,6 +25,11 @@ exactly one recovery objective, which the ledger explicitly funds or blocks. Thr
 preempt growth. Unknown vision preserves durable state without authorizing new work, while current
 visible ownership loss releases local commitments.
 
+At RCL2, a spawn-only room may build observed owned extension sites from energy already carried by a
+viable worker while preserving the full spawn reserve. This bounded exception ends when the site or
+bootstrap state ends; normal surplus-based growth then resumes. It does not bypass layout,
+contracts, movement, action arbitration, replacement, threat, or CPU gates.
+
 Capability contracts bind to a stable BudgetLedger issuer key and must see the matching current
 active reservation before funding or assignment. One grant binding backs at most one active
 contract. Grant renewal preserves contract identity; released, consumed, expired, or missing

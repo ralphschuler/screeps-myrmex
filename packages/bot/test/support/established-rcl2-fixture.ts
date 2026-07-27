@@ -21,6 +21,7 @@ export interface EstablishedConstructionSiteProfile {
 
 export interface EstablishedRcl2WorldOptions {
   readonly constructionSite?: EstablishedConstructionSiteProfile;
+  readonly initialExtensionCount?: 0 | 1 | 2;
   readonly reverseCollections?: boolean;
 }
 
@@ -56,10 +57,12 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
   let tick = START_TICK - 1;
   let spawnEnergy = 300;
   const initialExtensionEnergy = options.constructionSite === undefined ? 0 : 50;
-  const extensionEnergy = new Map([
-    ["extension-a", initialExtensionEnergy],
-    ["extension-b", initialExtensionEnergy],
-  ]);
+  const initialExtensionCount = options.initialExtensionCount ?? 2;
+  const extensionEnergy = new Map<string, number>(
+    ["extension-a", "extension-b"]
+      .slice(0, initialExtensionCount)
+      .map((id) => [id, initialExtensionEnergy] as const),
+  );
   let siteProgress = construction.initialProgress;
   let siteCompleted = false;
   let siteCompletionPendingAt: number | null = null;
@@ -106,7 +109,10 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
       store: storeFor(() => extensionEnergy.get(id) ?? 0, 50),
       structureType: "extension",
     }) as unknown as StructureExtension;
-  const extensions = [extension("extension-a", 11, 10), extension("extension-b", 12, 10)];
+  const extensions = [
+    ...(initialExtensionCount >= 1 ? [extension("extension-a", 11, 10)] : []),
+    ...(initialExtensionCount >= 2 ? [extension("extension-b", 12, 10)] : []),
+  ];
   const spawn = {
     hits: 5_000,
     hitsMax: 5_000,
@@ -438,6 +444,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     replacementVisibleAt: () => replacementVisibleAt,
     replacementWorkerId: () => replacementWorkerId,
     roomEnergy: () => room.energyAvailable,
+    roomEnergyCapacity: () => room.energyCapacityAvailable,
     siteCompletedAt: () => siteCompletedAt,
     siteCount: () => (siteCompleted ? 0 : 1),
     siteProgress: () => siteProgress,

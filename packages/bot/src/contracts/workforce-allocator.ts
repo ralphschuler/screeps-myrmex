@@ -262,6 +262,8 @@ function actionEligible(actor: WorkforceActor, contract: WorkContractRecord): bo
   if (contract.execution === undefined) return true;
   if (contract.execution.action === "transfer")
     return actor.energy === undefined || actor.energy > 0;
+  if (contract.execution.action === "build" && contract.issuer.includes("/rcl2-bootstrap/build/"))
+    return actor.energy === undefined || actor.energy > 0;
   if (contract.execution.action === "harvest")
     return (
       contract.execution.version === 5 ||

@@ -1379,6 +1379,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           context.contractPlanning,
           context.tick,
           context.snapshot,
+          context.config,
         );
         for (const request of growth.requests) scope.producer.submit(request);
         for (const transition of growth.transitions) scope.producer.transition(transition);
