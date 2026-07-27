@@ -15,10 +15,11 @@ intent arbitration/execution contracts, telemetry, deterministic replay, and arc
 implemented. Phase 1 also implements validated runtime configuration, fail-closed configured
 relations, the owned-room survival lifecycle, the local budget ledger, the persistent contract
 ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration, narrow spawn
-command execution, and atomic command-to-budget settlement. Systems assigned to later roadmap gates
-remain normative targets. Their absence is an implementation task, not permission to invent a
-different boundary. If a requirement cannot fit this architecture, write an ADR before changing the
-architecture.
+command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
+substrate and its bounded runtime composition; room-intelligence, routing, and remote-portfolio
+consumers remain unavailable. Systems assigned to later roadmap gates remain normative targets.
+Their absence is an implementation task, not permission to invent a different boundary. If a
+requirement cannot fit this architecture, write an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -320,6 +321,14 @@ missing terminal service still exposes the planned position.
 `StructureRemovalArbiter` alone authorizes removal and `StructureDestroyExecutor` alone calls
 `Structure.destroy`. Every extension, container, spawn, storage, terminal, tower, link, and lab
 result reuses the same fixed receipt.
+
+`SegmentManager` is the sole raw-segment authority. Consumers register typed logical stores and
+receive only `ready`, `loading`, `missing`, or `corrupt`; only `segments/segment-manager.ts`
+references `RawMemory` segment members. Owner-local schema V1 retains at most one current,
+predecessor, and pending copy for each of 32 logical entries. A pending copy is published only after
+a later active tick verifies its envelope and checksum. Activation, writes, compaction, quarantine,
+and manifest bytes have hard bounds, and optional unavailability cannot block boot-critical work.
+[ADR 0079](adr/0079-segment-manager-authority.md) records this boundary.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -733,6 +742,7 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | System                     | Phase     | Admission                       | CPU estimate |
 | -------------------------- | --------- | ------------------------------- | -----------: |
 | `core.boot`                | Boot      | mandatory, recovery-safe        |         0.05 |
+| `segments.ingest`          | Boot      | operational, recovery-safe      |         0.25 |
 | `world.observe`            | Observe   | mandatory, recovery-safe        |         1.00 |
 | `safety.foundation`        | Safety    | mandatory, recovery-safe        |         0.10 |
 | `colony.director`          | Plan      | mandatory, recovery-safe        |         1.50 |
@@ -746,19 +756,23 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `industry.reconcile`       | Reconcile | mandatory before root commit    |         0.50 |
 | `layout.handoff-reconcile` | Reconcile | mandatory handoff precommit     |         0.10 |
 | `contracts.reconcile`      | Reconcile | operational, recovery-safe      |         0.50 |
+| `segments.reconcile`       | Reconcile | operational, recovery-safe      |         0.25 |
 | `state.reconcile`          | Reconcile | mandatory tail                  |         1.00 |
 | `telemetry.minimum`        | Telemetry | mandatory tail                  |         0.50 |
 
 Memory opening is a bounded preflight because recovery status is an input to CPU-mode selection. It
-may perform only the documented migration step budget. `RuntimeKernel` remains the sole scheduled
-phase orchestrator. The Phase 1 colony outcome replaces `planning.foundation` with
-`colony.director`. The spawn outcome adds mandatory-tail `spawn.execute` followed by mandatory-tail
-`spawn.settle`; the latter performs durable colony staging after command results and before
-budget-consuming contract reconciliation. When admitted, operational `contracts.reconcile` stages
-its owner transaction before mandatory-tail `state.reconcile`; only the latter commits the
-`Memory.myrmex` root. `industry.execute` follows shared intent arbitration in the mandatory Execute
-tail; `industry.reconcile` stages terminal, lab, mature, and observer effects through one industry
-owner transaction before `state.reconcile`. The operational `agents.plan` pass excludes persisted
+may perform only the documented migration step budget. `segments.ingest` then captures only this
+tick's available segment strings; `segments.reconcile` performs the bounded activation/write plan
+and stages owner-local schema V1 before the root commit. Either system may skip or fail without
+fabricating readiness or blocking mandatory work. `RuntimeKernel` remains the sole scheduled phase
+orchestrator. The Phase 1 colony outcome replaces `planning.foundation` with `colony.director`. The
+spawn outcome adds mandatory-tail `spawn.execute` followed by mandatory-tail `spawn.settle`; the
+latter performs durable colony staging after command results and before budget-consuming contract
+reconciliation. When admitted, operational `contracts.reconcile` stages its owner transaction before
+mandatory-tail `state.reconcile`; only the latter commits the `Memory.myrmex` root.
+`industry.execute` follows shared intent arbitration in the mandatory Execute tail;
+`industry.reconcile` stages terminal, lab, mature, and observer effects through one industry owner
+transaction before `state.reconcile`. The operational `agents.plan` pass excludes persisted
 spawn-evacuation leases; optional `migration.layout` continues only its exact current
 planner-authorized terms through the same Logistics/ContractLedger/lease-agent path. A skipped or
 failed continuation therefore emits no new spawn-evacuation request, funding transition, or action;
@@ -1063,9 +1077,12 @@ the call is allowed. Anything reused across calls or ticks is a registered names
 
 ### 8.3 SegmentManager
 
-`SegmentManager` owns segment activation, serialization, integrity checks, compaction, and write
-budgets. Other systems use typed stores and receive one of `ready`, `loading`, `missing`, or
-`corrupt`; they never call RawMemory directly.
+`SegmentManager` owns segment registration, activation, serialization, integrity checks, generation
+publication, compaction, quarantine, eviction, and write budgets. Other systems register typed
+logical stores and receive one of `ready`, `loading`, `missing`, or `corrupt`; they never receive a
+physical segment ID or raw string and never call `RawMemory` directly. Architecture enforcement
+restricts every direct, bracketed, destructured, aliased, bound, `call`, and `apply` access to the
+canonical manager file.
 
 Segment categories are:
 
@@ -1075,14 +1092,40 @@ Segment categories are:
 - bounded telemetry history;
 - large resumable analysis inputs or outputs.
 
-The small manifest in persistent Memory maps logical keys to physical segment, generation, schema,
-size, checksum, and last access. Activation is planned one tick ahead. Priority is safety intel,
-active operations, active remote/colony data, then optional analysis.
+The existing root `segments` owner uses owner-local schema V1 without changing the root schema.
+Exact `{}` initializes it. A future owner-local schema is preserved and unavailable. Because every
+segment consumer is optional or reconstructible, a malformed current manifest rebuilds empty and
+increments bounded recovery evidence rather than blocking Boot. Aggregate `StateView` omits the raw
+owner; runtime composition alone reads it and only `SegmentManager` stages its transaction.
 
-Boot-critical behavior MUST NOT require a segment. Missing derived data is rebuilt. Corrupt
-authoritative historical data is quarantined and replaced only through its owner's recovery rule.
-Writes use copy-then-publish generations so an interrupted write cannot replace the last valid
-payload.
+V1 contains at most 32 canonical logical entries and 100 quarantine receipts within 64,000 JSON code
+units. Each logical entry retains one verified current generation, one verified predecessor, and one
+optional pending generation. A successful `offered` result joins only the current tick's bounded
+arbitration; because inactive segments cannot retain an unbounded payload in Memory, a client
+re-offers the same value until a read reports it ready. A write allocates a separate physical
+segment, waits for it to be active, writes one complete checksummed envelope, persists `written`
+evidence, and re-reads the copy on a later active tick. Only exact envelope, identity, schema,
+generation, size, and checksum evidence publishes it as current. An interrupted root commit leaves
+the verified current untouched; a corrupt current copy is quarantined and the predecessor is used
+only after normal activation and validation.
+
+Activation follows safety intel, active operations, active colony/remote data, then optional
+analysis, with logical identity as the final tie-breaker. Hard ceilings are ten active segments, 64
+typed reads and 200,000 read code units, 100,000 pending-verification code units, 32 write offers,
+two admitted writes and 200,000 written code units, eight compaction steps, and 32 store
+registrations per tick; one raw string is at most 100,000 code units. Pending generations expire
+after ten ticks and quarantined IDs wait at least five ticks before reuse. Any ID referenced by the
+opening manifest remains non-reusable for the complete tick, so a failed root commit cannot point
+old state at newly-overwritten bytes. Pressure compacts predecessors before evicting optional or
+oldest same-class data. Access evidence persists at a 25-tick interval rather than on every read.
+
+Boot-critical behavior MUST NOT require a segment. Missing derived data is rebuilt. A skipped,
+unavailable, missing, corrupt, or future-owner service authorizes no optimistic freshness. Bounded
+telemetry exposes a fixed-order 20-number tuple of status, readiness, activity, byte, and recovery
+counts—never logical keys, physical IDs, or payloads. `SEGMENT_TELEMETRY_INDEX` names every offset;
+the packed form preserves the closed Phase 1 telemetry-byte gate. Exact limits and
+reset/interruption evidence are recorded in
+[`phase3-segments-evidence.md`](phase3-segments-evidence.md).
 
 ### 8.4 InterShardManager
 
@@ -2720,7 +2763,8 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrices
 `TelemetryService` provides:
 
 - per-phase and per-system CPU with admission/skip reason;
-- cache and segment health;
+- cache and fixed-cardinality SegmentManager health, including activation, write, fallback,
+  quarantine, eviction, compaction, and manifest bounds without identities or payloads;
 - colony planning status, owner revision, and fixed-cardinality state and budget-reason counts;
 - objective, active-reservation, and pending-reservation counts;
 - total reserved energy, spawn ticks, and abstract CPU;
@@ -2883,7 +2927,8 @@ and absent paths, and settlement after an executor CPU overrun.
 Required architecture assertions include:
 
 - only state code references `Memory.myrmex`;
-- only segment code calls RawMemory segment methods;
+- only canonical `SegmentManager` code calls or aliases `RawMemory` segment members;
+- raw `segments` owner reads occur only in runtime composition and writes only in `SegmentManager`;
 - only shard code calls InterShardMemory;
 - only observer/validation adapters and executors access live game objects outside composition;
 - only executors call command methods;
@@ -3157,7 +3202,7 @@ roadmap gate.
 | Phase 0       | kernel, scheduler contract, state schema/migrations, snapshot, telemetry, scenario DSL     |
 | Phase 1       | config/relations, survival lifecycle/ledger, contracts, workforce, spawn, economy, defense |
 | Phase 2       | complete-colony layouts, structures, stock policy, industry, and RCL8 optimization         |
-| Phase 3       | segment intel, scouting, route costing, remote portfolio                                   |
+| Phase 3       | typed SegmentManager, segment intel, scouting, route costing, remote portfolio             |
 | Phase 4       | empire graph, expansion portfolio, bootstrap operations                                    |
 | Phase 5       | diplomacy evidence, full threat model, reinforcements, boosts, hard-target defense         |
 | Phase 6       | market, MMO deployment/canary policy, richer operational telemetry                         |

@@ -15,6 +15,7 @@ import type { TickTelemetry } from "../telemetry/metrics";
 import type { WorldSnapshot } from "../world/snapshot";
 import type { LayoutRuntimeResult } from "../layout";
 import type { LinkRuntimeResult } from "../links";
+import type { SegmentManagerMetrics, SegmentService } from "../segments";
 
 export interface RuntimeGame {
   readonly cpu: {
@@ -65,6 +66,10 @@ export interface TickContext {
   readonly movementChannels: MovementRuntimeChannels;
   /** Canonical data-only local path capability; unavailable service returns typed no-path data. */
   readonly localPathPlanning: LocalPathPlanningService;
+  /** Sole typed logical segment-store boundary; physical IDs and raw bytes remain private. */
+  readonly segmentStorage: SegmentService;
+  /** Bounded observer-only segment health for the current tick. */
+  readonly segments: SegmentManagerMetrics;
   /** Tick-local layout planning, arbitration, execution, and durable reconciliation evidence. */
   readonly layout: LayoutRuntimeResult;
   /** Tick-local link classification, arbitration, and command settlement evidence. */

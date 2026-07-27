@@ -165,6 +165,11 @@ and MMO deployment remain gated by their own evidence.
 
 ## Phase 3 — Remote Portfolio
 
+- The sole typed RawMemory-segment substrate is tracked by
+  [issue #100](https://github.com/ralphschuler/screeps-myrmex/issues/100) and
+  [`phase3-segments-evidence.md`](phase3-segments-evidence.md). It provides bounded asynchronous
+  storage and recovery for later intelligence, routes, and accounting without selecting remotes or
+  satisfying the phase exit itself.
 - Remote discovery, reservation, mining, hauling, suspension, evacuation, and resumption.
 - Full-cost profitability and threat-adjusted routing.
 

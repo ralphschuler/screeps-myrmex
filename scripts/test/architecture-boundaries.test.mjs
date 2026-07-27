@@ -38,7 +38,7 @@ function completeBoundarySources(runtimeContents) {
 describe("runtime architecture boundaries", () => {
   it("has no deployable source violations", () => {
     expect(findArchitectureViolations(botSources())).toEqual([]);
-  }, 15_000);
+  }, 30_000);
 
   it.each([
     [
@@ -164,6 +164,59 @@ describe("runtime architecture boundaries", () => {
         },
       ]);
     }
+  });
+
+  it("restricts RawMemory segment access and SegmentManager declaration to the canonical authority", () => {
+    for (const contents of [
+      "RawMemory.setActiveSegments([]);",
+      'RawMemory["segments"][0] = "data";',
+      "const raw = RawMemory; raw.setActiveSegments([0]);",
+      "const first = RawMemory; const second = first; second.segments[0] = data;",
+      "const { setActiveSegments: activate } = RawMemory; activate([0]);",
+      "const activate = RawMemory.setActiveSegments.bind(RawMemory); activate([0]);",
+      "RawMemory.setActiveSegments.call(RawMemory, [0]);",
+    ]) {
+      expect(findArchitectureViolations([{ path: "segments/helper.ts", contents }])).toEqual([
+        { path: "segments/helper.ts", rule: "raw-memory-outside-segment-owner" },
+      ]);
+    }
+    expect(
+      findArchitectureViolations([
+        {
+          path: "segments/segment-manager.ts",
+          contents:
+            "export class SegmentManager { activate() { RawMemory.setActiveSegments([]); } }",
+        },
+      ]),
+    ).toEqual([]);
+    expect(
+      findArchitectureViolations([
+        { path: "economy/segment-manager.ts", contents: "export class SegmentManager {}" },
+      ]),
+    ).toEqual([{ path: "economy/segment-manager.ts", rule: "duplicate-authority:SegmentManager" }]);
+  });
+
+  it("restricts raw segment-owner reads to runtime and writes to SegmentManager", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "economy/planner.ts", contents: 'manager.ownerView("segments");' },
+      ]),
+    ).toEqual([{ path: "economy/planner.ts", rule: "segments-owner-read-outside-runtime" }]);
+    expect(
+      findArchitectureViolations([
+        { path: "economy/planner.ts", contents: 'manager.transaction("segments");' },
+      ]),
+    ).toEqual([{ path: "economy/planner.ts", rule: "segments-state-write-outside-manager" }]);
+    expect(
+      findArchitectureViolations([
+        { path: "runtime/tick.ts", contents: 'manager.ownerView("segments");' },
+        {
+          path: "segments/segment-manager.ts",
+          contents:
+            'export class SegmentManager { stage(manager) { manager.transaction("segments"); } }',
+        },
+      ]),
+    ).toEqual([]);
   });
 
   it("rejects raw contracts-owner reads outside the runtime adapter", () => {

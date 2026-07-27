@@ -73,6 +73,7 @@ const COLONY_AUTHORITY_PATH = "colony/director.ts";
 const RUNTIME_COMPOSITION_PATH = "runtime/tick.ts";
 const LOCAL_PATH_ADAPTER_PATH = "runtime/local-path-adapter.ts";
 const CONSOLE_REPORTER_PATH = "telemetry/console-reporter.ts";
+const SEGMENT_MANAGER_PATH = "segments/segment-manager.ts";
 
 const COMPLETE_SOURCE_SENTINELS = new Set([
   "colony/director.ts",
@@ -170,6 +171,7 @@ const AUTHORITY_DECLARATIONS = new Map([
   ["MemoryManager", "state/manager.ts"],
   ["RuntimeConfigAuthority", "config/authority.ts"],
   ["RuntimeKernel", "runtime/kernel/runtime-kernel.ts"],
+  ["SegmentManager", SEGMENT_MANAGER_PATH],
   ["SpawnBroker", SPAWN_BROKER_PATH],
   ["SpawnExecutor", SPAWN_EXECUTOR_PATH],
   ["WorkforceAllocator", "contracts/workforce-allocator.ts"],
@@ -228,6 +230,9 @@ function inspectSource(contents, path) {
   const commandMethodCalls = collectMethodCallAnalysis(source, COMMAND_METHODS);
   const rootCommitMethodCalls = collectMethodCallAnalysis(source, ROOT_COMMIT_METHODS);
   const gameAccess = collectGlobalObjectAccessAnalysis(source, "Game");
+  const rawMemoryAccess = contents.includes("RawMemory")
+    ? collectGlobalObjectAccessAnalysis(source, "RawMemory")
+    : null;
   const budgetLedgerConstructions = collectConstructorAnalysis(source, "BudgetLedger");
   const perCreepTaskMemory = collectPerCreepTaskMemoryAnalysis(source);
   let coloniesTransactionCalls = 0;
@@ -407,6 +412,12 @@ function inspectSource(contents, path) {
           path === "contracts/contract-ledger.ts",
         );
       }
+      if (calledOwnerView && stringLiteralValue(ownerArgument) === "segments") {
+        addUnlessAllowed("segments-owner-read-outside-runtime", path === RUNTIME_COMPOSITION_PATH);
+      }
+      if (calledTransaction && stringLiteralValue(ownerArgument) === "segments") {
+        addUnlessAllowed("segments-state-write-outside-manager", path === SEGMENT_MANAGER_PATH);
+      }
 
       const rootCommitMethodCall = rootCommitMethodCalls.resolve(node);
       if (rootCommitMethodCall?.methods.has("commitReconciliation") === true) {
@@ -494,7 +505,7 @@ function inspectSource(contents, path) {
         addUnlessAllowed("cpu-source-outside-runtime", path.startsWith("runtime/"));
       }
       if (access.owner === "RawMemory" && RAW_MEMORY_SEGMENT_MEMBERS.has(access.member)) {
-        addUnlessAllowed("raw-memory-outside-segment-owner", path.startsWith("segments/"));
+        addUnlessAllowed("raw-memory-outside-segment-owner", path === SEGMENT_MANAGER_PATH);
       }
       if (access.owner === "InterShardMemory") {
         addUnlessAllowed(
@@ -505,6 +516,12 @@ function inspectSource(contents, path) {
     }
     if (accessesGlobalMember(node, gameAccess, "spawns")) {
       addUnlessAllowed("live-world-read-outside-observer", path.startsWith("world/"));
+    }
+    if (
+      rawMemoryAccess !== null &&
+      accessesTrackedGlobalMember(node, rawMemoryAccess, RAW_MEMORY_SEGMENT_MEMBERS)
+    ) {
+      addUnlessAllowed("raw-memory-outside-segment-owner", path === SEGMENT_MANAGER_PATH);
     }
     if (isPerCreepTaskMemoryAccess(node, perCreepTaskMemory)) {
       rules.add("per-creep-task-memory");
@@ -853,18 +870,26 @@ function globalObjectSource(node, resolveBinding, aliases, globalName) {
 }
 
 function accessesGlobalMember(node, analysis, member) {
-  if (
-    (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
-    terminalMemberName(node) === member
-  ) {
-    return isGlobalObjectExpression(node.expression, analysis);
+  return accessesTrackedGlobalMember(node, analysis, new Set([member]));
+}
+
+function accessesTrackedGlobalMember(node, analysis, members) {
+  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+    const member = terminalMemberName(node);
+    return (
+      member !== null && members.has(member) && isGlobalObjectExpression(node.expression, analysis)
+    );
   }
 
   if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)) {
     return (
       node.initializer !== undefined &&
       isGlobalObjectExpression(node.initializer, analysis) &&
-      bindingPatternAccessesMember(node.name, member)
+      node.name.elements.some(
+        (element) =>
+          element.dotDotDotToken !== undefined ||
+          members.has(propertyName(element.propertyName ?? element.name)),
+      )
     );
   }
 
@@ -873,7 +898,9 @@ function accessesGlobalMember(node, analysis, member) {
     return (
       pattern !== null &&
       isGlobalObjectExpression(node.right, analysis) &&
-      assignmentPatternAccessesMember(pattern, member)
+      pattern.properties.some(
+        (property) => ts.isSpreadAssignment(property) || members.has(propertyName(property.name)),
+      )
     );
   }
 
@@ -887,20 +914,6 @@ function isGlobalObjectExpression(node, analysis) {
   }
   const binding = analysis.resolveBinding(identifier);
   return binding === null ? identifier.text === analysis.globalName : analysis.aliases.has(binding);
-}
-
-function bindingPatternAccessesMember(pattern, member) {
-  return pattern.elements.some(
-    (element) =>
-      element.dotDotDotToken !== undefined ||
-      propertyName(element.propertyName ?? element.name) === member,
-  );
-}
-
-function assignmentPatternAccessesMember(pattern, member) {
-  return pattern.properties.some(
-    (property) => ts.isSpreadAssignment(property) || propertyName(property.name) === member,
-  );
 }
 
 function collectConstructorAnalysis(source, constructorName) {

@@ -214,7 +214,7 @@ export type MigratingMyrmexMemory = {
 export type MyrmexMemoryRoot = MyrmexMemory | MigratingMyrmexMemory;
 /** General consumers cannot inspect raw persistence owned by dedicated runtime authorities. */
 export type StateView = DeepReadonly<
-  Omit<MyrmexMemory, "config" | "colonies" | "contracts" | "layouts">
+  Omit<MyrmexMemory, "config" | "colonies" | "contracts" | "layouts" | "segments">
 >;
 export type OwnerStateView = DeepReadonly<JsonObject>;
 
