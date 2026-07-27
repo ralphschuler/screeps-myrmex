@@ -219,6 +219,29 @@ describe("runtime architecture boundaries", () => {
     ).toEqual([]);
   });
 
+  it("restricts raw remotes-owner reads to runtime and writes to RemotePortfolio", () => {
+    expect(
+      findArchitectureViolations([
+        { path: "economy/planner.ts", contents: 'manager.ownerView("remotes");' },
+      ]),
+    ).toEqual([{ path: "economy/planner.ts", rule: "remotes-owner-read-outside-runtime" }]);
+    expect(
+      findArchitectureViolations([
+        { path: "economy/planner.ts", contents: 'manager.transaction("remotes");' },
+      ]),
+    ).toEqual([{ path: "economy/planner.ts", rule: "remotes-state-write-outside-portfolio" }]);
+    expect(
+      findArchitectureViolations([
+        { path: "runtime/tick.ts", contents: 'manager.ownerView("remotes");' },
+        {
+          path: "remotes/portfolio.ts",
+          contents:
+            'export class RemotePortfolio { stage(manager) { manager.transaction("remotes"); } }',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
   it("rejects raw contracts-owner reads outside the runtime adapter", () => {
     for (const contents of [
       'manager.ownerView("contracts");',
@@ -320,6 +343,7 @@ describe("runtime architecture boundaries", () => {
   it.each([
     ["BudgetLedger", "economy/budget.ts", "duplicate-authority:BudgetLedger"],
     ["ColonyDirector", "economy/colony.ts", "duplicate-authority:ColonyDirector"],
+    ["RemotePortfolio", "strategy/remotes.ts", "duplicate-authority:RemotePortfolio"],
     ["RoutePlanner", "remotes/routes.ts", "duplicate-authority:RoutePlanner"],
   ])("keeps %s at its canonical declaration", (authority, path, rule) => {
     expect(

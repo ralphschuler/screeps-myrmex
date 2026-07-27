@@ -63,9 +63,9 @@
   ],
   "productionBundle": {
     "buildSha": "phase2-gate-evidence",
-    "bytes": 1660040,
+    "bytes": 1660064,
     "inputCount": 159,
-    "sha256": "sha256:e9c66d483c89d16e84e481173346468f9adab89a13198cf7a1e57a33fb5ff115"
+    "sha256": "sha256:56d6e005a359885caaafe2f81f5ae68ca2d2af6e9325675627183bff0363b410"
   },
   "progression": {
     "controllerEnergy": 16380000,
@@ -325,7 +325,7 @@
     "attestation": {
       "manifestSha256": "sha256:ecc728959ca26151df59f005fffee04dd7692502aedf71d008ccabe498912380",
       "measurementSha256": "sha256:3a3636c9c9291f02e2d724c40b9ac10d611f97bc2d88bea9b439d4ac2825d483",
-      "productionBundleSha256": "sha256:e9c66d483c89d16e84e481173346468f9adab89a13198cf7a1e57a33fb5ff115",
+      "productionBundleSha256": "sha256:56d6e005a359885caaafe2f81f5ae68ca2d2af6e9325675627183bff0363b410",
       "progression": {
         "seed": "phase2-progression-v1",
         "warmOutcomeHash": "fnv1a64-utf16:714e0bd9176f674c",

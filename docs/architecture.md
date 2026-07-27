@@ -17,10 +17,11 @@ relations, the owned-room survival lifecycle, the local budget ledger, the persi
 ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration, narrow spawn
 command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
 substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
-boundary, and deterministic threat-aware room-route cost/travel estimates; remote-portfolio
-consumers remain unavailable. Systems assigned to later roadmap gates remain normative targets.
-Their absence is an implementation task, not permission to invent a different boundary. If a
-requirement cannot fit this architecture, write an ADR before changing the architecture.
+boundary, deterministic threat-aware room-route cost/travel estimates, and one command-free
+full-cost `RemotePortfolio`; reservation/mining/hauling consumers remain unavailable. Systems
+assigned to later roadmap gates remain normative targets. Their absence is an implementation task,
+not permission to invent a different boundary. If a requirement cannot fit this architecture, write
+an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -350,6 +351,18 @@ reconstructible heap cache. Every cache hit revalidates current route-chain evid
 budget, reservation, persistent owner, route target, tile path, contract, intent, or command.
 [ADR 0081](adr/0081-threat-aware-route-planner.md) records this boundary.
 
+`RemotePortfolio` is the sole persistent remote lifecycle, full-cost forecast, ranking, and abstract
+portfolio-capacity authority. It consumes only current/fresh complete IntelService results, ready
+RoutePlanner results, and detached controller, donor, and threat evidence from their owning systems.
+Observed source capacity over the official regeneration interval supplies revenue; nine explicit
+latency/spawn/body/hauling/reservation/road/repair/loss/CPU rates supply cost. One externally
+survival-preempted energy/spawn-time/CPU/Memory/count envelope admits every commitment dimension or
+none. Owner-local V1 retains at most 32 canonical records in 16,384 code units and moves through
+`candidate`, `probing`, `active`, `threatened`, `suspended`, `cooldown`, or `retired`. It emits
+immutable objectives and fixed metrics only; no colony grant, contract, intent, command, player
+classification, or realized-profit history. [ADR 0082](adr/0082-remote-portfolio-authority.md)
+records this boundary.
+
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
 3. `main.ts` exports the Screeps loop and performs no gameplay planning.
@@ -483,10 +496,10 @@ contract-reconciliation view. Phase 3 adds the immutable `IntelRuntimeResult`; i
 freshness-qualified room/route views, vision requests, and fixed counters, never raw segment bytes
 or physical IDs. The context contains neither `Game`, mutable `Memory`, nor the raw operational
 candidate. Later fields enter only with the roadmap system that owns them. The aggregate `StateView`
-also redacts the raw `config`, `colonies`, and `contracts` owners; consumers use only
-`TickContext.config`, `TickContext.colony`, `TickContext.spawn`, and `TickContext.contracts`. A
-later planner consumes the explicit colony-plan output rather than depending on a staged `colonies`
-mutation that is invisible in the beginning-of-tick state view.
+also redacts the raw `config`, `colonies`, `contracts`, and `remotes` owners; consumers use only
+owner-qualified immutable projections. A later planner consumes the explicit colony-plan output
+rather than depending on a staged `colonies` mutation that is invisible in the beginning-of-tick
+state view.
 
 `RuntimeServices` contains narrow interfaces, not concrete systems. It exposes state transactions,
 cache lookup, segment requests, deterministic IDs, and telemetry. Gameplay planners MUST NOT receive
@@ -1242,8 +1255,10 @@ The sole `world.route-plan.v1` cache retains at most 64 reconstructible plans fo
 validity to topology, intel, diplomacy, threat, and policy revisions. A hit revalidates the complete
 route chain, fresh-safe evidence, cost, risk, and travel estimate. Missing heap, stale evidence,
 status change, risk breach, malformed input, or budget denial produces a typed non-ready result and
-no durable state. Because issue #57 does not yet produce candidates, routing is a request-driven
-service rather than an idle scheduled system. Exact contracts and evidence are recorded in
+no durable state. Routing remains request-driven rather than an idle scheduled system. Issue #57's
+RemotePortfolio consumes caller-composed ready results; production candidate/grant composition waits
+for an executable reservation/mining consumer instead of creating an unfunded scheduled scan. Exact
+route contracts and evidence are recorded in
 [`phase3-routes-evidence.md`](phase3-routes-evidence.md).
 
 ## 10. Strategy and Objective Hierarchy
@@ -2522,17 +2537,32 @@ revision, and targeting ceiling.
 
 ### 12.8 RemotePortfolio
 
-Each remote uses:
+Each persisted remote uses:
 
-`candidate → scouting → trial → active → suspended → retiring`
+`candidate → probing → active → threatened|suspended → cooldown → active`
 
-`rejected` and `lost` are explicit outcomes. The portfolio owns the full-cost ledger: delivered
-energy minus spawn amortization, reservation, roads/repair, hauling, CPU shadow cost, expected loss,
-defense, and replacement disruption.
+`retired` is terminal. Current/fresh complete intel and one ready donor-to-remote route are
+mandatory. Gross milli-energy per tick comes from observed source capacity over the source
+regeneration interval. Latency, spawn opportunity, body amortization, hauling, reservation, roads,
+repair, expected loss, and CPU shadow cost are separate checked rates; net value must remain
+positive.
 
-Threat, stale intel, negative expected value, donor weakness, or route failure suspends new spending
-and triggers safe withdrawal. Resume requires a policy-defined cooldown plus fresh evidence. Remote
-planners emit normal contracts; they do not fork the economy, spawn, movement, or defense systems.
+The portfolio receives one capacity envelope only after owned-room survival and defense preemption.
+Energy, spawn ticks, milli-CPU, Memory commitment, and funded count reserve atomically. Existing
+active work receives one bounded retention margin, then net value and stable room/donor identities
+rank candidates. Pressure, stale or partial vision, route loss, donor weakness, controller conflict,
+negative value, or threat releases the complete abstract commitment. A threat enters `threatened`;
+safe evidence must pass the source-policy suspension and cooldown probes before resumption. Fresh
+source disappearance or objective expiry retires the record.
+
+Owner-local schema V1 stores at most 32 records and exact latest forecasts, not realized history.
+Exact `{}` initializes it; malformed/future/future-tick evidence authorizes no objective. Same-tick
+replay is idempotent, only unfunded candidates and retired records are evictable under the
+16,384-code-unit ceiling, and a heap reset changes no decision. `RemotePortfolio.stage` is the only
+remotes-owner write boundary. Runtime composition remains deferred until reservation/mining work
+supplies post-survival executable budgets. Later remote planners emit normal contracts; they do not
+fork colony budgets, economy, spawn, movement, diplomacy, threat, defense, or command authorities.
+Exact evidence is in [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md).
 
 ### 12.9 ExpansionDirector
 
@@ -3009,6 +3039,13 @@ Required architecture assertions include:
   computes no route/remote choice, and emits no game command;
 - `RoutePlanner` has one canonical declaration, observes no live world object, owns only the bounded
   `world.route-plan.v1` heap cache, and emits no remote choice, reservation, intent, or command;
+- `RemotePortfolio` has one canonical declaration and is the sole `remotes` owner writer; raw owner
+  reads remain runtime-only, and the portfolio consumes typed intel/route and detached
+  donor/controller/threat evidence without creating a colony grant, contract, intent, or command;
+- full-cost remote admission is deterministic across candidate reorder and heap reset, reserves
+  energy/spawn/CPU/Memory/count atomically, releases all dimensions under pressure, and fails closed
+  on stale/partial/missing intel, route loss, donor/controller/threat denial, non-positive value,
+  timeout, malformed/future state, or owner/input bounds;
 - route selection is deterministic across evidence reorder and heap reset; closed/protected,
   stale/partial, unsafe, over-budget, and disconnected evidence stays typed and fail-closed;
 - current observation outranks IntelService history; every room/route read has explicit age and
