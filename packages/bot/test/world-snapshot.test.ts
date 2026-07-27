@@ -150,6 +150,60 @@ describe("WorldSnapshot", () => {
     );
   });
 
+  it("normalizes previous-tick events, portals, and invader cores for durable intel", () => {
+    const forward = observeWorld(
+      makeGameWithRooms({ W1N1: makeOwnedRoomWithIntelStructures(false) }),
+    );
+    const reversed = observeWorld(
+      makeGameWithRooms({ W1N1: makeOwnedRoomWithIntelStructures(true) }),
+    );
+
+    expect(JSON.stringify(reversed)).toBe(JSON.stringify(forward));
+    expect(forward.rooms[0]?.eventLogStatus).toBe("observed");
+    expect(forward.rooms[0]?.events).toEqual([
+      {
+        amount: 125,
+        attackType: 2,
+        event: 1,
+        objectId: "hostile-a",
+        resourceType: null,
+        structureType: null,
+        targetId: "spawn-b",
+        x: null,
+        y: null,
+      },
+      {
+        amount: null,
+        attackType: null,
+        event: 2,
+        objectId: "road-z",
+        resourceType: null,
+        structureType: "road",
+        targetId: null,
+        x: null,
+        y: null,
+      },
+    ]);
+    expect(forward.rooms[0]?.structures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "core-z",
+          invaderCore: { level: 2, ticksToDeploy: 400 },
+        }),
+        expect.objectContaining({
+          id: "portal-z",
+          portal: {
+            destinationRoomName: "E2S3",
+            destinationShard: "shard1",
+            x: null,
+            y: null,
+          },
+          ticksToDecay: 800,
+        }),
+      ]),
+    );
+  });
+
   it("distinguishes confirmed visible absence from unknown rooms without stale data", () => {
     const snapshot = observeWorld(makeGame(false), {
       requestedRoomNames: ["W2N2", "W8N8", "W8N8"],
@@ -495,6 +549,49 @@ function makeGameWithRooms(rooms: Readonly<Record<string, Room>>): RuntimeGame {
     shard: { name: "shard3" },
     time: 500,
   };
+}
+
+function makeOwnedRoomWithIntelStructures(reversed: boolean): Room {
+  const fixture = makeOwnedRoom(false).room;
+  const structures = [
+    ...fixture.find(FIND_STRUCTURES_VALUE),
+    {
+      destination: { room: "E2S3", shard: "shard1" },
+      hits: 1,
+      hitsMax: 1,
+      id: "portal-z",
+      pos: new LivePosition(5, 5, "W1N1"),
+      structureType: "portal",
+      ticksToDecay: 800,
+    },
+    {
+      hits: 100_000,
+      hitsMax: 100_000,
+      id: "core-z",
+      level: 2,
+      my: false,
+      owner: { username: "Invader" },
+      pos: new LivePosition(25, 25, "W1N1"),
+      structureType: "invaderCore",
+      ticksToDeploy: 400,
+    },
+  ] as unknown as AnyStructure[];
+  const events = [
+    { event: 2, objectId: "road-z", data: { type: "road" } },
+    {
+      event: 1,
+      objectId: "hostile-a",
+      data: { targetId: "spawn-b", damage: 125, attackType: 2 },
+    },
+  ] as EventItem[];
+  return {
+    ...(fixture as unknown as Record<string, unknown>),
+    getEventLog: () => maybeReverse(events, reversed),
+    find: (findType: number): unknown[] =>
+      findType === FIND_STRUCTURES_VALUE
+        ? maybeReverse(structures, reversed)
+        : fixture.find(findType as FindConstant),
+  } as unknown as Room;
 }
 
 function makeOwnedRoomWithTraversalRampart(input: {

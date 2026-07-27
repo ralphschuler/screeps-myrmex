@@ -4,7 +4,7 @@ Status: **Normative target architecture**
 
 Applies to: `packages/bot`
 
-Last updated: 2026-07-26
+Last updated: 2026-07-27
 
 This document defines the core systems of MYRMEX, the authority each system owns, and the only
 supported ways those systems integrate. It is deliberately specific so that human and AI
@@ -16,10 +16,11 @@ implemented. Phase 1 also implements validated runtime configuration, fail-close
 relations, the owned-room survival lifecycle, the local budget ledger, the persistent contract
 ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration, narrow spawn
 command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
-substrate and its bounded runtime composition; room-intelligence, routing, and remote-portfolio
-consumers remain unavailable. Systems assigned to later roadmap gates remain normative targets.
-Their absence is an implementation task, not permission to invent a different boundary. If a
-requirement cannot fit this architecture, write an ADR before changing the architecture.
+substrate, bounded room-intelligence retention and freshness queries, and one data-only
+vision-demand boundary; route costing and remote-portfolio consumers remain unavailable. Systems
+assigned to later roadmap gates remain normative targets. Their absence is an implementation task,
+not permission to invent a different boundary. If a requirement cannot fit this architecture, write
+an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -330,6 +331,16 @@ a later active tick verifies its envelope and checksum. Activation, writes, comp
 and manifest bytes have hard bounds, and optional unavailability cannot block boot-critical work.
 [ADR 0079](adr/0079-segment-manager-authority.md) records this boundary.
 
+`IntelService` is the sole historical room-intelligence projection. It consumes only current
+`WorldSnapshot` facts and the typed SegmentManager service, stores one canonical bounded V1 payload
+per logical room key, and exposes explicit `current`, `fresh`, `stale`, `expired`, or `unknown`
+reads. Current vision outranks history. Caller-provided route sequences receive aggregate freshness
+only; IntelService does not find or select routes. One typed vision demand may become an existing
+authorized observer request or a separately BudgetLedger-authorized data-only scout request. It owns
+no root Memory, game command, threat decision, remote selection, or budget. Over-cap, malformed,
+inactive, missing, corrupt, cross-shard, future-tick, or CPU-skipped evidence fails closed.
+[ADR 0080](adr/0080-segment-backed-room-intelligence.md) records the payload and vision boundary.
+
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
 3. `main.ts` exports the Screeps loop and performs no gameplay planning.
@@ -459,9 +470,11 @@ interface TickContext {
 The executable `TickContext` began in Phase 0 with tick, shard, memory status, detached state view,
 immutable snapshot, sealed arbitration result, reconcile result, and bounded tick telemetry. Phase 1
 adds the resolved `RuntimeConfig`, immutable colony-plan and spawn-plan/result views, and
-contract-reconciliation view. The context contains neither `Game`, mutable `Memory`, nor the raw
-operational candidate. Later fields enter only with the roadmap system that owns them. The aggregate
-`StateView` also redacts the raw `config`, `colonies`, and `contracts` owners; consumers use only
+contract-reconciliation view. Phase 3 adds the immutable `IntelRuntimeResult`; it contains
+freshness-qualified room/route views, vision requests, and fixed counters, never raw segment bytes
+or physical IDs. The context contains neither `Game`, mutable `Memory`, nor the raw operational
+candidate. Later fields enter only with the roadmap system that owns them. The aggregate `StateView`
+also redacts the raw `config`, `colonies`, and `contracts` owners; consumers use only
 `TickContext.config`, `TickContext.colony`, `TickContext.spawn`, and `TickContext.contracts`. A
 later planner consumes the explicit colony-plan output rather than depending on a staged `colonies`
 mutation that is invisible in the beginning-of-tick state view.
@@ -525,8 +538,8 @@ codes for telemetry.
 - normalizes collections into deterministic ordering;
 - records visibility and freshness explicitly;
 - converts game objects into immutable plain data;
-- derives observation facts such as ownership changes, damage, hostile presence, and event-log
-  entries;
+- derives observation facts such as ownership changes, damage, hostile presence, and at most 128
+  canonical previous-tick event-log entries per room; an over-cap batch is explicitly unavailable;
 - projects owned spawn activity, including `isActive()` and the full nullable `spawning` record, so
   arbitration never reads `Game.spawns`;
 - projects factories, power spawns, observers, and nukers as sorted detached current-tick facts,
@@ -745,6 +758,7 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `segments.ingest`          | Boot      | operational, recovery-safe      |         0.25 |
 | `world.observe`            | Observe   | mandatory, recovery-safe        |         1.00 |
 | `safety.foundation`        | Safety    | mandatory, recovery-safe        |         0.10 |
+| `world.observe-intel`      | Observe   | operational                     |         0.50 |
 | `colony.director`          | Plan      | mandatory, recovery-safe        |         1.50 |
 | `industry.publish`         | Plan      | optional economic               |         0.50 |
 | `migration.layout`         | Plan      | optional economic               |         1.50 |
@@ -764,32 +778,36 @@ Memory opening is a bounded preflight because recovery status is an input to CPU
 may perform only the documented migration step budget. `segments.ingest` then captures only this
 tick's available segment strings; `segments.reconcile` performs the bounded activation/write plan
 and stages owner-local schema V1 before the root commit. Either system may skip or fail without
-fabricating readiness or blocking mandatory work. `RuntimeKernel` remains the sole scheduled phase
-orchestrator. The Phase 1 colony outcome replaces `planning.foundation` with `colony.director`. The
-spawn outcome adds mandatory-tail `spawn.execute` followed by mandatory-tail `spawn.settle`; the
-latter performs durable colony staging after command results and before budget-consuming contract
-reconciliation. When admitted, operational `contracts.reconcile` stages its owner transaction before
-mandatory-tail `state.reconcile`; only the latter commits the `Memory.myrmex` root.
-`industry.execute` follows shared intent arbitration in the mandatory Execute tail;
-`industry.reconcile` stages terminal, lab, mature, and observer effects through one industry owner
-transaction before `state.reconcile`. The operational `agents.plan` pass excludes persisted
-spawn-evacuation leases; optional `migration.layout` continues only its exact current
-planner-authorized terms through the same Logistics/ContractLedger/lease-agent path. A skipped or
-failed continuation therefore emits no new spawn-evacuation request, funding transition, or action;
-ordinary Logistics retirement may still fail closed when its projected flow disappears. On the rare
-explicit selected-source handoff, `layout.handoff-reconcile` stages the complete layout draft before
-its root commit; the following tick's contract reconciliation consumes that durable coordinate. The
-same precommit stages one observation-settled stale site or terminal-success non-storage removal
-receipt before ending command-free layout planning for that tick. Every construction-site or removal
-execution result also activates that precommit before root reconciliation, so scheduler health
-ordering cannot strand its receipt; no separate reconciliation or owner exists. An
-otherwise-quiescent stale revision may carry settled source-service coordinates only when its exact
-bounded ContractLedger planning records match and the new plan preserves the complete issuance set.
-The bounded layout handoff plan completes before colony budgeting; only its accepted exact stale set
-may enter the sole StaticMiningPlanner projection to renew already-matching work. If admission,
-policy, current planning, room/source evidence, or tuple pinning fails, the stale set never enters
-that projection. It is a continuation of the same layout owner, not a second planner or state
-authority. Later outcomes replace their own foundation markers without adding another loop.
+fabricating readiness or blocking mandatory work. Operational `world.observe-intel` follows the
+mandatory current observation in the same phase, registers only `world.room-intel.v1`, re-offers at
+most two bounded room payloads, and publishes freshness and authorized vision-demand results before
+observer composition. A skipped or failed plan publishes no optimistic intel and cannot block
+mandatory work. `RuntimeKernel` remains the sole scheduled phase orchestrator. The Phase 1 colony
+outcome replaces `planning.foundation` with `colony.director`. The spawn outcome adds mandatory-tail
+`spawn.execute` followed by mandatory-tail `spawn.settle`; the latter performs durable colony
+staging after command results and before budget-consuming contract reconciliation. When admitted,
+operational `contracts.reconcile` stages its owner transaction before mandatory-tail
+`state.reconcile`; only the latter commits the `Memory.myrmex` root. `industry.execute` follows
+shared intent arbitration in the mandatory Execute tail; `industry.reconcile` stages terminal, lab,
+mature, and observer effects through one industry owner transaction before `state.reconcile`. The
+operational `agents.plan` pass excludes persisted spawn-evacuation leases; optional
+`migration.layout` continues only its exact current planner-authorized terms through the same
+Logistics/ContractLedger/lease-agent path. A skipped or failed continuation therefore emits no new
+spawn-evacuation request, funding transition, or action; ordinary Logistics retirement may still
+fail closed when its projected flow disappears. On the rare explicit selected-source handoff,
+`layout.handoff-reconcile` stages the complete layout draft before its root commit; the following
+tick's contract reconciliation consumes that durable coordinate. The same precommit stages one
+observation-settled stale site or terminal-success non-storage removal receipt before ending
+command-free layout planning for that tick. Every construction-site or removal execution result also
+activates that precommit before root reconciliation, so scheduler health ordering cannot strand its
+receipt; no separate reconciliation or owner exists. An otherwise-quiescent stale revision may carry
+settled source-service coordinates only when its exact bounded ContractLedger planning records match
+and the new plan preserves the complete issuance set. The bounded layout handoff plan completes
+before colony budgeting; only its accepted exact stale set may enter the sole StaticMiningPlanner
+projection to renew already-matching work. If admission, policy, current planning, room/source
+evidence, or tuple pinning fails, the stale set never enters that projection. It is a continuation
+of the same layout owner, not a second planner or state authority. Later outcomes replace their own
+foundation markers without adding another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -1162,19 +1180,36 @@ current hit points, so fully damaged parts do not satisfy a contract.
 
 ### 9.2 IntelRepository
 
-`IntelRepository` is the read interface over current observation plus segment-backed history.
-`IntelService` owns intel retention and confidence. Every record includes observed tick, source,
-confidence, and expiry policy.
+`IntelService` is the executable read interface over current observation plus SegmentManager-backed
+history. Payload schema V1 stores shard, room and observation tick; validated terrain; bounded
+sources, controller/reservation, explicit mineral-observation completeness, structures, hostile
+capabilities, and previous-tick event scalars. Portals retain bounded destination evidence and
+invader cores retain level/deployment evidence. Material fact changes bypass the 25-tick unchanged-
+record refresh interval, while inactive-generation rewrites remain lower priority than pending,
+material, corrupt, and missing work. Live objects, paths, route selections, threat decisions, and
+snapshots are forbidden.
 
-Consumers state their freshness requirement:
+A caller supplies `maximumAge` and `expiresAfter`. Current visible evidence always wins; verified
+history reports `fresh`, `stale`, or `expired`, while inactive, missing, corrupt, cross-shard,
+future-tick, malformed, future-schema, and read-budget evidence reports `unknown`. Collection
+overflow or unavailable terrain, mineral, or event observation is explicit partial quality. A route
+query contains an already ordered caller-supplied room list and receives only aggregate
+freshness/quality.
+
+Consumers retain domain-specific requirements:
 
 - immediate defense: current tick;
-- remote operation: policy-defined recent vision;
-- claim scoring: recent room and route evidence;
+- remote operation: policy-defined recent complete vision;
+- claim scoring: recent complete room and route evidence;
 - offensive operation: explicit maximum age by evidence kind.
 
-If freshness is insufficient, a planner emits a scout/observer contract or defers the decision. It
-does not silently use stale information.
+`VisionDemandV1` unifies refresh demand without owning delivery. Fresh-enough intel satisfies it.
+Otherwise one valid observer authorization yields the existing `ObservationRequestV1`; absent that,
+a scout request requires current external BudgetLedger identity and exact energy, spawn-time, CPU,
+and deadline caps. ObserverArbiter/Executor retain commands and retries; scout output remains data
+only until later existing contract/spawn/movement authorities consume it. Insufficient freshness or
+authorization defers or rejects rather than silently using stale data. Exact caps and reset/eviction
+evidence are recorded in [`phase3-intel-evidence.md`](phase3-intel-evidence.md).
 
 ## 10. Strategy and Objective Hierarchy
 
@@ -1468,33 +1503,34 @@ facts—not a successful command return—prove target completion. ADR 0008 reco
 
 The following table is the canonical ownership map.
 
-| System                     | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                          |
-| -------------------------- | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | ----------------------------------- |
-| `RuntimeConfigAuthority`   | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners    |
-| `EmpireDirector`           | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands      |
-| `ColonyDirector`           | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache        |
-| `BudgetLedger`             | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend      |
-| `ContractLedger`           | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands      |
-| `EconomyPlanner`           | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps              |
-| `SpawnBroker`              | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger |
-| `SpawnExecutor`            | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy   |
-| `WorkforceAllocator`       | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands  |
-| `LogisticsPlanner`         | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly           |
-| `MovementArbiter`          | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels          |
-| `LayoutPlanner`            | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites           |
-| `ConstructionPlanner`      | build/repair/migration priorities              | layout, structures, reserves              | construction, work, removal proposals    | issue commands                      |
-| `StructureRemovalArbiter`  | owned-structure removal authorization          | typed proposals, current safety evidence  | at most one accepted removal intent      | call the game API                   |
-| `StructureDestroyExecutor` | direct owned-structure destroy command         | one accepted intent, narrow live adapter  | typed destroy result                     | select migration policy             |
-| `DefenseDirector`          | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war             |
-| `DiplomacyLedger`          | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions        |
-| `RemotePortfolio`          | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly          |
-| `ExpansionDirector`        | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets         |
-| `IndustryDirector`         | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls   |
-| `MarketPlanner`            | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly        |
-| `OperationsController`     | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies            |
-| `ExecutorRegistry`         | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices              |
-| `Reconciler`               | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                 |
-| `TelemetryService`         | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store         |
+| System                     | Sole authority                                 | Reads                                     | Emits/owns                               | Never does                              |
+| -------------------------- | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- | --------------------------------------- |
+| `RuntimeConfigAuthority`   | runtime policy resolution                      | source defaults, owned config candidate   | immutable config and gate views          | expose raw candidate to planners        |
+| `EmpireDirector`           | global objectives and strategic budgets        | snapshot, ledgers, strategy config        | objective revisions, global reservations | issue creep/structure commands          |
+| `ColonyDirector`           | owned-room lifecycle and local policy          | empire objective, colony view             | colony objectives, local reserves        | maintain its own world cache            |
+| `BudgetLedger`             | local resource reservations                    | requests, capacity, colony posture        | grants, denials, consumption             | admit kernel work or overspend          |
+| `ContractLedger`           | contract state, leases, and persistence        | requests, live budget grants, actors      | records, outcomes, staged owner state    | mint budgets or issue commands          |
+| `IntelService`             | historical room facts and freshness            | snapshot, typed segment store, demands    | room/route views, vision requests        | select remotes/routes or issue commands |
+| `EconomyPlanner`           | source/use demand model                        | colony view, contracts                    | harvest/work/upgrade/build demand        | spawn or assign creeps                  |
+| `SpawnBroker`              | spawn-slot, body, and name arbitration         | demands, snapshot, expectations, policy   | deterministic spawn selections           | persist a queue or construct ledger     |
+| `SpawnExecutor`            | live spawn command boundary                    | authorized intents, narrow ID resolver    | typed command results                    | select bodies or own retry policy       |
+| `WorkforceAllocator`       | bounded creep-to-contract allocation policy    | capabilities, contracts, travel estimates | assignment and safe-idle proposals       | mutate contracts or issue commands      |
+| `LogisticsPlanner`         | resource-flow contracts                        | stores, stock targets, routes             | haul/transfer/withdraw intents           | move or transfer directly               |
+| `MovementArbiter`          | movement reservations and move choice          | movement intents, matrices, snapshot      | accepted move intents                    | decide why a creep travels              |
+| `LayoutPlanner`            | planned structure positions                    | terrain, policy, colony state             | versioned layout plan                    | create construction sites               |
+| `ConstructionPlanner`      | build/repair/migration priorities              | layout, structures, reserves              | construction, work, removal proposals    | issue commands                          |
+| `StructureRemovalArbiter`  | owned-structure removal authorization          | typed proposals, current safety evidence  | at most one accepted removal intent      | call the game API                       |
+| `StructureDestroyExecutor` | direct owned-structure destroy command         | one accepted intent, narrow live adapter  | typed destroy result                     | select migration policy                 |
+| `DefenseDirector`          | threat state and defense posture               | snapshot, intel, diplomacy                | safety intents, defense contracts        | authorize offensive war                 |
+| `DiplomacyLedger`          | observed relation and reputation state         | config relation policy, observed evidence | relation view, transitions               | weaken configured exclusions            |
+| `RemotePortfolio`          | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly              |
+| `ExpansionDirector`        | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets             |
+| `IndustryDirector`         | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls       |
+| `MarketPlanner`            | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly            |
+| `OperationsController`     | military authorization and operation lifecycle | policy, diplomacy, intel, budget          | operation contracts and transitions      | target configured allies                |
+| `ExecutorRegistry`         | command adapters                               | accepted intents, live handles            | command results                          | make strategic choices                  |
+| `Reconciler`               | application of tick outcomes                   | results, observation facts                | staged persistent commit                 | issue game commands                     |
+| `TelemetryService`         | metrics, diagnostics, status                   | system reports and results                | bounded telemetry                        | become a second state store             |
 
 ### 12.1 ColonyDirector
 
@@ -2780,6 +2816,10 @@ The versioned policy fields, limits, statuses, gates, and deterministic matrices
 - intent arbitration and command-result summaries;
 - schema, build, source/config/policy revisions, config status/reason, and gate reason/blocker.
 
+`TickOutcome.intel.metrics` separately exposes 16 fixed-cardinality room-intelligence freshness,
+quality, write, and refresh counters without room, player, payload, or physical-segment identities.
+They remain outside the closed earlier-phase durable telemetry owner and are never gameplay input.
+
 Structured diagnostics use bounded codes and stable opaque entity references. The pure
 `security/redaction` boundary converts any player-controlled value or exception text before it
 reaches telemetry, diagnostics, or a later console reporter; raw operational snapshots remain inside
@@ -2929,6 +2969,13 @@ Required architecture assertions include:
 - only state code references `Memory.myrmex`;
 - only canonical `SegmentManager` code calls or aliases `RawMemory` segment members;
 - raw `segments` owner reads occur only in runtime composition and writes only in `SegmentManager`;
+- `IntelService` registers only the typed `world.room-intel.v1` store, stores no root-Memory owner,
+  computes no route/remote choice, and emits no game command;
+- current observation outranks IntelService history; every room/route read has explicit age and
+  expiry, and malformed, partial, unavailable, corrupt, cross-shard, future, or over-cap evidence
+  remains typed and fail-closed;
+- one intel vision demand may reuse only existing observer authorization or an external
+  BudgetLedger-backed data-only scout authorization; it cannot mint either grant;
 - only shard code calls InterShardMemory;
 - only observer/validation adapters and executors access live game objects outside composition;
 - only executors call command methods;

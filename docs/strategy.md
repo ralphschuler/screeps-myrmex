@@ -464,6 +464,12 @@ live risks are in [`phase2-gate-evidence.md`](phase2-gate-evidence.md). This unb
 planning but does not authorize later-phase actions or MMO deployment. Thresholds, telemetry, and
 Scenario Kit remain observer/test inputs and cannot authorize gameplay.
 
+Phase 3 room intelligence is evidence only. Current vision outranks segment history; every caller
+supplies an age and expiry bound, and partial, inactive, missing, corrupt, cross-shard, or future
+evidence authorizes nothing. Previous-tick events retain that exact temporal meaning. Refresh demand
+prefers an already authorized observer, then a separately BudgetLedger-authorized data-only scout;
+IntelService neither selects a remote or route nor creates a budget, contract, spawn, or command.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

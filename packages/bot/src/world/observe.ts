@@ -28,6 +28,8 @@ import {
   type RoomSnapshot,
   type RoomVisibilitySnapshot,
   type RoadSnapshot,
+  type RoomEventLogStatus,
+  type RoomEventSnapshot,
   type RuinSnapshot,
   type SnapshotEntityCounts,
   type SourceSnapshot,
@@ -41,6 +43,7 @@ import {
 import { isObservedStructureStaticallyWalkable } from "./traversal";
 
 const MAX_CREEP_BODY_PARTS = 50;
+const MAX_ROOM_EVENTS = 128;
 const MAX_STRUCTURE_EFFECTS = 16;
 const BODY_PART_TYPES = [
   "move",
@@ -116,6 +119,7 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     typeof FIND_DROPPED_RESOURCES === "undefined" ? [] : room.find(FIND_DROPPED_RESOURCES);
   const ruins = typeof FIND_RUINS === "undefined" ? [] : room.find(FIND_RUINS);
   const tombstones = typeof FIND_TOMBSTONES === "undefined" ? [] : room.find(FIND_TOMBSTONES);
+  const eventBatch = snapshotRoomEvents(room);
   const staticRoom = snapshotStaticRoom(room, structures, constructionSites);
   const minerals = typeof FIND_MINERALS === "undefined" ? [] : room.find(FIND_MINERALS);
   if (staticRoom === undefined) {
@@ -128,6 +132,8 @@ function observeRoom(room: Room, observedAt: number, ownedCreeps: readonly Creep
     energyAvailable: room.energyAvailable,
     energyCapacityAvailable: room.energyCapacityAvailable,
     droppedResources: droppedResources.map(snapshotDroppedResource).sort(compareById),
+    events: eventBatch.events,
+    eventLogStatus: eventBatch.status,
     hostileCreeps: creeps
       .filter((creep) => !creep.my)
       .map(snapshotCreep)
@@ -343,13 +349,110 @@ function snapshotStructure(structure: AnyStructure): StructureSnapshot {
     pos: snapshotPosition(structure.pos),
     structureType: structure.structureType,
     isPublic: structure.structureType === "rampart" ? structure.isPublic : null,
+    ...(structure.structureType === "invaderCore"
+      ? {
+          invaderCore: {
+            level: structure.level,
+            ticksToDeploy: nullableNumber(structure.ticksToDeploy),
+          },
+        }
+      : {}),
+    ...(structure.structureType === "portal"
+      ? { portal: snapshotPortalDestination(structure.destination) }
+      : {}),
     ticksToDecay:
       structure.structureType === "road" ||
       structure.structureType === "container" ||
-      structure.structureType === "rampart"
+      structure.structureType === "rampart" ||
+      structure.structureType === "portal"
         ? nullableNumber(structure.ticksToDecay)
         : null,
   };
+}
+
+function snapshotPortalDestination(destination: StructurePortal["destination"]) {
+  if ("shard" in destination) {
+    return {
+      destinationRoomName: destination.room,
+      destinationShard: destination.shard,
+      x: null,
+      y: null,
+    };
+  }
+  return {
+    destinationRoomName: destination.roomName,
+    destinationShard: null,
+    x: destination.x,
+    y: destination.y,
+  };
+}
+
+function snapshotRoomEvents(room: Room): {
+  readonly events: readonly RoomEventSnapshot[];
+  readonly status: RoomEventLogStatus;
+} {
+  if (typeof room.getEventLog !== "function") return { events: [], status: "unavailable" };
+  const events = room.getEventLog();
+  if (!Array.isArray(events) || events.length > MAX_ROOM_EVENTS) {
+    return { events: [], status: "limit-exceeded" };
+  }
+  return {
+    events: events.map(snapshotRoomEvent).sort(compareRoomEvents),
+    status: "observed",
+  };
+}
+
+function snapshotRoomEvent(item: EventItem): RoomEventSnapshot {
+  const data: Readonly<Record<string, unknown>> =
+    typeof item.data === "object" && item.data !== null ? item.data : {};
+  return {
+    event: item.event,
+    objectId: boundedIdentity(item.objectId),
+    targetId: optionalIdentity(data.targetId),
+    amount: eventAmount(data),
+    attackType: optionalNonnegativeInteger(data.attackType),
+    resourceType: optionalIdentity(data.resourceType),
+    structureType: optionalIdentity(data.structureType ?? data.type),
+    x: optionalCoordinate(data.x),
+    y: optionalCoordinate(data.y),
+  };
+}
+
+function compareRoomEvents(left: RoomEventSnapshot, right: RoomEventSnapshot): number {
+  return (
+    left.event - right.event ||
+    compareStrings(left.objectId, right.objectId) ||
+    compareStrings(left.targetId ?? "", right.targetId ?? "") ||
+    (left.attackType ?? -1) - (right.attackType ?? -1) ||
+    (left.amount ?? -1) - (right.amount ?? -1) ||
+    compareStrings(left.resourceType ?? "", right.resourceType ?? "") ||
+    compareStrings(left.structureType ?? "", right.structureType ?? "") ||
+    (left.y ?? -1) - (right.y ?? -1) ||
+    (left.x ?? -1) - (right.x ?? -1)
+  );
+}
+
+function eventAmount(data: Readonly<Record<string, unknown>>): number | null {
+  return optionalNonnegativeInteger(data.amount ?? data.damage);
+}
+
+function boundedIdentity(value: unknown): string {
+  const normalized = optionalIdentity(value);
+  return normalized ?? "unknown";
+}
+
+function optionalIdentity(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= 128 ? value : null;
+}
+
+function optionalNonnegativeInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function optionalCoordinate(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 49
+    ? value
+    : null;
 }
 
 function snapshotRoad(road: StructureRoad): RoadSnapshot {
