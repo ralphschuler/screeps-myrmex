@@ -16,6 +16,7 @@ export interface SurvivalWorldOptions {
     readonly x: number;
     readonly y: number;
   };
+  readonly controllerTicksToDowngrade?: number;
   readonly initialWorkerEnergy?: number;
 }
 
@@ -64,6 +65,7 @@ export interface SurvivalWorld {
   setPathUnavailable(unavailable: boolean): void;
   setSpawnBlocker(blocker: "busy" | "energy" | null): void;
   setTargetResolverUnavailable(unavailable: boolean): void;
+  setWorkerEnergy(energy: number): void;
 }
 
 export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld {
@@ -106,6 +108,7 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
     sourceBHarvested: 0,
     controllerLevel: 1,
     controllerProgress: options.controllerInitialProgress ?? 0,
+    controllerTicksToDowngrade: options.controllerTicksToDowngrade ?? 10_000,
     controllerUpgradeCalls: 0,
     lostWorkerEnergy: 0,
     spawnCalls: [] as SpawnCall[],
@@ -117,6 +120,7 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
     targetMissingObservations: 0,
     targetResolverUnavailable: false,
     withheldSpawnEnergy: 0,
+    withheldWorkerEnergy: 0,
     workerEnergy: initialWorkerEnergy,
     workerFatigue: 0,
     workerName: initialWorkerEnergy > 0 ? "bootstrap-worker" : (null as string | null),
@@ -242,6 +246,7 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
       if (state.workerEnergy <= 0) return -6;
       state.workerEnergy -= 1;
       state.controllerProgress += 1;
+      state.controllerTicksToDowngrade += 100;
       state.controllerUpgradeCalls += 1;
       if (state.controllerProgress >= 200) {
         state.controllerLevel = 2;
@@ -283,7 +288,9 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
     safeMode: undefined,
     safeModeAvailable: 1,
     safeModeCooldown: undefined,
-    ticksToDowngrade: 10_000,
+    get ticksToDowngrade() {
+      return state.controllerTicksToDowngrade;
+    },
     upgradeBlocked: undefined,
   } as unknown as StructureController;
   const room = {
@@ -331,6 +338,7 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
     const elapsed = tick - state.lastAdvancedTick;
     if (state.workerTicksToLive !== null) state.workerTicksToLive -= elapsed;
     state.workerFatigue = Math.max(0, state.workerFatigue - elapsed * 2);
+    state.controllerTicksToDowngrade = Math.max(0, state.controllerTicksToDowngrade - elapsed);
     state.currentTick = tick;
     state.lastAdvancedTick = tick;
     if (state.pendingSpawn !== null && tick >= state.pendingSpawn.readyAt) {
@@ -461,7 +469,8 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
           state.successfulSpawnCost +
           state.controllerUpgradeCalls +
           state.lostWorkerEnergy +
-          state.withheldSpawnEnergy,
+          state.withheldSpawnEnergy +
+          state.withheldWorkerEnergy,
       );
     },
     game: (tick: number): RuntimeGame => {
@@ -508,8 +517,9 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
       };
     },
     killWorker: () => {
-      state.lostWorkerEnergy += state.workerEnergy;
+      state.lostWorkerEnergy += state.workerEnergy + state.withheldWorkerEnergy;
       state.workerEnergy = 0;
+      state.withheldWorkerEnergy = 0;
       state.workerFatigue = 0;
       state.workerName = null;
       state.workerTicksToLive = null;
@@ -536,6 +546,13 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
     },
     setTargetResolverUnavailable: (unavailable: boolean) => {
       state.targetResolverUnavailable = unavailable;
+    },
+    setWorkerEnergy: (energy: number) => {
+      const available = state.workerEnergy + state.withheldWorkerEnergy;
+      if (!Number.isSafeInteger(energy) || energy < 0 || energy > available)
+        throw new Error("worker energy override exceeds conserved fixture energy");
+      state.workerEnergy = energy;
+      state.withheldWorkerEnergy = available - energy;
     },
   };
   return world;

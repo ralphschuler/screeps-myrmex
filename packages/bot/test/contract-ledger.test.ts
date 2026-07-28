@@ -8,6 +8,7 @@ import {
   MAX_CONTRACT_TRANSITIONS_PER_TICK,
   WORK_CONTRACT_STATES,
   ContractLedger,
+  RCL1_CONTROLLER_FUNDING_HANDOFF,
   contractIdFor,
   isLegalContractTransition,
   requestSignature,
@@ -332,6 +333,110 @@ describe("ContractLedger", () => {
       },
     ]);
     expect(JSON.stringify(wrongTick.ledger.view())).toBe(beforeWrongTick);
+  });
+
+  it("atomically permits only the explicit RCL1 controller funding-category handoff", () => {
+    const issuer = "growth/W1N1/upgrade-controller/controller-1";
+    const budgetIssuer = issuer;
+    const predecessor = makeRequest({
+      budgetBinding: { category: "bootstrap-controller", issuer: budgetIssuer },
+      execution: {
+        action: "upgrade-controller",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      issuer,
+      issuerSequence: 1,
+      kind: "upgrade",
+      targetId: "controller-1",
+    });
+    const ledger = openLedger({});
+    const predecessorId = submitOrThrow(ledger, predecessor, 1);
+    expect(
+      ledger.reconcile({
+        actors: [],
+        funding: activeFunding({ category: "bootstrap-controller", issuer: budgetIssuer }),
+        requests: [],
+        tick: 2,
+        transitions: [
+          { contractId: predecessorId, reason: "bootstrap-funded", tick: 2, to: "funded" },
+        ],
+        travel: ZERO_TRAVEL,
+      }).transitions,
+    ).toEqual([{ accepted: true, contractId: predecessorId, from: "proposed", to: "funded" }]);
+
+    let current = predecessor;
+    let currentId = predecessorId;
+    const steps = [
+      { category: "controller-risk", handoff: true },
+      { category: "controller-risk", handoff: false },
+      { category: "bootstrap-controller", handoff: true },
+    ] as const;
+    for (const [index, step] of steps.entries()) {
+      const tick = index + 3;
+      const successor = {
+        ...current,
+        budgetBinding: { category: step.category, issuer: budgetIssuer },
+        issuerSequence: current.issuerSequence + 1,
+      };
+      const successorId = contractIdFor(
+        successor.issuer,
+        successor.issuerKey,
+        successor.issuerSequence,
+      );
+      const result = ledger.reconcile({
+        actors: [],
+        funding: activeFunding({ category: step.category, issuer: budgetIssuer }),
+        replacements: [
+          {
+            ...(step.handoff ? { fundingHandoff: RCL1_CONTROLLER_FUNDING_HANDOFF } : {}),
+            predecessorContractId: currentId,
+            reason: "growth-budget-renewed",
+            successor,
+            tick,
+          },
+        ],
+        requests: [],
+        tick,
+        transitions: [{ contractId: successorId, reason: "successor-funded", tick, to: "funded" }],
+        travel: ZERO_TRAVEL,
+      });
+      expect(result.replacements).toEqual([
+        { accepted: true, predecessorContractId: currentId, successorContractId: successorId },
+      ]);
+      expect(ledger.view().active).toEqual([
+        expect.objectContaining({
+          budgetBinding: { category: step.category, issuer: budgetIssuer },
+          id: successorId,
+          issuerSequence: successor.issuerSequence,
+          state: "funded",
+        }),
+      ]);
+      current = successor;
+      currentId = successorId;
+    }
+
+    const blocked = openLedger({});
+    const blockedId = submitOrThrow(blocked, predecessor, 1);
+    const changedWithoutProof = {
+      ...predecessor,
+      budgetBinding: { category: "controller-risk", issuer: budgetIssuer },
+      issuerSequence: 2,
+    };
+    expect(
+      blocked.replace({
+        predecessorContractId: blockedId,
+        reason: "unproved-category-change",
+        successor: changedWithoutProof,
+        tick: 2,
+      }),
+    ).toEqual({
+      accepted: false,
+      predecessorContractId: blockedId,
+      reason: "relationship-mismatch",
+    });
   });
 
   it("publishes the legal transition matrix and leaves state byte-identical after rejection", () => {

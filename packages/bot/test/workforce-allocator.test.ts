@@ -56,6 +56,36 @@ describe("WorkforceAllocator", () => {
     ]);
   });
 
+  it("requires carried energy for controller work before assignment", () => {
+    const empty = makeActor("actor:a-empty", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 0,
+    });
+    const carrying = makeActor("actor:z-carrying", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 1,
+    });
+    const upgrade = makeContract("contract:upgrade", {
+      execution: {
+        action: "upgrade-controller",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "upgrade",
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+    });
+
+    expect(allocate([empty, carrying], [upgrade]).assignments).toEqual([
+      expect.objectContaining({ actorId: carrying.id, contractId: upgrade.id }),
+    ]);
+    expect(allocate([empty], [upgrade])).toMatchObject({
+      assignments: [],
+      deferred: [{ contractId: upgrade.id, reason: "no-viable-actor" }],
+    });
+  });
+
   it("preempts lower-priority work deterministically without assigning an actor twice", () => {
     const urgent = makeContract("contract:urgent", {
       kind: "defend",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CONTRACT_REQUESTS_PER_TICK,
   MAX_CONTRACT_TRANSITIONS_PER_TICK,
+  RCL1_CONTROLLER_FUNDING_HANDOFF,
   createContractRequestChannel,
   type CapabilityVector,
   type ContractRequestBatch,
@@ -115,6 +116,23 @@ describe("contract request channel", () => {
     ]);
     expect(Object.isFrozen(batch.replacements)).toBe(true);
     expect(Object.isFrozen(batch.replacements[0]?.successor)).toBe(true);
+  });
+
+  it("preserves the typed RCL1 funding handoff through channel normalization", () => {
+    const channel = createContractRequestChannel();
+    const scope = channel.openProducer("growth.replacement");
+    scope.producer.replace({
+      fundingHandoff: RCL1_CONTROLLER_FUNDING_HANDOFF,
+      predecessorContractId: "contract:risk",
+      reason: "growth-budget-renewed",
+      successor: makeRequest("controller", { issuerSequence: 2 }),
+      tick: 100,
+    });
+    scope.stage().commit();
+
+    expect(channel.seal().replacements).toEqual([
+      expect.objectContaining({ fundingHandoff: RCL1_CONTROLLER_FUNDING_HANDOFF }),
+    ]);
   });
 
   it("rejects only the producer that exceeds aggregate request capacity", () => {

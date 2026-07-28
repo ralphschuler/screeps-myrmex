@@ -427,12 +427,17 @@ execution and #49 owning container repair. The exact official Store, storage, te
 withdraw, Wiki Maturity Matrix, and Wiki Energy guidance consulted for this policy is recorded in
 [ADR 0018](adr/0018-logistics-planner-authority.md).
 
-RCL1 bootstrap controller work spends only carried creep energy while the 300 spawn reserve remains
-intact. Its contract horizon matches the existing 1,500-tick assignment ceiling rather than the
-generic 50-tick lease duration, so legal fatigue-aware in-room travel remains assignable. Budget
-renewal atomically advances exactly one contract generation with a fresh horizon; ambiguous or
-skipped issuer evidence fails closed. Worker loss, unknown routes, deadline infeasibility, and
-renewal conflicts remain distinct bounded outcomes rather than silent funded work.
+RCL1 controller work spends only carried creep energy while the 300 spawn reserve remains intact.
+Inside the controller-risk window, only the higher-priority `controller-risk` path is funded;
+ordinary bootstrap does not duplicate it. A legal worker must currently carry energy before
+allocation, while cargo or actor loss preserves the stable budget/contract for later refill. Leaving
+or re-entering that window atomically advances the same issuer between controller-risk and bootstrap
+funding without duplicate budgets, contracts, leases, movement, or upgrade commands. Bootstrap's
+contract horizon matches the existing 1,500-tick assignment ceiling rather than the generic 50-tick
+lease duration, so legal fatigue-aware in-room travel remains assignable. Budget renewal atomically
+advances exactly one contract generation with a fresh horizon; ambiguous or skipped issuer evidence
+fails closed. Worker loss, unknown routes, deadline infeasibility, and renewal conflicts remain
+distinct bounded outcomes rather than silent funded work.
 
 A spawn-only RCL2 room cannot satisfy the normal 300-energy protected floor plus 100-energy growth
 surplus before extensions exist. While capacity remains below that configured normal-growth floor,

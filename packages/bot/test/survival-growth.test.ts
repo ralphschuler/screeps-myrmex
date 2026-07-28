@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildRuntimeConfig } from "../src/config/runtime-config";
 import { authorizedSurvivalGrowth, planSurvivalGrowth, renewGrowthBudgets } from "../src/growth";
-import { contractIdFor, type ContractPlanningView } from "../src/contracts";
+import {
+  contractIdFor,
+  type ContractPlanningRecord,
+  type ContractPlanningView,
+  type WorkContractRequest,
+} from "../src/contracts";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
@@ -161,6 +166,326 @@ describe("survival growth", () => {
         config,
       ),
     ).toEqual([]);
+  });
+
+  it("funds one RCL1 controller-risk path from carried energy at the protected reserve", () => {
+    const config = buildRuntimeConfig();
+    const planned = planSurvivalGrowth(
+      world({
+        controllerLevel: 1,
+        downgrade: config.policy.recovery.controllerRiskWindowTicks,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 4,
+      }),
+      config,
+    );
+
+    expect(planned).toMatchObject([
+      {
+        action: "upgrade-controller",
+        reasonCode: "controller-risk",
+        budgetRequest: {
+          category: "controller-risk",
+          energy: null,
+        },
+      },
+    ]);
+    expect(planned).toHaveLength(1);
+    const withoutCargo = planSurvivalGrowth(
+      world({
+        controllerLevel: 1,
+        downgrade: config.policy.recovery.controllerRiskWindowTicks,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 0,
+      }),
+      config,
+    );
+    expect(withoutCargo).toMatchObject([
+      {
+        reasonCode: "controller-risk",
+        budgetRequest: { category: "controller-risk", energy: null },
+      },
+    ]);
+
+    const initial = renewGrowthBudgets(
+      planned,
+      [],
+      100,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    )[0];
+    if (initial === undefined) throw new Error("expected controller-risk budget");
+    const duringCargoLoss = renewGrowthBudgets(
+      withoutCargo,
+      [
+        {
+          category: initial.budgetRequest.category,
+          colonyId: initial.colonyId,
+          issuer: initial.budgetRequest.issuer,
+          request: initial.budgetRequest,
+          revision: initial.budgetRequest.revision,
+          status: "active",
+        },
+      ],
+      101,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    )[0];
+    expect(duringCargoLoss?.budgetRequest).toEqual(initial.budgetRequest);
+
+    const belowFloor = planSurvivalGrowth(
+      world({
+        controllerLevel: 1,
+        downgrade: config.policy.recovery.controllerRiskWindowTicks,
+        energy: 299,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 4,
+      }),
+      config,
+    );
+    expect(belowFloor).toMatchObject([
+      { reasonCode: "controller-risk", budgetRequest: { energy: null } },
+    ]);
+
+    const legacyPendingRequest = {
+      ...initial.budgetRequest,
+      energy: { minimum: 1, desired: config.policy.growth.maximumEnergyPerTick },
+    };
+    const recoveredPending = renewGrowthBudgets(
+      planned,
+      [
+        {
+          category: legacyPendingRequest.category,
+          colonyId: initial.colonyId,
+          issuer: initial.budgetRequest.issuer,
+          request: legacyPendingRequest,
+          revision: legacyPendingRequest.revision,
+          status: "pending",
+        },
+      ],
+      101,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    )[0];
+    expect(recoveredPending?.budgetRequest).toMatchObject({
+      energy: null,
+      expiresAt: 101 + config.policy.leases.durationTicks,
+      revision: 2,
+    });
+    if (recoveredPending === undefined) throw new Error("expected recovered pending budget");
+    expect(
+      authorizedSurvivalGrowth(
+        [recoveredPending],
+        [
+          {
+            category: recoveredPending.budgetRequest.category,
+            colonyId: recoveredPending.colonyId,
+            issuer: recoveredPending.budgetRequest.issuer,
+            status: "active",
+          },
+        ],
+        { status: "ready", contracts: [] },
+        101,
+      ).requests,
+    ).toMatchObject([{ issuerSequence: 2 }]);
+  });
+
+  it("atomically hands one RCL1 bootstrap contract to controller-risk funding", () => {
+    const config = buildRuntimeConfig();
+    const bootstrap = renewGrowthBudgets(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 1,
+          energy: 300,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 4,
+        }),
+        config,
+      ),
+      [],
+      100,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    )[0];
+    if (bootstrap === undefined) throw new Error("expected RCL1 bootstrap candidate");
+    const predecessorRequest = authorizedSurvivalGrowth(
+      [bootstrap],
+      [
+        {
+          category: bootstrap.budgetRequest.category,
+          colonyId: bootstrap.colonyId,
+          issuer: bootstrap.budgetRequest.issuer,
+          status: "active",
+        },
+      ],
+      { status: "ready", contracts: [] },
+      100,
+    ).requests[0];
+    if (predecessorRequest === undefined) throw new Error("expected bootstrap contract request");
+
+    const risk = renewGrowthBudgets(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 1,
+          downgrade: config.policy.recovery.controllerRiskWindowTicks,
+          energy: 300,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 4,
+        }),
+        config,
+      ),
+      [
+        {
+          category: bootstrap.budgetRequest.category,
+          colonyId: bootstrap.colonyId,
+          issuer: bootstrap.budgetRequest.issuer,
+          request: bootstrap.budgetRequest,
+          revision: bootstrap.budgetRequest.revision,
+          status: "active",
+        },
+      ],
+      101,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    )[0];
+    if (risk === undefined) throw new Error("expected controller-risk candidate");
+    const handoff = authorizedSurvivalGrowth(
+      [risk],
+      [
+        {
+          category: risk.budgetRequest.category,
+          colonyId: risk.colonyId,
+          issuer: risk.budgetRequest.issuer,
+          status: "active",
+        },
+      ],
+      {
+        status: "ready",
+        contracts: [planningRecord(predecessorRequest)],
+      },
+      101,
+    );
+
+    expect(risk.budgetRequest).toMatchObject({
+      category: "controller-risk",
+      expiresAt: 101 + config.policy.leases.durationTicks,
+      revision: 2,
+    });
+    expect(handoff.requests).toEqual([]);
+    expect(handoff.replacements).toMatchObject([
+      {
+        fundingHandoff: "rcl1-controller-risk-bootstrap",
+        reason: "growth-budget-renewed",
+        successor: {
+          budgetBinding: { category: "controller-risk" },
+          issuerSequence: 2,
+        },
+      },
+    ]);
+    const riskRequest = handoff.replacements[0]?.successor;
+    if (riskRequest === undefined) throw new Error("expected controller-risk successor");
+
+    const renewedRisk = renewGrowthBudgets(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 1,
+          downgrade: config.policy.recovery.controllerRiskWindowTicks,
+          energy: 300,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 4,
+        }),
+        config,
+      ),
+      [
+        {
+          category: risk.budgetRequest.category,
+          colonyId: risk.colonyId,
+          issuer: risk.budgetRequest.issuer,
+          request: risk.budgetRequest,
+          revision: risk.budgetRequest.revision,
+          status: "active",
+        },
+      ],
+      141,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    )[0];
+    if (renewedRisk === undefined) throw new Error("expected renewed risk budget");
+    const riskRenewal = authorizedSurvivalGrowth(
+      [renewedRisk],
+      [
+        {
+          category: renewedRisk.budgetRequest.category,
+          colonyId: renewedRisk.colonyId,
+          issuer: renewedRisk.budgetRequest.issuer,
+          status: "active",
+        },
+      ],
+      { status: "ready", contracts: [planningRecord(riskRequest)] },
+      141,
+    );
+    expect(riskRenewal.requests).toEqual([]);
+    expect(riskRenewal.replacements).toMatchObject([
+      { successor: { budgetBinding: { category: "controller-risk" }, issuerSequence: 3 } },
+    ]);
+    expect(riskRenewal.replacements[0]).not.toHaveProperty("fundingHandoff");
+    const renewedRiskRequest = riskRenewal.replacements[0]?.successor;
+    if (renewedRiskRequest === undefined) throw new Error("expected renewed risk successor");
+
+    const resumedBootstrap = renewGrowthBudgets(
+      planSurvivalGrowth(
+        world({
+          controllerLevel: 1,
+          energy: 300,
+          energyCapacity: 300,
+          spawn: true,
+          workerEnergy: 4,
+        }),
+        config,
+      ),
+      [
+        {
+          category: renewedRisk.budgetRequest.category,
+          colonyId: renewedRisk.colonyId,
+          issuer: renewedRisk.budgetRequest.issuer,
+          request: renewedRisk.budgetRequest,
+          revision: renewedRisk.budgetRequest.revision,
+          status: "active",
+        },
+      ],
+      142,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    )[0];
+    if (resumedBootstrap === undefined) throw new Error("expected resumed bootstrap budget");
+    const resumed = authorizedSurvivalGrowth(
+      [resumedBootstrap],
+      [
+        {
+          category: resumedBootstrap.budgetRequest.category,
+          colonyId: resumedBootstrap.colonyId,
+          issuer: resumedBootstrap.budgetRequest.issuer,
+          status: "active",
+        },
+      ],
+      { status: "ready", contracts: [planningRecord(renewedRiskRequest)] },
+      142,
+    );
+    expect(resumed.requests).toEqual([]);
+    expect(resumed.replacements).toMatchObject([
+      {
+        fundingHandoff: "rcl1-controller-risk-bootstrap",
+        successor: { budgetBinding: { category: "bootstrap-controller" }, issuerSequence: 4 },
+      },
+    ]);
   });
 
   it("bootstraps RCL2 extension work from carried energy without claiming the protected reserve", () => {
@@ -592,6 +917,18 @@ describe("survival growth", () => {
     ]);
   });
 });
+
+function planningRecord(request: WorkContractRequest): ContractPlanningRecord {
+  if (request.execution === undefined || request.targetId === null)
+    throw new Error("growth planning record requires executable target terms");
+  return {
+    ...request,
+    contractId: contractIdFor(request.issuer, request.issuerKey, request.issuerSequence),
+    execution: request.execution,
+    state: "funded",
+    targetId: request.targetId,
+  };
+}
 
 function world(
   options: {

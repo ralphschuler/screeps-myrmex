@@ -25,13 +25,23 @@ site-placement authority.
   generation now enters the existing atomic ContractLedger replacement channel with only its exact
   next sequence and a freshly funded horizon; no parallel contract, budget, or queue is added.
 - `workforce-allocator.test.ts` distinguishes `no-actor`, `travel-unknown`, and
-  `deadline-infeasible` from remaining actor infeasibility. `telemetry-service.test.ts` proves those
-  reasons plus funding/issuer-renewal rejection remain bounded and expose only opaque contract
-  fingerprints.
+  `deadline-infeasible` from remaining actor infeasibility. It also requires current positive actor
+  energy for controller work, so an empty worker cannot issue a doomed upgrade.
+  `telemetry-service.test.ts` proves those reasons plus funding/issuer-renewal rejection remain
+  bounded and expose only opaque contract fingerprints.
 - Controller downgrade work uses `controller-risk`; `BudgetLedger` places it ahead of optional
-  growth while recovery, defense, and mandatory work remain authoritative.
-- Bootstrap growth uses a new `bootstrap-controller` budget category with a null room-energy claim
-  so controller progress spends carried creep energy first and leaves the protected reserve intact
+  growth while recovery, defense, and mandatory work remain authoritative. Issue #481 makes every
+  RCL1 risk form a null room-energy claim, so the live `protected-energy-floor` blocker cannot
+  deadlock carried controller work. A pre-fix pending positive claim receives one fresh revision;
+  cargo loss then leaves the corrected request byte-stable and allocation deferred until refill.
+- That RCL1 risk form suppresses the duplicate ordinary candidate. A due risk generation renews
+  atomically before any later category transition. As an upgrade raises the downgrade timer out of
+  the risk window—or later decay re-enters it—the same ContractLedger replacement advances the
+  issuer's exact next generation between `controller-risk` and `bootstrap-controller` funding. The
+  ledger accepts only that typed category-handoff proof with unchanged owner, budget issuer, work,
+  and target terms; integrated tests reject an unproved category change.
+- Bootstrap growth uses a `bootstrap-controller` budget category with a null room-energy claim so
+  controller progress spends carried creep energy first and leaves the protected reserve intact
   until RCL2.
 - Issue #473 adds the bounded next transition: an owned RCL2 room below the configured normal-growth
   floor may emit only observed owned extension-site work when one active spawn, the protected room
@@ -59,6 +69,14 @@ site-placement authority.
   recover, one lease moves and upgrades across fatigue, JSON/module-heap reconstruction, and
   reordered observations, reaches RCL2 within 250 ticks, emits no deadline-infeasible outcome or
   duplicate command, and leaves spawn energy at 300.
+- The #481 production-`runTick` row starts that same 196/200 outcome at the exact controller-risk
+  boundary with four carried energy and a full 300/300 spawn. It obtains a zero-room-energy
+  controller-risk grant, defers across constrained CPU, an unavailable/recovered path, and temporary
+  cargo removal/refill, then moves and upgrades four times. It crosses atomically into ordinary
+  bootstrap funding when the official 100-tick timer effect clears risk, survives JSON/module-heap
+  reconstruction and input reorder, and reaches RCL2 with one contract, one lease, no spawn command,
+  and all 300 spawn energy intact. Focused ContractLedger evidence retains exact first-tick lease
+  expiry/reassignment, while the complete recovery row retains actor death/replacement.
 - The planner selects only observed owned spawn, extension, container, road, and tower sites. It
   creates no construction sites and retains no layout, topology, or placement state.
 

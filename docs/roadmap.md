@@ -65,7 +65,9 @@ merged.
   bootstrap recovery is tracked by
   [issue #473](https://github.com/ralphschuler/screeps-myrmex/issues/473). RCL1 controller work
   keeps a feasible travel horizon and atomically renews its exact contract generation under
-  [issue #479](https://github.com/ralphschuler/screeps-myrmex/issues/479).
+  [issue #479](https://github.com/ralphschuler/screeps-myrmex/issues/479); downgrade-risk work at
+  the protected spawn floor uses the same carried-energy path under
+  [issue #481](https://github.com/ralphschuler/screeps-myrmex/issues/481).
 - Bounded survival accounting and explainable structured status are tracked by
   [issue #39](https://github.com/ralphschuler/screeps-myrmex/issues/39) and
   [`phase1-telemetry-evidence.md`](phase1-telemetry-evidence.md).

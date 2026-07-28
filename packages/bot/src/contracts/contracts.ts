@@ -450,8 +450,13 @@ export interface ContractTransitionRequest {
   readonly to: WorkContractState;
 }
 
+export const RCL1_CONTROLLER_FUNDING_HANDOFF = "rcl1-controller-risk-bootstrap" as const;
+export type ContractFundingHandoff = typeof RCL1_CONTROLLER_FUNDING_HANDOFF;
+
 /** One all-or-nothing retirement and successor issuance owned by ContractLedger. */
 export interface ContractReplacementRequest {
+  /** Narrow policy proof for the only replacement allowed to change its funding category. */
+  readonly fundingHandoff?: ContractFundingHandoff;
   readonly predecessorContractId: string;
   readonly reason: string;
   readonly successor: WorkContractRequest;

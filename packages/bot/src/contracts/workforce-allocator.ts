@@ -296,7 +296,10 @@ function evaluateBid(
 /** Action eligibility is current-tick data only; unknown legacy fixture fields fail neither open nor closed. */
 function actionEligible(actor: WorkforceActor, contract: WorkContractRecord): boolean {
   if (contract.execution === undefined) return true;
-  if (contract.execution.action === "transfer")
+  if (
+    contract.execution.action === "transfer" ||
+    contract.execution.action === "upgrade-controller"
+  )
     return actor.energy === undefined || actor.energy > 0;
   if (contract.execution.action === "build" && contract.issuer.includes("/rcl2-bootstrap/build/"))
     return actor.energy === undefined || actor.energy > 0;
