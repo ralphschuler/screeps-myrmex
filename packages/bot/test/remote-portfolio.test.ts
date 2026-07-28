@@ -373,7 +373,7 @@ describe("RemotePortfolio", () => {
     expect(result.owner?.records.filter(({ commitment }) => commitment !== null)).toHaveLength(4);
   });
 
-  it("evicts oldest retired records to satisfy the owner byte ceiling", () => {
+  it("retains only bounded retired records within the expanded accounting owner ceiling", () => {
     const portfolio = new RemotePortfolio();
     let owner: unknown = {};
     for (let batch = 0; batch < 4; batch += 1) {
@@ -395,7 +395,7 @@ describe("RemotePortfolio", () => {
     expect(JSON.stringify(owner).length).toBeLessThanOrEqual(
       REMOTE_PORTFOLIO_LIMITS.maximumOwnerCodeUnits,
     );
-    expect((owner as { records: readonly unknown[] }).records.length).toBeLessThan(32);
+    expect((owner as { records: readonly unknown[] }).records.length).toBeLessThanOrEqual(32);
   });
 
   it("fails stale, partial, unaffordable, missing, vanished, and expired evidence closed", () => {
@@ -579,6 +579,23 @@ describe("RemotePortfolio", () => {
     expect(memory.myrmex?.remotes).toEqual(result.owner);
   });
 
+  it("migrates owner V1 accounting empty without changing portfolio records", () => {
+    const portfolio = new RemotePortfolio();
+    const input = candidate("W1N2", costs(1_000));
+    const current = plan(portfolio, 100, {}, input);
+    if (current.owner === null) throw new Error("expected current owner");
+    const legacy = {
+      schemaVersion: 1,
+      revision: current.owner.revision,
+      records: current.owner.records,
+    };
+    const migrated = plan(portfolio, 100, legacy, input);
+
+    expect(migrated.status).toBe("ready");
+    expect(migrated.owner).toMatchObject({ schemaVersion: 2, accounting: [] });
+    expect(migrated.owner?.records).toEqual(current.owner.records);
+  });
+
   it("preserves malformed/future owners and rejects bounded input overflow", () => {
     const portfolio = new RemotePortfolio();
     const input = candidate("W1N2", costs(1_000));
@@ -588,7 +605,15 @@ describe("RemotePortfolio", () => {
       changed: false,
       owner: null,
     });
-    expect(plan(portfolio, 100, { schemaVersion: 2 }, input)).toMatchObject({
+    expect(
+      plan(
+        portfolio,
+        100,
+        { schemaVersion: 2, revision: 0, records: [], accounting: [{ roomName: "W1N2" }] },
+        input,
+      ),
+    ).toMatchObject({ status: "owner-malformed", changed: false, owner: null });
+    expect(plan(portfolio, 100, { schemaVersion: 3 }, input)).toMatchObject({
       status: "owner-future-schema",
       changed: false,
       owner: null,

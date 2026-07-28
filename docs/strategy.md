@@ -566,7 +566,7 @@ hauler death therefore cannot become ghost income; death records loss and a mono
 replacement cycle. Full sinks retain loaded work without opening another pickup. Stale or unsafe
 evidence, route/endpoint or production/loss change, timeout, and budget loss stop new pickup;
 already-loaded cargo may still reach its current owned sink after remote vision disappears. This
-proves delivery mechanics, not strict evacuation (#61) or realized rolling profit (#62).
+proves delivery mechanics; strict evacuation is composed by #61 and realized attribution by #62.
 
 Remote safety now qualifies those active operations before more exposure. Configured exclusions are
 resolved first; an active offensive NPC/player creep, recent unattributed attack, imminent Invader
@@ -583,7 +583,18 @@ creating a retry storm; arrival and route-failure holds prevent the opening leas
 ordinary exposed work before reconciliation. This is operational remote exposure policy, not Phase 5
 owned-room defense or a second diplomacy/threat authority.
 
-Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
+Realized remote accounting now closes the forecast loop without making telemetry a strategy owner.
+Settled owned-sink delivery is revenue; harvested energy is utilization evidence only. Spawn energy
+and time, travel, reservation, construction, repair, CPU, creep loss, and downtime remain distinct
+costs in one compact portfolio-owned rolling window. Source-controlled shadow prices convert time
+and CPU to milli-energy, while forecast variance and coverage expose modeled uncertainty. A new
+remote may warm up under its positive admission forecast; once tracked evidence qualifies, negative
+return, staleness, or incompleteness suspends the existing portfolio commitment and releases every
+abstract capacity dimension. Marginal positive work remains explicit instead of being mislabeled as
+loss. Threat and owned-colony survival still preempt accounting. Missing, partial, conflicting, or
+over-cap receipts cannot invent delivery, erase loss, or authorize work.
+
+Remote and claim decisions therefore use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.
 

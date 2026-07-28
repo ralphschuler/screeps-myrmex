@@ -8,7 +8,7 @@ import {
   assessRemoteSafety,
   planRemoteEvacuations,
   type RemoteCandidateEvidence,
-  type RemotePortfolioOwnerV1,
+  type RemotePortfolioOwnerV2,
   type RemoteSafetyEvidence,
 } from "../../bot/src/remotes";
 import type { CreepSnapshot } from "../../bot/src/world/snapshot";
@@ -21,7 +21,7 @@ interface World {
   readonly minerActive: boolean;
   readonly minerRetreatTicks: number;
   readonly minerRoomName: string;
-  readonly owner: RemotePortfolioOwnerV1 | Readonly<Record<string, never>>;
+  readonly owner: RemotePortfolioOwnerV2 | Readonly<Record<string, never>>;
   readonly reserverActive: boolean;
 }
 interface Input {

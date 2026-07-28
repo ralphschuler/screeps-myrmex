@@ -1,3 +1,5 @@
+import { parseRemoteAccountingRecords } from "./accounting";
+import type { RemoteAccountingRecordV1 } from "./accounting-contracts";
 import {
   REMOTE_PORTFOLIO_LIMITS,
   REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION,
@@ -5,18 +7,20 @@ import {
   REMOTE_PORTFOLIO_STATES,
   type RemoteCapacityCommitment,
   type RemoteForecast,
-  type RemotePortfolioOwnerV1,
+  type RemotePortfolioOwnerV2,
   type RemotePortfolioRecord,
 } from "./contracts";
 
-export type RemotePortfolioOwnerStatus = "initialized" | "ready" | "malformed" | "future-schema";
+export type RemotePortfolioOwnerStatus =
+  "initialized" | "migrated" | "ready" | "malformed" | "future-schema";
 
 export interface RemotePortfolioOwnerResolution {
   readonly status: RemotePortfolioOwnerStatus;
-  readonly owner: RemotePortfolioOwnerV1 | null;
+  readonly owner: RemotePortfolioOwnerV2 | null;
 }
 
-const OWNER_KEYS = ["schemaVersion", "revision", "records"] as const;
+const OWNER_V1_KEYS = ["schemaVersion", "revision", "records"] as const;
+const OWNER_V2_KEYS = ["schemaVersion", "revision", "records", "accounting"] as const;
 const RECORD_KEYS = [
   "roomName",
   "donorColonyId",
@@ -47,6 +51,15 @@ export function resolveRemotePortfolioOwner(value: unknown): RemotePortfolioOwne
     ) {
       return freeze({ status: "future-schema", owner: null });
     }
+    if (value.schemaVersion === 1) {
+      const records = parseRecords(value, OWNER_V1_KEYS);
+      return records === null
+        ? freeze({ status: "malformed", owner: null })
+        : freeze({
+            status: "migrated",
+            owner: canonicalRemotePortfolioOwner(value.revision as number, records, []),
+          });
+    }
     const owner = parseOwner(value);
     return owner === null
       ? freeze({ status: "malformed", owner: null })
@@ -56,36 +69,51 @@ export function resolveRemotePortfolioOwner(value: unknown): RemotePortfolioOwne
   }
 }
 
-export function emptyRemotePortfolioOwner(): RemotePortfolioOwnerV1 {
+export function emptyRemotePortfolioOwner(): RemotePortfolioOwnerV2 {
   return deepFreeze({
     schemaVersion: REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION,
     revision: 0,
     records: [],
+    accounting: [],
   });
 }
 
 export function canonicalRemotePortfolioOwner(
   revision: number,
   records: readonly RemotePortfolioRecord[],
-): RemotePortfolioOwnerV1 {
+  accounting: readonly RemoteAccountingRecordV1[],
+): RemotePortfolioOwnerV2 {
   return deepFreeze({
     schemaVersion: REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION,
     revision,
     records: [...records].sort((left, right) => compare(left.roomName, right.roomName)),
+    accounting: [...accounting].sort((left, right) => compare(left.roomName, right.roomName)),
   });
 }
 
 export function remotePortfolioOwnerEquals(
-  left: RemotePortfolioOwnerV1,
-  right: RemotePortfolioOwnerV1,
+  left: RemotePortfolioOwnerV2,
+  right: RemotePortfolioOwnerV2,
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function parseOwner(value: Readonly<Record<string, unknown>>): RemotePortfolioOwnerV1 | null {
+function parseOwner(value: Readonly<Record<string, unknown>>): RemotePortfolioOwnerV2 | null {
+  const records = parseRecords(value, OWNER_V2_KEYS);
+  const accounting = parseRemoteAccountingRecords(value.accounting);
+  return value.schemaVersion !== REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION ||
+    records === null ||
+    accounting === null
+    ? null
+    : canonicalRemotePortfolioOwner(value.revision as number, records, accounting);
+}
+
+function parseRecords(
+  value: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): readonly RemotePortfolioRecord[] | null {
   if (
-    !hasExactKeys(value, OWNER_KEYS) ||
-    value.schemaVersion !== REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION ||
+    !hasExactKeys(value, keys) ||
     !nonnegative(value.revision) ||
     !Array.isArray(value.records) ||
     value.records.length > REMOTE_PORTFOLIO_LIMITS.maximumRecords
@@ -98,8 +126,7 @@ function parseOwner(value: Readonly<Record<string, unknown>>): RemotePortfolioOw
     if (record === null) return null;
     records.push(record);
   }
-  if (!strictlySorted(records.map(({ roomName }) => roomName))) return null;
-  return canonicalRemotePortfolioOwner(value.revision, records);
+  return strictlySorted(records.map(({ roomName }) => roomName)) ? records : null;
 }
 
 function parseRecord(value: unknown): RemotePortfolioRecord | null {

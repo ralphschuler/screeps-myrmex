@@ -1,7 +1,11 @@
 import type { MemoryManager, MemoryStageResult } from "../state/memory";
+import { reduceRemoteAccounting } from "./accounting";
+import type { RemoteAccountingResult, RemoteProfitabilitySummary } from "./accounting-contracts";
+import { DEFAULT_REMOTE_ACCOUNTING_POLICY_V1 } from "./accounting-policy";
 import {
   REMOTE_COST_COMPONENTS,
   REMOTE_PORTFOLIO_LIMITS,
+  REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION,
   type RemoteCandidateEvidence,
   type RemoteCapacityCommitment,
   type RemoteForecast,
@@ -9,7 +13,7 @@ import {
   type RemotePortfolioInput,
   type RemotePortfolioMetrics,
   type RemotePortfolioObjective,
-  type RemotePortfolioOwnerV1,
+  type RemotePortfolioOwnerV2,
   type RemotePortfolioPolicyV1,
   type RemotePortfolioReason,
   type RemotePortfolioRecord,
@@ -59,6 +63,27 @@ export class RemotePortfolio {
       current.records.some(({ lastEvaluatedTick }) => lastEvaluatedTick > input.tick)
     )
       return preservedResult("invalid-input");
+    const lifecycleByRoom = new Map(current.records.map((record) => [record.roomName, record]));
+    const accounting = reduceRemoteAccounting({
+      tick: input.tick,
+      previous: current.accounting,
+      observations: input.accounting ?? [],
+      policy: input.accountingPolicy ?? DEFAULT_REMOTE_ACCOUNTING_POLICY_V1,
+      protectedRoomNames: current.accounting.flatMap(({ roomName }) => {
+        const lifecycle = lifecycleByRoom.get(roomName);
+        return lifecycle !== undefined &&
+          lifecycle.state !== "candidate" &&
+          lifecycle.state !== "retired"
+          ? [roomName]
+          : [];
+      }),
+    });
+    if (accounting.status !== "ready") {
+      return preservedResult(accounting.status);
+    }
+    const accountingByRoom = new Map(
+      accounting.summaries.map((summary) => [summary.roomName, summary]),
+    );
     if (input.candidates.length > REMOTE_PORTFOLIO_LIMITS.maximumCandidatesPerTick) {
       return preservedResult("limit-exceeded");
     }
@@ -78,7 +103,13 @@ export class RemotePortfolio {
       const forecast = forecastFor(candidate);
       if (forecast === null) return preservedResult("invalid-input");
       evaluations.push(
-        evaluate(candidate, forecast, input, previousByRoom.get(candidate.roomName)),
+        evaluate(
+          candidate,
+          forecast,
+          input,
+          previousByRoom.get(candidate.roomName),
+          accountingByRoom.get(candidate.roomName),
+        ),
       );
     }
 
@@ -104,7 +135,7 @@ export class RemotePortfolio {
       }
     }
 
-    const bounded = fitRecordBound(nextRecords, current.revision + 1);
+    const bounded = fitRecordBound(nextRecords, current.revision + 1, accounting.records);
     if (bounded === null) return preservedResult("memory-budget");
     const transitions = bounded.filter((record) => {
       const previous = previousByRoom.get(record.roomName);
@@ -114,14 +145,18 @@ export class RemotePortfolio {
       return preservedResult("limit-exceeded");
     }
 
-    const provisional = canonicalRemotePortfolioOwner(current.revision + 1, bounded);
-    const initialized = resolved.status === "initialized";
+    const provisional = canonicalRemotePortfolioOwner(
+      current.revision + 1,
+      bounded,
+      accounting.records,
+    );
+    const initialized = resolved.status === "initialized" || resolved.status === "migrated";
     const changed = initialized || !sameRecords(current, provisional);
     const owner = changed ? provisional : current;
     if (JSON.stringify(owner).length > REMOTE_PORTFOLIO_LIMITS.maximumOwnerCodeUnits) {
       return preservedResult("memory-budget");
     }
-    return readyResult(current, owner, changed, evaluations);
+    return readyResult(current, owner, changed, evaluations, accounting);
   }
 
   /** Stages this authority's complete validated owner; only MemoryManager commits the root. */
@@ -140,6 +175,7 @@ function evaluate(
   forecast: RemoteForecast,
   input: RemotePortfolioInput,
   previous: RemotePortfolioRecord | undefined,
+  accounting: RemoteProfitabilitySummary | undefined,
 ): CandidateEvaluation {
   if (previous?.state === "retired") {
     return {
@@ -187,6 +223,14 @@ function evaluate(
   )
     reason = "threat-risk";
   else if (forecast.profit < input.policy.minimumProfitMilliPerTick) reason = "negative-value";
+  else if (
+    accounting?.donorColonyId !== undefined &&
+    accounting.donorColonyId !== candidate.donorColonyId
+  )
+    reason = "accounting-incomplete";
+  else if (accounting?.reason === "stale") reason = "accounting-stale";
+  else if (accounting?.reason === "incomplete") reason = "accounting-incomplete";
+  else if (accounting?.reason === "loss-making") reason = "realized-negative";
   else if (
     previous !== undefined &&
     (previous.state === "suspended" || previous.state === "threatened") &&
@@ -477,6 +521,7 @@ function forecastFor(candidate: RemoteCandidateEvidence): RemoteForecast | null 
 function fitRecordBound(
   records: readonly RemotePortfolioRecord[],
   revision: number,
+  accounting: RemotePortfolioOwnerV2["accounting"],
 ): readonly RemotePortfolioRecord[] | null {
   let canonical = [...records].sort((left, right) => compare(left.roomName, right.roomName));
   const evictable = [
@@ -498,7 +543,8 @@ function fitRecordBound(
   let evictIndex = 0;
   while (
     canonical.length > REMOTE_PORTFOLIO_LIMITS.maximumRecords ||
-    encodedOwnerLength(revision, canonical) > REMOTE_PORTFOLIO_LIMITS.maximumOwnerCodeUnits
+    encodedOwnerLength(revision, canonical, accounting) >
+      REMOTE_PORTFOLIO_LIMITS.maximumOwnerCodeUnits
   ) {
     const retired = evictable[evictIndex];
     if (retired === undefined) return null;
@@ -508,15 +554,25 @@ function fitRecordBound(
   return canonical;
 }
 
-function encodedOwnerLength(revision: number, records: readonly RemotePortfolioRecord[]): number {
-  return JSON.stringify({ schemaVersion: 1, revision, records }).length;
+function encodedOwnerLength(
+  revision: number,
+  records: readonly RemotePortfolioRecord[],
+  accounting: RemotePortfolioOwnerV2["accounting"],
+): number {
+  return JSON.stringify({
+    schemaVersion: REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION,
+    revision,
+    records,
+    accounting,
+  }).length;
 }
 
 function readyResult(
-  previous: RemotePortfolioOwnerV1,
-  owner: RemotePortfolioOwnerV1,
+  previous: RemotePortfolioOwnerV2,
+  owner: RemotePortfolioOwnerV2,
   changed: boolean,
   evaluations: readonly CandidateEvaluation[],
+  accounting: RemoteAccountingResult,
 ): RemotePortfolioResult {
   const objectives: RemotePortfolioObjective[] = owner.records.flatMap((record) =>
     record.commitment === null ||
@@ -543,6 +599,7 @@ function readyResult(
     status: "ready",
     changed,
     owner,
+    accounting,
     objectives,
     dispositions,
     metrics: metrics(previous, owner, evaluations),
@@ -550,8 +607,8 @@ function readyResult(
 }
 
 function metrics(
-  previous: RemotePortfolioOwnerV1,
-  owner: RemotePortfolioOwnerV1,
+  previous: RemotePortfolioOwnerV2,
+  owner: RemotePortfolioOwnerV2,
   evaluations: readonly CandidateEvaluation[],
 ): RemotePortfolioMetrics {
   const prior = new Map(previous.records.map((record) => [record.roomName, record]));
@@ -585,7 +642,8 @@ function validInput(input: RemotePortfolioInput): boolean {
     nonnegative(input.tick) &&
     validCapacity(input.capacity) &&
     validPolicy(input.policy) &&
-    Array.isArray(input.candidates)
+    Array.isArray(input.candidates) &&
+    (input.accounting === undefined || Array.isArray(input.accounting))
   );
 }
 
@@ -729,10 +787,10 @@ function validCommitment(value: unknown): value is RemoteCapacityCommitment {
   );
 }
 
-function sameRecords(left: RemotePortfolioOwnerV1, right: RemotePortfolioOwnerV1): boolean {
+function sameRecords(left: RemotePortfolioOwnerV2, right: RemotePortfolioOwnerV2): boolean {
   return remotePortfolioOwnerEquals(left, { ...right, revision: left.revision });
 }
-function countState(owner: RemotePortfolioOwnerV1, state: RemotePortfolioRecord["state"]): number {
+function countState(owner: RemotePortfolioOwnerV2, state: RemotePortfolioRecord["state"]): number {
   return owner.records.filter((record) => record.state === state).length;
 }
 function safeAdd(left: number, right: number): number | null {
@@ -789,10 +847,37 @@ function emptyResult(
     status,
     changed: false,
     owner: null,
+    accounting: emptyAccounting(status),
     objectives: [],
     dispositions: [],
     metrics: emptyMetrics(),
   });
+}
+function emptyAccounting(
+  status: Exclude<RemotePortfolioResult["status"], "ready">,
+): RemoteAccountingResult {
+  return {
+    status: status === "limit-exceeded" ? "limit-exceeded" : "invalid-input",
+    changed: false,
+    records: [],
+    summaries: [],
+    metrics: {
+      observed: 0,
+      tracked: 0,
+      warmingUp: 0,
+      profitable: 0,
+      marginal: 0,
+      lossMaking: 0,
+      stale: 0,
+      incomplete: 0,
+      revenueMilli: 0,
+      costMilli: 0,
+      profitMilli: 0,
+      harvestedEnergy: 0,
+      deliveredEnergy: 0,
+      downtimeTicks: 0,
+    },
+  };
 }
 function emptyMetrics(): RemotePortfolioMetrics {
   return {

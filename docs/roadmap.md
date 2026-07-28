@@ -224,7 +224,10 @@ authorized without an explicit maintainer resolution of this gap.
   [`phase3-safety-evidence.md`](phase3-safety-evidence.md). The request-driven projection reuses
   relation, intel, route, portfolio, contract, logistics, lease-agent, movement, and executor
   authorities; owned-room defense remains later work.
-- Realized per-remote full-cost profitability and outcome telemetry remain issue #62.
+- Bounded realized per-remote full-cost accounting, forecast comparison, and loss/staleness feedback
+  are tracked by [issue #62](https://github.com/ralphschuler/screeps-myrmex/issues/62) and
+  [`phase3-profitability-evidence.md`](phase3-profitability-evidence.md). Compact rolling evidence
+  remains owned by RemotePortfolio; observer telemetry does not become a strategy authority.
 
 **Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.
 

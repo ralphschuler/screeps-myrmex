@@ -19,11 +19,12 @@ command execution, and atomic command-to-budget settlement. Phase 3 adds the typ
 substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
 boundary, deterministic threat-aware room-route cost/travel estimates, one command-free full-cost
 `RemotePortfolio`, just-in-time budgeted remote controller reservation, request-driven budgeted
-remote source mining/capital plus loss-aware routed remote hauling, and threat-qualified
-leased-actor remote evacuation through existing relation, logistics, contract, spawn, movement,
-action, and construction-site authorities. Systems assigned to later roadmap gates remain normative
-targets. Their absence is an implementation task, not permission to invent a different boundary. If
-a requirement cannot fit this architecture, write an ADR before changing the architecture.
+remote source mining/capital plus loss-aware routed remote hauling, threat-qualified leased-actor
+remote evacuation, and bounded realized-profit accounting with portfolio-owned loss/staleness
+feedback through existing relation, logistics, contract, spawn, movement, action, and
+construction-site authorities. Systems assigned to later roadmap gates remain normative targets.
+Their absence is an implementation task, not permission to invent a different boundary. If a
+requirement cannot fit this architecture, write an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -359,17 +360,21 @@ reconstructible heap cache. Every cache hit revalidates current route-chain evid
 budget, reservation, persistent owner, route target, tile path, contract, intent, or command.
 [ADR 0081](adr/0081-threat-aware-route-planner.md) records this boundary.
 
-`RemotePortfolio` is the sole persistent remote lifecycle, full-cost forecast, ranking, and abstract
-portfolio-capacity authority. It consumes only current/fresh complete IntelService results, ready
-RoutePlanner results, and detached controller, donor, and threat evidence from their owning systems.
-Observed source capacity over the official regeneration interval supplies revenue; nine explicit
-latency/spawn/body/hauling/reservation/road/repair/loss/CPU rates supply cost. One externally
-survival-preempted energy/spawn-time/CPU/Memory/count envelope admits every commitment dimension or
-none. Owner-local V1 retains at most 32 canonical records in 16,384 code units and moves through
-`candidate`, `probing`, `active`, `threatened`, `suspended`, `cooldown`, or `retired`. It emits
-immutable objectives and fixed metrics only; no colony grant, contract, intent, command, player
-classification, or realized-profit history. [ADR 0082](adr/0082-remote-portfolio-authority.md)
-records this boundary.
+`RemotePortfolio` is the sole persistent remote lifecycle, full-cost forecast, realized-accounting,
+ranking, and abstract portfolio-capacity authority. It consumes only current/fresh complete
+IntelService results, ready RoutePlanner results, detached controller/donor/threat evidence, and
+settled disjoint remote receipts from their owning systems. Observed source capacity over the
+official regeneration interval supplies forecast revenue; nine explicit
+latency/spawn/body/hauling/reservation/road/repair/loss/CPU rates supply forecast cost. One
+externally survival-preempted energy/spawn-time/CPU/Memory/count envelope admits every commitment
+dimension or none. Owner-local V2 retains at most 32 canonical lifecycle records plus eight compact
+50-tick accounting rings in 32,768 code units and moves through `candidate`, `probing`, `active`,
+`threatened`, `suspended`, `cooldown`, or `retired`. Qualified realized loss, stale accounting, or
+incomplete accounting can release that existing commitment; only the portfolio changes lifecycle. It
+emits immutable objectives, bounded per-remote summaries, and fixed aggregate metrics only; no
+colony grant, contract, intent, command, player classification, or telemetry strategy owner.
+[ADR 0082](adr/0082-remote-portfolio-authority.md) records initial forecast admission, and
+[ADR 0088](adr/0088-realized-remote-profitability-accounting.md) records realized accounting.
 
 `RemoteReservationPlanner` is the sole active-portfolio-to-controller-reservation projection. It is
 pure and ownerless: one active profitable objective plus current/fresh complete controller evidence,
@@ -1070,7 +1075,7 @@ The persistent root is divided by authority, not convenience:
 | `colonies`   | `ColonyDirector`         | per-colony state machines, reserves, layout revision, local policy |
 | `contracts`  | `ContractLedger`         | persistent work contracts, leases, deadlines, outcomes             |
 | `diplomacy`  | `DiplomacyLedger`        | observed evidence, confidence, and optional reputation state       |
-| `remotes`    | `RemotePortfolio`        | candidates, active commitments, ledgers, suspension state          |
+| `remotes`    | `RemotePortfolio`        | candidates, commitments, compact profit windows, suspension state  |
 | `expansion`  | `ExpansionDirector`      | claim candidates and bootstrap operation state                     |
 | `operations` | `OperationsController`   | authorized military and strategic operation state machines         |
 | `industry`   | `IndustryDirector`       | stock targets, production commitments, market risk limits          |
@@ -2667,14 +2672,18 @@ negative value, or threat releases the complete abstract commitment. A threat en
 safe evidence must pass the source-policy suspension and cooldown probes before resumption. Fresh
 source disappearance or objective expiry retires the record.
 
-Owner-local schema V1 stores at most 32 records and exact latest forecasts, not realized history.
-Exact `{}` initializes it; malformed/future/future-tick evidence authorizes no objective. Same-tick
-replay is idempotent, only unfunded candidates and retired records are evictable under the
-16,384-code-unit ceiling, and a heap reset changes no decision. `RemotePortfolio.stage` is the only
-remotes-owner write boundary. Runtime composition remains request-driven until autonomous candidate
-and post-survival donor-grant composition is scheduled. Later remote planners emit normal contracts;
-they do not fork colony budgets, economy, spawn, movement, diplomacy, threat, defense, or command
-authorities. Exact evidence is in [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md).
+Owner-local schema V2 stores at most 32 lifecycle records and eight compact realized-accounting
+rings under one 32,768-code-unit ceiling. V1 migrates with byte-equivalent lifecycle records and
+empty accounting. Exact `{}` initializes V2; malformed/future/future-tick evidence authorizes no
+objective. Same-tick replay is idempotent; lifecycle records and accounting rings belonging to
+active, threatened, suspended, or cooling records are not evictable, while candidate and retired
+evidence may yield under bounded pressure. A heap reset changes no decision. `RemotePortfolio.stage`
+is the only remotes-owner write boundary. Runtime composition remains request-driven until
+autonomous candidate, settled accounting receipt, and post-survival donor-grant composition is
+scheduled. Later remote planners emit normal contracts; they do not fork colony budgets, economy,
+spawn, movement, diplomacy, threat, defense, telemetry, or command authorities. Forecast evidence is
+in [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md), and realized evidence is in
+[`phase3-profitability-evidence.md`](phase3-profitability-evidence.md).
 
 Issue #58's `RemoteReservationPlanner` consumes only active objectives paired with their exact
 candidate evidence. It revalidates current/fresh complete intel, a ready route, controller
@@ -2721,6 +2730,16 @@ already following that return stays Logistics-owned. Donor arrival, actor loss, 
 route produces one ordinary suspension; arrival and route failure also hold same-tick lease
 execution closed until Reconcile. Exact evidence is in
 [`phase3-safety-evidence.md`](phase3-safety-evidence.md).
+
+Issue #62 adds a pure portfolio-owned reducer over settled remote receipts. Delivered energy is the
+only realized revenue; harvested energy reports utilization. Spawn energy/time, travel, reservation,
+construction, repair, CPU, creep loss, and downtime remain distinct attributed costs under explicit
+source shadow prices. At most eight current observations update eight compact 50-sample rings.
+Qualified windows expose forecast variance, confidence, utilization, and `profitable`, `marginal`,
+`loss-making`, `stale`, `incomplete`, or `warming-up`; loss/stale/incomplete evidence feeds only the
+existing portfolio suspension path. Threat and mechanics blockers retain precedence. Telemetry may
+observe bounded summaries but cannot authorize work. Exact evidence is in
+[`phase3-profitability-evidence.md`](phase3-profitability-evidence.md).
 
 ### 12.9 ExpansionDirector
 
@@ -3204,6 +3223,12 @@ Required architecture assertions include:
   energy/spawn/CPU/Memory/count atomically, releases all dimensions under pressure, and fails closed
   on stale/partial/missing intel, route loss, donor/controller/threat denial, non-positive value,
   timeout, malformed/future state, or owner/input bounds;
+- realized remote accounting accepts only bounded settled disjoint receipts, counts delivered energy
+  once as revenue, keeps harvest as utilization, attributes spawn energy/time, travel, reservation,
+  construction, repair, CPU, creep loss, and downtime separately, and preserves compact rolling
+  windows across V1-to-V2 migration, same-tick replay, reorder, and heap reset; qualified loss,
+  staleness, or incompleteness releases the existing portfolio commitment with a stable reason,
+  while malformed/conflicting/over-cap input writes no prefix and creates no telemetry authority;
 - route selection is deterministic across evidence reorder and heap reset; closed/protected,
   stale/partial, unsafe, over-budget, and disconnected evidence stays typed and fail-closed;
 - remote reservation starts only from one active positive portfolio objective, current/fresh
