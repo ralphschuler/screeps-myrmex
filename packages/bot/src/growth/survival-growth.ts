@@ -91,12 +91,19 @@ export function planSurvivalGrowth(
       config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy
     )
       continue;
-    for (const site of sites.slice(0, config.policy.growth.maximumActiveContractsPerRoom)) {
+    const reserveRcl2ControllerSlot =
+      !urgency &&
+      controller.level === 2 &&
+      sites.length > 0 &&
+      config.policy.growth.maximumActiveContractsPerRoom >= 2;
+    const buildLimit =
+      config.policy.growth.maximumActiveContractsPerRoom - (reserveRcl2ControllerSlot ? 1 : 0);
+    for (const site of sites.slice(0, buildLimit)) {
       candidates.push(
         buildCandidate(room.name, site.id, site.pos, siteRank(site.structureType), config),
       );
     }
-    if (!urgency && sites.length === 0) {
+    if (!urgency && (sites.length === 0 || reserveRcl2ControllerSlot)) {
       candidates.push(
         upgradeCandidate(room.name, controller.id, controller.pos, "optional-growth", config),
       );

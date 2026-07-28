@@ -32,13 +32,18 @@ Current-HEAD compatibility is separate and executable:
   variant issues one `StructureFactory.produce` and one `StructurePowerSpawn.processPower`,
   reconstructs Memory in the reset variant, and observes exact `[40, 100, 20]` and `[50, 1, 1]`
   settlement.
+- `spawn-only-rcl2-progression-runtime.test.ts` runs up to 1,400 consecutive production `runTick`
+  calls from one spawn, zero extensions/sites, and 300 capacity. It observes legal layout site
+  commands, deferred movement, full-cost extension construction, capacity above 300, controller
+  progress, constrained/surplus CPU, path recovery, reset/reorder, workforce loss, and replacement
+  useful work with zero kernel faults.
 - `phase2-gate-evidence.test.mjs` rebuilds the current deployable CJS bundle, rejects Scenario Kit
   inputs, evaluates it in a clean VM, invokes its exported `loop()`, and observes tick-100
   telemetry.
 
-That is 30 production `runTick` calls across commandful paths plus one exact-bundle entrypoint call.
-It is bounded runtime-path evidence, not a complete healthy RCL8 soak or MMO timing evidence.
-Scenario Kit remains development-only and absent from the bundle.
+These are bounded production runtime-path witnesses plus one exact-bundle entrypoint call. They are
+not a complete healthy RCL8 soak or MMO timing evidence. Scenario Kit remains development-only and
+absent from the bundle.
 
 ## Acceptance status and continuation override
 
@@ -112,7 +117,8 @@ state are unchanged.
 ## Remaining risks
 
 - No fixture currently executes a complete healthy RCL8 colony through a production `runTick` soak.
-  The RCL8 command witness explicitly remains `developing` with a layout-domain blocker.
+  The new spawn-only RCL2 witness closes the first-extension movement/progression gap only; the RCL8
+  command witness explicitly remains `developing` with a layout-domain blocker.
 - Deterministic fixtures cannot reproduce MMO scheduling jitter, shard outages, or hostile strategy.
 - CPU and bucket values in the long-horizon result are analytical assignments, not measured
   production or MMO CPU.

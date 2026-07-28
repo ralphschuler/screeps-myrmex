@@ -422,6 +422,7 @@ describe("RemoteMiningPlanner", () => {
       availableEnergy: 1_000,
       colonyId: "W1N1",
       committedDemandIds: [],
+      controllerLevel: 8,
       controllerRisk: false,
       cpuMode: "normal",
       funded,

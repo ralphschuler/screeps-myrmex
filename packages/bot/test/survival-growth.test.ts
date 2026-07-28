@@ -585,9 +585,17 @@ describe("survival growth", () => {
       ),
     ).toMatchObject([
       {
+        action: "build",
         reasonCode: "optional-growth",
         budgetRequest: {
           issuer: "growth/W1N1/build/site-extension",
+        },
+      },
+      {
+        action: "upgrade-controller",
+        reasonCode: "optional-growth",
+        budgetRequest: {
+          issuer: "growth/W1N1/upgrade-controller/controller-a",
         },
       },
     ]);
@@ -700,7 +708,10 @@ describe("survival growth", () => {
       normalWorld,
       config,
     );
-    expect(normal.requests).toMatchObject([{ issuer: "growth/W1N1/build/site-extension" }]);
+    expect(normal.requests).toMatchObject([
+      { issuer: "growth/W1N1/build/site-extension" },
+      { issuer: "growth/W1N1/upgrade-controller/controller-a" },
+    ]);
     expect(normal.transitions).toEqual([
       {
         contractId: "bootstrap-RCL2-extension",

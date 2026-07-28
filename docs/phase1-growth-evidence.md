@@ -60,8 +60,15 @@ site-placement authority.
   a production row in which a funded but unleased V2 static contract cannot suppress the only mobile
   worker: that worker harvests and progresses the first extension while all 300 spawn energy remains
   protected. A second row reaches an exact static takeover, removes that miner, enters constrained
-  CPU, and restores one mobile harvest without duplicate source commands. Full layout-to-site,
-  multi-tile movement, capacity-400, and RCL3 progression evidence remains issue #476.
+  CPU, and restores one mobile harvest without duplicate source commands. Issue #476 closes the
+  remaining production chain in `spawn-only-rcl2-progression-runtime.test.ts`: a zero-site,
+  zero-extension 300-capacity room uses the production layout executor, exact PathFinder adapter,
+  deferred next-tick movement, ordinary contracts/leases/actions, and full 3,000-energy extension
+  costs to exceed 400 capacity and resume controller progress. The same bounded row injects surplus
+  and constrained CPU, unavailable/recovered paths, module/Memory reset, reordered observations,
+  complete workforce loss, and replacement useful work without duplicate site commands or kernel
+  faults. A newly considered full carry-bearing actor consumes its cargo before V2/V5 drop-mining;
+  an incumbent drop miner retains continuity.
 - `survival-flow-runtime.test.ts` composes the recovery and bootstrap paths from an empty Memory
   RCL1 world with one 300-capacity spawn: it accounts controller spend separately from room and
   creep energy, reaches RCL2 by tick 1,599 (a 1,500-tick replay deadline), and asserts the spawn

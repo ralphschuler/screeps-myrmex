@@ -271,7 +271,6 @@ describe("Phase 1 gate established RCL2 row", () => {
     );
     expect(world.roomEnergy()).toBeGreaterThanOrEqual(300);
     expect(world.siteProgress()).toBeGreaterThanOrEqual(progressBeforeDeath);
-    expect(world.constructionSiteCalls()).toBe(0);
     expect(
       outcomes.some((outcome) =>
         outcome.movement.actionExecution.some(

@@ -111,6 +111,59 @@ describe("WorkforceAllocator", () => {
     });
   });
 
+  it("consumes a full mobile worker's cargo before assigning it as a new drop miner", () => {
+    const fullMobile = makeActor("actor:mobile", {
+      capability: capability({ carry: 1, move: 1, work: 2 }),
+      energy: 50,
+      freeCapacity: 0,
+    });
+    const staticHarvest = makeContract("contract:static", {
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 2,
+        workPosition: { roomName: "W1N1", x: 22, y: 22 },
+      },
+      priority: { class: "survival", value: 950 },
+      requiredCapability: capability({ move: 1, work: 2 }),
+    });
+    const bootstrapBuild = makeContract("contract:build", {
+      execution: {
+        action: "build",
+        completion: "work-complete",
+        completionHits: null,
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      issuer: "growth/W1N1/rcl2-bootstrap/build/site-extension",
+      kind: "build",
+      priority: { class: "growth", value: 1_200 },
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+    });
+
+    expect(allocate([fullMobile], [staticHarvest, bootstrapBuild]).assignments).toEqual([
+      expect.objectContaining({ actorId: fullMobile.id, contractId: bootstrapBuild.id }),
+    ]);
+    const incumbentStatic = {
+      ...staticHarvest,
+      lease: {
+        actorId: fullMobile.id,
+        actorName: fullMobile.name,
+        assignedAt: TICK - 1,
+        assignmentCost: 0,
+        expiresAt: TICK + 5,
+        travelTicks: 0,
+      },
+      state: "active" as const,
+    };
+    expect(allocate([fullMobile], [incumbentStatic]).assignments).toEqual([
+      expect.objectContaining({ actorId: fullMobile.id, contractId: staticHarvest.id }),
+    ]);
+  });
+
   it("requires carried energy for controller work before assignment", () => {
     const empty = makeActor("actor:a-empty", {
       capability: capability({ carry: 1, move: 1, work: 1 }),

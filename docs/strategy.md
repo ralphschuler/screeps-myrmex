@@ -414,14 +414,16 @@ issuance coordinate advances exactly once, while `ContractLedger` atomically rep
 source and funding binding with its next sequence; the current-tick predecessor remains executable
 and no duplicate or durable zero-contract state is allowed. Funding is not takeover: mobile survival
 harvesting remains available until one matching assigned or active static lease has a current viable
-miner on the exact committed work tile. The handoff suppresses competing mobile harvest execution
-and suspends rather than retires its demand. Miner death, lease or path suspension, blocked
-replacement, and constrained CPU restore that fallback through the existing operational contract
-path. Zero-`CARRY` V2 miners remain valid because harvest overflow drops on their tile; mobile V1
-harvesters still require free capacity. Useful `WORK` is capped by source regeneration throughput,
-replacement remains ahead of optional growth, and missing or unavailable offload infrastructure
-degrades to dropped energy rather than stalling extraction. Container state is evidence only for #47
-hauling and #49 repair, while a nearby link is only a candidate until #48 authorizes link commands.
+miner on the exact committed work tile. A full carry-bearing worker cannot newly enter that static
+lease and strand its bootstrap cargo; a matching incumbent may continue deliberate overflow drops.
+The handoff suppresses competing mobile harvest execution and suspends rather than retires its
+demand. Miner death, lease or path suspension, blocked replacement, and constrained CPU restore that
+fallback through the existing operational contract path. Zero-`CARRY` V2 miners remain valid because
+harvest overflow drops on their tile; mobile V1 harvesters still require free capacity. Useful
+`WORK` is capped by source regeneration throughput, replacement remains ahead of optional growth,
+and missing or unavailable offload infrastructure degrades to dropped energy rather than stalling
+extraction. Container state is evidence only for #47 hauling and #49 repair, while a nearby link is
+only a candidate until #48 authorizes link commands.
 
 Logistics uses one canonical resource-flow admission model across fresh visible owned rooms. Spawn
 and extension supply, survival towers, and controller supply are mandatory before optional storage
@@ -458,9 +460,12 @@ MYRMEX may therefore fund only currently observed owned extension sites when one
 keeps the full spawn reserve available, uses the existing optional-growth posture and CPU gates, and
 survives temporary worker/cargo loss without duplicate issuer coordinates. Site loss, ownership or
 RCL drift, active-spawn drift, or sufficient capacity ends the exception; normal surplus-based
-growth then resumes. Layout placement, contracts, workforce, movement, action arbitration, and
-execution retain their sole authorities. [ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md)
-records the boundary.
+growth then resumes. At 400 capacity, one of the existing two RCL2 optional-growth slots remains
+available for controller progress while one slot retains construction. Both still need independent
+funding and actors, so the protected reserve and construction continuity remain intact. `surplus`
+CPU is normal-work capacity here; only lower CPU modes preempt it. Layout placement, contracts,
+workforce, movement, action arbitration, and execution retain their sole authorities.
+[ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md) records the boundary.
 
 Spawn decisions use one deterministic broker across every eligible local spawn. Emergency recovery
 precedes replacement, which precedes upgrading and construction; stable deadline, body-cost, and

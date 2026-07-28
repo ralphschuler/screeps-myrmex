@@ -56,6 +56,7 @@ export interface ColonyPopulationPolicyInput {
   readonly availableEnergy: number;
   readonly colonyId: string;
   readonly committedDemandIds: readonly string[];
+  readonly controllerLevel: number | null;
   readonly controllerRisk: boolean | null;
   readonly cpuMode: CpuMode;
   readonly funded: ContractPopulationView;
@@ -312,7 +313,8 @@ function preemption(
   if (input.activeThreat === true || input.state === "threatened") return "threat-preemption";
   if (input.state === "recovering") return "recovery-preemption";
   if (input.state === "bootstrapping") return "bootstrap-preemption";
-  if (input.cpuMode !== "normal") return "constrained-cpu-preemption";
+  if (input.cpuMode !== "normal" && !(input.cpuMode === "surplus" && input.controllerLevel === 2))
+    return "constrained-cpu-preemption";
   if (input.controllerRisk !== false) return "controller-downgrade-preemption";
   if (input.spawnUtilizationBasisPoints >= POPULATION_SPAWN_SATURATION_BASIS_POINTS)
     return "spawn-saturated";

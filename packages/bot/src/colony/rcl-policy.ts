@@ -129,7 +129,8 @@ function reason(
   if (o.activeThreat === true || o.state === "threatened") return "threat-preemption";
   if (o.state === "recovering") return "recovery-preemption";
   if (o.state === "bootstrapping") return "bootstrap-preemption";
-  if (o.cpuMode !== "normal") return "constrained-cpu-preemption";
+  if (o.cpuMode !== "normal" && !(o.cpuMode === "surplus" && policyRow.level === 2))
+    return "constrained-cpu-preemption";
   if (o.controllerRisk !== false) return "controller-downgrade-risk";
   if (reserve !== "restored") return "protected-spawn-reserve-unrestored";
   if (
