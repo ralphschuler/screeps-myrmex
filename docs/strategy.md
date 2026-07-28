@@ -601,6 +601,20 @@ abstract capacity dimension. Marginal positive work remains explicit instead of 
 loss. Threat and owned-colony survival still preempt accounting. Missing, partial, conflicting, or
 over-cap receipts cannot invent delivery, erase loss, or authorize work.
 
+Production Phase 3 composition now evaluates only bounded adjacent or retained candidates and admits
+capacity only after a donor has an owned controller, active spawn, legal `WORK`/`CARRY`/`MOVE`
+workforce, post-reserve stored energy, and scheduler-derived CPU headroom. One reservation contract
+creates one exclusive population demand. If threat, CPU, route, vision, value, source, or donor
+workforce evidence removes the current budget request, same-tick population planning removes that
+spawn demand before reconciliation. Realized production feedback advances only on exact
+owned-sink-delivery or actor-loss cycles: five settlements inside a 1,000-tick window qualify value,
+250 ticks without one becomes stale, and each cycle includes route/replacement travel, reserved CPU
+over the cycle, and lifetime-amortized energy/spawn time for all current remote bodies. In-flight
+zero-delivery ticks therefore neither invent revenue nor force premature abandonment. The 90-tick
+warm/reset/reordered gate keeps only the profitable remote active after those failures and records
+zero kernel faults. Phase 3 is complete, but the Phase-3-only continuation override still forbids
+Phase 4 while the Phase 2 production RCL8 soak is unproved.
+
 Remote and claim decisions therefore use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

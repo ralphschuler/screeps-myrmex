@@ -116,24 +116,25 @@ export class ColonyPopulationPolicy {
         load.measuredWorkTicks + Math.min(load.backlogWorkTicks, POPULATION_PLANNING_HORIZON_TICKS),
       );
       if (productive === 0) continue;
-      const roundTrip =
-        load.mode === "stationary" || load.mode === "logistics"
-          ? 0
-          : Math.min(
-              load.travelTicks * 2,
-              POPULATION_PLANNING_HORIZON_TICKS,
-              MAX_POPULATION_TRAVEL_TICKS * 2,
-            );
+      const singleCopy =
+        load.mode === "exclusive" || load.mode === "logistics" || load.mode === "stationary";
+      const exclusiveActor = load.mode === "exclusive" || load.mode === "stationary";
+      const roundTrip = singleCopy
+        ? 0
+        : Math.min(
+            load.travelTicks * 2,
+            POPULATION_PLANNING_HORIZON_TICKS,
+            MAX_POPULATION_TRAVEL_TICKS * 2,
+          );
       const travelOverhead = Math.ceil(
         (productive * roundTrip) / POPULATION_PLANNING_HORIZON_TICKS,
       );
-      const copies =
-        load.mode === "stationary" || load.mode === "logistics"
-          ? 1
-          : Math.min(
-              MAX_POPULATION_COPIES_PER_OBJECTIVE,
-              Math.ceil((productive + travelOverhead) / POPULATION_PLANNING_HORIZON_TICKS),
-            );
+      const copies = singleCopy
+        ? 1
+        : Math.min(
+            MAX_POPULATION_COPIES_PER_OBJECTIVE,
+            Math.ceil((productive + travelOverhead) / POPULATION_PLANNING_HORIZON_TICKS),
+          );
       const partsPerCopy = total(load.minimumCapability);
       const boundedCopies =
         partsPerCopy === 0
@@ -143,29 +144,28 @@ export class ColonyPopulationPolicy {
               Math.floor((MAX_POPULATION_TARGET_PARTS - targetParts) / partsPerCopy),
             );
       if (boundedCopies === 0) continue;
-      const objectiveSupply =
-        load.mode === "stationary"
-          ? takeExclusiveSupply(
-              exclusiveActors,
-              remainingSupply,
-              load.minimumCapability,
-              input.replacementLeadTicks +
-                load.travelTicks +
-                total(load.minimumCapability) * 3 +
-                (input.spawnBusyTicks ?? 0),
-            )
-          : load.mode === "logistics"
-            ? {
-                ...supply(
-                  input.actors,
-                  input.replacementLeadTicks +
-                    load.travelTicks +
-                    total(load.minimumCapability) * 3 +
-                    (input.spawnBusyTicks ?? 0),
-                ),
-              }
-            : remainingSupply;
-      if (load.mode !== "stationary" && load.mode !== "logistics")
+      const objectiveSupply = exclusiveActor
+        ? takeExclusiveSupply(
+            exclusiveActors,
+            remainingSupply,
+            load.minimumCapability,
+            input.replacementLeadTicks +
+              load.travelTicks +
+              total(load.minimumCapability) * 3 +
+              (input.spawnBusyTicks ?? 0),
+          )
+        : load.mode === "logistics"
+          ? {
+              ...supply(
+                input.actors,
+                input.replacementLeadTicks +
+                  load.travelTicks +
+                  total(load.minimumCapability) * 3 +
+                  (input.spawnBusyTicks ?? 0),
+              ),
+            }
+          : remainingSupply;
+      if (!singleCopy)
         reserveActors(
           exclusiveActors,
           load.minimumCapability,

@@ -28,7 +28,7 @@ export interface NormalizedPopulationLoad {
   readonly revision: number;
   readonly sourceCapacityWorkTicks: number;
   readonly travelTicks: number;
-  readonly mode?: "cyclic" | "logistics" | "stationary";
+  readonly mode?: "cyclic" | "exclusive" | "logistics" | "stationary";
 }
 
 export interface ContractPopulationView {

@@ -18,7 +18,7 @@ ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration,
 command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
 substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
 boundary, deterministic threat-aware room-route cost/travel estimates, one command-free full-cost
-`RemotePortfolio`, just-in-time budgeted remote controller reservation, request-driven budgeted
+`RemotePortfolio`, just-in-time budgeted remote controller reservation, production-composed budgeted
 remote source mining/capital plus loss-aware routed remote hauling, threat-qualified leased-actor
 remote evacuation, and bounded realized-profit accounting with portfolio-owned loss/staleness
 feedback through existing relation, logistics, contract, spawn, movement, action, and
@@ -566,9 +566,11 @@ interface TickContext {
 The executable `TickContext` began in Phase 0 with tick, shard, memory status, detached state view,
 immutable snapshot, sealed arbitration result, reconcile result, and bounded tick telemetry. Phase 1
 adds the resolved `RuntimeConfig`, immutable colony-plan and spawn-plan/result views, and
-contract-reconciliation view. Phase 3 adds the immutable `IntelRuntimeResult`; it contains
-freshness-qualified room/route views, vision requests, and fixed counters, never raw segment bytes
-or physical IDs. The context contains neither `Game`, mutable `Memory`, nor the raw operational
+contract-reconciliation view. Phase 3 adds the immutable `IntelRuntimeResult`, owner-qualified
+`RemotePortfolioResult`, and bounded `RemoteOperationsPlan`. They contain freshness-qualified
+room/route views, vision requests, fixed counters, lifecycle/accounting output, and ordinary typed
+budget/contract/logistics/site/evacuation projections—never raw segment bytes, physical IDs, or raw
+owner bytes. The context contains neither `Game`, mutable `Memory`, nor the raw operational
 candidate. Later fields enter only with the roadmap system that owns them. The aggregate `StateView`
 also redacts the raw `config`, `colonies`, `contracts`, and `remotes` owners; consumers use only
 owner-qualified immutable projections. A later planner consumes the explicit colony-plan output
@@ -857,7 +859,8 @@ The executable foundation registers these systems explicitly in `runtime/tick.ts
 | `world.observe`            | Observe   | mandatory, recovery-safe        |         1.00 |
 | `safety.foundation`        | Safety    | mandatory, recovery-safe        |         0.10 |
 | `world.observe-intel`      | Observe   | operational                     |         0.50 |
-| `colony.director`          | Plan      | mandatory, recovery-safe        |         1.50 |
+| `colony.director`          | Plan      | mandatory, recovery-safe        |         2.25 |
+| `remotes.contracts`        | Plan      | optional economic               |         0.25 |
 | `industry.publish`         | Plan      | optional economic               |         0.50 |
 | `migration.layout`         | Plan      | optional economic               |         1.50 |
 | `cache.sweep`              | Plan      | surplus maintenance, cadence 25 |         0.25 |
@@ -880,32 +883,41 @@ fabricating readiness or blocking mandatory work. Operational `world.observe-int
 mandatory current observation in the same phase, registers only `world.room-intel.v1`, re-offers at
 most two bounded room payloads, and publishes freshness and authorized vision-demand results before
 observer composition. A skipped or failed plan publishes no optimistic intel and cannot block
-mandatory work. `RuntimeKernel` remains the sole scheduled phase orchestrator. The Phase 1 colony
-outcome replaces `planning.foundation` with `colony.director`. The spawn outcome adds mandatory-tail
-`spawn.execute` followed by mandatory-tail `spawn.settle`; the latter performs durable colony
-staging after command results and before budget-consuming contract reconciliation. When admitted,
-operational `contracts.reconcile` stages its owner transaction before mandatory-tail
-`state.reconcile`; only the latter commits the `Memory.myrmex` root. `industry.execute` follows
-shared intent arbitration in the mandatory Execute tail; `industry.reconcile` stages terminal, lab,
-mature, and observer effects through one industry owner transaction before `state.reconcile`. The
-operational `agents.plan` pass excludes persisted spawn-evacuation leases; optional
-`migration.layout` continues only its exact current planner-authorized terms through the same
-Logistics/ContractLedger/lease-agent path. A skipped or failed continuation therefore emits no new
-spawn-evacuation request, funding transition, or action; ordinary Logistics retirement may still
-fail closed when its projected flow disappears. On the rare explicit selected-source handoff,
-`layout.handoff-reconcile` stages the complete layout draft before its root commit; the following
-tick's contract reconciliation consumes that durable coordinate. The same precommit stages one
-observation-settled stale site or terminal-success non-storage removal receipt before ending
-command-free layout planning for that tick. Every construction-site or removal execution result also
-activates that precommit before root reconciliation, so scheduler health ordering cannot strand its
-receipt; no separate reconciliation or owner exists. An otherwise-quiescent stale revision may carry
-settled source-service coordinates only when its exact bounded ContractLedger planning records match
-and the new plan preserves the complete issuance set. The bounded layout handoff plan completes
-before colony budgeting; only its accepted exact stale set may enter the sole StaticMiningPlanner
-projection to renew already-matching work. If admission, policy, current planning, room/source
-evidence, or tuple pinning fails, the stale set never enters that projection. It is a continuation
-of the same layout owner, not a second planner or state authority. Later outcomes replace their own
-foundation markers without adding another loop.
+mandatory work. When `phase3.portfolio` is effective, the colony planning boundary consumes that
+published intel to discover at most four adjacent or retained candidates, request bounded routes,
+apply relation/safety evidence, plan/stage the sole portfolio owner, and prepare ordinary remote
+budget/contract/logistics/site/evacuation projections before the exact donor budget session. Its
+scheduler-derived CPU envelope reserves 2.25 CPU for mandatory colony planning; constrained mode
+publishes zero remote CPU capacity, authorizes zero cold route-search CPU, and sheds prior
+commitments. `remotes.contracts` may publish only the prepared requests and transitions through the
+existing channel. Population demand is retained only while its stable colony/category/issuer binding
+has a current budget request, so same-tick threat, CPU, route, vision, value, or donor preemption
+cannot spawn stale remote work before ContractLedger reconciliation. `RuntimeKernel` remains the
+sole scheduled phase orchestrator. The Phase 1 colony outcome replaces `planning.foundation` with
+`colony.director`. The spawn outcome adds mandatory-tail `spawn.execute` followed by mandatory-tail
+`spawn.settle`; the latter performs durable colony staging after command results and before
+budget-consuming contract reconciliation. When admitted, operational `contracts.reconcile` stages
+its owner transaction before mandatory-tail `state.reconcile`; only the latter commits the
+`Memory.myrmex` root. `industry.execute` follows shared intent arbitration in the mandatory Execute
+tail; `industry.reconcile` stages terminal, lab, mature, and observer effects through one industry
+owner transaction before `state.reconcile`. The operational `agents.plan` pass excludes persisted
+spawn-evacuation leases; optional `migration.layout` continues only its exact current
+planner-authorized terms through the same Logistics/ContractLedger/lease-agent path. A skipped or
+failed continuation therefore emits no new spawn-evacuation request, funding transition, or action;
+ordinary Logistics retirement may still fail closed when its projected flow disappears. On the rare
+explicit selected-source handoff, `layout.handoff-reconcile` stages the complete layout draft before
+its root commit; the following tick's contract reconciliation consumes that durable coordinate. The
+same precommit stages one observation-settled stale site or terminal-success non-storage removal
+receipt before ending command-free layout planning for that tick. Every construction-site or removal
+execution result also activates that precommit before root reconciliation, so scheduler health
+ordering cannot strand its receipt; no separate reconciliation or owner exists. An
+otherwise-quiescent stale revision may carry settled source-service coordinates only when its exact
+bounded ContractLedger planning records match and the new plan preserves the complete issuance set.
+The bounded layout handoff plan completes before colony budgeting; only its accepted exact stale set
+may enter the sole StaticMiningPlanner projection to renew already-matching work. If admission,
+policy, current planning, room/source evidence, or tuple pinning fails, the stale set never enters
+that projection. It is a continuation of the same layout owner, not a second planner or state
+authority. Later outcomes replace their own foundation markers without adding another loop.
 
 There is exactly one literal `colonies` transaction call site in `spawn.settle` and exactly one
 normal root-commit call site in `state.reconcile`. The provisional and exact Plan views are never
@@ -1341,10 +1353,10 @@ The sole `world.route-plan.v1` cache retains at most 64 reconstructible plans fo
 validity to topology, intel, diplomacy, threat, and policy revisions. A hit revalidates the complete
 route chain, fresh-safe evidence, cost, risk, and travel estimate. Missing heap, stale evidence,
 status change, risk breach, malformed input, or budget denial produces a typed non-ready result and
-no durable state. Routing remains request-driven rather than an idle scheduled system. Issue #57's
-RemotePortfolio consumes caller-composed ready results; production candidate/grant composition waits
-for an executable reservation/mining consumer instead of creating an unfunded scheduled scan. Exact
-route contracts and evidence are recorded in
+no durable state. Routing remains request-driven rather than an idle scheduled system. Phase 3
+production composition requests only bounded adjacent and retained-portfolio routes while the gate
+is effective; `RemotePortfolio` consumes those ready results and still cannot create a grant,
+contract, intent, or command. Exact route contracts and evidence are recorded in
 [`phase3-routes-evidence.md`](phase3-routes-evidence.md).
 
 ## 10. Strategy and Objective Hierarchy
@@ -2723,11 +2735,22 @@ empty accounting. Exact `{}` initializes V2; malformed/future/future-tick eviden
 objective. Same-tick replay is idempotent; lifecycle records and accounting rings belonging to
 active, threatened, suspended, or cooling records are not evictable, while candidate and retired
 evidence may yield under bounded pressure. A heap reset changes no decision. `RemotePortfolio.stage`
-is the only remotes-owner write boundary. Runtime composition remains request-driven until
-autonomous candidate, settled accounting receipt, and post-survival donor-grant composition is
-scheduled. Later remote planners emit normal contracts; they do not fork colony budgets, economy,
-spawn, movement, diplomacy, threat, defense, telemetry, or command authorities. Forecast evidence is
-in [`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md), and realized evidence is in
+is the only remotes-owner write boundary. Phase 3 production composition discovers at most four
+adjacent or retained candidates, prioritizing non-terminal retained identities and their exact donor
+binding before lexical new candidates. It derives one post-survival energy/spawn/CPU/Memory/count
+envelope, projects bounded settled accounting, and stages the owner inside the mandatory colony
+planning boundary before the sole root commit. A continuously selected, fully eligible candidate
+renews its 1,500-tick objective only inside the final 250 ticks; denied, expired, or source-vanished
+records cannot extend their deadline. Settlement-only production accounting retains at most 50
+samples over 1,000 ticks, waits for five complete delivery/loss cycles, and becomes stale after 250
+ticks without a settlement. Each cycle attributes exact owned-sink gain and actor loss, routed and
+stationary replacement travel, scheduler-derived CPU capacity over the settlement span, and
+lifetime-amortized energy/spawn time for every current V4/V5/V6 body. Thus ordinary in-flight ticks
+cannot fabricate zero revenue, and later reserver/miner/hauler generations remain charged without a
+second persistent owner. Later remote projections emit normal requests through `remotes.contracts`;
+they do not fork colony budgets, economy, spawn, movement, diplomacy, threat, defense, telemetry, or
+command authorities. Forecast evidence is in
+[`phase3-portfolio-evidence.md`](phase3-portfolio-evidence.md), and realized evidence is in
 [`phase3-profitability-evidence.md`](phase3-profitability-evidence.md).
 
 Issue #58's `RemoteReservationPlanner` consumes only active objectives paired with their exact
@@ -2735,9 +2758,11 @@ candidate evidence. It revalidates current/fresh complete intel, a ready route, 
 availability/self-reservation, donor health, threat limits, objective expiry, and portfolio capacity
 before asking the existing donor `BudgetLedger` for 1,300 energy and 100 milli-CPU. Only an active
 exact grant may produce one two-`CLAIM`/two-`MOVE` reservation contract. SpawnBroker retains the
-exact 12-tick slot claim. Reservation starts when observed ticks are within route travel plus spawn
-and safety lead, ends at 450 ticks, and retries command failures at most three times. Reserver death
-or route suspension does not create a command attempt. Exact evidence is in
+exact 12-tick slot claim. ContractLedger marks V4 population `exclusive`: one reservation contract
+may request at most one actor, and that actor cannot satisfy another exclusive objective in the same
+projection. Reservation starts when observed ticks are within route travel plus spawn and safety
+lead, ends at 450 ticks, and retries command failures at most three times. Reserver death or route
+suspension does not create a command attempt. Exact evidence is in
 [`phase3-reservation-evidence.md`](phase3-reservation-evidence.md).
 
 Issue #59's `RemoteMiningPlanner` consumes the same exact active objective/evidence boundary without
@@ -3077,12 +3102,14 @@ blocking. Issue `#37` made `phase1.colony` source-available under `runtime-confi
 gate as its prerequisite. Issue `#24` makes `phase1.spawn` source-available under
 `runtime-config-source-v4`, also with the colony gate as its prerequisite. Every later gameplay gate
 remains unavailable until its own outcome is proved; issue `#257` makes `phase2.labs` available
-under `runtime-config-source-v26` with `phase2.industry` as its prerequisite, and issue `#267` makes
-`phase2.mature` available under `runtime-config-source-v27` with `phase2.labs` as its prerequisite.
-Operational Memory may disable an available gate but cannot activate another gate. A source-v3
-receipt is incompatible under v4 and is reissued only after a present candidate revalidates; an
-incompatible receipt with no candidate falls back to source defaults without rewriting operator
-bytes. Secrets never enter source, Memory, telemetry, Wiki, or committed config.
+under `runtime-config-source-v26` with `phase2.industry` as its prerequisite, issue `#267` makes
+`phase2.mature` available under `runtime-config-source-v27` with `phase2.labs` as its prerequisite,
+and issue `#63` makes `phase3.portfolio` available under `runtime-config-source-v28` with
+`phase2.mature` as its prerequisite. Operational Memory may disable an available gate but cannot
+activate another gate. A source-v3 receipt is incompatible under v4 and is reissued only after a
+present candidate revalidates; an incompatible receipt with no candidate falls back to source
+defaults without rewriting operator bytes. Secrets never enter source, Memory, telemetry, Wiki, or
+committed config.
 
 The versioned policy fields, limits, statuses, gates, and deterministic matrices are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md) and
@@ -3571,6 +3598,16 @@ manifest, result, collector, or evaluator is bundled, persisted, or exposed to g
 Consequently the historical pass artifact is not valid proof of #54's runtime exit criterion. Phase
 3 continues only under the maintainer's 2026-07-27 Phase-3-limited administrative override, not
 because this evidence marks the runtime gate passed.
+
+The Phase 3 portfolio matrix executes 30 production `runTick` calls in each warm, reset, and
+reordered variant. Two competing adjacent remotes pass through forecast admission, active donor
+budgets, V4/V5/V6 contracts, population/spawn demand, threat suspension, CPU shedding, route and
+vision loss, profitability reversal, complete donor-workforce loss, source retirement, and cautious
+resumption. Expected spawn errors remain typed and bounded. All 90 ticks have zero kernel faults and
+equal semantic hashes while the sole profitable final remote remains active. Exact budgets, owner
+bytes, source/config revisions, full-attribution dependency evidence, rollback, and residual risk
+are recorded in [`phase3-gate-evidence.md`](phase3-gate-evidence.md). This demonstrates the Phase 3
+exit only; Phase 4 remains unauthorized under the Phase-3-limited continuation override.
 
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,

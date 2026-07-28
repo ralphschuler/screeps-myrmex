@@ -181,6 +181,11 @@ authorized without an explicit maintainer resolution of this gap.
 
 ## Phase 3 — Remote Portfolio
 
+**Status:** implemented; production composition and the deterministic exit matrix are tracked by
+[issue #63](https://github.com/ralphschuler/screeps-myrmex/issues/63) and
+[`phase3-gate-evidence.md`](phase3-gate-evidence.md). Phase 4 remains unauthorized because the
+Phase-3-only continuation override does not resolve the unproved Phase 2 production RCL8 soak.
+
 - The sole typed RawMemory-segment substrate is tracked by
   [issue #100](https://github.com/ralphschuler/screeps-myrmex/issues/100) and
   [`phase3-segments-evidence.md`](phase3-segments-evidence.md). It provides bounded asynchronous
@@ -229,7 +234,10 @@ authorized without an explicit maintainer resolution of this gap.
   [`phase3-profitability-evidence.md`](phase3-profitability-evidence.md). Compact rolling evidence
   remains owned by RemotePortfolio; observer telemetry does not become a strategy authority.
 
-**Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.
+**Exit:** demonstrated by a 90-tick warm/reset/reordered production `runTick` matrix: only the
+profitable remote remains active after threat, CPU, route, vision, profitability, donor-loss, and
+source-loss pressure. This closes Phase 3 only; it does not authorize Phase 4 under the current
+continuation override.
 
 ## Phase 4 — Expansion
 

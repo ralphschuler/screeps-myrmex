@@ -334,7 +334,9 @@ export class ContractLedger {
             travelTicks: record.maxAssignmentCost,
             ...(record.execution?.version === 2 || record.execution?.version === 5
               ? { mode: "stationary" as const }
-              : {}),
+              : record.execution?.version === 4
+                ? { mode: "exclusive" as const }
+                : {}),
           },
         ];
       })

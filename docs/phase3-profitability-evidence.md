@@ -108,9 +108,12 @@ npm run check
 Final repository-wide counts and CI results are recorded in the pull request and issue completion
 receipt.
 
-## Residual risk and next gate
+## Residual risk and gate composition
 
-The accounting contract is request-driven like the preceding Phase 3 leaves. Issue #63 must compose
-current production receipts and run the frozen multi-remote portfolio soak before Phase 3 can pass.
-This leaf does not infer market value, expansion ROI, combat value, or hostile causality, and
-retains no unbounded history.
+Issue #63 now composes the accounting boundary with production candidate, operation, budget,
+contract, spawn, safety, and portfolio planning and runs the frozen multi-remote soak. Production
+uses settlement-only five-cycle qualification: exact delivery/loss receipts include modeled full
+cycle travel, reserved CPU over the cycle, and lifetime-amortized V4/V5/V6 body energy/spawn time;
+in-flight ticks create no zero-revenue sample. See
+[`phase3-gate-evidence.md`](phase3-gate-evidence.md). This leaf still does not infer market value,
+expansion ROI, combat value, or hostile causality, and retains no unbounded history.
