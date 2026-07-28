@@ -407,11 +407,16 @@ it under the existing route, terrain, and coordinate ordering; worse or equal al
 cause churn, and another source's persisted service is never a candidate for theft. The layout-owned
 issuance coordinate advances exactly once, while `ContractLedger` atomically replaces the same
 source and funding binding with its next sequence; the current-tick predecessor remains executable
-and no duplicate or durable zero-contract state is allowed. Useful `WORK` is capped by source
-regeneration throughput, replacement remains ahead of optional growth, and missing or unavailable
-offload infrastructure degrades to dropped energy rather than stalling extraction. Container state
-is evidence only for #47 hauling and #49 repair, while a nearby link is only a candidate until #48
-authorizes link commands.
+and no duplicate or durable zero-contract state is allowed. Funding is not takeover: mobile survival
+harvesting remains available until one matching assigned or active static lease has a current viable
+miner on the exact committed work tile. The handoff suppresses competing mobile harvest execution
+and suspends rather than retires its demand. Miner death, lease or path suspension, blocked
+replacement, and constrained CPU restore that fallback through the existing operational contract
+path. Zero-`CARRY` V2 miners remain valid because harvest overflow drops on their tile; mobile V1
+harvesters still require free capacity. Useful `WORK` is capped by source regeneration throughput,
+replacement remains ahead of optional growth, and missing or unavailable offload infrastructure
+degrades to dropped energy rather than stalling extraction. Container state is evidence only for #47
+hauling and #49 repair, while a nearby link is only a candidate until #48 authorizes link commands.
 
 Logistics uses one canonical resource-flow admission model across fresh visible owned rooms. Spawn
 and extension supply, survival towers, and controller supply are mandatory before optional storage

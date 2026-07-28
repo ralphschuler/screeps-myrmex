@@ -147,6 +147,21 @@ describe("lease agents", () => {
     expect(working.actions).toEqual([
       expect.objectContaining({ kind: "harvest", targetId: "source-a" }),
     ]);
+    const zeroCarryWorking = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [lease], status: "ready" },
+      paths,
+      snapshot: snapshot({
+        actor: position(11, 10),
+        source: position(12, 10),
+        storeCapacity: 0,
+      }),
+      tick: 10,
+    });
+    expect(zeroCarryWorking.actions).toEqual([
+      expect.objectContaining({ kind: "harvest", targetId: "source-a" }),
+    ]);
+    expect(zeroCarryWorking.dispositions).toEqual([]);
     const depleted = planLeaseAgents({
       availablePathCpu: 1,
       execution: { leases: [lease], status: "ready" },
@@ -313,12 +328,20 @@ function snapshot(input: {
   };
   energy?: number;
   sourceEnergy?: number;
+  storeCapacity?: number;
 }): WorldSnapshot {
+  const storeCapacity = input.storeCapacity ?? 50;
   const store = {
-    capacity: 50,
-    freeCapacity: 50,
+    capacity: storeCapacity,
+    freeCapacity: storeCapacity - (input.energy ?? 0),
     resources: input.energy === undefined ? [] : [{ amount: input.energy, resourceType: "energy" }],
     usedCapacity: input.energy ?? 0,
+  };
+  const targetStore = {
+    capacity: 50,
+    freeCapacity: 50,
+    resources: [],
+    usedCapacity: 0,
   };
   return {
     observation: { age: 0, shard: "shard0", status: "observed", tick: 10 },
@@ -374,7 +397,7 @@ function snapshot(input: {
                   ownerUsername: "me",
                   ownership: "owned",
                   pos: input.structure.pos,
-                  store,
+                  store: targetStore,
                   structureType: "spawn",
                 },
               ],

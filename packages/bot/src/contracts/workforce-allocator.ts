@@ -305,6 +305,7 @@ function actionEligible(actor: WorkforceActor, contract: WorkContractRecord): bo
     return actor.energy === undefined || actor.energy > 0;
   if (contract.execution.action === "harvest")
     return (
+      contract.execution.version === 2 ||
       contract.execution.version === 5 ||
       actor.freeCapacity === undefined ||
       actor.freeCapacity === null ||

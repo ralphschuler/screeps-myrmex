@@ -55,6 +55,7 @@ const DEFAULT_CONSTRUCTION_SITE = Object.freeze({
 export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) {
   const construction = options.constructionSite ?? DEFAULT_CONSTRUCTION_SITE;
   let tick = START_TICK - 1;
+  let cpuBucket = 10_000;
   let spawnEnergy = 300;
   const initialExtensionEnergy = options.constructionSite === undefined ? 0 : 50;
   const initialExtensionCount = options.initialExtensionCount ?? 2;
@@ -70,6 +71,8 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
   let constructionSiteCalls = 0;
   const buildCalls: EstablishedBuildCall[] = [];
   const sourceEnergy = { value: 3_000 };
+  let staticMinerAlive = true;
+  let workerHarvestCalls = 0;
   let droppedEnergy = 0;
   let droppedResourceId = "drop-source-a-0";
   let droppedResourceSequence = 0;
@@ -241,6 +244,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
         const amount = Math.min(2, capacity - workerEnergy, sourceEnergy.value);
         workerEnergy += amount;
         sourceEnergy.value -= amount;
+        workerHarvestCalls += 1;
         return markReplacementWork(0);
       },
       transfer: (target: AnyStoreStructure, resource: ResourceConstant, amount?: number) => {
@@ -350,8 +354,8 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     find: (findType: number): unknown[] =>
       findType === FIND_CREEPS_VALUE
         ? options.reverseCollections
-          ? [staticMiner, ...(worker === null ? [] : [worker])]
-          : [...(worker === null ? [] : [worker]), staticMiner]
+          ? [...(staticMinerAlive ? [staticMiner] : []), ...(worker === null ? [] : [worker])]
+          : [...(worker === null ? [] : [worker]), ...(staticMinerAlive ? [staticMiner] : [])]
         : findType === FIND_DROPPED_RESOURCES_VALUE
           ? droppedEnergy > 0
             ? [droppedResource]
@@ -392,7 +396,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
           extensions.push(extension(id, construction.pos.x, construction.pos.y));
         }
       }
-      produceStaticDrop();
+      if (staticMinerAlive) produceStaticDrop();
       if (pendingSpawn !== null && nextTick >= pendingSpawn.completeAt) {
         replacementWorkerId = `replacement-${pendingSpawn.name}`;
         worker = createWorker(replacementWorkerId, pendingSpawn.name, pendingSpawn.body, 0);
@@ -401,12 +405,12 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
       }
       const creeps = {
         ...(worker === null ? {} : { [worker.name]: worker }),
-        [staticMiner.name]: staticMiner,
+        ...(staticMinerAlive ? { [staticMiner.name]: staticMiner } : {}),
       };
       let cpuUsed = 0;
       return {
         cpu: {
-          bucket: 10_000,
+          bucket: cpuBucket,
           limit: 20,
           tickLimit: 500,
           getUsed: () => {
@@ -420,7 +424,7 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
         getObjectById: (id: string) =>
           id === worker?.id
             ? worker
-            : id === staticMiner.id
+            : id === staticMiner.id && staticMinerAlive
               ? staticMiner
               : id === droppedResource.id && droppedEnergy > 0
                 ? droppedResource
@@ -436,6 +440,12 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
         time: nextTick,
       };
     },
+    clearDroppedEnergy: () => {
+      droppedEnergy = 0;
+    },
+    killStaticMiner: () => {
+      staticMinerAlive = false;
+    },
     killWorker: () => {
       worker = null;
       workerEnergy = 0;
@@ -447,9 +457,13 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
     roomEnergyCapacity: () => room.energyCapacityAvailable,
     siteCompletedAt: () => siteCompletedAt,
     siteCount: () => (siteCompleted ? 0 : 1),
+    setCpuBucket: (value: number) => {
+      cpuBucket = value;
+    },
     siteProgress: () => siteProgress,
     spawnCalls: () => [...spawnCalls],
     spawnEnergy: () => spawnEnergy,
+    workerHarvestCalls: () => workerHarvestCalls,
   };
 }
 

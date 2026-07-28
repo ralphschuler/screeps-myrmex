@@ -8,8 +8,12 @@ when alternate source containers appear. Issue
 handoff. Issue [#306](https://github.com/ralphschuler/screeps-myrmex/issues/306) safely reuses that
 handoff for one strictly better existing exact service. Issue
 [#411](https://github.com/ralphschuler/screeps-myrmex/issues/411) preserves an already-settled
-explicit source-service contract and lease across one command-free stale layout revision. The
-checked gate result remains [`phase2-mining-results.json`](phase2-mining-results.json).
+explicit source-service contract and lease across one command-free stale layout revision. Issue
+[#474](https://github.com/ralphschuler/screeps-myrmex/issues/474) corrects the executable takeover:
+funding alone cannot suppress survival harvesting, and only a matching current viable miner on its
+exact work tile completes the handoff. The checked historical gate result remains
+[`phase2-mining-results.json`](phase2-mining-results.json); current compatibility is additive and
+does not rewrite that artifact.
 
 ## Composed deterministic scenario
 
@@ -50,8 +54,11 @@ eight tiles.
 | Full container                       | `container-full`; drop fallback remains available                    |
 | Decaying container                   | decay telemetry is exposed without repair authority                  |
 | Destroyed container                  | `container-destroyed`; drop fallback avoids extraction deadlock      |
-| Miner death and expiry               | one stable replacement demand is retained until scheduling           |
-| Spawn busy and low energy            | replacement waits; no duplicate identity is introduced               |
+| Miner death and expiry               | mobile fallback re-funds while stable replacement demand remains     |
+| Funded/unassigned static contract    | mobile source harvesting remains executable                          |
+| Viable miner reaches exact work tile | mobile lease is suppressed then suspended; one harvest path executes |
+| Static actor beyond executor cap     | mobile fallback remains; observation order changes no result         |
+| Spawn busy and low energy            | fallback persists; no duplicate identity is introduced               |
 | Temporary blocked tile               | the committed work position remains stable for deterministic retry   |
 | Worse exact alternate appears        | selected exact service and contract remain byte-stable               |
 | Better exact alternate appears       | one safe atomic next-sequence handoff; no selection oscillation      |
@@ -68,8 +75,11 @@ eight tiles.
 
 At 800 room energy capacity the body projection requests five `WORK` and three `MOVE` parts. Five
 active `WORK` parts harvest the source regeneration bound of ten energy per tick without requesting
-useless throughput. Mining's null energy and spawn requests leave the protected 300-energy recovery
-tranche outside mining authority.
+useless throughput. A V2 body needs no `CARRY`: allocation and lease execution accept its
+zero-capacity Store, and official harvest behavior drops overflow on the current tile. V1 mobile
+harvesting still requires free capacity. Mining's null energy and spawn requests leave the protected
+300-energy recovery tranche outside mining authority; a spawn-only RCL2 worker continues harvesting
+until the room can fund a true static replacement without crossing that reserve.
 
 The telemetry row checks source uptime, harvested energy, miner idle time, replacement gap,
 container fill and decay, and finite CPU per harvested energy. Planning emits one projection per
@@ -85,7 +95,11 @@ adjacent cells per source.
 - [#49](https://github.com/ralphschuler/screeps-myrmex/issues/49) owns repair policy and commands.
   This scenario observes container decay but does not schedule repair.
 - `ContractLedger` remains the sole contract state owner. One replacement consumes one bounded
-  request and transition; validation failure restores the predecessor byte-for-byte.
+  request and transition; validation failure restores the predecessor byte-for-byte. Static
+  readiness suspends the reusable mobile contract rather than creating another source owner; loss of
+  the actor, exact position, lease, path, or authorization re-funds fallback under operational CPU
+  admission. A previously retired generation-one fallback advances once rather than reusing a
+  terminal coordinate.
 - The focused multi-tick runtime outcome proves the persisted layout/contract transition. The #411
   row additionally proves warm, JSON/module-reset, and reordered structure and creep exact sequence-
   2 handoffs; zero site/destroy commands; no replacement or terminal outcome; one retained contract;
@@ -105,7 +119,8 @@ adjacent cells per source.
 ADRs 0017, [0044](adr/0044-selected-source-service-handoff.md), and
 [0076](adr/0076-command-free-stale-layout-revision-handoff.md) record the consulted official
 [`Source`](https://docs.screeps.com/api/#Source),
-[`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest), and
+[`Creep.harvest`](https://docs.screeps.com/api/#Creep.harvest),
+[`StructureSpawn.spawnCreep`](https://docs.screeps.com/api/#StructureSpawn.spawnCreep), and
 [`StructureContainer`](https://docs.screeps.com/api/#StructureContainer) contracts. The Screeps Wiki
 [`Static Harvesting`](https://wiki.screepspl.us/Static_Harvesting/) page supplies terminology only;
 the implementation and scenario remain clean-room.
@@ -116,6 +131,10 @@ Run the focused evidence and documentation checks from the repository root:
 npx vitest run packages/bot/test/source-services.test.ts \
   packages/bot/test/static-mining.test.ts \
   packages/bot/test/static-mining-runtime.test.ts \
+  packages/bot/test/survival-flow.test.ts \
+  packages/bot/test/workforce-allocator.test.ts \
+  packages/bot/test/lease-agent.test.ts \
+  packages/bot/test/phase1-gate-runtime.test.ts \
   packages/bot/test/layout-revision-handoff-runtime.test.ts \
   packages/scenario-kit/test/phase2-static-mining-gate.test.ts
 npx markdownlint-cli2 docs/phase2-mining-evidence.md docs/phase2-layout-evidence.md \

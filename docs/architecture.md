@@ -60,8 +60,14 @@ position has continuity precedence; a newer container cannot silently change exe
 terms. After selected-container loss, or when a different existing exact container strictly outranks
 the selected exact container under the canonical source-service ordering, one fresh safe replacement
 advances a bounded layout-owned issuance coordinate. `ContractLedger` atomically retires the
-predecessor and admits only its exact next sequence. Population policy, SpawnBroker, movement
-arbitration, and executors retain their existing authorities.
+predecessor and admits only its exact next sequence. A funded contract alone never excludes mobile
+survival harvesting. Static takeover requires one matching assigned or active V2 lease, a current
+viable actor on the exact work position, matching source terms, and admission inside the canonical
+64-actor lease-execution ceiling. That tick suppresses and suspends the mobile lease without
+retiring it; readiness loss re-funds fallback through operational contract publication even under
+constrained CPU. V2 allocation and execution permit zero-`CARRY` extraction because official harvest
+overflow drops on the actor tile. Population policy, SpawnBroker, movement arbitration, and
+executors retain their existing authorities.
 
 `LinkArbiter` is the sole link-transfer admission authority. Mining, logistics, and controller
 policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
@@ -1571,12 +1577,17 @@ The Phase 1 `EconomyPlanner` alternates recovery workers between visible sources
 spawn/extension sinks through stable endpoint-demand `harvesting-filling` contracts. The allocator,
 not an actor-shaped issuer, selects the eligible lease holder. Partial cargo retains that actual
 lease holder's phase from `ContractExecutionView`: harvest batches until full and continuous fill
-omits the Screeps transfer amount so all available cargo is offered. `ContractPlanningView` remains
-the renewal/endpoint-retirement projection. This introduces no role Memory or flow ledger. Tick
-telemetry reports owned-room refill demand and scheduled harvest/delivery in energy units; observed
-cargo/drops remain stock gauges, successful command receipts are not treated as settled world
-deltas, and boosted harvest explicitly marks its base-yield total as a lower bound. ADR 0009 records
-the projection boundary.
+omits the Screeps transfer amount so all available cargo is offered. A static source becomes
+exclusive only from a matching current V2 lease whose viable actor has reached its exact work tile;
+funding, assignment without arrival, stale actor evidence, or suspension retains mobile fallback.
+The same tick filters the superseded mobile lease before agent intent production and suspends it in
+ContractLedger. Loss of readiness restores the reusable demand; an older terminal generation uses
+one deterministic later coordinate rather than resurrecting retired work. `ContractPlanningView`
+remains the renewal/endpoint-retirement projection. This introduces no role Memory or flow ledger.
+Tick telemetry reports owned-room refill demand and scheduled harvest/delivery in energy units;
+observed cargo/drops remain stock gauges, successful command receipts are not treated as settled
+world deltas, and boosted harvest explicitly marks its base-yield total as a lower bound. ADR 0009
+records the projection boundary.
 
 The Phase 1 `CriticalMaintenancePlanner` has no durable owner. It reads one current room snapshot
 and can emit budgeted repair contracts only for a critically damaged spawn, sole container, or

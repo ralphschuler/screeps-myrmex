@@ -84,6 +84,147 @@ describe("Phase 1 gate established RCL2 row", () => {
     expect(outcomes.flatMap(({ kernel }) => kernel.faults)).toEqual([]);
   });
 
+  it("keeps spawn-only RCL2 harvesting while its first static miner is unaffordable", () => {
+    const world = establishedRcl2World({
+      constructionSite: {
+        controllerLevel: 2,
+        id: "first-extension-site",
+        initialProgress: 0,
+        pos: { x: 10, y: 11 },
+        progressTotal: 50,
+        structureType: "extension",
+        workerBody: ["work", "carry", "move"],
+        workerEnergy: 0,
+        workerPos: { x: 11, y: 10 },
+      },
+      initialExtensionCount: 0,
+      reverseCollections: true,
+    });
+    world.killStaticMiner();
+    const memory = {} as Memory;
+    const outcomes = [] as ReturnType<typeof runTick>[];
+
+    for (
+      let tick = START_TICK;
+      tick < START_TICK + 40 && (world.workerHarvestCalls() === 0 || world.siteProgress() === 0);
+      tick += 1
+    ) {
+      outcomes.push(runTick({ game: world.game(tick), memory }));
+      expect(world.spawnEnergy()).toBe(300);
+    }
+
+    const contracts = memory.myrmex?.contracts as unknown as {
+      active?: readonly {
+        readonly issuer?: string;
+        readonly lease?: unknown;
+        readonly state?: string;
+      }[];
+    };
+    expect(world.workerHarvestCalls()).toBeGreaterThan(0);
+    expect(world.siteProgress()).toBeGreaterThan(0);
+    expect(world.roomEnergyCapacity()).toBe(300);
+    expect(contracts.active).toContainEqual(
+      expect.objectContaining({
+        issuer: "mining/W1N1/source-a",
+        lease: null,
+        state: "funded",
+      }),
+    );
+    expect(
+      outcomes.some(({ movement }) =>
+        movement.actionExecution.some(
+          ({ intent, status }) =>
+            intent.kind === "harvest" && intent.targetId === "source-a" && status === "executed",
+        ),
+      ),
+    ).toBe(true);
+    expect(outcomes.flatMap(({ kernel }) => kernel.faults)).toEqual([]);
+  });
+
+  it("restores survival harvesting under constrained CPU after static-miner loss", async () => {
+    const world = establishedRcl2World({
+      constructionSite: {
+        controllerLevel: 2,
+        id: "road-site",
+        initialProgress: 0,
+        pos: { x: 10, y: 11 },
+        progressTotal: 100,
+        structureType: "road",
+        workerBody: ["work", "carry", "move"],
+        workerEnergy: 0,
+        workerPos: { x: 11, y: 10 },
+      },
+    });
+    let memory = {} as Memory;
+    let nextTick = START_TICK;
+    const takeover = [] as ReturnType<typeof runTick>[];
+    const contractState = (prefix: string): string | undefined => {
+      const owner = memory.myrmex?.contracts as unknown as {
+        active?: readonly { readonly issuer?: string; readonly state?: string }[];
+      };
+      return owner.active?.find(({ issuer }) => issuer?.startsWith(prefix))?.state;
+    };
+
+    for (; nextTick < START_TICK + 30; nextTick += 1) {
+      takeover.push(runTick({ game: world.game(nextTick), memory }));
+      if (
+        ["assigned", "active"].includes(contractState("mining/W1N1/source-a") ?? "") &&
+        contractState("economy/W1N1/harvest/source-a") === "suspended"
+      ) {
+        nextTick += 1;
+        break;
+      }
+    }
+
+    expect(["assigned", "active"]).toContain(contractState("mining/W1N1/source-a"));
+    expect(contractState("economy/W1N1/harvest/source-a")).toBe("suspended");
+    expect(
+      takeover.every(
+        ({ movement }) =>
+          movement.actionExecution.filter(
+            ({ intent, status }) =>
+              intent.kind === "harvest" && intent.targetId === "source-a" && status === "executed",
+          ).length <= 1,
+      ),
+    ).toBe(true);
+    world.killStaticMiner();
+    world.clearDroppedEnergy();
+    world.setCpuBucket(4_000);
+    memory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    const executeTick = (await import("../src/runtime/tick")).runTick;
+    const harvestsBeforeLoss = world.workerHarvestCalls();
+    const constrained = [] as ReturnType<typeof runTick>[];
+
+    for (
+      ;
+      nextTick < START_TICK + 40 && world.workerHarvestCalls() === harvestsBeforeLoss;
+      nextTick += 1
+    )
+      constrained.push(executeTick({ game: world.game(nextTick), memory }));
+
+    expect(constrained).not.toHaveLength(0);
+    expect(constrained.every(({ kernel }) => kernel.mode === "constrained")).toBe(true);
+    expect(
+      constrained.every(({ kernel }) =>
+        kernel.systems.some(
+          ({ status, systemId }) => systemId === "economy.contracts" && status === "completed",
+        ),
+      ),
+    ).toBe(true);
+    expect(world.workerHarvestCalls()).toBeGreaterThan(harvestsBeforeLoss);
+    expect(["assigned", "active"]).toContain(contractState("economy/W1N1/harvest/source-a"));
+    expect(
+      constrained.every(
+        ({ movement }) =>
+          movement.actionExecution.filter(
+            ({ intent, status }) =>
+              intent.kind === "harvest" && intent.targetId === "source-a" && status === "executed",
+          ).length <= 1,
+      ),
+    ).toBe(true);
+  });
+
   it("replaces its established worker once and resumes useful RCL2 work", () => {
     const world = establishedRcl2World();
     const memory = {} as Memory;

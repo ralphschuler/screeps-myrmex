@@ -12,6 +12,7 @@ import {
   planSurvivalFlow,
   reconcileStaleSourceServiceContracts,
   renewSurvivalFlowBudgets,
+  withoutSupersededSurvivalHarvestLeases,
   type StaticMiningPlan,
   type SurvivalFlowCandidate,
 } from "../economy";
@@ -1297,10 +1298,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       descriptor: {
         id: "economy.contracts",
         phase: "plan",
-        criticality: "economic",
+        criticality: "operational",
         cadence: 1,
         estimate: 0.5,
-        admitInRecovery: false,
+        admitInRecovery: true,
         mandatoryTail: false,
       },
       run: ({ context }) => {
@@ -1312,6 +1313,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           context.contractPlanning,
           context.tick,
           context.snapshot,
+          context.contractExecution,
         );
         for (const request of flow.requests) scope.producer.submit(request);
         for (const transition of flow.transitions) scope.producer.transition(transition);
@@ -1446,40 +1448,44 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
         const planned = planLeaseAgents({
           availablePathCpu: localPathSearchAllowance(budget),
-          execution: withoutSuppressedLeaseTargets(
-            executableLogisticsView(
-              context.contractExecution,
+          execution: withoutSupersededSurvivalHarvestLeases(
+            withoutSuppressedLeaseTargets(
+              executableLogisticsView(
+                context.contractExecution,
+                new Set([
+                  ...[...activeLabEvacuationFlowIds].filter(
+                    (flowId) => !authorizedLabEvacuationFlowIds.has(flowId),
+                  ),
+                  ...[...activeLinkEvacuationFlowIds].filter(
+                    (flowId) => !authorizedLinkEvacuationFlowIds.has(flowId),
+                  ),
+                  ...blockedStorageEvacuationFlowIds,
+                  ...blockedStaleContainerMigrationFlowIds,
+                  ...blockedStaleExtensionEvacuationFlowIds,
+                  ...blockedStaleTowerEvacuationFlowIds,
+                  ...[...activeTerminalEvacuationFlowIds].filter(
+                    (flowId) => !authorizedTerminalEvacuationFlowIds.has(flowId),
+                  ),
+                  ...blockedSpawnEvacuationFlowIds,
+                ]),
+                logisticsAcquireAdmissionLimits(context.contractExecution, logisticsRuntime),
+              ),
               new Set([
-                ...[...activeLabEvacuationFlowIds].filter(
-                  (flowId) => !authorizedLabEvacuationFlowIds.has(flowId),
-                ),
-                ...[...activeLinkEvacuationFlowIds].filter(
-                  (flowId) => !authorizedLinkEvacuationFlowIds.has(flowId),
-                ),
-                ...blockedStorageEvacuationFlowIds,
-                ...blockedStaleContainerMigrationFlowIds,
-                ...blockedStaleExtensionEvacuationFlowIds,
-                ...blockedStaleTowerEvacuationFlowIds,
-                ...[...activeTerminalEvacuationFlowIds].filter(
-                  (flowId) => !authorizedTerminalEvacuationFlowIds.has(flowId),
-                ),
-                ...blockedSpawnEvacuationFlowIds,
+                ...suppressedContainerMigrationTargetIds,
+                ...suppressedSpawnEvacuationTargetIds,
+                ...suppressedStorageEvacuationTargetIds,
+                ...suppressedTerminalEvacuationTargetIds,
+                ...suppressedTowerEvacuationTargetIds,
               ]),
-              logisticsAcquireAdmissionLimits(context.contractExecution, logisticsRuntime),
+              new Set([
+                ...authorizedContainerMigrationFlowIds,
+                ...authorizedStorageEvacuationFlowIds,
+                ...authorizedTerminalEvacuationFlowIds,
+                ...authorizedTowerEvacuationFlowIds,
+              ]),
             ),
-            new Set([
-              ...suppressedContainerMigrationTargetIds,
-              ...suppressedSpawnEvacuationTargetIds,
-              ...suppressedStorageEvacuationTargetIds,
-              ...suppressedTerminalEvacuationTargetIds,
-              ...suppressedTowerEvacuationTargetIds,
-            ]),
-            new Set([
-              ...authorizedContainerMigrationFlowIds,
-              ...authorizedStorageEvacuationFlowIds,
-              ...authorizedTerminalEvacuationFlowIds,
-              ...authorizedTowerEvacuationFlowIds,
-            ]),
+            context.contractPlanning,
+            context.snapshot,
           ),
           movementPolicy: context.config.policy.movement,
           paths: context.localPathPlanning,

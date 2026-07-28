@@ -56,8 +56,12 @@ site-placement authority.
   including a bounded 111-tick travel estimate.
 - `phase1-gate-runtime.test.ts` reconstructs Memory and the module heap, then executes the exact
   production contract/action path against a first-extension site. Five carried energy completes the
-  bounded fixture while spawn energy remains 300 and capacity rises from 300 to 350. Layout-to-site,
-  static-mining handoff, and full movement/progression evidence remain issues #474 and #476.
+  bounded fixture while spawn energy remains 300 and capacity rises from 300 to 350. Issue #474 adds
+  a production row in which a funded but unleased V2 static contract cannot suppress the only mobile
+  worker: that worker harvests and progresses the first extension while all 300 spawn energy remains
+  protected. A second row reaches an exact static takeover, removes that miner, enters constrained
+  CPU, and restores one mobile harvest without duplicate source commands. Full layout-to-site,
+  multi-tile movement, capacity-400, and RCL3 progression evidence remains issue #476.
 - `survival-flow-runtime.test.ts` composes the recovery and bootstrap paths from an empty Memory
   RCL1 world with one 300-capacity spawn: it accounts controller spend separately from room and
   creep energy, reaches RCL2 by tick 1,599 (a 1,500-tick replay deadline), and asserts the spawn

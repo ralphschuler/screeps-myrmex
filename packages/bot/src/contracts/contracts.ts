@@ -373,6 +373,8 @@ export interface LeasedWorkExecution {
   readonly targetId: string;
 }
 
+export const MAX_LEASE_EXECUTION_ACTORS = 64;
+
 export interface ContractExecutionView {
   readonly leases: readonly LeasedWorkExecution[];
   readonly status: "ready" | "unavailable";
