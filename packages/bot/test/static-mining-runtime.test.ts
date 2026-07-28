@@ -108,7 +108,11 @@ describe("static mining runtime activation", () => {
     const commands = commandSpies();
     const seeded = runTick({ game: miningGame(400, commands, true, 2), memory });
     expect(miningContractIds(seeded)).toEqual([]);
-    expect(commands.createConstructionSite).not.toHaveBeenCalled();
+    expect(
+      (
+        commands.createConstructionSite.mock.calls as unknown as readonly [number, number, string][]
+      ).some(([, , structureType]) => structureType === "container"),
+    ).toBe(false);
     expect(commands.harvest).not.toHaveBeenCalled();
     commands.createConstructionSite.mockClear();
     commands.harvest.mockClear();

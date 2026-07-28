@@ -67,8 +67,10 @@ viable actor on the exact work position, matching source terms, and admission in
 64-actor lease-execution ceiling. That tick suppresses and suspends the mobile lease without
 retiring it; readiness loss re-funds fallback through operational contract publication even under
 constrained CPU. V2 allocation and execution permit zero-`CARRY` extraction because official harvest
-overflow drops on the actor tile. Population policy, SpawnBroker, movement arbitration, and
-executors retain their existing authorities.
+overflow drops on the actor tile. A carry-bearing actor with a known full Store may retain its
+incumbent V2/V5 drop-mining lease, but cannot newly enter one until its carried energy is consumed;
+this prevents static priority from trapping bootstrap cargo. Population policy, SpawnBroker,
+movement arbitration, and executors retain their existing authorities.
 
 `LinkArbiter` is the sole link-transfer admission authority. Mining, logistics, and controller
 policy emit funded typed proposals; only `LinkExecutor` may call `StructureLink.transferEnergy`.
@@ -1046,6 +1048,10 @@ The modes are:
 | `normal`      | all due operational planners and selected strategic work                        |
 | `surplus`     | normal work plus backlog, route, layout, intel, and simulation jobs             |
 
+For the spawn-only RCL2 progression path, colony RCL and population policy treat both `normal` and
+`surplus` as normal-work capacity. Mature surplus admission remains unchanged; lower CPU modes
+preempt the RCL2 optional work.
+
 Criticality classes are:
 
 1. `mandatory`: boot, observation, safety, essential execution, reconcile, minimal telemetry;
@@ -1693,10 +1699,13 @@ while capacity remains below that normal floor, the full protected reserve remai
 viable `WORK`/`CARRY`/`MOVE` worker carries energy. Its distinct `rcl2-infrastructure-bootstrap`
 candidate claims CPU but no room energy because `Creep.build` spends creep cargo; current
 actor-energy eligibility prevents an empty worker from taking that lease, and a stable contract
-survives temporary worker/cargo loss and retires when the site or bootstrap phase ends.
-`ColonyDirector` remains the sole budget authority, so controller risk is admitted ahead of optional
-construction and constrained CPU, threat, or recovery posture fails optional growth closed. Lease
-agents and executors retain the only Screeps work-command path.
+survives temporary worker/cargo loss and retires when the site or bootstrap phase ends. At the
+normal 400-energy floor, RCL2 reserves one of the existing two optional-growth slots for controller
+work while one site remains active; existing budget, population, and allocator authorities still
+require funded energy and a separate viable actor before both can execute. `ColonyDirector` remains
+the sole budget authority, so controller risk is admitted ahead of optional construction and
+constrained CPU, threat, or recovery posture fails optional growth closed. Lease agents and
+executors retain the only Screeps work-command path.
 [ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md) records the RCL2 exception.
 
 Lease agents retain no task or role Memory. They correlate each proposal with contract ID and

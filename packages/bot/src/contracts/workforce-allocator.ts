@@ -330,15 +330,18 @@ function actionEligible(
     return actor.energy === undefined || actor.energy > 0;
   if (contract.execution.action === "build" && contract.issuer.includes("/rcl2-bootstrap/build/"))
     return actor.energy === undefined || actor.energy > 0;
-  if (contract.execution.action === "harvest")
-    return (
-      contract.execution.version === 2 ||
-      contract.execution.version === 5 ||
+  if (contract.execution.action === "harvest") {
+    const hasCapacity =
       actor.capability.carry === 0 ||
       actor.freeCapacity === undefined ||
       actor.freeCapacity === null ||
-      actor.freeCapacity > 0
-    );
+      actor.freeCapacity > 0;
+    if (contract.execution.version !== 2 && contract.execution.version !== 5) return hasCapacity;
+    // Preserve an established stationary/drop miner, but do not let a newly considered full
+    // carry-bearing worker bypass carried-energy consumption merely because static mining may drop
+    // overflow. The worker becomes eligible again after consuming its cargo.
+    return hasCapacity || incumbent?.id === contract.id;
+  }
   return true;
 }
 

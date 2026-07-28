@@ -40,6 +40,7 @@ const input = (change: Partial<ColonyPopulationPolicyInput> = {}): ColonyPopulat
   availableEnergy: 2_000,
   colonyId: "W1N1",
   committedDemandIds: [],
+  controllerLevel: 2,
   controllerRisk: false,
   cpuMode: "normal",
   funded: { loads: [load()], status: "ready" },
@@ -123,6 +124,29 @@ describe("ColonyPopulationPolicy", () => {
     );
     expect(mixed.demands.every(({ category }) => category === "defense")).toBe(true);
   });
+  it("admits optional RCL2 population without opening mature surplus population", () => {
+    const optional = load({ category: "optional-growth" });
+    const policy = new ColonyPopulationPolicy();
+    expect(
+      policy.project(
+        input({
+          controllerLevel: 2,
+          cpuMode: "surplus",
+          funded: { loads: [optional], status: "ready" },
+        }),
+      ).demands,
+    ).not.toEqual([]);
+    expect(
+      policy.project(
+        input({
+          controllerLevel: 8,
+          cpuMode: "surplus",
+          funded: { loads: [optional], status: "ready" },
+        }),
+      ).demands,
+    ).toEqual([]);
+  });
+
   it("uses exact replacement lead edge", () => {
     const p = new ColonyPopulationPolicy();
     expect(p.project(input({ actors: [actor(59)] })).demands).toHaveLength(2);

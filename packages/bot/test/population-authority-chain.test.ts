@@ -271,6 +271,7 @@ function policyInput(
     availableEnergy: 300,
     colonyId: "W1N1",
     committedDemandIds: [],
+    controllerLevel: 2,
     controllerRisk: false,
     cpuMode: "normal",
     funded: { status: "ready", loads: [populationLoad()] },

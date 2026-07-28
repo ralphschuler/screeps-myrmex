@@ -87,6 +87,16 @@ describe("complete-colony RCL policy projection", () => {
         reasonCode,
       });
   });
+  it("treats surplus CPU as RCL2 normal-work capacity without opening mature progression", () => {
+    expect(projectColonyRclPolicy({ ...BASE, cpuMode: "surplus" }).progression).toMatchObject({
+      authorized: true,
+      reasonCode: "active",
+    });
+    expect(
+      projectColonyRclPolicy({ ...BASE, controllerLevel: 8, cpuMode: "surplus" }).progression,
+    ).toMatchObject({ authorized: false, reasonCode: "constrained-cpu-preemption" });
+  });
+
   it("authorizes bounded infrastructure rebuilding without reopening optional progression", () => {
     const rclPolicy = projectColonyRclPolicy({ ...BASE, controllerLevel: 8 });
     const domainHealth = projectColonyDomainHealth({

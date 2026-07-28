@@ -45,8 +45,12 @@ A spawn-only RCL2 room can progress an observed first-extension site through pro
 and executors while the spawn remains at 300 energy. Heap reconstruction preserves the contract and
 normal growth resumes without duplicate bootstrap work once sufficient capacity exists.
 
-This repair does not prove layout placement, static-mining handoff, or a complete spawn-only RCL2 to
-RCL3 movement soak. Issues #474 and #476 retain those separate outcomes.
+Follow-up issue #476 composes the missing production path. `surplus` CPU is admitted as normal work
+for this RCL2 progression path without changing mature admission; a full carry-bearing actor cannot
+newly enter V2/V5 drop mining before consuming its cargo; and, at the 400-energy normal floor, one
+of the existing two RCL2 optional-growth slots is reserved for controller work while the other
+retains construction. Exact budget, population, allocator, movement, and executor authorities remain
+unchanged.
 
 Rollback needs no Memory migration. Cancel or allow the distinct bootstrap contracts to retire
 before deploying older code; older planning otherwise cancels their ordinary `growth/` issuers

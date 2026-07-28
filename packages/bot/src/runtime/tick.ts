@@ -6563,9 +6563,19 @@ function authorizedSpawnIntents(
     if (
       selection.revision !== authority.revision ||
       selection.budgetId !== authority.reservationId ||
-      reservation === undefined ||
+      reservation === undefined
+    ) {
+      throw new Error("SpawnBroker selection does not match its atomic colony grant");
+    }
+    // The exact session re-arbitrates provisional selections after every claim competes together.
+    // A normal reserve/capacity denial revokes that provisional selection without faulting Plan.
+    if (
+      reservation.status !== "active" ||
       reservation.grant.energy < selection.energyCost ||
-      reservation.grant.spawn === null ||
+      reservation.grant.spawn === null
+    )
+      continue;
+    if (
       reservation.grant.spawn.spawnId !== selection.spawnClaim.spawnId ||
       reservation.grant.spawn.startTick !== selection.spawnClaim.startTick ||
       reservation.grant.spawn.endTick !== selection.spawnClaim.endTick
