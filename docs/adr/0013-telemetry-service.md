@@ -13,7 +13,9 @@ make reset/reordering behaviour unprovable.
 `TelemetryService` is the sole authority for the `telemetry` owner. It consumes settled immutable
 tick receipts and writes a fixed-schema capped observer history through `MemoryManager`'s single
 reconciliation commit. The status surface has bounded typed detail records, fixed aggregate
-counters, a canonical hash, and deterministic overflow counters.
+counters, a canonical hash, and deterministic overflow counters. A `not-funded` allocation detail is
+omitted when the same tick already publishes the contract's funding blocker; this preserves the
+blocker while avoiding duplicate budget consumption.
 
 The owner contains only current status metadata, capped hash history, dropped counts, and the safe
 reporter aggregation metadata described below. It has no live objects, raw snapshots, planner

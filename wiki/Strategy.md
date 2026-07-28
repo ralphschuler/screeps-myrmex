@@ -38,6 +38,12 @@ viable worker while preserving the full spawn reserve. This bounded exception en
 bootstrap state ends; normal surplus-based growth then resumes. It does not bypass layout,
 contracts, movement, action arbitration, replacement, threat, or CPU gates.
 
+Static-mining funding does not stop that worker from harvesting. A source changes over only after a
+matching leased miner is currently viable on the exact committed work tile. MYRMEX then suppresses
+competing mobile harvest execution and suspends the reusable fallback contract. Miner death, blocked
+or suspended movement, replacement delay, reset, or constrained CPU restores mobile harvesting.
+Zero-`CARRY` static miners intentionally drop harvested energy for the existing pickup path.
+
 Capability contracts bind to a stable BudgetLedger issuer key and must see the matching current
 active reservation before funding or assignment. One grant binding backs at most one active
 contract. Grant renewal preserves contract identity; released, consumed, expired, or missing

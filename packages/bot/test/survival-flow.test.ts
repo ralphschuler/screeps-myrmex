@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { authorizedSurvivalFlow, planSurvivalFlow, renewSurvivalFlowBudgets } from "../src/economy";
+import {
+  authorizedSurvivalFlow,
+  planSurvivalFlow,
+  renewSurvivalFlowBudgets,
+  withoutSupersededSurvivalHarvestLeases,
+} from "../src/economy";
 import {
   contractIdFor,
+  ContractLedger,
   normalizeContractRequest,
   requestSignature,
   WorkforceAllocator,
@@ -118,7 +124,7 @@ describe("survival flow", () => {
     expect(planSurvivalFlow(withOnlyInactiveExtension)).toEqual([]);
   });
 
-  it("hands each source from mobile survival flow to static mining only after funding", () => {
+  it("keeps mobile harvesting until a leased static miner can take over", () => {
     const binding = (
       state: ContractPlanningView["contracts"][number]["state"],
     ): ContractPlanningView => ({
@@ -136,7 +142,7 @@ describe("survival flow", () => {
             counterpartId: null,
             resourceType: null,
             version: 2,
-            workPosition: position(9, 10),
+            workPosition: position(10, 10),
           },
           issuer: "mining/W1N1/source-near",
           owner: { id: "W1N1", kind: "colony" },
@@ -145,31 +151,343 @@ describe("survival flow", () => {
         },
       ],
     });
-    const selectedTarget = (state: ContractPlanningView["contracts"][number]["state"]) =>
-      planSurvivalFlow(snapshot(), { leases: [], status: "ready" }, binding(state))[0]?.targetId;
+    const selectedTarget = (
+      state: ContractPlanningView["contracts"][number]["state"],
+      execution: ContractExecutionView = { leases: [], status: "ready" },
+      observed: WorldSnapshot = snapshot(),
+    ) => planSurvivalFlow(observed, execution, binding(state))[0]?.targetId;
 
-    expect(selectedTarget("proposed")).toBe("source-near");
-    expect(selectedTarget("suspended")).toBe("source-near");
-    for (const state of ["funded", "assigned", "active"] as const)
-      expect(selectedTarget(state)).toBe("source-far");
+    for (const state of ["proposed", "funded", "assigned", "active", "suspended"] as const)
+      expect(selectedTarget(state)).toBe("source-near");
+    for (const state of ["assigned", "active"] as const)
+      expect(selectedTarget(state, activeStaticExecution(state), staticTakeoverSnapshot())).toBe(
+        "source-far",
+      );
+    expect(selectedTarget("active", activeStaticExecution("active"), snapshot())).toBe(
+      "source-near",
+    );
+    expect(
+      selectedTarget(
+        "active",
+        activeStaticExecution("active"),
+        staticTakeoverSnapshot({ moveParts: 0 }),
+      ),
+    ).toBe("source-far");
+    for (const observed of [
+      staticTakeoverSnapshot({ ticksToLive: 1 }),
+      staticTakeoverSnapshot({ workParts: 0 }),
+      staticTakeoverSnapshot({ sourcePosition: position(12, 11) }),
+    ])
+      expect(selectedTarget("active", activeStaticExecution("active"), observed)).toBe(
+        "source-near",
+      );
+    const distantSourceExecution = activeStaticExecution("active");
+    const distantSourceLease = distantSourceExecution.leases[0];
+    if (distantSourceLease === undefined) throw new Error("expected static lease");
+    expect(
+      selectedTarget(
+        "active",
+        {
+          ...distantSourceExecution,
+          leases: [{ ...distantSourceLease, target: position(12, 12) }],
+        },
+        staticTakeoverSnapshot({ sourcePosition: position(12, 12) }),
+      ),
+    ).toBe("source-near");
+    const expiredExecution = activeStaticExecution("active");
+    const expiredLease = expiredExecution.leases[0];
+    if (expiredLease === undefined) throw new Error("expected static lease");
+    expect(
+      selectedTarget(
+        "active",
+        { ...expiredExecution, leases: [{ ...expiredLease, leaseExpiresAt: 10 }] },
+        staticTakeoverSnapshot(),
+      ),
+    ).toBe("source-near");
+    const mobileExecution = activeFlowExecution("harvest");
+    const mobileLease = mobileExecution.leases[0];
+    if (mobileLease === undefined) throw new Error("expected mobile lease");
+    const capacityFillers = Array.from({ length: 63 }, (_, index) => ({
+      ...mobileLease,
+      actorId: `actor-${String(index).padStart(2, "0")}`,
+      actorName: `actor-${String(index).padStart(2, "0")}`,
+      contractId: `filler-${String(index).padStart(2, "0")}`,
+    }));
+    const capacityExecution: ContractExecutionView = {
+      leases: [
+        ...capacityFillers,
+        ...mobileExecution.leases,
+        ...activeStaticExecution("active", "z-miner").leases,
+      ],
+      status: "ready",
+    };
+    const capacitySnapshot = staticTakeoverSnapshot({ minerId: "z-miner" });
+    expect(selectedTarget("active", capacityExecution, capacitySnapshot)).toBe("source-near");
+    expect(
+      selectedTarget(
+        "active",
+        { ...capacityExecution, leases: [...capacityExecution.leases].reverse() },
+        capacitySnapshot,
+      ),
+    ).toBe("source-near");
+    const capacityMobileContract = activeFlowPlanning("harvest").contracts[0];
+    const capacityStaticContract = binding("active").contracts[0];
+    if (capacityMobileContract === undefined || capacityStaticContract === undefined)
+      throw new Error("expected capacity contracts");
+    expect(
+      withoutSupersededSurvivalHarvestLeases(
+        capacityExecution,
+        {
+          contracts: [capacityMobileContract, capacityStaticContract],
+          status: "ready",
+        },
+        capacitySnapshot,
+      ).leases.map(({ contractId }) => contractId),
+    ).toContain("contract-harvest");
+
+    const nearMobileIssuer = "economy/W1N1/harvest/source-near";
+    const farMobileIssuer = "economy/W1N1/harvest/source-far";
+    const nearMobileContract = {
+      ...capacityMobileContract,
+      budgetBinding: { category: "harvesting-filling" as const, issuer: nearMobileIssuer },
+      contractId: "mobile-near",
+      issuer: nearMobileIssuer,
+      targetId: "source-near",
+    };
+    const farMobileContract = {
+      ...nearMobileContract,
+      budgetBinding: { category: "harvesting-filling" as const, issuer: farMobileIssuer },
+      contractId: "mobile-far",
+      issuer: farMobileIssuer,
+      targetId: "source-far",
+    };
+    const farStaticContract = {
+      ...capacityStaticContract,
+      budgetBinding: {
+        category: "harvesting-filling" as const,
+        issuer: "mining/W1N1/source-far",
+      },
+      contractId: "static-far",
+      execution: {
+        ...capacityStaticContract.execution,
+        workPosition: position(19, 20),
+      },
+      issuer: "mining/W1N1/source-far",
+      targetId: "source-far",
+    };
+    const nearStaticLease = activeStaticExecution("active", "b-static").leases[0];
+    if (nearStaticLease === undefined) throw new Error("expected near static lease");
+    const farStaticLease = {
+      ...nearStaticLease,
+      actorId: "e-static",
+      actorName: "e-static",
+      contractId: "static-far",
+      execution: { ...nearStaticLease.execution, workPosition: position(19, 20) },
+      target: position(20, 20),
+      targetId: "source-far",
+    };
+    const nearMobileLease = {
+      ...mobileLease,
+      actorId: "c-mobile",
+      actorName: "c-mobile",
+      contractId: "mobile-near",
+    };
+    const farMobileLease = {
+      ...mobileLease,
+      actorId: "d-mobile",
+      actorName: "d-mobile",
+      contractId: "mobile-far",
+      target: position(20, 20),
+      targetId: "source-far",
+    };
+    const cascadeFillers = capacityFillers.slice(0, 61);
+    const cascadeExecution: ContractExecutionView = {
+      leases: [farStaticLease, farMobileLease, ...cascadeFillers, nearMobileLease, nearStaticLease],
+      status: "ready",
+    };
+    const capacityRoom = capacitySnapshot.rooms[0];
+    const mobileTemplate = capacityRoom?.ownedCreeps.find(({ id }) => id === "worker-a");
+    const staticTemplate = capacityRoom?.ownedCreeps.find(({ id }) => id === "z-miner");
+    if (capacityRoom === undefined || mobileTemplate === undefined || staticTemplate === undefined)
+      throw new Error("expected capacity actors");
+    const cascadeSnapshot: WorldSnapshot = {
+      ...capacitySnapshot,
+      rooms: [
+        {
+          ...capacityRoom,
+          ownedCreeps: [
+            { ...staticTemplate, id: "e-static", name: "e-static", pos: position(19, 20) },
+            { ...mobileTemplate, id: "d-mobile", name: "d-mobile", pos: position(18, 20) },
+            { ...mobileTemplate, id: "c-mobile", name: "c-mobile" },
+            { ...staticTemplate, id: "b-static", name: "b-static" },
+          ],
+        },
+      ],
+    };
+    const cascadePlanning: ContractPlanningView = {
+      contracts: [farStaticContract, farMobileContract, nearMobileContract, capacityStaticContract],
+      status: "ready",
+    };
+    const cascadeRemaining = (leases: ContractExecutionView["leases"]) =>
+      withoutSupersededSurvivalHarvestLeases(
+        { leases, status: "ready" },
+        cascadePlanning,
+        cascadeSnapshot,
+      ).leases.map(({ contractId }) => contractId);
+    for (const leases of [cascadeExecution.leases, [...cascadeExecution.leases].reverse()]) {
+      expect(cascadeRemaining(leases)).not.toContain("mobile-near");
+      expect(cascadeRemaining(leases)).not.toContain("mobile-far");
+      expect(cascadeRemaining(leases)).toEqual(
+        expect.arrayContaining(["static-near", "static-far"]),
+      );
+    }
+    const takeoverSnapshot = staticTakeoverSnapshot();
+    const takeoverRoom = takeoverSnapshot.rooms[0];
+    if (takeoverRoom === undefined) throw new Error("expected takeover room");
+    const minerAway: WorldSnapshot = {
+      ...takeoverSnapshot,
+      rooms: [
+        {
+          ...takeoverRoom,
+          ownedCreeps: takeoverRoom.ownedCreeps.map((actor) =>
+            actor.id === "miner-a" ? { ...actor, pos: position(9, 10) } : actor,
+          ),
+        },
+      ],
+    };
+    expect(selectedTarget("active", activeStaticExecution("active"), minerAway)).toBe(
+      "source-near",
+    );
+    const reordered: WorldSnapshot = {
+      ...takeoverSnapshot,
+      rooms: [
+        {
+          ...takeoverRoom,
+          ownedCreeps: [...takeoverRoom.ownedCreeps].reverse(),
+          sources: [...takeoverRoom.sources].reverse(),
+        },
+      ],
+    };
+    expect(planSurvivalFlow(reordered, activeStaticExecution("active"), binding("active"))).toEqual(
+      planSurvivalFlow(
+        JSON.parse(JSON.stringify(takeoverSnapshot)) as WorldSnapshot,
+        JSON.parse(JSON.stringify(activeStaticExecution("active"))) as ContractExecutionView,
+        JSON.parse(JSON.stringify(binding("active"))) as ContractPlanningView,
+      ),
+    );
+
+    let recoveredFallbackRequest:
+      ReturnType<typeof authorizedSurvivalFlow>["requests"][number] | null = null;
+    for (const state of ["funded", "suspended"] as const) {
+      const legacyFallbackCandidate = planSurvivalFlow(
+        snapshot(),
+        { leases: [], status: "ready" },
+        binding(state),
+      )[0];
+      if (legacyFallbackCandidate === undefined)
+        throw new Error("expected legacy fallback candidate");
+      const request = authorizedSurvivalFlow(
+        [legacyFallbackCandidate],
+        [{ ...legacyFallbackCandidate.budgetRequest, status: "active" }],
+        binding(state),
+        10,
+      ).requests[0];
+      expect(request?.issuerSequence).toBe(2);
+      recoveredFallbackRequest = request ?? null;
+    }
+    const initialCandidate = planSurvivalFlow(snapshot())[0];
+    if (initialCandidate === undefined || recoveredFallbackRequest === null)
+      throw new Error("expected fallback generations");
+    const initialRequest = authorizedSurvivalFlow(
+      [initialCandidate],
+      [{ ...initialCandidate.budgetRequest, status: "active" }],
+      { contracts: [], status: "ready" },
+      1,
+    ).requests[0];
+    if (initialRequest === undefined) throw new Error("expected initial fallback request");
+    const opened = ContractLedger.open({});
+    if (opened.status !== "ready") throw new Error("expected contract ledger");
+    const initialSubmission = opened.ledger.submit(initialRequest, 1);
+    if (!initialSubmission.accepted) throw new Error("expected initial fallback submission");
+    expect(
+      opened.ledger.transition({
+        contractId: initialSubmission.contractId,
+        reason: "legacy-static-handoff",
+        tick: 2,
+        to: "cancelled",
+      }),
+    ).toMatchObject({ accepted: true, to: "cancelled" });
+    const reconstructed = ContractLedger.open(
+      JSON.parse(JSON.stringify(opened.ledger.view())) as unknown,
+    );
+    if (reconstructed.status !== "ready") throw new Error("expected reconstructed ledger");
+    expect(reconstructed.ledger.submit(recoveredFallbackRequest, 3)).toMatchObject({
+      accepted: true,
+      outcome: "created",
+    });
 
     const mobile = activeFlowPlanning("harvest").contracts[0];
-    const staticContract = binding("funded").contracts[0];
+    const staticContract = binding("active").contracts[0];
     if (mobile === undefined || staticContract === undefined)
       throw new Error("expected handoff contracts");
+    const planning = { contracts: [mobile, staticContract], status: "ready" as const };
+    const execution = {
+      leases: [...activeFlowExecution("harvest").leases, ...activeStaticExecution("active").leases],
+      status: "ready" as const,
+    };
+    expect(
+      authorizedSurvivalFlow([], [], planning, 10, staticTakeoverSnapshot(), execution).transitions,
+    ).toEqual([
+      expect.objectContaining({
+        contractId: mobile.contractId,
+        reason: "static-miner-ready",
+        to: "suspended",
+      }),
+    ]);
+    expect(
+      withoutSupersededSurvivalHarvestLeases(
+        execution,
+        planning,
+        staticTakeoverSnapshot(),
+      ).leases.map(({ contractId }) => contractId),
+    ).toEqual(["static-near"]);
+
+    const suspendedStatic = { ...staticContract, state: "suspended" as const };
+    const recoveryCandidate = planSurvivalFlow(
+      snapshot(),
+      { leases: [], status: "ready" },
+      { contracts: [suspendedStatic], status: "ready" },
+    )[0];
+    if (recoveryCandidate === undefined) throw new Error("expected fallback recovery candidate");
+    const suspendedMobile = {
+      ...mobile,
+      budgetBinding: {
+        category: "harvesting-filling" as const,
+        issuer: recoveryCandidate.budgetRequest.issuer,
+      },
+      issuer: recoveryCandidate.budgetRequest.issuer,
+      issuerSequence: recoveryCandidate.contractSequence,
+      state: "suspended" as const,
+      targetId: recoveryCandidate.targetId,
+    };
+    const recoveryPlanning = {
+      contracts: [suspendedMobile, suspendedStatic],
+      status: "ready" as const,
+    };
     expect(
       authorizedSurvivalFlow(
-        [],
-        [],
-        { contracts: [mobile, staticContract], status: "ready" },
-        10,
+        [recoveryCandidate],
+        [{ ...recoveryCandidate.budgetRequest, status: "active" }],
+        recoveryPlanning,
+        11,
         snapshot(),
+        { leases: [], status: "ready" },
       ).transitions,
     ).toEqual([
       expect.objectContaining({
         contractId: mobile.contractId,
-        reason: "static-binding-funded",
-        to: "cancelled",
+        reason: "survival-work-remains",
+        to: "funded",
       }),
     ]);
   });
@@ -263,7 +581,9 @@ describe("survival flow", () => {
       droppedResources: [],
       storedStructures,
     });
-    expect(planSurvivalFlow(noDrop, undefined, planning)).toEqual([]);
+    expect(planSurvivalFlow(noDrop, undefined, planning)).toEqual([
+      expect.objectContaining({ action: "harvest", targetId: "source-near" }),
+    ]);
   });
 
   it("funds suspended work again and cancels a vanished endpoint without duplicating its binding", () => {
@@ -493,6 +813,40 @@ describe("survival flow", () => {
   });
 });
 
+function activeStaticExecution(
+  state: "assigned" | "active",
+  actorId = "miner-a",
+): ContractExecutionView {
+  return {
+    status: "ready",
+    leases: [
+      {
+        actorId,
+        actorName: actorId,
+        contractId: "static-near",
+        deadline: 100,
+        execution: {
+          action: "harvest",
+          completion: "continuous",
+          counterpartId: null,
+          resourceType: null,
+          version: 2,
+          workPosition: position(10, 10),
+        },
+        expiresAt: 101,
+        leaseExpiresAt: 101,
+        priority: { class: "survival", value: 950 },
+        quantity: 50,
+        range: 1,
+        revision: 1,
+        state,
+        target: position(11, 11),
+        targetId: "source-near",
+      },
+    ],
+  };
+}
+
 function activeFlowExecution(action: "harvest" | "pickup" | "transfer"): ContractExecutionView {
   const transfer = action === "transfer";
   return {
@@ -581,6 +935,54 @@ function staticPlanning(sourceIds: readonly string[]): ContractPlanningView {
       state: "active",
       targetId: sourceId,
     })),
+  };
+}
+
+function staticTakeoverSnapshot(
+  options: {
+    readonly minerId?: string;
+    readonly moveParts?: number;
+    readonly sourcePosition?: ReturnType<typeof position>;
+    readonly ticksToLive?: number;
+    readonly workParts?: number;
+  } = {},
+): WorldSnapshot {
+  const observed = snapshot();
+  const room = observed.rooms[0];
+  const worker = room?.ownedCreeps[0];
+  if (room === undefined || worker === undefined) throw new Error("expected worker fixture");
+  const workParts = options.workParts ?? 2;
+  const moveParts = options.moveParts ?? 1;
+  const minerId = options.minerId ?? "miner-a";
+  const miner = {
+    ...worker,
+    body: {
+      ...worker.body,
+      activeParts: workParts + moveParts,
+      carry: { active: 0, boosted: 0, total: 0 },
+      move: { active: moveParts, boosted: 0, total: moveParts },
+      size: workParts + moveParts,
+      work: { active: workParts, boosted: 0, total: workParts },
+    },
+    id: minerId,
+    name: minerId,
+    pos: position(10, 10),
+    store: { capacity: 0, freeCapacity: 0, resources: [], usedCapacity: 0 },
+    ticksToLive: options.ticksToLive ?? worker.ticksToLive,
+  };
+  return {
+    ...observed,
+    rooms: [
+      {
+        ...room,
+        ownedCreeps: [{ ...worker, pos: position(8, 10) }, miner],
+        sources: room.sources.map((source) =>
+          source.id === "source-near" && options.sourcePosition !== undefined
+            ? { ...source, pos: options.sourcePosition }
+            : source,
+        ),
+      },
+    ],
   };
 }
 

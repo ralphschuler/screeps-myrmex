@@ -87,6 +87,51 @@ describe("TelemetryService", () => {
     expect(next.owner.droppedHistory).toBe(1);
   });
 
+  it("omits redundant not-funded allocation detail when funding explains the same contract", () => {
+    const outcome = runTick({ game: game(100), memory: {} as Memory });
+    if (outcome.telemetry === null || outcome.contracts === null)
+      throw new Error("expected telemetry and contracts");
+    const result = new TelemetryService().record(
+      {},
+      {
+        base: outcome.telemetry,
+        colony: outcome.colony,
+        contracts: {
+          ...outcome.contracts,
+          allocation: {
+            ...outcome.contracts.allocation,
+            deferred: [
+              { contractId: "duplicate-contract", reason: "not-funded" as const },
+              { contractId: "allocation-only", reason: "not-funded" as const },
+            ],
+          },
+          funding: [
+            {
+              contractId: "duplicate-contract",
+              reservationId: "duplicate-reservation",
+              reason: "reservation-inactive" as const,
+              status: "denied" as const,
+            },
+          ],
+        },
+        execution: outcome.execution,
+        growth: [],
+        maintenance: [],
+        movement: outcome.movement,
+        snapshot: outcome.snapshot,
+        spawn: outcome.spawn,
+        reporterSignals: [],
+      },
+    );
+    const contractDetails = result.telemetry.status.details.filter(
+      ({ domain }) => domain === "contract",
+    );
+    expect(contractDetails.filter(({ reason }) => reason === "not-funded")).toHaveLength(1);
+    expect(contractDetails.filter(({ reason }) => reason === "reservation-inactive")).toHaveLength(
+      1,
+    );
+  });
+
   it("migrates a V4 owner to bounded Phase 2 V5 samples, RCL timing, and attrition state", () => {
     const fixture = serviceFixture(100);
     const result = new TelemetryService().record(

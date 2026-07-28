@@ -56,6 +56,47 @@ describe("WorkforceAllocator", () => {
     ]);
   });
 
+  it("assigns zero-carry static miners while full mobile harvesters remain ineligible", () => {
+    const zeroCarryMiner = makeActor("actor:static", {
+      capability: capability({ move: 1, work: 2 }),
+      energy: 0,
+      freeCapacity: 0,
+    });
+    const staticHarvest = makeContract("contract:static", {
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 2,
+        workPosition: { roomName: "W1N1", x: 10, y: 10 },
+      },
+      requiredCapability: capability({ move: 1, work: 2 }),
+    });
+    const fullMobile = makeActor("actor:mobile", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 50,
+      freeCapacity: 0,
+    });
+    const mobileHarvest = makeContract("contract:mobile", {
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+    });
+
+    expect(allocate([zeroCarryMiner], [staticHarvest]).assignments).toEqual([
+      expect.objectContaining({ actorId: zeroCarryMiner.id, contractId: staticHarvest.id }),
+    ]);
+    expect(allocate([fullMobile], [mobileHarvest])).toMatchObject({
+      assignments: [],
+      deferred: [{ contractId: mobileHarvest.id, reason: "no-viable-actor" }],
+    });
+  });
+
   it("requires carried energy for controller work before assignment", () => {
     const empty = makeActor("actor:a-empty", {
       capability: capability({ carry: 1, move: 1, work: 1 }),

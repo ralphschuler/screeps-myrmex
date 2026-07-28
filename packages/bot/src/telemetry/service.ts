@@ -1163,9 +1163,11 @@ function collectDetails(input: TelemetryServiceInput): TelemetryDetail[] {
       details.push(detail("budget", decision.reservationId, decision.status, decision.reasonCode));
     }
   }
+  const contractsWithFundingDetail = new Set<string>();
   for (const decision of input.contracts?.funding ?? []) {
     if (decision.status !== "authorized") {
       details.push(detail("contract", decision.contractId, decision.status, decision.reason));
+      contractsWithFundingDetail.add(decision.contractId);
     }
   }
   for (const release of input.contracts?.releases ?? []) {
@@ -1196,6 +1198,8 @@ function collectDetails(input: TelemetryServiceInput): TelemetryDetail[] {
     }
   }
   for (const deferral of input.contracts?.allocation.deferred ?? []) {
+    if (deferral.reason === "not-funded" && contractsWithFundingDetail.has(deferral.contractId))
+      continue;
     details.push(detail("contract", deferral.contractId, "deferred", deferral.reason));
   }
   for (const decision of input.execution?.decisions ?? []) {

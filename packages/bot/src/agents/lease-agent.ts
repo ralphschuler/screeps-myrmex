@@ -1,8 +1,9 @@
-import type {
-  ContractExecutionTerms,
-  ContractExecutionView,
-  ContractTransitionRequest,
-  LeasedWorkExecution,
+import {
+  MAX_LEASE_EXECUTION_ACTORS,
+  type ContractExecutionTerms,
+  type ContractExecutionView,
+  type ContractTransitionRequest,
+  type LeasedWorkExecution,
 } from "../contracts";
 import type { MovementPolicy } from "../config";
 import {
@@ -20,7 +21,7 @@ import type {
   WorldSnapshot,
 } from "../world/snapshot";
 
-export const MAX_LEASE_AGENT_ACTORS = 64;
+export const MAX_LEASE_AGENT_ACTORS = MAX_LEASE_EXECUTION_ACTORS;
 
 export type AgentDispositionReason =
   | "actor-capability-lost"
@@ -453,6 +454,7 @@ function validateLease(
       lease.execution.action === "pickup") &&
     actor.store.freeCapacity !== null &&
     actor.store.freeCapacity <= 0 &&
+    lease.execution.version !== 2 &&
     lease.execution.version !== 5
   )
     return suspend("actor-store-full");

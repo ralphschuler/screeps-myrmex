@@ -1,9 +1,10 @@
 import type { BudgetRequest } from "../colony";
-import type {
-  ContractExecutionView,
-  ContractPlanningView,
-  ContractTransitionRequest,
-  WorkContractRequest,
+import {
+  MAX_LEASE_EXECUTION_ACTORS,
+  type ContractExecutionView,
+  type ContractPlanningView,
+  type ContractTransitionRequest,
+  type WorkContractRequest,
 } from "../contracts";
 import type { PositionSnapshot, RoomSnapshot, WorldSnapshot } from "../world/snapshot";
 
@@ -12,6 +13,7 @@ export interface SurvivalFlowCandidate {
   readonly actorId: string;
   readonly budgetRequest: BudgetRequest;
   readonly colonyId: string;
+  readonly contractSequence: number;
   readonly targetId: string;
   readonly target: PositionSnapshot;
 }
@@ -37,9 +39,11 @@ export function planSurvivalFlow(
 ): readonly SurvivalFlowCandidate[] {
   const candidates: SurvivalFlowCandidate[] = [];
   const activeActionByActor = activeSurvivalActionByActor(execution, planning);
-  const staticBindings = staticSourceBindings(planning);
+  const staticBindings = staticMiningBindings(planning);
+  const staticTakeovers = staticSourceTakeovers(execution, planning, snapshot);
   for (const room of snapshot.rooms.filter((value) => value.controller?.ownership === "owned")) {
     const roomBindings = staticBindings.get(room.name) ?? new Map();
+    const roomTakeovers = staticTakeovers.get(room.name) ?? new Map();
     const reservedDrops = new Set<string>();
     const reservedSources = new Set<string>();
     const reservedSinks = new Set<string>();
@@ -57,7 +61,7 @@ export function planSurvivalFlow(
         ? staticMiningDrop(room, actor.pos, reservedDrops, roomBindings)
         : null;
       const harvestTarget = canHarvest
-        ? source(room, actor.pos, reservedSources, new Set(roomBindings.keys()))
+        ? source(room, actor.pos, reservedSources, new Set(roomTakeovers.keys()))
         : null;
       const transferTarget = carriedEnergy > 0 ? sink(room, actor.pos, reservedSinks) : null;
       const activeAction = activeActionByActor.get(actor.id);
@@ -84,7 +88,15 @@ export function planSurvivalFlow(
             ? reservedDrops
             : reservedSinks
         ).add(target.id);
-        candidates.push(candidate(room.name, actor.id, action, target));
+        candidates.push(
+          candidate(
+            room.name,
+            actor.id,
+            action,
+            target,
+            survivalContractSequence(planning, room.name, action, target.id),
+          ),
+        );
       }
     }
   }
@@ -93,6 +105,22 @@ export function planSurvivalFlow(
       compareStrings(left.budgetRequest.issuer, right.budgetRequest.issuer),
     ),
   );
+}
+
+export function withoutSupersededSurvivalHarvestLeases(
+  execution: ContractExecutionView,
+  planning: ContractPlanningView,
+  snapshot: WorldSnapshot,
+): ContractExecutionView {
+  const takeovers = staticSourceTakeovers(execution, planning, snapshot);
+  const suppressedContractIds = supersededSurvivalHarvestContractIds(planning, takeovers);
+  if (suppressedContractIds.size === 0) return execution;
+  return Object.freeze({
+    leases: Object.freeze(
+      execution.leases.filter(({ contractId }) => !suppressedContractIds.has(contractId)),
+    ),
+    status: execution.status,
+  });
 }
 
 function activeSurvivalActionByActor(
@@ -192,6 +220,7 @@ export function authorizedSurvivalFlow(
   planning: ContractPlanningView,
   tick: number,
   observation: WorldSnapshot | null = null,
+  execution: ContractExecutionView = { leases: [], status: "unavailable" },
 ): SurvivalFlowPlan {
   const authorized = candidates.filter((candidate) =>
     reservations.some(
@@ -203,6 +232,12 @@ export function authorizedSurvivalFlow(
     ),
   );
   const currentIssuers = new Set(authorized.map((candidate) => candidate.budgetRequest.issuer));
+  const staticTakeovers: ReadonlyMap<
+    string,
+    ReadonlyMap<string, PositionSnapshot>
+  > = observation === null
+    ? new Map<string, ReadonlyMap<string, PositionSnapshot>>()
+    : staticSourceTakeovers(execution, planning, observation);
   const requests = authorized
     .map(contractFor)
     .sort((left, right) => compareStrings(left.issuer, right.issuer));
@@ -222,13 +257,15 @@ export function authorizedSurvivalFlow(
         });
       } else if (
         contract.execution.action === "harvest" &&
-        staticSourceBindings(planning).get(contract.owner.id)?.has(contract.targetId)
+        contract.state !== "proposed" &&
+        contract.state !== "suspended" &&
+        staticTakeovers.get(contract.owner.id)?.has(contract.targetId)
       ) {
         transitions.push({
           contractId: contract.contractId,
-          reason: "static-binding-funded",
+          reason: "static-miner-ready",
           tick,
-          to: "cancelled",
+          to: "suspended",
         });
       } else if (
         !currentIssuers.has(contract.issuer) &&
@@ -274,12 +311,14 @@ function candidate(
   actorId: string,
   action: "harvest" | "pickup" | "transfer",
   target: { readonly id: string; readonly pos: PositionSnapshot },
+  contractSequence: number,
 ): SurvivalFlowCandidate {
   const issuer = `economy/${colonyId}/${action}/${target.id}`;
   return {
     action,
     actorId,
     colonyId,
+    contractSequence,
     targetId: target.id,
     target: target.pos,
     budgetRequest: {
@@ -318,7 +357,7 @@ function contractFor(candidate: SurvivalFlowCandidate): WorkContractRequest {
     expiresAt: SURVIVAL_FLOW_EXPIRY,
     issuer: candidate.budgetRequest.issuer,
     issuerKey: `${candidate.action}:${candidate.targetId}`,
-    issuerSequence: 1,
+    issuerSequence: candidate.contractSequence,
     kind: harvest ? "harvest" : pickup ? "haul" : "fill",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 1 },
     // TTL/deadline checks remain authoritative; this cap must not reject a viable local-room route
@@ -386,32 +425,164 @@ function source(
       )[0] ?? null
   );
 }
-function staticSourceBindings(
+function survivalContractSequence(
+  planning: ContractPlanningView,
+  colonyId: string,
+  action: SurvivalFlowCandidate["action"],
+  targetId: string,
+): number {
+  if (planning.status !== "ready") return 1;
+  const issuer = `economy/${colonyId}/${action}/${targetId}`;
+  const existing = planning.contracts.find(
+    (contract) => isSurvivalFlowContract(contract) && contract.issuer === issuer,
+  );
+  if (existing !== undefined) return existing.issuerSequence ?? 1;
+  if (action !== "harvest") return 1;
+  const staticContracts = planning.contracts.filter((contract) => {
+    const identity = staticMiningIdentity(contract, true);
+    return identity?.colonyId === colonyId && identity.sourceId === targetId;
+  });
+  if (staticContracts.length !== 1) return 1;
+  return Math.max(2, (staticContracts[0]?.issuerSequence ?? 1) + 1);
+}
+
+function staticSourceTakeovers(
+  execution: ContractExecutionView,
+  planning: ContractPlanningView,
+  snapshot: WorldSnapshot,
+): ReadonlyMap<string, ReadonlyMap<string, PositionSnapshot>> {
+  if (execution.status !== "ready" || planning.status !== "ready") return new Map();
+  let current = execution;
+  let takeovers = staticSourceTakeoversOnce(current, planning, snapshot);
+  for (let pass = 0; pass <= execution.leases.length; pass += 1) {
+    const suppressed = supersededSurvivalHarvestContractIds(planning, takeovers);
+    const leases = current.leases.filter(({ contractId }) => !suppressed.has(contractId));
+    if (leases.length === current.leases.length) return takeovers;
+    current = Object.freeze({ leases: Object.freeze(leases), status: "ready" });
+    takeovers = staticSourceTakeoversOnce(current, planning, snapshot);
+  }
+  return takeovers;
+}
+
+function staticSourceTakeoversOnce(
+  execution: ContractExecutionView,
+  planning: ContractPlanningView,
+  snapshot: WorldSnapshot,
+): ReadonlyMap<string, ReadonlyMap<string, PositionSnapshot>> {
+  const result = new Map<string, Map<string, PositionSnapshot>>();
+  const admittedActorIds = admittedLeaseActorIds(execution);
+  for (const contract of planning.contracts) {
+    const identity = staticMiningIdentity(contract);
+    if (identity === null || (contract.state !== "assigned" && contract.state !== "active"))
+      continue;
+    const lease = execution.leases.find(({ contractId }) => contractId === contract.contractId);
+    const room = snapshot.rooms.find(({ name }) => name === identity.colonyId);
+    const actor = room?.ownedCreeps.find(({ id }) => id === lease?.actorId);
+    const source = room?.sources.find(({ id }) => id === identity.sourceId);
+    if (
+      lease === undefined ||
+      !admittedActorIds.has(lease.actorId) ||
+      lease.state !== contract.state ||
+      lease.targetId !== identity.sourceId ||
+      lease.execution.version !== 2 ||
+      lease.execution.workPosition.roomName !== identity.workPosition.roomName ||
+      lease.execution.workPosition.x !== identity.workPosition.x ||
+      lease.execution.workPosition.y !== identity.workPosition.y ||
+      snapshot.observedAt >
+        Math.min(lease.deadline, lease.expiresAt - 1, lease.leaseExpiresAt - 1) ||
+      actor === undefined ||
+      actor.name !== lease.actorName ||
+      actor.spawning ||
+      actor.ticksToLive === null ||
+      actor.ticksToLive <= 1 ||
+      actor.body.work.active < 1 ||
+      actor.pos.roomName !== identity.workPosition.roomName ||
+      actor.pos.x !== identity.workPosition.x ||
+      actor.pos.y !== identity.workPosition.y ||
+      source === undefined ||
+      distance(identity.workPosition, source.pos) > 1 ||
+      source.pos.roomName !== lease.target.roomName ||
+      source.pos.x !== lease.target.x ||
+      source.pos.y !== lease.target.y
+    )
+      continue;
+    const bindings = result.get(identity.colonyId) ?? new Map<string, PositionSnapshot>();
+    bindings.set(identity.sourceId, identity.workPosition);
+    result.set(identity.colonyId, bindings);
+  }
+  return result;
+}
+
+function supersededSurvivalHarvestContractIds(
+  planning: ContractPlanningView,
+  takeovers: ReadonlyMap<string, ReadonlyMap<string, PositionSnapshot>>,
+): ReadonlySet<string> {
+  return new Set(
+    planning.contracts.flatMap((contract) =>
+      isSurvivalFlowContract(contract) &&
+      contract.execution.action === "harvest" &&
+      takeovers.get(contract.owner.id)?.has(contract.targetId)
+        ? [contract.contractId]
+        : [],
+    ),
+  );
+}
+
+function admittedLeaseActorIds(execution: ContractExecutionView): ReadonlySet<string> {
+  const actorIds = new Set<string>();
+  for (const lease of [...execution.leases].sort(
+    (left, right) =>
+      compareStrings(left.actorId, right.actorId) ||
+      compareStrings(left.contractId, right.contractId),
+  )) {
+    if (actorIds.size >= MAX_LEASE_EXECUTION_ACTORS) break;
+    actorIds.add(lease.actorId);
+  }
+  return actorIds;
+}
+
+function staticMiningBindings(
   planning: ContractPlanningView,
 ): ReadonlyMap<string, ReadonlyMap<string, PositionSnapshot>> {
   const result = new Map<string, Map<string, PositionSnapshot>>();
   if (planning.status !== "ready") return result;
   for (const contract of planning.contracts) {
-    const [scope, colonyId, sourceId, ...extra] = contract.issuer.split("/");
-    if (
-      scope !== "mining" ||
-      colonyId === undefined ||
-      sourceId === undefined ||
-      extra.length > 0 ||
-      !["funded", "assigned", "active"].includes(contract.state) ||
-      contract.owner.kind !== "colony" ||
-      contract.owner.id !== colonyId ||
-      contract.targetId !== sourceId ||
-      contract.budgetBinding.category !== "harvesting-filling" ||
-      contract.budgetBinding.issuer !== contract.issuer ||
-      contract.execution.version !== 2
-    )
-      continue;
-    const bindings = result.get(colonyId) ?? new Map<string, PositionSnapshot>();
-    bindings.set(sourceId, contract.execution.workPosition);
-    result.set(colonyId, bindings);
+    const identity = staticMiningIdentity(contract);
+    if (identity === null) continue;
+    const bindings = result.get(identity.colonyId) ?? new Map<string, PositionSnapshot>();
+    bindings.set(identity.sourceId, identity.workPosition);
+    result.set(identity.colonyId, bindings);
   }
   return result;
+}
+
+function staticMiningIdentity(
+  contract: ContractPlanningView["contracts"][number],
+  includeSuspended = false,
+): {
+  readonly colonyId: string;
+  readonly sourceId: string;
+  readonly workPosition: PositionSnapshot;
+} | null {
+  const [scope, colonyId, sourceId, ...extra] = contract.issuer.split("/");
+  const stateMatches = includeSuspended
+    ? ["funded", "assigned", "active", "suspended"].includes(contract.state)
+    : ["funded", "assigned", "active"].includes(contract.state);
+  if (
+    scope !== "mining" ||
+    colonyId === undefined ||
+    sourceId === undefined ||
+    extra.length !== 0 ||
+    !stateMatches ||
+    contract.owner.kind !== "colony" ||
+    contract.owner.id !== colonyId ||
+    contract.targetId !== sourceId ||
+    contract.budgetBinding.category !== "harvesting-filling" ||
+    contract.budgetBinding.issuer !== contract.issuer ||
+    contract.execution.version !== 2
+  )
+    return null;
+  return { colonyId, sourceId, workPosition: contract.execution.workPosition };
 }
 function resourceAmount(
   actor: {

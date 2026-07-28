@@ -1,6 +1,6 @@
 # ADR 0017: Static mining authority foundation
 
-Status: accepted (PR C composed activation evidence)
+Status: accepted (PR C composed activation evidence; issue #474 takeover correction)
 
 ## Context
 
@@ -39,6 +39,20 @@ source-unavailable; composed runtime evidence, activation, and policy telemetry 
   [`phase2-mining-results.json`](../phase2-mining-results.json). It proves stable source identities,
   bounded source evaluation, reset/reorder equivalence, deterministic fault recovery, and
   observer-only mining telemetry without granting telemetry gameplay authority.
+- Issue #474 corrects mobile-to-static takeover. A funded, unassigned, traveling, missing,
+  incapacitated, expired, executor-cap-deferred, or suspended static contract does not exclude
+  survival harvesting. Takeover requires one matching assigned or active V2 lease whose current
+  actor is viable, has reached the exact committed work position, and lies inside the canonical
+  64-actor lease-execution admission. The existing mobile lease is suppressed for that tick and
+  suspended, not retired; actor loss, lease suspension, path failure, or replacement delay re-funds
+  the fallback through the same ContractLedger authority. Previously retired generation-one mobile
+  harvest identities recover at one deterministic later coordinate inferred only from the exact
+  static contract.
+- V2 extraction deliberately supports zero-`CARRY` miners. Workforce allocation and lease execution
+  therefore admit a capable V2 actor with zero Store capacity; successful `Creep.harvest` drops the
+  energy on its tile under the official API contract. V1 mobile harvesting still requires free
+  capacity. Survival contract publication is operational work under constrained CPU; no planner,
+  role, queue, budget, or command authority is added.
 
 ## Consequences
 
@@ -49,11 +63,16 @@ source-unavailable; composed runtime evidence, activation, and policy telemetry 
   decisions without granting layout code command authority.
 - Container decay remains #49 repair input, drop collection remains #47 hauling work, and
   `link-candidate` remains a read-only transition until #48 owns link commands.
+- The source keeps one executable mobile fallback until a current viable V2 miner reaches the exact
+  work tile. Takeover emits no duplicate harvest action; losing that readiness restores fallback
+  within bounded contract reconciliation, including constrained CPU and heap reconstruction.
 
 ## Sources consulted
 
 - [Source](https://docs.screeps.com/api/#Source)
 - [Creep.harvest](https://docs.screeps.com/api/#Creep.harvest)
 - [StructureContainer](https://docs.screeps.com/api/#StructureContainer)
+- [StructureSpawn.spawnCreep](https://docs.screeps.com/api/#StructureSpawn.spawnCreep)
 - [Room.Terrain](https://docs.screeps.com/api/#Room.Terrain)
-- [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/) (terminology only)
+- [Static Harvesting](https://wiki.screepspl.us/Static_Harvesting/) (stationary and zero-`CARRY`
+  terminology only)

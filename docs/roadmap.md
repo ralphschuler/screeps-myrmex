@@ -39,7 +39,9 @@ merged.
   [issue #24](https://github.com/ralphschuler/screeps-myrmex/issues/24) and
   [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). This schedules the zero-worker recovery
   body without adding a second ledger or persistent spawn queue.
-- Bootstrap harvesting, filling, upgrading, and construction demand.
+- Bootstrap harvesting, filling, upgrading, and construction demand. Static-mining takeover and
+  bounded survival fallback are protected by
+  [issue #474](https://github.com/ralphschuler/screeps-myrmex/issues/474).
 - Proactive replacement deadlines plus worker execution for end-to-end zero-creep recovery.
 - Deterministic movement/primary-action authority is tracked by
   [issue #25](https://github.com/ralphschuler/screeps-myrmex/issues/25); bounded runtime channels,
