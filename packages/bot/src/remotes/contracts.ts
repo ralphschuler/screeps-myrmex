@@ -1,13 +1,19 @@
 import type { RoomIntelQueryResult } from "../world/intel";
 import type { RoutePlanResult } from "../world/routes";
+import type {
+  RemoteAccountingObservation,
+  RemoteAccountingPolicyV1,
+  RemoteAccountingRecordV1,
+  RemoteAccountingResult,
+} from "./accounting-contracts";
 
-export const REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION = 1 as const;
+export const REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION = 2 as const;
 
 export const REMOTE_PORTFOLIO_LIMITS = Object.freeze({
   maximumCandidatesPerTick: 8,
   maximumDeadlineTicks: 50_000,
   maximumIdentityCodeUnits: 128,
-  maximumOwnerCodeUnits: 16_384,
+  maximumOwnerCodeUnits: 32_768,
   maximumRateMilliPerTick: 1_000_000_000,
   maximumCapacityUnits: 1_000_000_000_000,
   maximumRecords: 32,
@@ -46,6 +52,9 @@ export const REMOTE_PORTFOLIO_REASONS = [
   "capacity-cpu",
   "capacity-memory",
   "capacity-active",
+  "realized-negative",
+  "accounting-stale",
+  "accounting-incomplete",
   "cooldown-wait",
   "cooldown-probe",
   "resumed-active",
@@ -139,9 +148,16 @@ export interface RemotePortfolioRecord {
 }
 
 export interface RemotePortfolioOwnerV1 {
+  readonly schemaVersion: 1;
+  readonly revision: number;
+  readonly records: readonly RemotePortfolioRecord[];
+}
+
+export interface RemotePortfolioOwnerV2 {
   readonly schemaVersion: typeof REMOTE_PORTFOLIO_OWNER_SCHEMA_VERSION;
   readonly revision: number;
   readonly records: readonly RemotePortfolioRecord[];
+  readonly accounting: readonly RemoteAccountingRecordV1[];
 }
 
 export interface RemotePortfolioInput {
@@ -150,6 +166,9 @@ export interface RemotePortfolioInput {
   readonly candidates: readonly RemoteCandidateEvidence[];
   readonly capacity: RemotePortfolioCapacity;
   readonly policy: RemotePortfolioPolicyV1;
+  /** Settled current-tick receipts; omission records no new sample. */
+  readonly accounting?: readonly RemoteAccountingObservation[];
+  readonly accountingPolicy?: RemoteAccountingPolicyV1;
 }
 
 export interface RemotePortfolioObjective {
@@ -198,7 +217,8 @@ export type RemotePortfolioStatus =
 export interface RemotePortfolioResult {
   readonly status: RemotePortfolioStatus;
   readonly changed: boolean;
-  readonly owner: RemotePortfolioOwnerV1 | null;
+  readonly owner: RemotePortfolioOwnerV2 | null;
+  readonly accounting: RemoteAccountingResult;
   readonly objectives: readonly RemotePortfolioObjective[];
   readonly dispositions: readonly RemotePortfolioDisposition[];
   readonly metrics: RemotePortfolioMetrics;

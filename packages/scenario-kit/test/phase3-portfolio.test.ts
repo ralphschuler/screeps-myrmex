@@ -3,7 +3,7 @@ import {
   DEFAULT_REMOTE_PORTFOLIO_POLICY_V1,
   RemotePortfolio,
   type RemoteCandidateEvidence,
-  type RemotePortfolioOwnerV1,
+  type RemotePortfolioOwnerV2,
   type RemotePortfolioState,
 } from "../../bot/src/remotes";
 import type { RoomIntelQueryResult } from "../../bot/src/world/intel";
@@ -11,7 +11,7 @@ import type { RoutePlanResult } from "../../bot/src/world/routes";
 import { defineReplayScenario, runScenario, type ReplayScenario } from "../src";
 
 interface PortfolioWorld {
-  readonly owner: RemotePortfolioOwnerV1 | Readonly<Record<string, never>>;
+  readonly owner: RemotePortfolioOwnerV2 | Readonly<Record<string, never>>;
 }
 
 type PortfolioInputKind =
