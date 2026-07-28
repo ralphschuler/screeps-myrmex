@@ -380,6 +380,21 @@ export interface ContractExecutionView {
   readonly status: "ready" | "unavailable";
 }
 
+/** Tick-local strategy override that reuses lease-agent pathing and the sole MovementArbiter. */
+export interface LeaseTravelOverride {
+  readonly actorId: string;
+  readonly contractId: string;
+  readonly contractRevision: number;
+  readonly deadline: number;
+  readonly destinationRoomName: string;
+  readonly mode: "hold" | "travel";
+  readonly originRoomName: string;
+  readonly priority: number;
+  readonly reason: string;
+  readonly routeRoomNames: readonly string[];
+  readonly routeTravelTicks: number;
+}
+
 /** Bounded, data-only active-contract projection for planners that must renew or retire work. */
 export interface ContractPlanningRecord {
   readonly budgetBinding: ContractBudgetBinding;

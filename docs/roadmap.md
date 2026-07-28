@@ -218,6 +218,12 @@ authorized without an explicit maintainer resolution of this gap.
   and [`phase3-hauling-evidence.md`](phase3-hauling-evidence.md). V6 reuses LogisticsPlanner,
   ContractLedger, population/spawn, movement/action, and executor authorities; strict threat
   evacuation/resumption remains #61.
+- Threat-qualified remote suspension, leased-actor evacuation, loaded-hauler preservation, and
+  freshness/confidence/loss-gated resumption are tracked by
+  [issue #61](https://github.com/ralphschuler/screeps-myrmex/issues/61) and
+  [`phase3-safety-evidence.md`](phase3-safety-evidence.md). The request-driven projection reuses
+  relation, intel, route, portfolio, contract, logistics, lease-agent, movement, and executor
+  authorities; owned-room defense remains later work.
 - Realized per-remote full-cost profitability and outcome telemetry remain issue #62.
 
 **Exit:** only profitable remotes remain active during bounded deterministic portfolio soaks.

@@ -5,7 +5,7 @@ import {
   type LeaseAgentPlanInput,
 } from "../src/agents";
 import { DEFAULT_SURVIVAL_POLICY } from "../src/config/defaults";
-import type { LeasedWorkExecution } from "../src/contracts";
+import type { LeaseTravelOverride, LeasedWorkExecution } from "../src/contracts";
 import { EMPTY_MOVEMENT_PROGRESS_VIEW, type LocalPathPlanningService } from "../src/movement";
 import type { PositionSnapshot, WorldSnapshot } from "../src/world/snapshot";
 
@@ -45,6 +45,63 @@ describe("remote mining lease execution", () => {
     expect(harvesting.actions).toEqual([
       expect.objectContaining({ kind: "harvest", targetId: "source-a" }),
     ]);
+  });
+
+  it("lets remote safety reverse the leased route without issuing the exposed action", () => {
+    const override: LeaseTravelOverride = {
+      actorId: "creep-a",
+      contractId: "remote-mining-a",
+      contractRevision: 1,
+      deadline: 500,
+      destinationRoomName: "W1N1",
+      mode: "travel",
+      originRoomName: "W0N1",
+      priority: 10_000,
+      reason: "remote-safety-credible-hostile",
+      routeRoomNames: ["W1N1"],
+      routeTravelTicks: 50,
+    };
+    const fleeing = plan(
+      snapshot(position("W0N1", 10, 10), { energy: 3_000, present: true }),
+      miningLease(),
+      [override],
+    );
+    const crossing = plan(
+      snapshot(position("W0N1", 0, 10), { energy: 3_000, present: true }),
+      miningLease(),
+      [override],
+    );
+    const holding = plan(
+      snapshot(position("W0N1", 10, 10), { energy: 3_000, present: true }),
+      miningLease(),
+      [
+        {
+          ...override,
+          destinationRoomName: "W0N1",
+          mode: "hold",
+          routeRoomNames: [],
+          routeTravelTicks: 0,
+        },
+      ],
+    );
+
+    expect(fleeing.actions).toEqual([]);
+    expect(fleeing.movement).toEqual([
+      expect.objectContaining({
+        destination: position("W0N1", 9, 10),
+        goal: position("W0N1", 0, 10),
+        priority: 10_000,
+      }),
+    ]);
+    expect(crossing.actions).toEqual([]);
+    expect(crossing.movement).toEqual([
+      expect.objectContaining({
+        destination: position("W1N1", 49, 10),
+        direction: 7,
+        roomTransition: true,
+      }),
+    ]);
+    expect(holding).toEqual({ actions: [], dispositions: [], movement: [] });
   });
 
   it("continues with zero CARRY or a full store and idles while the source regenerates", () => {
@@ -117,7 +174,11 @@ describe("remote mining lease execution", () => {
   });
 });
 
-function plan(snapshotValue: WorldSnapshot, lease: LeasedWorkExecution) {
+function plan(
+  snapshotValue: WorldSnapshot,
+  lease: LeasedWorkExecution,
+  travelOverrides: readonly LeaseTravelOverride[] = [],
+) {
   const input: LeaseAgentPlanInput = {
     availablePathCpu: 1,
     execution: { leases: [lease], status: "ready" },
@@ -126,6 +187,7 @@ function plan(snapshotValue: WorldSnapshot, lease: LeasedWorkExecution) {
     progress: EMPTY_MOVEMENT_PROGRESS_VIEW,
     snapshot: snapshotValue,
     tick: 10,
+    travelOverrides,
   };
   return planLeaseAgents(input);
 }
@@ -171,7 +233,8 @@ function snapshot(
     energyAvailable: 0,
     energyCapacityAvailable: 0,
     hostileCreeps: [],
-    exits: name === "W1N1" ? [position(name, 49, 10)] : [],
+    exits:
+      name === "W1N1" ? [position(name, 49, 10)] : name === "W0N1" ? [position(name, 0, 10)] : [],
     name,
     observedAt: 10,
     ownedCreeps: actorPos.roomName === name ? [creep(actorPos, fullStore)] : [],
