@@ -292,7 +292,12 @@ describe("survival growth", () => {
         { status: "ready", contracts: [] },
         101,
       ).requests,
-    ).toMatchObject([{ issuerSequence: 2 }]);
+    ).toMatchObject([
+      {
+        issuerSequence: 2,
+        priority: { class: "survival", value: 1_600 },
+      },
+    ]);
   });
 
   it("atomically hands one RCL1 bootstrap contract to controller-risk funding", () => {

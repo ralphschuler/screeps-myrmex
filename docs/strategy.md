@@ -395,7 +395,12 @@ Local spending follows a fixed survival order: emergency spawning, defense, repl
 harvesting/filling, controller survival, critical maintenance, then optional growth. Current energy,
 spawn time, and kernel-admitted CPU are conserved before priority is considered. Only emergency
 spawning, defense, and replacement may consume protected spawn energy; every later category must
-leave the remaining tranche intact.
+leave the remaining tranche intact. Within one priority class, the higher numeric policy value wins
+before work-kind tie breakers. A worker with an active acquisition lease fills its known remaining
+cargo capacity before upgrade, build, or repair may take over. Once consumption begins, it retains
+that phase until its cargo is empty; harvest and pickup cannot turn partial capacity into a new
+acquisition trip. An available survival delivery sink may still preempt either phase. Equivalent
+leases renew before expiry so this phase does not disappear at a ten-tick boundary.
 
 Static mining assigns one deterministic primary extraction commitment per visible owned source. Once
 persisted, its legal reachable work position outranks newly observed alternate containers or sites.
@@ -434,12 +439,14 @@ withdraw, Wiki Maturity Matrix, and Wiki Energy guidance consulted for this poli
 
 RCL1 controller work spends only carried creep energy while the 300 spawn reserve remains intact.
 Inside the controller-risk window, only the higher-priority `controller-risk` path is funded;
-ordinary bootstrap does not duplicate it. A legal worker must currently carry energy before
-allocation, while cargo or actor loss preserves the stable budget/contract for later refill. Leaving
-or re-entering that window atomically advances the same issuer between controller-risk and bootstrap
-funding without duplicate budgets, contracts, leases, movement, or upgrade commands. Bootstrap's
-contract horizon matches the existing 1,500-tick assignment ceiling rather than the generic 50-tick
-lease duration, so legal fatigue-aware in-room travel remains assignable. Budget renewal atomically
+ordinary bootstrap does not duplicate it. Controller-risk work uses the `survival` contract class
+and may preempt acquisition with available cargo; ordinary bootstrap remains `growth` and waits for
+the normal acquisition batch. A legal worker must currently carry energy before allocation, while
+cargo or actor loss preserves the stable budget/contract for later refill. Leaving or re-entering
+that window atomically advances the same issuer between controller-risk and bootstrap funding
+without duplicate budgets, contracts, leases, movement, or upgrade commands. Bootstrap's contract
+horizon matches the existing 1,500-tick assignment ceiling rather than the generic 50-tick lease
+duration, so legal fatigue-aware in-room travel remains assignable. Budget renewal atomically
 advances exactly one contract generation with a fresh horizon; ambiguous or skipped issuer evidence
 fails closed. Worker loss, unknown routes, deadline infeasibility, and renewal conflicts remain
 distinct bounded outcomes rather than silent funded work.
@@ -629,6 +636,15 @@ shared storage capacity. Internal sends move resources from colonies above targe
 minimum, while terminal cooldown, destination capacity, protected energy, configured transaction
 cost, and shared colony funding can defer the transfer. Failed sends use bounded durable backoff;
 completed sends become eligible again only after observed destination stock changes.
+
+The shared lease and movement target catalog resolves the mineral object itself. A funded
+`WORK`/`MOVE` extractor may therefore operate without `CARRY` and deliberately drop output on its
+tile; carry-bearing harvesters still need observable free capacity. Industry CPU reservations use
+integer milli-CPU so valid work cannot be silently rejected by the colony ledger. New extraction
+funding survives publication when its exact current contract bootstrap is committed, including a
+successor generation on an older rolling grant; otherwise it requires the live mineral contract.
+Internal-send funding requires a current typed terminal intent. This settlement is binding-specific
+and never sweeps unrelated lab or mature Industry reservations.
 
 Lab staging is contamination-first and budget-bound. Industry may request finite reagent, product,
 boost-compound, or energy levels, but Logistics alone admits the corresponding local haul against

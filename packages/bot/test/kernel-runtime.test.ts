@@ -192,6 +192,57 @@ describe("RuntimeKernel", () => {
     expect(events).toEqual(["commit:tail", "commit:telemetry"]);
   });
 
+  it("keeps mandatory tail dependencies stable across restored health age", () => {
+    const cpu = new TestCpu();
+    const events: string[] = [];
+    const execute = makeSystem(
+      "spawn.execute",
+      {
+        phase: "execute",
+        criticality: "mandatory",
+        mandatoryTail: true,
+      },
+      () => ({ commit: () => events.push("execute") }),
+    );
+    const settle = makeSystem(
+      "spawn.settle",
+      {
+        phase: "execute",
+        criticality: "mandatory",
+        mandatoryTail: true,
+      },
+      () => ({ commit: () => events.push("settle") }),
+    );
+    const kernel = new RuntimeKernel([settle, execute], {
+      initialHealth: [
+        {
+          consecutiveFailures: 0,
+          lastSuccessfulTick: 10,
+          nextProbeTick: null,
+          systemId: "spawn.execute",
+        },
+        {
+          consecutiveFailures: 1,
+          lastSuccessfulTick: 1,
+          nextProbeTick: null,
+          systemId: "spawn.settle",
+        },
+      ],
+    });
+
+    const report = kernel.run({
+      context: { cpu, events },
+      cpu,
+      tick: 11,
+    });
+
+    expect(report.systems.map(({ systemId }) => systemId)).toEqual([
+      "spawn.execute",
+      "spawn.settle",
+    ]);
+    expect(events).toEqual(["execute", "settle"]);
+  });
+
   it("quarantines repeated optional faults, backs off probes, and recovers on success", () => {
     const cpu = new TestCpu();
     const events: string[] = [];

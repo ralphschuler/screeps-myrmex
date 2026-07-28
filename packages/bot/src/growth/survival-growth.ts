@@ -448,7 +448,7 @@ function contractFor(candidate: GrowthCandidate): WorkContractRequest {
     owner: { id: candidate.colonyId, kind: "colony" },
     preconditionKeys: ["visible-growth-target"],
     priority: {
-      class: "growth",
+      class: candidate.budgetRequest.category === "controller-risk" ? "survival" : "growth",
       value:
         candidate.budgetRequest.category === "controller-risk"
           ? 1_600

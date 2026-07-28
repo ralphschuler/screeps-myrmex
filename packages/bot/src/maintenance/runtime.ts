@@ -1,8 +1,10 @@
 import type { BudgetRequest } from "../colony";
-import type {
-  ContractPlanningView,
-  ContractTransitionRequest,
-  WorkContractRequest,
+import {
+  nextIssuerSequence,
+  type ContractPlanningRecord,
+  type ContractPlanningView,
+  type ContractTransitionRequest,
+  type WorkContractRequest,
 } from "../contracts";
 import type { ConstructionPlanningResult, MaintenanceProposal } from "./construction-planner";
 import type { WorldSnapshot } from "../world/snapshot";
@@ -66,9 +68,15 @@ export function assignMaintenanceExecution(
   towerTargets: readonly { readonly target: string }[],
 ): MaintenanceExecutionAssignment {
   const assignedToTower = new Set(towerTargets.map(({ target }) => target));
-  const creepRequests = authorized.creepRequests.filter(
-    ({ targetId }) => targetId === null || !assignedToTower.has(targetId),
-  );
+  const selectedByBinding = new Map<string, WorkContractRequest>();
+  const candidates = authorized.creepRequests
+    .filter(({ targetId }) => targetId === null || !assignedToTower.has(targetId))
+    .sort(compareCreepRequests);
+  for (const request of candidates) {
+    const key = `${request.owner.kind}\u0000${request.owner.id}\u0000${request.budgetBinding.category}\u0000${request.budgetBinding.issuer}`;
+    if (!selectedByBinding.has(key)) selectedByBinding.set(key, request);
+  }
+  const creepRequests = [...selectedByBinding.values()].sort(compareCreepRequests);
   return freeze({
     creepRequests,
     duplicateTargetsSuppressed: authorized.creepRequests.length - creepRequests.length,
@@ -118,6 +126,7 @@ export function projectMaintenanceBudgets(input: {
     readonly colonyId: string;
     readonly issuer: string;
     readonly revision: number;
+    readonly request: BudgetRequest;
     readonly status: string;
   }[];
   readonly planning: ConstructionPlanningResult;
@@ -139,7 +148,7 @@ export function projectMaintenanceBudgets(input: {
           category === "maintenance" && colonyId === roomName && existingIssuer === issuer,
       );
       const reservable = prior?.status === "active" || prior?.status === "pending";
-      return {
+      const desired: BudgetRequest = {
         category: "maintenance",
         colonyId: roomName,
         cpu: { desired: 1, minimum: 0 },
@@ -149,10 +158,17 @@ export function projectMaintenanceBudgets(input: {
         },
         expiresAt: safeAdd(input.tick, input.ttl),
         issuer,
-        revision:
-          prior === undefined ? 1 : reservable ? prior.revision : safeAdd(prior.revision, 1),
+        revision: prior === undefined ? 1 : safeAdd(prior.revision, 1),
         spawn: null,
       };
+      const renewalDue =
+        prior !== undefined && prior.request.expiresAt - input.tick <= Math.min(1, input.ttl);
+      return prior !== undefined &&
+        reservable &&
+        !renewalDue &&
+        sameBudgetClaims(prior.request, desired)
+        ? cloneBudgetRequest(prior.request)
+        : desired;
     });
   return freeze({ budgets, planning: input.planning });
 }
@@ -170,6 +186,14 @@ export function authorizeMaintenanceWork(input: {
   readonly contracts: ContractPlanningView;
   readonly tick: number;
 }): AuthorizedMaintenanceProjection {
+  if (input.contracts.status !== "ready") {
+    return freeze({
+      creepRequests: [],
+      fundedProposals: [],
+      retirements: [],
+      towerCandidates: [],
+    });
+  }
   const fundedRooms = new Set(
     input.budgets.flatMap((budget) =>
       input.reservations.some(
@@ -187,28 +211,47 @@ export function authorizeMaintenanceWork(input: {
     fundedRooms.has(roomName),
   );
   const currentIssuers = new Set(fundedProposals.map(contractIssuer));
+  const activeByIssuer = new Map<string, ContractPlanningRecord>();
+  const occupiedBindings = new Set<string>();
   const retirements: ContractTransitionRequest[] = [];
-  if (input.contracts.status === "ready") {
-    for (const contract of input.contracts.contracts) {
-      if (!contract.issuer.startsWith(MAINTENANCE_ISSUER_PREFIX)) continue;
-      if (!currentIssuers.has(contract.issuer))
-        retirements.push({
-          contractId: contract.contractId,
-          reason: "maintenance-band-resolved",
-          tick: input.tick,
-          to: "cancelled",
-        });
-      else if (contract.state === "proposed" || contract.state === "suspended")
-        retirements.push({
-          contractId: contract.contractId,
-          reason: "maintenance-funded",
-          tick: input.tick,
-          to: "funded",
-        });
+  for (const contract of input.contracts.contracts) {
+    if (!contract.issuer.startsWith(MAINTENANCE_ISSUER_PREFIX)) continue;
+    activeByIssuer.set(contract.issuer, contract);
+    if (!currentIssuers.has(contract.issuer))
+      retirements.push({
+        contractId: contract.contractId,
+        reason: "maintenance-band-resolved",
+        tick: input.tick,
+        to: "cancelled",
+      });
+    else if (contract.state === "proposed" || contract.state === "suspended")
+      retirements.push({
+        contractId: contract.contractId,
+        reason: "maintenance-funded",
+        tick: input.tick,
+        to: "funded",
+      });
+    if (currentIssuers.has(contract.issuer)) {
+      occupiedBindings.add(
+        `${contract.owner.kind}\u0000${contract.owner.id}\u0000${contract.budgetBinding.category}\u0000${contract.budgetBinding.issuer}`,
+      );
     }
   }
   return freeze({
-    creepRequests: fundedProposals.map((proposal) => contractFor(proposal, input.budgets)),
+    creepRequests: fundedProposals.flatMap((proposal) => {
+      const issuer = contractIssuer(proposal);
+      if (activeByIssuer.has(issuer)) return [];
+      const binding = input.budgets.find(({ colonyId }) => colonyId === proposal.roomName);
+      if (
+        binding === undefined ||
+        occupiedBindings.has(
+          `colony\u0000${proposal.roomName}\u0000maintenance\u0000${binding.issuer}`,
+        )
+      )
+        return [];
+      const sequence = nextIssuerSequence(input.contracts, issuer);
+      return sequence === null ? [] : [contractFor(proposal, input.budgets, sequence)];
+    }),
     fundedProposals,
     retirements: retirements.sort((a, b) => a.contractId.localeCompare(b.contractId)),
     towerCandidates: fundedProposals.filter(({ towerEligible }) => towerEligible),
@@ -218,6 +261,7 @@ export function authorizeMaintenanceWork(input: {
 function contractFor(
   proposal: MaintenanceProposal,
   budgets: readonly BudgetRequest[],
+  issuerSequence: number,
 ): WorkContractRequest {
   const budget = budgets.find(({ colonyId }) => colonyId === proposal.roomName);
   if (budget === undefined) throw new Error("funded maintenance proposal lost its room budget");
@@ -242,7 +286,7 @@ function contractFor(
     expiresAt: budget.expiresAt,
     issuer: contractIssuer(proposal),
     issuerKey: proposal.targetId,
-    issuerSequence: 1,
+    issuerSequence,
     kind: "repair",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 1 },
     maxAssignmentCost: 100,
@@ -272,8 +316,36 @@ function roomBudgetIssuer(roomName: string): string {
 function contractIssuer(proposal: MaintenanceProposal): string {
   return `${MAINTENANCE_ISSUER_PREFIX}${proposal.roomName}/${proposal.targetId}/${String(proposal.targetHits)}`;
 }
+function compareCreepRequests(left: WorkContractRequest, right: WorkContractRequest): number {
+  return (
+    right.priority.value - left.priority.value ||
+    (left.targetId ?? "").localeCompare(right.targetId ?? "") ||
+    left.issuer.localeCompare(right.issuer)
+  );
+}
 function safeAdd(value: number, delta: number): number {
   return value <= Number.MAX_SAFE_INTEGER - delta ? value + delta : Number.MAX_SAFE_INTEGER;
+}
+function sameBudgetClaims(left: BudgetRequest, right: BudgetRequest): boolean {
+  return (
+    left.category === right.category &&
+    left.colonyId === right.colonyId &&
+    left.issuer === right.issuer &&
+    left.energy?.minimum === right.energy?.minimum &&
+    left.energy?.desired === right.energy?.desired &&
+    left.cpu?.minimum === right.cpu?.minimum &&
+    left.cpu?.desired === right.cpu?.desired &&
+    left.spawn === null &&
+    right.spawn === null
+  );
+}
+function cloneBudgetRequest(request: BudgetRequest): BudgetRequest {
+  return {
+    ...request,
+    cpu: request.cpu === null ? null : { ...request.cpu },
+    energy: request.energy === null ? null : { ...request.energy },
+    spawn: request.spawn === null ? null : { ...request.spawn },
+  };
 }
 function freeze<T>(value: T): T {
   if (value && typeof value === "object") {

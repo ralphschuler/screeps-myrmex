@@ -15,13 +15,16 @@ eligible worker without leaving an actor-shaped ghost contract. Requests use onl
 emergency-recovery reserve therefore remains unavailable to ordinary filling work.
 
 `ContractPlanningView` still supplies stable renewal and endpoint-retirement evidence.
-`ContractExecutionView` now supplies only the actual lease holder's current harvest/transfer phase.
-A partial worker retains harvest until full; after delivery starts, it retains transfer until empty.
-Phase-inactive endpoint contracts suspend so their issuer coordinate can be reused on later cycles;
-only confirmed visible target disappearance retires them. A temporary zero-worker interval keeps
-endpoint demand suspended so the next recovery worker can resume it. Continuous fill omits the
-optional `Creep.transfer` amount and therefore offers the assigned worker's complete available
-cargo. This reconstructs the batch after a heap reset without role Memory or another task authority.
+`ContractExecutionView` supplies the actual lease holder's current energy phase. A partial worker
+retains acquisition until full; a higher-value upgrade, build, or repair cannot start mid-batch.
+Once consumption starts, harvest and pickup remain unavailable to that actor until its cargo is
+empty. An active survival sink may still preempt either phase for delivery, which then continues
+until empty. Phase-inactive endpoint contracts suspend so their issuer coordinate can be reused on
+later cycles; only confirmed visible target disappearance retires them. A temporary zero-worker
+interval keeps endpoint demand suspended so the next recovery worker can resume it. Continuous fill
+omits the optional `Creep.transfer` amount and therefore offers the assigned worker's complete
+available cargo. This reconstructs the batch after a heap reset without role Memory or another task
+authority.
 
 `contracts.reconcile` obtains route evidence through a runtime-owned adapter to the existing
 `LocalPathPlanningService`. In-range work costs no search; out-of-range work uses cached or bounded

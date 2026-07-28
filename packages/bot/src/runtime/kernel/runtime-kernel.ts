@@ -598,6 +598,11 @@ export class RuntimeKernel<Context> {
       if (left.descriptor.mandatoryTail !== right.descriptor.mandatoryTail) {
         return left.descriptor.mandatoryTail ? 1 : -1;
       }
+      if (left.descriptor.mandatoryTail && right.descriptor.mandatoryTail) {
+        // Tail systems are all admitted and may carry explicit data dependencies (for example,
+        // spawn.execute before spawn.settle). Health age must never invert that stable order.
+        return compareStrings(left.descriptor.id, right.descriptor.id);
+      }
 
       const criticalityDifference =
         (CRITICALITY_ORDER.get(left.descriptor.criticality) ?? 0) -

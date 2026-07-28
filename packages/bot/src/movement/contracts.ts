@@ -12,6 +12,11 @@ export interface MovementIntent {
   readonly deadline: number;
   readonly destination: PositionSnapshot;
   readonly direction: DirectionConstant | null;
+  /**
+   * Heap-only semantic episode correlation. Contract identity remains the command authority;
+   * this key only lets movement-quality evidence survive an equivalent lease successor.
+   */
+  readonly episodeKey?: string;
   readonly goal: PositionSnapshot;
   readonly id: string;
   readonly priority: number;

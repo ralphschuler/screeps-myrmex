@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LedgerEntry } from "../src/colony";
+import { ContractLedger, type ContractPlanningView } from "../src/contracts";
 import type { ArbitrationBatch } from "../src/execution";
 import {
   authorizeIndustryWork,
@@ -15,6 +16,10 @@ import {
   type IndustryPlan,
   type TerminalSendIntent,
 } from "../src/industry";
+import {
+  unpublishedIndustryReservationIds,
+  type IndustryPublicationEvidence,
+} from "../src/runtime/tick";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 describe("industry runtime authority chain", () => {
@@ -40,7 +45,12 @@ describe("industry runtime authority chain", () => {
       { category: "industry", issuer: "industry/extract/W1N1/mineral/H" },
       { category: "industry", issuer: "industry/send/request/W1N1/W2N2/H" },
     ]);
+    expect(budgets.map(({ cpu }) => cpu)).toEqual([
+      { minimum: 100, desired: 500 },
+      { minimum: 20, desired: 100 },
+    ]);
     const authorized = authorizeIndustryWork({
+      contracts: { contracts: [], issuerFrontiers: [], status: "ready" },
       plan,
       reservations: [reservation(required(budgets[0]))],
       rooms,
@@ -49,10 +59,274 @@ describe("industry runtime authority chain", () => {
     expect(authorized.extractionContracts).toHaveLength(1);
     expect(authorized.extractionContracts[0]).toMatchObject({
       budgetBinding: { category: "industry", issuer: "industry/extract/W1N1/mineral/H" },
-      execution: { action: "harvest", resourceType: "H", version: 1 },
+      execution: { action: "harvest", resourceType: null, version: 1 },
       target: { roomName: "W1N1", x: 20, y: 21 },
       targetId: "mineral",
     });
+  });
+
+  it("keeps active extraction stable and regenerates once after terminal retirement", () => {
+    const rooms = observeIndustryRooms(snapshot(), [
+      {
+        bands: [{ resourceType: "H", min: 100, target: 500, max: 800 }],
+        commitments: [],
+        protectedEnergy: 300,
+        roomName: "W1N1",
+      },
+    ]);
+    const plan = industryPlan();
+    const initialBudget = required(projectIndustryBudgets(plan, 100)[0]);
+    const activeBudget = reservation(initialBudget);
+    expect(required(projectIndustryBudgets(plan, 101, [activeBudget])[0])).toEqual(initialBudget);
+    expect(required(projectIndustryBudgets(plan, 119, [activeBudget])[0])).toMatchObject({
+      expiresAt: 139,
+      revision: 2,
+    });
+
+    const empty: ContractPlanningView = {
+      contracts: [],
+      issuerFrontiers: [],
+      status: "ready",
+    };
+    const initial = authorizeIndustryWork({
+      contracts: empty,
+      plan,
+      reservations: [activeBudget],
+      rooms,
+      tick: 100,
+    });
+    const request = required(initial.extractionContracts[0]);
+    expect(request.issuerSequence).toBe(1);
+
+    const activeRecord: ContractPlanningView["contracts"][number] = {
+      budgetBinding: request.budgetBinding,
+      contractId: "industry-active",
+      execution: required(request.execution),
+      issuer: request.issuer,
+      issuerSequence: request.issuerSequence,
+      owner: request.owner,
+      state: "active",
+      targetId: required(request.targetId ?? undefined),
+    };
+    expect(
+      authorizeIndustryWork({
+        contracts: { contracts: [activeRecord], issuerFrontiers: [], status: "ready" },
+        plan,
+        reservations: [activeBudget],
+        rooms,
+        tick: 101,
+      }).extractionContracts,
+    ).toEqual([]);
+
+    const retired: ContractPlanningView = {
+      contracts: [],
+      issuerFrontiers: [{ issuer: request.issuer, retiredThrough: 1 }],
+      status: "ready",
+    };
+    const successor = authorizeIndustryWork({
+      contracts: retired,
+      plan,
+      reservations: [activeBudget],
+      rooms,
+      tick: 102,
+    });
+    expect(successor.extractionContracts).toHaveLength(1);
+    expect(successor.extractionContracts[0]?.issuerSequence).toBe(2);
+    const successorRequest = required(successor.extractionContracts[0]);
+    const opened = ContractLedger.open({
+      active: [],
+      issuerFrontiers: [{ issuer: request.issuer, retiredThrough: 1 }],
+      outcomes: [],
+      schemaVersion: 1,
+    });
+    if (opened.status !== "ready") throw new Error("expected industry ledger");
+    const submission = opened.ledger.submit(successorRequest, 102);
+    if (!submission.accepted) throw new Error(`industry successor rejected: ${submission.reason}`);
+    expect(submission).toMatchObject({
+      accepted: true,
+      outcome: "created",
+    });
+    expect(opened.ledger.submit(successorRequest, 102)).toMatchObject({
+      accepted: true,
+      outcome: "duplicate-active",
+    });
+    expect(
+      authorizeIndustryWork({
+        ...roundTrip({
+          contracts: retired,
+          plan,
+          reservations: [activeBudget],
+          rooms,
+          tick: 102,
+        }),
+      }),
+    ).toEqual(successor);
+
+    const proposed = { ...activeRecord, state: "proposed" as const };
+    expect(
+      authorizeIndustryWork({
+        contracts: { contracts: [proposed], issuerFrontiers: [], status: "ready" },
+        plan,
+        reservations: [activeBudget],
+        rooms,
+        tick: 103,
+      }),
+    ).toMatchObject({
+      extractionContracts: [],
+      transitions: [
+        {
+          contractId: "industry-active",
+          reason: "industry-extraction-funded",
+          tick: 103,
+          to: "funded",
+        },
+      ],
+    });
+  });
+
+  it("fails closed when extraction contract planning is unavailable", () => {
+    const rooms = observeIndustryRooms(snapshot(), [
+      {
+        bands: [{ resourceType: "H", min: 100, target: 500, max: 800 }],
+        commitments: [],
+        protectedEnergy: 300,
+        roomName: "W1N1",
+      },
+    ]);
+    const plan = industryPlan();
+    const budgets = projectIndustryBudgets(plan, 100);
+    const authorized = authorizeIndustryWork({
+      contracts: { contracts: [], issuerFrontiers: [], status: "unavailable" },
+      plan,
+      reservations: [reservation(required(budgets[0]))],
+      rooms,
+      tick: 100,
+    });
+
+    expect(authorized.budgets).toEqual(budgets);
+    expect(authorized.extractionContracts).toEqual([]);
+    expect(authorized.transitions).toEqual([]);
+  });
+
+  it("settles only current executable Industry bindings without touching lab budgets", () => {
+    const plan = industryPlan();
+    const extractionIssuer = required(plan.extraction[0]).identity;
+    const terminalIssuer = required(plan.sends[0]).identity;
+    const extractionReservation = settlementReservation("extraction", extractionIssuer, 90);
+    const terminalReservation = settlementReservation("terminal", terminalIssuer, 90);
+    const labReservation = settlementReservation("lab", "industry/boost/compound", 90);
+    const liveExtraction = exactExtractionPlanningRecord();
+    const currentEvidence: IndustryPublicationEvidence = {
+      extractionBootstraps: [
+        {
+          colonyId: "W1N1",
+          createdAtTick: 100,
+          issuer: extractionIssuer,
+          mineralId: "mineral",
+        },
+      ],
+      terminalIntents: [
+        {
+          colonyId: "W1N1",
+          issuer: terminalIssuer,
+          publishedAtTick: 100,
+        },
+      ],
+    };
+
+    expect(
+      unpublishedIndustryReservationIds({
+        contracts: {
+          contracts: [liveExtraction],
+          issuerFrontiers: [],
+          status: "ready",
+        },
+        evidence: { extractionBootstraps: [], terminalIntents: [] },
+        plan,
+        reservations: [terminalReservation, labReservation, extractionReservation],
+        tick: 100,
+      }),
+    ).toEqual(["terminal"]);
+
+    expect(
+      unpublishedIndustryReservationIds({
+        contracts: { contracts: [], issuerFrontiers: [], status: "ready" },
+        evidence: currentEvidence,
+        plan,
+        reservations: [
+          { ...extractionReservation, createdAt: 100 },
+          terminalReservation,
+          labReservation,
+        ],
+        tick: 100,
+      }),
+    ).toEqual([]);
+
+    expect(
+      unpublishedIndustryReservationIds({
+        contracts: { contracts: [], issuerFrontiers: [], status: "ready" },
+        evidence: currentEvidence,
+        plan,
+        reservations: [extractionReservation],
+        tick: 100,
+      }),
+    ).toEqual([]);
+
+    expect(
+      unpublishedIndustryReservationIds({
+        contracts: { contracts: [], issuerFrontiers: [], status: "ready" },
+        evidence: {
+          extractionBootstraps: [
+            {
+              ...required(currentEvidence.extractionBootstraps[0]),
+              createdAtTick: 99,
+            },
+          ],
+          terminalIntents: [
+            {
+              ...required(currentEvidence.terminalIntents[0]),
+              publishedAtTick: 99,
+            },
+          ],
+        },
+        plan,
+        reservations: [
+          { ...extractionReservation, createdAt: 100 },
+          terminalReservation,
+          labReservation,
+        ],
+        tick: 100,
+      }),
+    ).toEqual(["extraction", "terminal"]);
+
+    expect(
+      unpublishedIndustryReservationIds({
+        contracts: { contracts: [], issuerFrontiers: [], status: "unavailable" },
+        evidence: currentEvidence,
+        plan,
+        reservations: [
+          extractionReservation,
+          { ...extractionReservation, createdAt: 100, reservationId: "new-extraction" },
+          terminalReservation,
+          labReservation,
+        ],
+        tick: 100,
+      }),
+    ).toEqual(["new-extraction"]);
+
+    expect(
+      unpublishedIndustryReservationIds({
+        contracts: {
+          contracts: [{ ...liveExtraction, targetId: "different-mineral" }],
+          issuerFrontiers: [],
+          status: "ready",
+        },
+        evidence: { extractionBootstraps: [], terminalIntents: [] },
+        plan,
+        reservations: [extractionReservation],
+        tick: 100,
+      }),
+    ).toEqual(["extraction"]);
   });
 
   it("executes only accepted terminal intents and normalizes missing terminals", () => {
@@ -232,6 +506,10 @@ describe("industry runtime authority chain", () => {
       { minimum: 0, desired: 0 },
       { minimum: 40, desired: 40 },
     ]);
+    expect(budgets.map(({ cpu }) => cpu)).toEqual([
+      { minimum: 50, desired: 250 },
+      { minimum: 50, desired: 250 },
+    ]);
   });
 });
 
@@ -311,11 +589,42 @@ function reservation(request: ReturnType<typeof projectIndustryBudgets>[number])
     revision: request.revision,
     request,
     reasonCode: "granted",
-    grant: { energy: 800, cpu: 0.5, spawn: null },
+    grant: { energy: 800, cpu: request.cpu?.desired ?? 0, spawn: null },
     consumed: { energy: 0, cpu: 0, spawn: false },
     createdAt: 100,
     updatedAt: 100,
     status: "active",
+  };
+}
+
+function settlementReservation(reservationId: string, issuer: string, createdAt: number) {
+  return {
+    category: "industry",
+    colonyId: "W1N1",
+    createdAt,
+    issuer,
+    reservationId,
+    status: "active",
+  };
+}
+
+function exactExtractionPlanningRecord(): ContractPlanningView["contracts"][number] {
+  const issuer = "industry/extract/W1N1/mineral/H";
+  return {
+    budgetBinding: { category: "industry", issuer },
+    contractId: "industry-extraction",
+    execution: {
+      action: "harvest",
+      completion: "target-depleted",
+      counterpartId: null,
+      resourceType: null,
+      version: 1,
+    },
+    issuer,
+    issuerSequence: 1,
+    owner: { id: "W1N1", kind: "colony" },
+    state: "active",
+    targetId: "mineral",
   };
 }
 

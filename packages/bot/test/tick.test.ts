@@ -2214,6 +2214,49 @@ describe("tick lifecycle", () => {
     expect(outcome.stateCommit).toMatchObject({ committed: true });
   });
 
+  it.each([
+    {
+      label: "ready",
+      myrmex: undefined,
+      expectedStatus: "ready",
+    },
+    {
+      label: "recovery",
+      myrmex: {
+        schema: 1,
+        boot: { firstTick: 1, lastTick: 40, shard: "shard3" },
+        world: { stale: true },
+      },
+      expectedStatus: "recovery",
+    },
+    {
+      label: "unsupported",
+      myrmex: {
+        meta: { schemaVersion: 999 },
+      },
+      expectedStatus: "unsupported",
+    },
+  ] as const)("cleans dead creep memory during $label preflight", ({ expectedStatus, myrmex }) => {
+    const memory = {
+      creeps: { dead: { legacyRole: "worker" } },
+      ...(myrmex === undefined ? {} : { myrmex }),
+    } as unknown as Memory;
+
+    const outcome = runTick({
+      game: {
+        cpu: { bucket: 8_000, limit: 20, tickLimit: 500, getUsed: () => 0 },
+        creeps: {},
+        rooms: {},
+        shard: { name: "shard3" },
+        time: 44,
+      },
+      memory,
+    });
+
+    expect(outcome.memoryStatus).toBe(expectedStatus);
+    expect((memory as unknown as { creeps: Record<string, unknown> }).creeps).toEqual({});
+  });
+
   it("uses recovery admission while an interrupted migration advances", () => {
     const memory = {
       myrmex: {

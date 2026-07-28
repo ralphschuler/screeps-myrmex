@@ -1,4 +1,4 @@
-import type { WorldSnapshot } from "../world/snapshot";
+import { projectRoomStructureTargets, type WorldSnapshot } from "../world/snapshot";
 import { CreepActionArbiter, MovementArbiter } from "./arbiter";
 import type { CreepActionIntent, MovementIntent, MovementRuntimeResult } from "./contracts";
 import {
@@ -135,17 +135,15 @@ function collectTargetIds(snapshot: WorldSnapshot): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const room of snapshot.rooms) {
     if (room.controller !== null) ids.add(room.controller.id);
+    if (room.mineral !== undefined && room.mineral !== null) ids.add(room.mineral.id);
     for (const item of [
       ...room.constructionSites,
       ...room.hostileCreeps,
       ...room.ownedCreeps,
-      ...room.ownedExtensions,
-      ...room.ownedSpawns,
-      ...room.ownedTowers,
       ...(room.droppedResources ?? []),
       ...(room.ruins ?? []),
       ...room.sources,
-      ...room.storedStructures,
+      ...projectRoomStructureTargets(room),
       ...(room.tombstones ?? []),
     ])
       ids.add(item.id);

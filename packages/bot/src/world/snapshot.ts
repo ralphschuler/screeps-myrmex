@@ -401,6 +401,105 @@ export interface RoomSnapshot {
   readonly traversal?: StaticTraversalSnapshot;
 }
 
+/**
+ * One canonical detached structure target. This is presence and shape evidence only; consumers
+ * retain sole authority to decide whether a particular action is legal for the structure.
+ */
+export interface RoomStructureTargetSnapshot {
+  readonly hits: number;
+  readonly hitsMax: number;
+  readonly id: string;
+  readonly ownership: "owned" | "foreign" | "unowned";
+  readonly pos: PositionSnapshot;
+  readonly store: StoreSnapshot | null;
+  readonly structureType: string;
+}
+
+/**
+ * Projects every structure representation into one deterministic ID-keyed catalog. Runtime room
+ * snapshots intentionally expose overlapping generic, store-bearing, road, and owned-specialized
+ * arrays; the highest-fidelity specialized representation wins without multiplying targets.
+ */
+export function projectRoomStructureTargets(
+  room: RoomSnapshot,
+): readonly RoomStructureTargetSnapshot[] {
+  const candidates: {
+    readonly fidelity: number;
+    readonly target: RoomStructureTargetSnapshot;
+  }[] = [];
+  const add = (
+    fidelity: number,
+    structure: {
+      readonly hits: number;
+      readonly hitsMax: number;
+      readonly id: string;
+      readonly pos: PositionSnapshot;
+      readonly store?: StoreSnapshot;
+    },
+    ownership: RoomStructureTargetSnapshot["ownership"],
+    structureType: string,
+  ): void => {
+    candidates.push({
+      fidelity,
+      target: {
+        hits: structure.hits,
+        hitsMax: structure.hitsMax,
+        id: structure.id,
+        ownership,
+        pos: structure.pos,
+        store: structure.store ?? null,
+        structureType,
+      },
+    });
+  };
+
+  for (const structure of room.structures ?? [])
+    add(0, structure, structure.ownership, structure.structureType);
+  for (const road of room.roads ?? []) add(1, road, "unowned", "road");
+  for (const structure of room.storedStructures)
+    add(2, structure, structure.ownership, structure.structureType);
+  for (const structure of room.ownedExtractors ?? []) add(3, structure, "owned", "extractor");
+  for (const structure of room.ownedExtensions) add(3, structure, "owned", "extension");
+  for (const structure of room.ownedFactories ?? []) add(3, structure, "owned", "factory");
+  for (const structure of room.ownedLabs ?? []) add(3, structure, "owned", "lab");
+  for (const structure of room.ownedLinks ?? []) add(3, structure, "owned", "link");
+  for (const structure of room.ownedNukers ?? []) add(3, structure, "owned", "nuker");
+  for (const structure of room.ownedObservers ?? []) add(3, structure, "owned", "observer");
+  for (const structure of room.ownedPowerSpawns ?? []) add(3, structure, "owned", "powerSpawn");
+  for (const structure of room.ownedSpawns) add(3, structure, "owned", "spawn");
+  for (const structure of room.ownedStorages ?? []) add(3, structure, "owned", "storage");
+  for (const structure of room.ownedTerminals ?? []) add(3, structure, "owned", "terminal");
+  for (const structure of room.ownedTowers) add(3, structure, "owned", "tower");
+
+  candidates.sort(
+    (left, right) =>
+      compareStrings(left.target.id, right.target.id) ||
+      left.fidelity - right.fidelity ||
+      compareStructureTargetShape(left.target, right.target),
+  );
+  const byId = new Map<string, RoomStructureTargetSnapshot>();
+  for (const { target } of candidates) byId.set(target.id, target);
+  return Object.freeze(
+    [...byId.values()]
+      .sort((left, right) => compareStrings(left.id, right.id))
+      .map((target) =>
+        Object.freeze({
+          ...target,
+          pos: Object.freeze({ ...target.pos }),
+          store:
+            target.store === null
+              ? null
+              : Object.freeze({
+                  ...target.store,
+                  resources: Object.freeze(
+                    target.store.resources.map((resource) => Object.freeze({ ...resource })),
+                  ),
+                }),
+        }),
+      ),
+  );
+}
+
 export interface OwnedRoomSnapshot extends RoomSnapshot {
   readonly controller: ControllerSnapshot & { readonly ownership: "owned" };
 }
@@ -541,6 +640,26 @@ function emptyEntityCounts(): SnapshotEntityCounts {
     tombstones: 0,
     total: 0,
   };
+}
+
+function compareStructureTargetShape(
+  left: RoomStructureTargetSnapshot,
+  right: RoomStructureTargetSnapshot,
+): number {
+  return (
+    compareStrings(left.structureType, right.structureType) ||
+    compareStrings(left.ownership, right.ownership) ||
+    compareStrings(left.pos.roomName, right.pos.roomName) ||
+    left.pos.y - right.pos.y ||
+    left.pos.x - right.pos.x ||
+    left.hits - right.hits ||
+    left.hitsMax - right.hitsMax ||
+    (left.store?.usedCapacity ?? -1) - (right.store?.usedCapacity ?? -1)
+  );
+}
+
+function compareStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function deepFreeze<T>(value: T): T {

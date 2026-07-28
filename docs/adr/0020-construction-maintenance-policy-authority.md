@@ -32,11 +32,24 @@ hits in their issuer identity, so destruction, satisfaction, and policy-band cha
 without reopening a retired sequence. Tower-eligible funded proposals remain data until defense
 arbitration composes them.
 
+The room tranche is an exclusive contract binding: after tower exclusions, at most one creep repair
+is selected by priority, target ID, and issuer. A successor may reuse the binding only after the
+current contract is terminal. Lease validation and movement consume one deterministic,
+ID-deduplicated structure catalog covering generic structures, roads, store-bearing structures, and
+owned specialized structures; action policy still rejects foreign and non-repairable targets. The
+room reservation is conditional until publication settles: an exact same-tick creep-contract
+bootstrap may retain the binding until reconciliation, including a successor target reusing an older
+room grant. Without that bootstrap, the grant requires an exact live routine repair contract.
+Unavailable contract evidence causes neither speculative generation 1 publication nor destructive
+release.
+
 ## Consequences
 
 - Reordering, target loss, target satisfaction, and heap reset recompute identical demand from
   current evidence without a persistent maintenance queue.
 - Fortification depth cannot silently grow toward `hitsMax`.
 - Backlog overload retains highest-consequence work and exposes bounded deferral counts.
+- Roads and non-store-bearing structures remain executable through the ordinary contract, lease,
+  movement, and repair-command chain.
 - Runtime funding, command reconciliation, and the `phase2.maintenance` gate remain deferred until
   composed outcome evidence exists.

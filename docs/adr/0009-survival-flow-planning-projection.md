@@ -22,9 +22,19 @@ replacement worker can reuse its durable contract identity. Survival issuers ide
 demand rather than a particular creep, because `WorkforceAllocator` owns actor selection. The
 planner may additionally read `ContractExecutionView` only to retain the actual lease holder's
 harvest/transfer phase across partial cargo: harvest continues until full and transfer continues
-until empty. Raw contract-owner bytes, lease history, and mutation access remain private to the
-ledger. Agents consume the same execution projection and submit typed dispositions; executors remain
-the sole Screeps API callers.
+until empty. The same lease projection classifies upgrade, build, and repair as carried-energy
+consumption. A known partial acquire lease remains authoritative until its cargo is full, so a
+higher-value consumer cannot create two-energy source/controller trips. Once consumption starts,
+survival harvest and pickup are suppressed while the actor still carries energy. An available
+survival transfer remains eligible in either phase; the allocator enforces both incumbent guards
+against already-funded competing work.
+
+The planning view also exposes bounded detached retirement frontiers. Recurring survival endpoints
+retain one active generation or advance exactly to the next frontier coordinate after terminal
+evidence; they never reuse sequence 1 or infer a successor from an unrelated contract. Raw
+contract-owner bytes, lease history, and mutation access remain private to the ledger. Agents
+consume the same execution projection and submit typed dispositions; executors remain the sole
+Screeps API callers.
 
 ## Consequences
 
@@ -34,5 +44,6 @@ the sole Screeps API callers.
   the current batch from ContractLedger rather than actor-local task state.
 - A full or inactive endpoint suspends without retiring its reusable issuer coordinate; a confirmed
   visible disappearance retires it deterministically before a replacement binding is used.
+- Upgrade, build, and repair cargo drains without source round trips caused by partial capacity.
 - Heap resets retain the loop entirely in the colony and contract authorities.
 - `phase1.economy` is source-available under `runtime-config-source-v7`.

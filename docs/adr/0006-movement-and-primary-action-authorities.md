@@ -31,6 +31,14 @@ objects. Plan systems receive a data-only local-path capability, no engine objec
 CpuScheduler budget for a bounded cold search. Missing terrain, CPU, an incomplete path, or an
 adapter failure remains typed path result data.
 
+Issue #488 keeps heap-only recovery evidence attached to a semantic movement episode rather than a
+mutable lease revision. Equivalent renewal therefore preserves no-progress age, while observed
+movement or a genuinely changed goal resets it. A bounded short-lived actor-goal record in the same
+movement-progress cache namespace recognizes repeated A→B→A oscillation. At the existing release
+threshold the lease agent emits a typed suspension; `ContractLedger` remains the only authority that
+can release work. Cache loss can delay recovery but cannot authorize a command or persist task
+state.
+
 ## Consequences
 
 - Agents can combine one movement and one admitted primary action, matching the documented distinct

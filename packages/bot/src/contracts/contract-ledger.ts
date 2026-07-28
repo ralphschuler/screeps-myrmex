@@ -245,7 +245,7 @@ export class ContractLedger {
     return deepFreeze({ leases, status: "ready" });
   }
 
-  /** Sanitized active records for bounded planners; no owner-state bytes or lease history escape. */
+  /** Sanitized records and issuer frontiers for bounded planners; owner history never escapes. */
   public planningView(): ContractPlanningView {
     const contracts = this.#active
       .flatMap((record) => {
@@ -273,7 +273,10 @@ export class ContractLedger {
         ];
       })
       .sort((left, right) => compareStrings(left.contractId, right.contractId));
-    return deepFreeze({ contracts, status: "ready" });
+    const issuerFrontiers = this.#issuerFrontiers
+      .map((frontier) => ({ ...frontier }))
+      .sort((left, right) => compareStrings(left.issuer, right.issuer));
+    return deepFreeze({ contracts, issuerFrontiers, status: "ready" });
   }
 
   /** Derives a bounded population-only projection without exposing contract owner bytes. */
@@ -710,9 +713,22 @@ export class ContractLedger {
       const proposal = proposalByContract.get(record.id);
       if (record.lease !== null) {
         if (preserved.has(record.id)) {
+          this.renewLease(
+            record.id,
+            {
+              actorId: record.lease.actorId,
+              leaseExpiresAt: Math.min(input.tick + record.leasePolicy.duration, record.expiresAt),
+            },
+            input.tick,
+          );
           continue;
         }
         if (proposal?.actorId === record.lease.actorId) {
+          // Reconcile runs after this tick's command opportunity. Extend a still-valid incumbent
+          // on its final authorized tick so the next Observe phase never sees an expired lease.
+          // Validation and allocation above still retain sole authority to revoke it for changed
+          // funding, capability, TTL, route evidence, or a higher-priority assignment.
+          this.renewLease(record.id, proposal, input.tick);
           continue;
         }
         if (this.releaseLease(record.id, input.tick, "allocator-unassigned", true)) {
@@ -840,6 +856,37 @@ export class ContractLedger {
       },
       revision: record.revision + 1,
       state: "assigned",
+    });
+    this.#changed = true;
+  }
+
+  private renewLease(
+    contractId: string,
+    renewal: Pick<ContractAssignmentProposal, "actorId" | "leaseExpiresAt">,
+    tick: number,
+  ): void {
+    const index = this.#active.findIndex((record) => record.id === contractId);
+    const record = this.#active[index];
+    if (
+      record === undefined ||
+      record.lease === null ||
+      (record.state !== "assigned" && record.state !== "active") ||
+      renewal.actorId !== record.lease.actorId ||
+      tick < record.lease.expiresAt - 1 ||
+      renewal.leaseExpiresAt <= record.lease.expiresAt
+    ) {
+      return;
+    }
+    const lease = record.lease;
+    this.#active[index] = deepFreeze({
+      ...record,
+      lease: {
+        ...lease,
+        expiresAt: renewal.leaseExpiresAt,
+      },
+      // Lease renewal is durable authorization evidence. It changes the projection revision
+      // without inventing a same-state contract transition or restarting the work schedule.
+      revision: record.revision + 1,
     });
     this.#changed = true;
   }

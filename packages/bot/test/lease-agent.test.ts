@@ -10,10 +10,11 @@ import { DEFAULT_SURVIVAL_POLICY } from "../src/config/defaults";
 import type { ContractPlanningView, LeasedWorkExecution } from "../src/contracts";
 import {
   EMPTY_MOVEMENT_PROGRESS_VIEW,
+  MovementRuntime,
   type LocalPathPlanningService,
   type MovementRuntimeResult,
 } from "../src/movement";
-import type { WorldSnapshot } from "../src/world/snapshot";
+import { projectRoomStructureTargets, type WorldSnapshot } from "../src/world/snapshot";
 
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
 
@@ -176,6 +177,129 @@ describe("lease agents", () => {
     expect(depleted).toMatchObject({ actions: [], dispositions: [], movement: [] });
   });
 
+  it("executes a mineral harvest lease and completes it from the next depleted snapshot", () => {
+    const mineralPosition = position(12, 10);
+    const lease = harvestLease({
+      execution: {
+        action: "harvest",
+        completion: "target-depleted",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      quantity: 2,
+      target: mineralPosition,
+      targetId: "mineral-a",
+    });
+    const available = snapshot({
+      actor: position(11, 10),
+      carryParts: 0,
+      mineral: { amount: 2, pos: mineralPosition },
+      source: position(15, 10),
+      storeCapacity: 0,
+    });
+    const plan = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [lease], status: "ready" },
+      paths,
+      snapshot: available,
+      tick: 10,
+    });
+    expect(plan.actions).toEqual([
+      expect.objectContaining({
+        actorId: "creep-a",
+        kind: "harvest",
+        targetId: "mineral-a",
+      }),
+    ]);
+
+    const liveMineral = { amount: 2, id: "mineral-a" };
+    let harvestCalls = 0;
+    const runtime = new MovementRuntime();
+    for (const action of plan.actions) runtime.actionProducer.submit(action);
+    const executed = runtime.execute(available, 10, {
+      resolveActor: () => ({
+        harvest: (target: typeof liveMineral) => {
+          expect(target).toBe(liveMineral);
+          harvestCalls += 1;
+          liveMineral.amount = 0;
+          return 0;
+        },
+      }),
+      resolveTarget: (targetId) => (targetId === liveMineral.id ? liveMineral : null),
+    });
+    expect(harvestCalls).toBe(1);
+    expect(executed.actionExecution).toEqual([
+      expect.objectContaining({
+        reason: "executed",
+        status: "executed",
+      }),
+    ]);
+    expect(reconcileLeaseAgentActions([lease], executed, 10)).toEqual([
+      { contractId: "contract-a", reason: "agent-action-scheduled", tick: 10, to: "active" },
+    ]);
+
+    const depleted = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [{ ...lease, state: "active" }], status: "ready" },
+      paths,
+      snapshot: snapshot({
+        actor: position(11, 10),
+        carryParts: 0,
+        mineral: { amount: liveMineral.amount, pos: mineralPosition },
+        source: position(15, 10),
+        storeCapacity: 0,
+      }),
+      tick: 11,
+    });
+    expect(depleted.actions).toEqual([]);
+    expect(depleted.dispositions).toEqual([
+      expect.objectContaining({ reason: "target-depleted", to: "completed" }),
+    ]);
+  });
+
+  it("reports lease expiry separately from contract expiry", () => {
+    const expiredLease = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: {
+        leases: [
+          harvestLease({
+            deadline: 30,
+            expiresAt: 31,
+            leaseExpiresAt: 10,
+          }),
+        ],
+        status: "ready",
+      },
+      paths,
+      snapshot: snapshot({ actor: position(10, 10), source: position(12, 10) }),
+      tick: 10,
+    });
+    expect(expiredLease.dispositions).toEqual([
+      expect.objectContaining({ reason: "lease-expired", to: "suspended" }),
+    ]);
+
+    const expiredContract = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: {
+        leases: [
+          harvestLease({
+            deadline: 9,
+            expiresAt: 10,
+            leaseExpiresAt: 20,
+          }),
+        ],
+        status: "ready",
+      },
+      paths,
+      snapshot: snapshot({ actor: position(10, 10), source: position(12, 10) }),
+      tick: 10,
+    });
+    expect(expiredContract.dispositions).toEqual([
+      expect.objectContaining({ reason: "contract-expired", to: "suspended" }),
+    ]);
+  });
+
   it("reconciles only a matching scheduled action into assigned-to-active progress", () => {
     const lease = harvestLease();
     const result: MovementRuntimeResult = {
@@ -272,6 +396,81 @@ describe("lease agents", () => {
       { contractId: "contract-repair", reason: "repair-retry-exhausted", tick: 11, to: "failed" },
     ]);
   });
+
+  it("deduplicates a road target and executes its typed repair intent", () => {
+    const roadPosition = position(12, 10);
+    const world = snapshot({
+      actor: position(11, 10),
+      duplicateRoadHits: 900,
+      energy: 1,
+      road: { hits: 100, hitsMax: 1_000, pos: roadPosition },
+      source: position(15, 10),
+    });
+    const room = world.rooms[0];
+    if (room === undefined) throw new Error("expected room snapshot");
+    expect(projectRoomStructureTargets(room).filter(({ id }) => id === "road-a")).toEqual([
+      expect.objectContaining({
+        hits: 100,
+        hitsMax: 1_000,
+        ownership: "unowned",
+        structureType: "road",
+      }),
+    ]);
+
+    const lease = repairLease({
+      target: roadPosition,
+      targetId: "road-a",
+    });
+    const planned = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [lease], status: "ready" },
+      paths,
+      snapshot: world,
+      tick: 10,
+    });
+    expect(planned.dispositions).toEqual([]);
+    expect(planned.actions).toEqual([
+      expect.objectContaining({
+        actorId: "creep-a",
+        contractId: "contract-repair",
+        kind: "repair",
+        targetId: "road-a",
+      }),
+    ]);
+
+    const runtime = new MovementRuntime();
+    for (const intent of planned.actions) runtime.actionProducer.submit(intent);
+    const liveRoad = { id: "road-a" };
+    const repaired: unknown[] = [];
+    const outcome = runtime.execute(world, 10, {
+      resolveActor: () => ({
+        build: () => -7,
+        harvest: () => -7,
+        pickup: () => -7,
+        repair: (target: unknown) => {
+          repaired.push(target);
+          return 0;
+        },
+        reserveController: () => -7,
+        signController: () => -7,
+        transfer: () => -7,
+        upgradeController: () => -7,
+        withdraw: () => -7,
+      }),
+      resolveTarget: (targetId) => (targetId === "road-a" ? liveRoad : null),
+    });
+    expect(repaired).toEqual([liveRoad]);
+    expect(outcome.actionDecisions).toEqual([
+      expect.objectContaining({ status: "accepted", intent: planned.actions[0] }),
+    ]);
+    expect(outcome.actionExecution).toEqual([
+      expect.objectContaining({
+        status: "executed",
+        reason: "executed",
+        intent: planned.actions[0],
+      }),
+    ]);
+  });
 });
 
 function harvestLease(overrides: Partial<LeasedWorkExecution> = {}): LeasedWorkExecution {
@@ -300,12 +499,13 @@ function harvestLease(overrides: Partial<LeasedWorkExecution> = {}): LeasedWorkE
   };
 }
 
-function repairLease(): LeasedWorkExecution {
+function repairLease(overrides: Partial<LeasedWorkExecution> = {}): LeasedWorkExecution {
   return {
     ...harvestLease({
       contractId: "contract-repair",
       target: position(12, 10),
       targetId: "spawn-a",
+      ...overrides,
     }),
     execution: {
       action: "repair",
@@ -320,12 +520,23 @@ function repairLease(): LeasedWorkExecution {
 
 function snapshot(input: {
   actor: ReturnType<typeof position>;
+  carryParts?: number;
+  mineral?: {
+    readonly amount: number;
+    readonly pos: ReturnType<typeof position>;
+  };
   source: ReturnType<typeof position>;
   structure?: {
     readonly hits: number;
     readonly hitsMax: number;
     readonly pos: ReturnType<typeof position>;
   };
+  road?: {
+    readonly hits: number;
+    readonly hitsMax: number;
+    readonly pos: ReturnType<typeof position>;
+  };
+  duplicateRoadHits?: number;
   energy?: number;
   sourceEnergy?: number;
   storeCapacity?: number;
@@ -356,11 +567,22 @@ function snapshot(input: {
         energyAvailable: 0,
         energyCapacityAvailable: 0,
         hostileCreeps: [],
+        mineral:
+          input.mineral === undefined
+            ? null
+            : {
+                amount: input.mineral.amount,
+                density: 1,
+                id: "mineral-a",
+                mineralType: "H",
+                pos: input.mineral.pos,
+                ticksToRegeneration: input.mineral.amount === 0 ? 50_000 : null,
+              },
         name: "W1N1",
         observedAt: 10,
         ownedCreeps: [
           {
-            body: body(),
+            body: body(input.carryParts),
             fatigue: 0,
             hits: 100,
             hitsMax: 100,
@@ -376,6 +598,18 @@ function snapshot(input: {
         ownedExtensions: [],
         ownedSpawns: [],
         ownedTowers: [],
+        roads:
+          input.road === undefined
+            ? []
+            : [
+                {
+                  hits: input.road.hits,
+                  hitsMax: input.road.hitsMax,
+                  id: "road-a",
+                  pos: input.road.pos,
+                  ticksToDecay: 1_000,
+                },
+              ],
         ruins: [],
         sources: [
           {
@@ -399,6 +633,21 @@ function snapshot(input: {
                   pos: input.structure.pos,
                   store: targetStore,
                   structureType: "spawn",
+                },
+              ],
+        structures:
+          input.road === undefined || input.duplicateRoadHits === undefined
+            ? []
+            : [
+                {
+                  hits: input.duplicateRoadHits,
+                  hitsMax: input.road.hitsMax,
+                  id: "road-a",
+                  ownerUsername: null,
+                  ownership: "unowned",
+                  pos: input.road.pos,
+                  structureType: "road",
+                  ticksToDecay: 1_000,
                 },
               ],
         tombstones: [],
@@ -428,17 +677,17 @@ function snapshot(input: {
   };
 }
 
-function body() {
+function body(carryParts = 1) {
   const part = { active: 0, boosted: 0, total: 0 };
   return {
-    activeParts: 2,
+    activeParts: 2 + carryParts,
     attack: part,
-    carry: { ...part, active: 1, total: 1 },
+    carry: { ...part, active: carryParts, total: carryParts },
     claim: part,
     heal: part,
-    move: part,
+    move: { ...part, active: 1, total: 1 },
     rangedAttack: part,
-    size: 2,
+    size: 2 + carryParts,
     tough: part,
     work: { ...part, active: 1, total: 1 },
   };

@@ -28,7 +28,10 @@ bounded issuer authority. The ledger derives a collision-free length-prefixed ID
 is idempotent; different terms under an existing identity are rejected as an idempotency conflict. A
 persistent per-issuer retirement frontier records the highest terminal sequence. Once compact
 outcome history evicts a record, any request at or below that frontier still fails closed rather
-than recreating work; new logical work advances the sequence.
+than recreating work; new logical work advances the sequence. The sanitized planning projection
+includes bounded detached frontier evidence. One shared helper keeps a current active generation
+stable or selects exactly `retiredThrough + 1`, allowing recurring producers to recover without raw
+owner access or issuer-specific sequence guesses.
 
 The legal transitions are:
 
@@ -66,13 +69,25 @@ active lease without automatically returning it to `funded`. Unknown colony obse
 unavailable colony result authorizes no new funding or assignment, but does not invent revocation
 evidence or rewrite the preserved commitment.
 
+Optional publishers whose budgets are granted by an earlier mandatory system settle those grants
+before colony persistence. An exact, same-tick contract bootstrap may retain its own
+owner/category/issuer binding until `ContractLedger` reconciles it; this also permits a recurring
+successor to reuse an older rolling reservation. Without that bootstrap, contract-backed work
+requires an exact live contract, while command-only work requires a current typed intent.
+Unconfirmed active or pending reservations are released. An unavailable contract projection does not
+revoke an older contract-backed reservation without authoritative evidence, and domain settlement is
+scoped narrowly enough that unrelated reservations sharing a category are untouched.
+
 Deadlines are inclusive. `expiresAt` is the first invalid tick for both contracts and leases. A
 modeled completion exactly on the deadline and available future life exactly equal to the configured
 safety margin are viable. Because assignment occurs after Execute, feasibility excludes the current
 tick from a newly assigned actor's available life. An incumbent lease deducts elapsed modeled
 travel/work opportunities instead of charging the original work estimate again every tick. Its
 current travel evidence is captured before Execute, so reconciliation applies the modeled current
-opportunity before comparing it with the lease's post-Execute schedule.
+opportunity before comparing it with the lease's post-Execute schedule. On the final authorized
+lease tick, Reconcile extends an otherwise unchanged incumbent in place before the next Observe
+phase. This preserves actor, assignment schedule, and execution continuity; actual lease expiry is
+reported separately from contract expiry.
 
 ### Persistence and failure behavior
 
@@ -125,10 +140,10 @@ objects, or creep Memory, and it cannot issue commands. `ContractLedger` validat
 lease that results.
 
 The allocator evaluates no more than 64 contracts, 64 actors, and 4,096 pairs per pass. Safe-idle
-output is capped at 64 actors and remains data only. Contract order is priority class, survival work
-kind (`harvest`, then `fill`, then the remaining kind rank), descending numeric priority, ascending
-deadline, and contract ID. Actor bids sort by switching cost, known travel, smallest sufficient
-capability surplus, smallest sufficient remaining-life slack, and actor ID.
+output is capped at 64 actors and remains data only. Contract order is priority class, descending
+numeric priority, survival work kind (`harvest`, then `fill`, then the remaining kind rank),
+ascending deadline, and contract ID. Actor bids sort by switching cost, known travel, smallest
+sufficient capability surplus, smallest sufficient remaining-life slack, and actor ID.
 
 `Game.creeps` is the canonical owned-actor inventory and `WorldObserver` projects it into immutable
 room snapshots. Capability uses only active body parts. Spawning creeps and actors with null

@@ -83,77 +83,85 @@ actual flow and loss attribution. Command errors never consume or release anothe
 policy owner. It derives bounded road, container, ordinary-structure, wall, and rampart targets from
 current observation, layout, traffic consequence, reserve posture, RCL, and threat presence. It
 emits data only; ContractLedger owns funded creep work, while defense arbitration exclusively owns
-tower attack, heal, and repair. Issue #308 supersedes #284's temporary-road removal: the layout diff
-uses current engine-compatible road/rampart co-location, and roads never enter removal merely to
-build a planned structure. Issue #286 permits one empty obsolete extension only after current full
-allowance and an exact completed committed replacement are observed. Issue #288 lets the same policy
-persist one bounded stocked-extension evacuation, while `LogisticsPlanner` alone routes its exact
-energy to the replacement and suppresses refill competition. Removal still requires fresh
-delivered/empty observation and no active evacuation flow. Issue #453 composes this path through the
-production runtime: sequential V3 stages may reuse the layout-owned budget binding, every site or
-removal result uses the existing layout precommit before root commit, and a narrow spawn-pool
-recovery exception can rebuild the missing committed extension after removal. Issue #457 composes
-one active stale stocked-tower evacuation through those production authorities, exact command-free
-settlement, a later command-free revision handoff, one direct removal, and one 5,000-energy tower
-rebuild while at least one exact active tower retains the 10-energy action floor. Issue #290 permits
-one empty, unselected source-adjacent container only while a different exact committed container
-remains the reachable semantic service for the same source. Issue #292 permits one empty
-compatible-external general container only after committed replacement capacity exists; one compact
-layout-owned handoff suppresses its refill and waits for active logistics endpoints to retire. Issue
-\#294 extends that handoff to exact energy-only stock. Issue #296 permits a compact binary-ordered
-manifest of two to eight resource kinds and one distinct funded flow per kind. Issue #298 permits
-the same manifest for one non-energy kind while preserving the legacy energy-only identity. Issue
-\#300 reuses that bounded evacuation for one stocked, unselected redundant source-adjacent container
-while preserving its different exact selected service and static-mining identity; at most 2,000
-total units move, and fresh empty-target, every delivered replacement gain, and retired-flow
-evidence remain mandatory. Issue #310 persists one compact exact receipt for every current
-extension/container destroy result; `OK` waits for fresh disappearance, failures back off and stop
-after three attempts, and a blocked room emits no proposal that could consume the global slot. Issue
-\#312 reuses that authority for one active empty obsolete tower only after committed
-replacement-first geometry leaves an exact active committed tower with at least one action's energy.
-Issue #314 lets one stocked obsolete tower persist an exact bounded evacuation only when that
-operational replacement has complete free capacity; `LogisticsPlanner` alone routes the energy, and
-removal waits for fresh empty-target, delivered-replacement, and retired-flow/endpoint evidence.
-Issue #449 admits the target tile when its only companion is one owned rampart; exact tower-only
-removal leaves that protective layer intact, while every other companion, duplicate, or site fails
-closed. Sole, over-capacity, inactive, underfunded, unsafe, or pressured tower removals fail closed.
-Issue #316 restores committed RCL8 link geometry, then permits one empty idle external reserve link
-only while canonical current/ideal role evidence retains exact active source, hub, and controller
-links plus an empty idle exact reserve replacement. Issue #318 permits one positive energy-only
-reserve target to persist a bounded creep-logistics evacuation when the exact replacement can hold
-the complete amount. Removal waits for exact target emptiness, baseline-plus-amount replacement
-energy, retired flow/endpoints, zero cooldown, unchanged reserve roles, and no accepted native link
-transfer. Productive roles, malformed stock, capacity loss, cooldown, drift, or pressure fail
-closed. Issue #320 restores committed RCL8 lab geometry and permits one active empty zero-cooldown
-external lab only while the industry-owned current view is quiescent, no logistics endpoint names
-any room lab, and the remaining nine exact labs still derive a valid cluster. Issue #322 permits
-that target to hold energy only when one bounded funded creep-logistics evacuation can deliver the
-complete amount to the canonical exact replacement; removal requires fresh
-empty/delivered/retired-work and unchanged quiescence, cluster, and safety evidence. Issue #324
-permits one zero-energy, single-kind mineral target only when the industry-owned view publishes one
-exact active owned storage with complete aggregate capacity. The sole logistics path moves the
-mineral; removal requires fresh empty/delivered/retired-work and unchanged destination, quiescence,
-cluster, and safety evidence. Issue #326 admits both resources in one bounded record, atomically
-publishes distinct energy/replacement-lab and mineral/storage flows, and requires both exact
-destination gains plus complete work retirement before removal. Issue #330 permits one active
-reaction commitment to rebind onto a role-identical nine-committed-lab assignment before the unused
-external lab is removed. The prior Industry owner must already contain that fingerprint. A uniquely
-reconstructible durable rebound enters a non-staging, non-executable blocked view during temporary
-source-layout evidence loss or retained-lab staging, and layout planning pins that source record or
-degrades. Issue #333 permits the initial target to contain one exact energy-only amount, then reuses
-the V13 funded lab-energy evacuation during the durable ready handoff. Issue #335 permits one
-zero-energy, single-kind-mineral target and reuses the V13 mineral evacuation to the exact
-Industry-published active storage. Issue #337 permits one target containing both exact forms and
-atomically reuses both V13 flows after the same durable handoff. Issue #341 permits one explicit
-funded boost commitment to use the same role identical handoff while preserving its creep, compound,
-body target, deadline, and settled part terms. The first rebound emits no staging or lab intent;
-prior Industry owner plus current intent or pending attempt evidence makes it executable. The
-current boost intent and any pending lab attempt block removal. Removal also waits for every
-applicable exact destination gain and retired flow/endpoints. Source assignment attempts settle
-before rebound; pending retained assignment attempts, unresolved explicit boost work, role drift,
-malformed stock, cooldown, logistics drift, or unsafe colony evidence preserve the target. Issue
-[#343](https://github.com/ralphschuler/screeps-myrmex/issues/343) permits the quiescent mineral-only
-form to use one exact active idle terminal when no active storage exists. Issue
+tower attack, heal, and repair. A recurring room-maintenance budget retains identical request bytes
+until renewal is due and advances revision when expiry or claims change. Each target/hit-band repair
+uses the shared contract frontier so later damage in the same band creates one successor generation
+instead of reopening terminal sequence 1. One room-maintenance binding authorizes at most one creep
+repair at a time; after tower exclusions, the highest-priority target wins deterministically and a
+different target can reuse the binding only after its predecessor is terminal. Lease validation and
+movement share one deterministic, ID-deduplicated structure catalog covering generic structures,
+roads, store-bearing structures, and owned specialized structures. Foreign and non-repairable
+objects fail closed before an action is emitted. Issue #308 supersedes #284's temporary-road
+removal: the layout diff uses current engine-compatible road/rampart co-location, and roads never
+enter removal merely to build a planned structure. Issue #286 permits one empty obsolete extension
+only after current full allowance and an exact completed committed replacement are observed. Issue
+\#288 lets the same policy persist one bounded stocked-extension evacuation, while
+`LogisticsPlanner` alone routes its exact energy to the replacement and suppresses refill
+competition. Removal still requires fresh delivered/empty observation and no active evacuation flow.
+Issue #453 composes this path through the production runtime: sequential V3 stages may reuse the
+layout-owned budget binding, every site or removal result uses the existing layout precommit before
+root commit, and a narrow spawn-pool recovery exception can rebuild the missing committed extension
+after removal. Issue #457 composes one active stale stocked-tower evacuation through those
+production authorities, exact command-free settlement, a later command-free revision handoff, one
+direct removal, and one 5,000-energy tower rebuild while at least one exact active tower retains the
+10-energy action floor. Issue #290 permits one empty, unselected source-adjacent container only
+while a different exact committed container remains the reachable semantic service for the same
+source. Issue #292 permits one empty compatible-external general container only after committed
+replacement capacity exists; one compact layout-owned handoff suppresses its refill and waits for
+active logistics endpoints to retire. Issue \#294 extends that handoff to exact energy-only stock.
+Issue #296 permits a compact binary-ordered manifest of two to eight resource kinds and one distinct
+funded flow per kind. Issue \#298 permits the same manifest for one non-energy kind while preserving
+the legacy energy-only identity. Issue \#300 reuses that bounded evacuation for one stocked,
+unselected redundant source-adjacent container while preserving its different exact selected service
+and static-mining identity; at most 2,000 total units move, and fresh empty-target, every delivered
+replacement gain, and retired-flow evidence remain mandatory. Issue #310 persists one compact exact
+receipt for every current extension/container destroy result; `OK` waits for fresh disappearance,
+failures back off and stop after three attempts, and a blocked room emits no proposal that could
+consume the global slot. Issue \#312 reuses that authority for one active empty obsolete tower only
+after committed replacement-first geometry leaves an exact active committed tower with at least one
+action's energy. Issue #314 lets one stocked obsolete tower persist an exact bounded evacuation only
+when that operational replacement has complete free capacity; `LogisticsPlanner` alone routes the
+energy, and removal waits for fresh empty-target, delivered-replacement, and retired-flow/endpoint
+evidence. Issue #449 admits the target tile when its only companion is one owned rampart; exact
+tower-only removal leaves that protective layer intact, while every other companion, duplicate, or
+site fails closed. Sole, over-capacity, inactive, underfunded, unsafe, or pressured tower removals
+fail closed. Issue #316 restores committed RCL8 link geometry, then permits one empty idle external
+reserve link only while canonical current/ideal role evidence retains exact active source, hub, and
+controller links plus an empty idle exact reserve replacement. Issue #318 permits one positive
+energy-only reserve target to persist a bounded creep-logistics evacuation when the exact
+replacement can hold the complete amount. Removal waits for exact target emptiness,
+baseline-plus-amount replacement energy, retired flow/endpoints, zero cooldown, unchanged reserve
+roles, and no accepted native link transfer. Productive roles, malformed stock, capacity loss,
+cooldown, drift, or pressure fail closed. Issue #320 restores committed RCL8 lab geometry and
+permits one active empty zero-cooldown external lab only while the industry-owned current view is
+quiescent, no logistics endpoint names any room lab, and the remaining nine exact labs still derive
+a valid cluster. Issue #322 permits that target to hold energy only when one bounded funded
+creep-logistics evacuation can deliver the complete amount to the canonical exact replacement;
+removal requires fresh empty/delivered/retired-work and unchanged quiescence, cluster, and safety
+evidence. Issue #324 permits one zero-energy, single-kind mineral target only when the
+industry-owned view publishes one exact active owned storage with complete aggregate capacity. The
+sole logistics path moves the mineral; removal requires fresh empty/delivered/retired-work and
+unchanged destination, quiescence, cluster, and safety evidence. Issue #326 admits both resources in
+one bounded record, atomically publishes distinct energy/replacement-lab and mineral/storage flows,
+and requires both exact destination gains plus complete work retirement before removal. Issue #330
+permits one active reaction commitment to rebind onto a role-identical nine-committed-lab assignment
+before the unused external lab is removed. The prior Industry owner must already contain that
+fingerprint. A uniquely reconstructible durable rebound enters a non-staging, non-executable blocked
+view during temporary source-layout evidence loss or retained-lab staging, and layout planning pins
+that source record or degrades. Issue #333 permits the initial target to contain one exact
+energy-only amount, then reuses the V13 funded lab-energy evacuation during the durable ready
+handoff. Issue #335 permits one zero-energy, single-kind-mineral target and reuses the V13 mineral
+evacuation to the exact Industry-published active storage. Issue #337 permits one target containing
+both exact forms and atomically reuses both V13 flows after the same durable handoff. Issue #341
+permits one explicit funded boost commitment to use the same role identical handoff while preserving
+its creep, compound, body target, deadline, and settled part terms. The first rebound emits no
+staging or lab intent; prior Industry owner plus current intent or pending attempt evidence makes it
+executable. The current boost intent and any pending lab attempt block removal. Removal also waits
+for every applicable exact destination gain and retired flow/endpoints. Source assignment attempts
+settle before rebound; pending retained assignment attempts, unresolved explicit boost work, role
+drift, malformed stock, cooldown, logistics drift, or unsafe colony evidence preserve the target.
+Issue [#343](https://github.com/ralphschuler/screeps-myrmex/issues/343) permits the quiescent
+mineral-only form to use one exact active idle terminal when no active storage exists. Issue
 [#345](https://github.com/ralphschuler/screeps-myrmex/issues/345) reuses that V14 destination for an
 exact durable `ready` reaction handoff while retained labs continue work. Issue
 [#347](https://github.com/ralphschuler/screeps-myrmex/issues/347) reuses it for an exact `ready`
@@ -604,13 +612,15 @@ Every tick runs the following seven phases in order.
 Boot MUST:
 
 1. Detect first execution after a heap reset.
-2. Load `Memory.myrmex` through `MemoryManager`.
-3. Validate and, if required, advance schema migrations.
-4. Resolve source defaults and the accepted operational config into one immutable planner view.
-5. Rebuild service objects and empty heap indexes.
-6. Determine CPU mode and reserve CPU for safety, execution, reconcile, and telemetry.
-7. Read active segment payloads and cross-shard envelopes without blocking.
-8. Mark interrupted operations or expired leases for reconciliation.
+2. Remove stale standard `Memory.creeps` entries against canonical `Game.creeps` names through the
+   platform-memory hygiene preflight.
+3. Load `Memory.myrmex` through `MemoryManager`.
+4. Validate and, if required, advance schema migrations.
+5. Resolve source defaults and the accepted operational config into one immutable planner view.
+6. Rebuild service objects and empty heap indexes.
+7. Determine CPU mode and reserve CPU for safety, execution, reconcile, and telemetry.
+8. Read active segment payloads and cross-shard envelopes without blocking.
+9. Mark interrupted operations or expired leases for reconciliation.
 
 If a migration is incomplete, the bot enters `recovery` mode. Only migration work, observation,
 defense, essential spawning, and essential logistics are admitted. Migrations MUST be idempotent and
@@ -1032,8 +1042,10 @@ Criticality classes are:
 4. `strategic`: expansion, long-range operations, expensive intel analysis;
 5. `maintenance`: cache sweeping, compaction, detailed telemetry, simulations.
 
-The scheduler MUST reserve mandatory tail CPU before admitting optional work. Within an admission
-class it orders by deadline, explicit wake reason, oldest due tick, then stable system ID. Business
+The scheduler MUST reserve mandatory tail CPU before admitting optional work. Within an ordinary
+admission class it orders by deadline, explicit wake reason, oldest due tick, then stable system ID.
+Mandatory-tail systems in the same phase instead use stable system-ID dependency order; their health
+age cannot invert irreversible pairs such as `spawn.execute` before `spawn.settle`. Business
 priorities remain inside domain arbiters and do not change kernel criticality.
 
 No system may read `Game.cpu.bucket` to self-admit. It receives `CpuMode` and `CpuBudget` from the
@@ -1063,6 +1075,12 @@ quarantine. Per-creep kernels and one try/catch per creep are forbidden.
 
 `MemoryManager` owns the `Memory.myrmex` root, schema validation, migrations, transactions, and
 serialization hygiene. No other module reads or writes that root directly.
+
+Screeps' standard `Memory.creeps` table is not gameplay truth and remains outside that authority.
+One preflight compares its keys only with `Game.creeps`, inspects at most 128 canonical names and
+deletes at most 64 stale entries per tick. Tick-derived windows converge without heap state and run
+before MYRMEX state opening, including recovery and unsupported-schema paths. The preflight neither
+creates the table nor reads or mutates `Memory.myrmex`; live entry values remain byte-equivalent.
 
 The persistent root is divided by authority, not convenience:
 
@@ -1175,8 +1193,10 @@ Invalidation uses dependency epochs rather than scattered deletes. Initial epoch
 For example, a route cache key includes origin, destination, policy ID, and topology epoch. A static
 cost matrix includes room name, structure-layout epoch, and pathing-policy epoch. Dynamic creeps are
 overlaid per tick and do not invalidate static matrices or enter reusable local paths. The separate
-two-tick movement-progress namespace contains only bounded reconstructible attempt evidence; losing
-it resets congestion age and reduces quality without changing correctness.
+four-tick movement-progress namespace contains at most 128 reconstructible attempt records and 64
+actor-goal sequence records. Attempt progress still correlates only the immediately preceding tick;
+losing either record family resets recovery evidence and reduces quality without changing
+correctness.
 
 Only `CacheManager` may own global heap maps. A tiny function-local memoization that cannot survive
 the call is allowed. Anything reused across calls or ticks is a registered namespace.
@@ -1419,13 +1439,19 @@ in the table are invalid.
 
 `deadline` is inclusive: modeled travel and work may finish on that tick. `expiresAt` is exclusive
 and names the first tick on which unfinished work is invalid. A lease's `expiresAt` has the same
-exclusive meaning. Issuers retry with the same `(issuer, issuerSequence, issuerKey)` tuple;
-`ContractLedger` derives a collision-free, length-prefixed contract ID. Identical terms are
-idempotent, while changed terms under the same identity are an explicit conflict. Each issuer owns a
-strictly increasing sequence. Its persistent retirement frontier rejects every coordinate at or
-below the highest terminal sequence even after the compact outcome record is evicted, so heap reset
-or bounded-history eviction cannot resurrect completed work. Skipped or late lower coordinates fail
-closed; producers advance rather than recycle a sequence.
+exclusive meaning. Reconcile extends an otherwise valid incumbent lease on its final authorized
+tick, preserving its actor and modeled schedule so Observe never receives an expired lease between
+equivalent assignments. Lease expiry and contract expiry remain distinct disposition reasons.
+Issuers retry with the same `(issuer, issuerSequence, issuerKey)` tuple; `ContractLedger` derives a
+collision-free, length-prefixed contract ID. Identical terms are idempotent, while changed terms
+under the same identity are an explicit conflict. Each issuer owns a strictly increasing sequence.
+Its persistent retirement frontier rejects every coordinate at or below the highest terminal
+sequence even after the compact outcome record is evicted, so heap reset or bounded-history eviction
+cannot resurrect completed work. Skipped or late lower coordinates fail closed; producers advance
+rather than recycle a sequence. The bounded `ContractPlanningView` publishes active generations plus
+detached issuer frontiers, and the shared next-generation helper retains one active coordinate or
+advances exactly to `retiredThrough + 1`. Recurring Economy, Maintenance, and Industry producers use
+that projection instead of guessing or reusing sequence 1.
 
 Tick-local trivial work MAY use an ephemeral contract, but anything requiring spawn time,
 replacement, multiple ticks, resource reservation, or outcome accounting MUST be persistent.
@@ -1481,6 +1507,16 @@ expired entries deny funding. Known authorization loss moves `funded|assigned|ac
 no funding or assignment but preserves the commitment because absence of vision is not revocation
 evidence.
 
+When a mandatory planner grants a budget for work published by a later optional system,
+`spawn.settle` closes the split before colony persistence. An exact same-tick contract bootstrap may
+retain its own binding until `ContractLedger` reconciles it, including a recurring successor that
+reuses an older rolling reservation. Without that bootstrap, contract-backed retention requires an
+exact live contract, while command-only work requires a current typed intent; otherwise the active
+or pending reservation is released. An unavailable contract view preserves older contract-backed
+reservations rather than inventing revocation. Industry settlement scopes this rule only to current
+extraction and terminal-send proposals, so lab and mature-infrastructure budgets that share the
+`industry` category are not affected.
+
 General systems cannot inspect raw `config`, `colonies`, or `contracts` owner bytes through
 `StateView`. The composition adapter alone reads detached owner views; `ContractLedger` alone stages
 the contracts transaction.
@@ -1512,8 +1548,8 @@ or contract persistence. `ContractLedger` alone turns accepted proposals into le
 
 The allocator canonicalizes inputs before applying limits. It considers at most 64 contracts, 64
 actors, and 4,096 contract-actor pairs per pass, and emits at most 64 data-only safe-idle
-dispositions. Contract order is priority class, `harvest` then `fill` then remaining work-kind rank,
-higher numeric priority, earlier deadline, and finally contract ID. Actor bids prefer, in order:
+dispositions. Contract order is priority class, higher numeric priority, `harvest` then `fill` then
+remaining work-kind rank, earlier deadline, and finally contract ID. Actor bids prefer, in order:
 
 1. lower switching cost;
 2. shorter known travel;
@@ -1596,17 +1632,21 @@ The Phase 1 `EconomyPlanner` alternates recovery workers between visible sources
 spawn/extension sinks through stable endpoint-demand `harvesting-filling` contracts. The allocator,
 not an actor-shaped issuer, selects the eligible lease holder. Partial cargo retains that actual
 lease holder's phase from `ContractExecutionView`: harvest batches until full and continuous fill
-omits the Screeps transfer amount so all available cargo is offered. A static source becomes
-exclusive only from a matching current V2 lease whose viable actor has reached its exact work tile;
-funding, assignment without arrival, stale actor evidence, or suspension retains mobile fallback.
-The same tick filters the superseded mobile lease before agent intent production and suspends it in
-ContractLedger. Loss of readiness restores the reusable demand; an older terminal generation uses
-one deterministic later coordinate rather than resurrecting retired work. `ContractPlanningView`
-remains the renewal/endpoint-retirement projection. This introduces no role Memory or flow ledger.
-Tick telemetry reports owned-room refill demand and scheduled harvest/delivery in energy units;
-observed cargo/drops remain stock gauges, successful command receipts are not treated as settled
-world deltas, and boosted harvest explicitly marks its base-yield total as a lower bound. ADR 0009
-records the projection boundary.
+omits the Screeps transfer amount so all available cargo is offered. The same projection exposes a
+cross-domain carried-energy phase: an active acquisition lease fills known remaining capacity before
+upgrade, build, or repair may take over; once consumption begins, harvest and pickup cannot take
+that actor while it still carries energy. An available survival transfer sink may still preempt
+either phase. The allocator enforces both incumbent guards so stale already-funded competition
+cannot bypass the planner. A static source becomes exclusive only from a matching current V2 lease
+whose viable actor has reached its exact work tile; funding, assignment without arrival, stale actor
+evidence, or suspension retains mobile fallback. The same tick filters the superseded mobile lease
+before agent intent production and suspends it in ContractLedger. Loss of readiness restores the
+reusable demand; an older terminal generation uses the exact next frontier coordinate rather than
+resurrecting retired work. `ContractPlanningView` remains the renewal/endpoint-retirement
+projection. This introduces no role Memory or flow ledger. Tick telemetry reports owned-room refill
+demand and scheduled harvest/delivery in energy units; observed cargo/drops remain stock gauges,
+successful command receipts are not treated as settled world deltas, and boosted harvest explicitly
+marks its base-yield total as a lower bound. ADR 0009 records the projection boundary.
 
 The Phase 1 `CriticalMaintenancePlanner` has no durable owner. It reads one current room snapshot
 and can emit budgeted repair contracts only for a critically damaged spawn, sole container, or
@@ -1618,18 +1658,20 @@ this boundary.
 The Phase 1 `SurvivalGrowthPlanner` is likewise a pure snapshot selector with no layout, placement,
 or durable queue. A downgrade-risk controller may request `controller-risk` upgrade work; at RCL1,
 that request always spends carried creep energy and, at the full-floor bootstrap state, suppresses
-the potential duplicate ordinary candidate. A legacy or temporarily changed room-energy claim
-advances one fresh budget revision rather than conflicting under old terms. Workforce allocation
-requires current positive actor energy before any controller-upgrade lease, so cargo or actor loss
-defers without changing the budget signature and later refill can resume it. When the downgrade
-timer leaves or re-enters the risk window, the existing ContractLedger replacement channel
-atomically advances the same issuer between `controller-risk` and `bootstrap-controller` with no
-overlapping budget, contract, or lease. This is the only category-changing replacement: one typed
-RCL1-controller handoff proof must name the exact allowlisted pair while owner, budget issuer, work
-kind, target, and consecutive issuer sequence remain unchanged. A due same-category risk generation
-uses that channel first, preserving an exact consecutive sequence for a later handoff. Optional
-controller upgrading and owned spawn, extension, container, road, and tower construction sites need
-both the protected spawn reserve and configured surplus. RCL1 `bootstrap-controller` work retains a
+the potential duplicate ordinary candidate. Its work contract uses the `survival` class so carried
+energy can interrupt acquisition before downgrade, while ordinary bootstrap remains `growth` and
+retains full-batch acquisition. A legacy or temporarily changed room-energy claim advances one fresh
+budget revision rather than conflicting under old terms. Workforce allocation requires current
+positive actor energy before any controller-upgrade lease, so cargo or actor loss defers without
+changing the budget signature and later refill can resume it. When the downgrade timer leaves or
+re-enters the risk window, the existing ContractLedger replacement channel atomically advances the
+same issuer between `controller-risk` and `bootstrap-controller` with no overlapping budget,
+contract, or lease. This is the only category-changing replacement: one typed RCL1-controller
+handoff proof must name the exact allowlisted pair while owner, budget issuer, work kind, target,
+and consecutive issuer sequence remain unchanged. A due same-category risk generation uses that
+channel first, preserving an exact consecutive sequence for a later handoff. Optional controller
+upgrading and owned spawn, extension, container, road, and tower construction sites need both the
+protected spawn reserve and configured surplus. RCL1 `bootstrap-controller` work retains a
 1,500-tick budget/contract horizon, matching its bounded assignment-cost ceiling so a fresh
 TTL-viable worker is not rejected by the generic 50-tick lease horizon. When that budget renews, the
 same replacement channel atomically retires the exact predecessor and funds only its next issuer
@@ -1917,17 +1959,20 @@ dynamic-blockage policy, arbiter, and executor remain sole. A hold-mode override
 or primary action while an arrival or route-failure suspension waits for Reconcile.
 
 Issue [#447](https://github.com/ralphschuler/screeps-myrmex/issues/447) adds bounded local
-congestion recovery without another state authority. One 128-entry, two-tick heap cache records only
-the exact prior correlated movement attempt and beginning-of-tick actor position after an accepted,
-blocked, or typed no-path result. A consecutive unchanged position under the same contract revision
-and goal advances `stuckAge`; actor movement, evidence gaps, lease/goal drift, or heap reset returns
-it to zero. At `stuckReplanTicks`, the lease agent bypasses the reusable local path and gives the
-narrow search adapter at most 128 canonical current-room creep positions and already-proposed
-destinations as an impassable tick-local overlay. That search consumes the existing 0.5-CPU
-allowance and configured operation/cost limits, and its result is never cached. At
-`blockedReleaseTicks`, the agent emits one ordinary correlated suspension request and no movement;
-`ContractLedger` remains the only lease owner. Empty heap may delay replanning but cannot authorize
-movement, persist occupancy, or change contract safety.
+congestion recovery without another state authority. One four-tick heap namespace holds at most 128
+movement-attempt records and 64 actor-goal sequence records. Each attempt records the
+beginning-of-tick actor position after an accepted, blocked, or typed no-path result and correlates
+only with the immediately preceding tick. A consecutive unchanged position under the same semantic
+movement episode and goal advances `stuckAge`; ordinary lease revision renewal retains that episode,
+while actor movement, evidence gaps, real goal drift, or heap reset returns it to zero. The
+actor-goal records recognize repeated A→B→A target oscillation within the same short evidence
+window. At `stuckReplanTicks`, the lease agent bypasses the reusable local path and gives the narrow
+search adapter at most 128 canonical current-room creep positions and already-proposed destinations
+as an impassable tick-local overlay. That search consumes the existing 0.5-CPU allowance and
+configured operation/cost limits, and its result is never cached. At `blockedReleaseTicks`, either
+continuous blockage or bounded goal oscillation emits one ordinary correlated suspension request and
+no movement; `ContractLedger` remains the only lease owner. Empty heap may delay replanning but
+cannot authorize movement, persist occupancy, or change contract safety.
 
 Observe is the only live terrain/structure reader for that service. It publishes a compact immutable
 per-visible-room traversal projection; runtime's local path adapter is the only code that creates
@@ -2770,11 +2815,19 @@ transaction-energy, consumed, and unmet accounting.
 Runtime composition observes visible owned mineral, extractor, storage, and terminal facts before
 `ColonyDirector`. Source policy creates bounded per-mineral stock commitments and deterministic
 below-minimum rebalance requests; the director admits their industry budgets after survival and
-maintenance. Only active reservations may publish extraction contracts or terminal intents into the
-shared channels. A layouts V14 terminal-bound lab evacuation removes every send proposal whose
-source or destination is that reserved room before any terminal intent or budget can publish.
-Accepted terminal intents execute in the common execute phase, then the dedicated `industry` Memory
-owner records capped retry state before observer-only telemetry is emitted.
+maintenance. Active extraction requests remain byte-stable for one issuer generation; expiry,
+depletion, and later mineral regeneration advance through the shared retirement frontier rather than
+mutating or reopening sequence 1. Rolling industry reservations retain their exact request until
+renewal is due, then advance revision whenever expiry or claims change. Only active reservations may
+publish extraction contracts or terminal intents into the shared channels. Extraction contracts
+resolve the observed mineral object through the same Lease Agent and Movement target boundary used
+by source harvesting. A `WORK`/`MOVE` extractor with zero `CARRY` is executable because harvested
+mineral is deliberately dropped on its tile; carry-bearing harvesters still require known free
+capacity. Every Industry CPU claim is an integer milli-CPU value accepted by `BudgetLedger`. A
+layouts V14 terminal-bound lab evacuation removes every send proposal whose source or destination is
+that reserved room before any terminal intent or budget can publish. Accepted terminal intents
+execute in the common execute phase, then the dedicated `industry` Memory owner records capped retry
+state before observer-only telemetry is emitted.
 
 Lab facts follow the same detached boundary. The observer records current owned-lab activity,
 cooldown, resource-specific amounts/capacities, and bounded exact creep boost compounds. A bounded
