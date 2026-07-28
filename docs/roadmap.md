@@ -63,7 +63,9 @@ merged.
   [issue #28](https://github.com/ralphschuler/screeps-myrmex/issues/28) and
   [`phase1-growth-evidence.md`](phase1-growth-evidence.md). Spawn-only RCL2 carried-energy extension
   bootstrap recovery is tracked by
-  [issue #473](https://github.com/ralphschuler/screeps-myrmex/issues/473).
+  [issue #473](https://github.com/ralphschuler/screeps-myrmex/issues/473). RCL1 controller work
+  keeps a feasible travel horizon and atomically renews its exact contract generation under
+  [issue #479](https://github.com/ralphschuler/screeps-myrmex/issues/479).
 - Bounded survival accounting and explainable structured status are tracked by
   [issue #39](https://github.com/ralphschuler/screeps-myrmex/issues/39) and
   [`phase1-telemetry-evidence.md`](phase1-telemetry-evidence.md).

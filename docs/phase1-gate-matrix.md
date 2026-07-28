@@ -73,8 +73,9 @@ root:
 npm run check
 ```
 
-This command compares exported deterministic row outputs with the checked-in JSON, validates every
-budget, rebuilds and hashes the exact production bundle, checks its real esbuild input graph, and
+This command preserves the checked-in closure JSON by fixed digest, runs current deterministic row
+outputs against the frozen budgets without requiring historical hashes or measurements to match,
+rebuilds the current production compatibility bundle, checks its real esbuild input graph, and
 packages that bundle. It does not substitute for the explicitly later-owned live Screeps risks.
 
 ## Explicit remaining risks

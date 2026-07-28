@@ -587,7 +587,7 @@ describe("TelemetryService", () => {
     expect(replay.owner.last).toMatchObject({ hash: replay.telemetry.status.hash });
   });
 
-  it("publishes a stable redacted reason for funded contracts without a viable actor", () => {
+  it("publishes bounded redacted assignment and renewal blocker reasons", () => {
     const outcome = runTick({ game: game(100), memory: {} as Memory });
     if (outcome.telemetry === null || outcome.contracts === null)
       throw new Error("expected telemetry and contract reconciliation");
@@ -602,9 +602,19 @@ describe("TelemetryService", () => {
           allocation: {
             ...outcome.contracts.allocation,
             deferred: [
-              { contractId: "secret-bootstrap-contract", reason: "no-viable-actor" as const },
+              { contractId: "secret-no-actor", reason: "no-actor" as const },
+              { contractId: "secret-unknown-route", reason: "travel-unknown" as const },
+              { contractId: "secret-short-horizon", reason: "deadline-infeasible" as const },
             ],
           },
+          submissions: [
+            ...outcome.contracts.submissions,
+            {
+              accepted: false as const,
+              contractId: "secret-renewal-contract",
+              reason: "funding-binding-conflict" as const,
+            },
+          ],
         },
         execution: outcome.execution,
         growth: [],
@@ -615,12 +625,23 @@ describe("TelemetryService", () => {
         reporterSignals: [],
       },
     );
-    const deferred = result.telemetry.status.details.find(
-      ({ domain, status }) => domain === "contract" && status === "deferred",
+    const blockers = result.telemetry.status.details
+      .filter(({ domain }) => domain === "contract")
+      .map(({ reason }) => reason);
+    expect(blockers).toEqual(
+      expect.arrayContaining([
+        "deadline-infeasible",
+        "funding-binding-conflict",
+        "no-actor",
+        "travel-unknown",
+      ]),
     );
-    expect(deferred).toMatchObject({ reason: "no-viable-actor" });
-    expect(deferred?.entityId).toMatch(/^contract:[0-9a-f]{8}$/);
-    expect(JSON.stringify(result.telemetry)).not.toContain("secret-bootstrap-contract");
+    for (const detail of result.telemetry.status.details.filter(
+      ({ domain }) => domain === "contract",
+    )) {
+      expect(detail.entityId).toMatch(/^contract:[0-9a-f]{8}$/);
+    }
+    expect(JSON.stringify(result.telemetry)).not.toContain("secret-");
   });
 
   it("publishes bounded recovery transitions while Memory is ready without persisting a queue", () => {

@@ -1,9 +1,11 @@
 import type { RuntimeConfig } from "../config";
 import type { BudgetRequest } from "../colony";
-import type {
-  ContractPlanningView,
-  ContractTransitionRequest,
-  WorkContractRequest,
+import {
+  contractIdFor,
+  type ContractPlanningView,
+  type ContractReplacementRequest,
+  type ContractTransitionRequest,
+  type WorkContractRequest,
 } from "../contracts";
 import type { PositionSnapshot, WorldSnapshot } from "../world/snapshot";
 
@@ -23,6 +25,7 @@ export interface GrowthCandidate {
 }
 export interface GrowthPlan {
   readonly candidates: readonly GrowthCandidate[];
+  readonly replacements: readonly ContractReplacementRequest[];
   readonly requests: readonly WorkContractRequest[];
   readonly transitions: readonly ContractTransitionRequest[];
 }
@@ -119,8 +122,14 @@ export function renewGrowthBudgets(
       const due = prior !== undefined && prior.request.expiresAt - tick <= renewalWindowTicks;
       const revision =
         prior === undefined ? 1 : due || !reservable ? prior.revision + 1 : prior.revision;
+      // Any fresh RCL1 bootstrap worker that passes the 1,500-tick assignment and TTL gates must
+      // also fit the contract deadline. Generic 50-tick leases remain unchanged for other work.
+      const horizon =
+        candidate.budgetRequest.category === "bootstrap-controller"
+          ? Math.max(durationTicks, BOOTSTRAP_MAX_ASSIGNMENT_COST)
+          : durationTicks;
       const expiresAt =
-        prior !== undefined && reservable && !due ? prior.request.expiresAt : tick + durationTicks;
+        prior !== undefined && reservable && !due ? prior.request.expiresAt : tick + horizon;
       return { ...candidate, budgetRequest: { ...candidate.budgetRequest, expiresAt, revision } };
     }),
   );
@@ -156,9 +165,45 @@ export function authorizedSurvivalGrowth(
   const existingIssuers = new Set(
     planning.status === "ready" ? planning.contracts.map(({ issuer }) => issuer) : [],
   );
+  const replacements: ContractReplacementRequest[] = [];
+  const replacingPredecessors = new Set<string>();
   const transitions: ContractTransitionRequest[] = [];
-  if (planning.status === "ready")
+  if (planning.status === "ready") {
+    for (const candidate of authorized) {
+      if (candidate.budgetRequest.category !== "bootstrap-controller") continue;
+      const matches = planning.contracts.filter(
+        ({ issuer }) => issuer === candidate.budgetRequest.issuer,
+      );
+      const predecessor = matches.length === 1 ? matches[0] : undefined;
+      if (
+        predecessor === undefined ||
+        predecessor.issuerSequence === undefined ||
+        candidate.budgetRequest.revision !== predecessor.issuerSequence + 1
+      )
+        continue;
+      const successor = contractFor(candidate);
+      const successorId = contractIdFor(
+        successor.issuer,
+        successor.issuerKey,
+        successor.issuerSequence,
+      );
+      replacements.push({
+        predecessorContractId: predecessor.contractId,
+        reason: "growth-budget-renewed",
+        successor,
+        tick,
+      });
+      replacingPredecessors.add(predecessor.contractId);
+      transitions.push({
+        contractId: successorId,
+        reason: "growth-work-remains",
+        tick,
+        to: "funded",
+      });
+    }
+
     for (const contract of planning.contracts) {
+      if (replacingPredecessors.has(contract.contractId)) continue;
       if (!contract.issuer.startsWith("growth/") || contract.owner.kind !== "colony") continue;
       if (isRcl2InfrastructureBootstrap(contract.issuer)) {
         const reusable = reusabilityConfirmedForRcl2InfrastructureBootstrap(
@@ -213,14 +258,20 @@ export function authorizedSurvivalGrowth(
           to: "funded",
         });
     }
+  }
   return Object.freeze({
     candidates: Object.freeze(authorized),
+    replacements: Object.freeze(
+      replacements.sort((a, b) => a.predecessorContractId.localeCompare(b.predecessorContractId)),
+    ),
     requests: Object.freeze(
       authorized
         .filter(
           ({ budgetRequest }) =>
-            !isRcl2InfrastructureBootstrap(budgetRequest.issuer) ||
-            !existingIssuers.has(budgetRequest.issuer),
+            (!isRcl2InfrastructureBootstrap(budgetRequest.issuer) ||
+              !existingIssuers.has(budgetRequest.issuer)) &&
+            (budgetRequest.category !== "bootstrap-controller" ||
+              !existingIssuers.has(budgetRequest.issuer)),
         )
         .map(contractFor)
         .sort((a, b) => a.issuer.localeCompare(b.issuer)),

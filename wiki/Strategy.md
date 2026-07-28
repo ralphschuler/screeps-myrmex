@@ -25,6 +25,11 @@ exactly one recovery objective, which the ledger explicitly funds or blocks. Thr
 preempt growth. Unknown vision preserves durable state without authorizing new work, while current
 visible ownership loss releases local commitments.
 
+At RCL1, carried-energy controller work keeps a bounded fatigue-aware travel horizon instead of the
+generic short lease horizon. Renewal atomically advances one exact contract generation; missing
+routes, deadline failure, and renewal conflicts remain distinct redacted blockers while the full
+spawn reserve stays protected.
+
 At RCL2, a spawn-only room may build observed owned extension sites from energy already carried by a
 viable worker while preserving the full spawn reserve. This bounded exception ends when the site or
 bootstrap state ends; normal surplus-based growth then resumes. It does not bypass layout,

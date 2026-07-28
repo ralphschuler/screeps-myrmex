@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRuntimeConfig } from "../src/config/runtime-config";
 import { authorizedSurvivalGrowth, planSurvivalGrowth, renewGrowthBudgets } from "../src/growth";
-import type { ContractPlanningView } from "../src/contracts";
+import { contractIdFor, type ContractPlanningView } from "../src/contracts";
 import type { WorldSnapshot } from "../src/world/snapshot";
 
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
@@ -403,6 +403,113 @@ describe("survival growth", () => {
         to: "cancelled",
       },
     ]);
+  });
+
+  it("renews RCL1 bootstrap work with a fresh feasible horizon and one atomic successor", () => {
+    const config = buildRuntimeConfig();
+    const planned = planSurvivalGrowth(
+      world({
+        controllerLevel: 1,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 50,
+      }),
+      config,
+    );
+    const initial = renewGrowthBudgets(
+      planned,
+      [],
+      100,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    );
+    const first = initial[0];
+    if (first === undefined) throw new Error("expected RCL1 bootstrap candidate");
+    expect(first.budgetRequest.expiresAt - 1 - 100).toBeGreaterThan(49);
+
+    const predecessor = {
+      budgetBinding: {
+        category: "bootstrap-controller" as const,
+        issuer: first.budgetRequest.issuer,
+      },
+      contractId: contractIdFor(first.budgetRequest.issuer, first.targetId, 1),
+      execution: {
+        action: "upgrade-controller" as const,
+        completion: "continuous" as const,
+        completionHits: null,
+        counterpartId: null,
+        resourceType: null,
+        version: 1 as const,
+      },
+      issuer: first.budgetRequest.issuer,
+      issuerSequence: 1,
+      owner: { id: "W1N1", kind: "colony" as const },
+      state: "funded" as const,
+      targetId: first.targetId,
+    };
+    const renewed = renewGrowthBudgets(
+      planned,
+      [
+        {
+          category: "bootstrap-controller",
+          colonyId: "W1N1",
+          issuer: first.budgetRequest.issuer,
+          revision: 1,
+          request: { ...first.budgetRequest, expiresAt: 150, revision: 1 },
+          status: "active",
+        },
+      ],
+      140,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    );
+    const successor = renewed[0];
+    if (successor === undefined) throw new Error("expected renewed RCL1 bootstrap candidate");
+    expect(successor.budgetRequest).toMatchObject({ revision: 2 });
+    // If the predecessor lived until tick 150, the old 50-tick renewal left only 39 deadline
+    // ticks. The atomic successor must retain enough fresh time for travel plus one work tick.
+    expect(successor.budgetRequest.expiresAt - 1 - 150).toBeGreaterThan(40);
+
+    const authorized = authorizedSurvivalGrowth(
+      renewed,
+      [
+        {
+          category: "bootstrap-controller",
+          colonyId: "W1N1",
+          issuer: successor.budgetRequest.issuer,
+          status: "active",
+        },
+      ],
+      { status: "ready", contracts: [predecessor] },
+      140,
+      world({
+        controllerLevel: 1,
+        energy: 300,
+        energyCapacity: 300,
+        spawn: true,
+        workerEnergy: 50,
+      }),
+      config,
+    );
+    const successorId = contractIdFor(successor.budgetRequest.issuer, successor.targetId, 2);
+    expect(authorized.requests).toEqual([]);
+    expect(authorized.replacements).toHaveLength(1);
+    expect(authorized.replacements[0]).toMatchObject({
+      predecessorContractId: predecessor.contractId,
+      reason: "growth-budget-renewed",
+      successor: {
+        deadline: successor.budgetRequest.expiresAt - 1,
+        issuerSequence: 2,
+      },
+      tick: 140,
+    });
+    expect(authorized.transitions).toContainEqual({
+      contractId: successorId,
+      reason: "growth-work-remains",
+      tick: 140,
+      to: "funded",
+    });
   });
 
   it("keeps bootstrap demand reusable across temporary infeasibility and cancels when bootstrap phase exits", () => {

@@ -1171,6 +1171,30 @@ function collectDetails(input: TelemetryServiceInput): TelemetryDetail[] {
   for (const release of input.contracts?.releases ?? []) {
     details.push(detail("contract", release.contractId, "released", release.reason));
   }
+  for (const submission of input.contracts?.submissions ?? []) {
+    if (!submission.accepted) {
+      details.push(
+        detail(
+          "contract",
+          submission.contractId ?? `submission/${submission.reason}`,
+          "submission-rejected",
+          submission.reason,
+        ),
+      );
+    }
+  }
+  for (const replacement of input.contracts?.replacements ?? []) {
+    if (!replacement.accepted) {
+      details.push(
+        detail(
+          "contract",
+          replacement.predecessorContractId,
+          "renewal-rejected",
+          replacement.reason,
+        ),
+      );
+    }
+  }
   for (const deferral of input.contracts?.allocation.deferred ?? []) {
     details.push(detail("contract", deferral.contractId, "deferred", deferral.reason));
   }

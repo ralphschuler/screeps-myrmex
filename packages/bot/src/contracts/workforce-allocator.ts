@@ -17,7 +17,14 @@ export interface TravelEstimateView {
 }
 
 export type AllocationDeferralReason =
-  "contract-capacity" | "expired" | "no-viable-actor" | "not-started" | "not-funded";
+  | "contract-capacity"
+  | "deadline-infeasible"
+  | "expired"
+  | "no-actor"
+  | "no-viable-actor"
+  | "not-started"
+  | "not-funded"
+  | "travel-unknown";
 
 export interface ContractAssignmentProposal {
   readonly actorId: string;
@@ -56,6 +63,13 @@ interface CandidateBid {
   readonly switchingCost: number;
   readonly travelTicks: number;
   readonly ttlSlack: number;
+}
+
+type BidRejectionReason = "deadline-infeasible" | "no-viable-actor" | "travel-unknown";
+
+interface BidEvaluation {
+  readonly bid: CandidateBid | null;
+  readonly reason: BidRejectionReason | null;
 }
 
 /** Pure bounded policy. It never receives MemoryManager or any live Screeps object. */
@@ -104,30 +118,49 @@ export class WorkforceAllocator {
 
     for (const contract of consideredContracts) {
       const bids: CandidateBid[] = [];
+      const rejectionReasons = new Set<BidRejectionReason>();
+      let availableActors = 0;
+      let evaluatedActors = 0;
       for (const actor of consideredActors) {
         if (assignedActors.has(actor.id)) {
           continue;
         }
+        availableActors += 1;
         if (evaluatedPairs >= MAX_ALLOCATION_PAIRS) {
           break;
         }
         evaluatedPairs += 1;
-        const bid = buildBid(
+        evaluatedActors += 1;
+        const evaluation = evaluateBid(
           actor,
           contract,
           incumbentByActor.get(actor.id),
           input.tick,
           input.travel,
         );
-        if (bid !== null) {
-          bids.push(bid);
+        if (evaluation.bid !== null) {
+          bids.push(evaluation.bid);
+        } else if (evaluation.reason !== null) {
+          rejectionReasons.add(evaluation.reason);
         }
       }
 
       bids.sort(compareBids);
       const selected = bids[0];
       if (selected === undefined) {
-        deferred.push({ contractId: contract.id, reason: "no-viable-actor" });
+        deferred.push({
+          contractId: contract.id,
+          reason:
+            availableActors === 0
+              ? "no-actor"
+              : evaluatedActors === 0
+                ? "no-viable-actor"
+                : rejectionReasons.has("deadline-infeasible")
+                  ? "deadline-infeasible"
+                  : rejectionReasons.has("travel-unknown")
+                    ? "travel-unknown"
+                    : "no-viable-actor",
+        });
         continue;
       }
       assignedActors.add(selected.actor.id);
@@ -208,24 +241,24 @@ export const inRangeOrUnknownTravel: TravelEstimateView = Object.freeze({
   },
 });
 
-function buildBid(
+function evaluateBid(
   actor: WorkforceActor,
   contract: WorkContractRecord,
   incumbent: WorkContractRecord | undefined,
   tick: number,
   travel: TravelEstimateView,
-): CandidateBid | null {
+): BidEvaluation {
   if (
     actor.spawning ||
     actor.ticksToLive === null ||
     !capabilitySatisfies(actor.capability, contract.requiredCapability) ||
     !actionEligible(actor, contract)
   ) {
-    return null;
+    return { bid: null, reason: "no-viable-actor" };
   }
   const travelTicks = travel.estimate(actor, contract);
   if (!Number.isSafeInteger(travelTicks) || (travelTicks ?? -1) < 0) {
-    return null;
+    return { bid: null, reason: "travel-unknown" };
   }
   const knownTravel = travelTicks as number;
   const modeledWork =
@@ -233,27 +266,30 @@ function buildBid(
       ? remainingModeledTicks(contract, tick, knownTravel)
       : knownTravel + contract.estimatedWorkTicks;
   if (tick + modeledWork > contract.deadline) {
-    return null;
+    return { bid: null, reason: "deadline-infeasible" };
   }
   // Allocation happens after Execute, so the current observed TTL cannot supply a new action.
   const ttlSlack = actor.ticksToLive - 1 - modeledWork - contract.leasePolicy.ttlSafetyMargin;
   if (ttlSlack < 0) {
-    return null;
+    return { bid: null, reason: "no-viable-actor" };
   }
 
   const switchingCost = switchingPenalty(actor.id, incumbent, contract);
   const assignmentCost = knownTravel + switchingCost;
   if (assignmentCost > contract.maxAssignmentCost) {
-    return null;
+    return { bid: null, reason: "no-viable-actor" };
   }
 
   return {
-    actor,
-    assignmentCost,
-    capabilitySurplus: capabilitySurplus(actor.capability, contract.requiredCapability),
-    switchingCost,
-    travelTicks: knownTravel,
-    ttlSlack,
+    bid: {
+      actor,
+      assignmentCost,
+      capabilitySurplus: capabilitySurplus(actor.capability, contract.requiredCapability),
+      switchingCost,
+      travelTicks: knownTravel,
+      ttlSlack,
+    },
+    reason: null,
   };
 }
 
