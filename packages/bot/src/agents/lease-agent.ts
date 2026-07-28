@@ -101,6 +101,16 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
     seenActors.add(lease.actorId);
     const actor = actors.get(lease.actorId);
     const override = overrides.get(lease.contractId);
+    // Lease expiry is allocator evidence, not contract failure. Emit nothing after the exclusive
+    // lease boundary and let ContractLedger release/reassign it in the same Reconcile pass. Actual
+    // contract/override expiry still follows the normal suspension path below.
+    if (
+      override === undefined &&
+      input.tick >= lease.leaseExpiresAt &&
+      input.tick <= lease.deadline &&
+      input.tick < lease.expiresAt
+    )
+      continue;
     const disposition =
       override === undefined
         ? validateLease(lease, actor, targets, input.tick)

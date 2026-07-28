@@ -176,6 +176,18 @@ describe("lease agents", () => {
     expect(depleted).toMatchObject({ actions: [], dispositions: [], movement: [] });
   });
 
+  it("leaves an expired lease command-free for same-tick ledger renewal", () => {
+    const plan = planLeaseAgents({
+      availablePathCpu: 1,
+      execution: { leases: [harvestLease({ leaseExpiresAt: 10 })], status: "ready" },
+      paths,
+      snapshot: snapshot({ actor: position(11, 10), source: position(12, 10) }),
+      tick: 10,
+    });
+
+    expect(plan).toMatchObject({ actions: [], dispositions: [], movement: [] });
+  });
+
   it("reconciles only a matching scheduled action into assigned-to-active progress", () => {
     const lease = harvestLease();
     const result: MovementRuntimeResult = {

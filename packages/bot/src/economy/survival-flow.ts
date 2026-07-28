@@ -39,6 +39,7 @@ export function planSurvivalFlow(
 ): readonly SurvivalFlowCandidate[] {
   const candidates: SurvivalFlowCandidate[] = [];
   const activeActionByActor = activeSurvivalActionByActor(execution, planning);
+  const activeCarriedEnergyWorkByActor = carriedEnergyWorkByActor(execution, planning);
   const staticBindings = staticMiningBindings(planning);
   const staticTakeovers = staticSourceTakeovers(execution, planning, snapshot);
   for (const room of snapshot.rooms.filter((value) => value.controller?.ownership === "owned")) {
@@ -55,6 +56,10 @@ export function planSurvivalFlow(
       )
         continue;
       const carriedEnergy = resourceAmount(actor, "energy");
+      // Keep an already-leased build, repair, or upgrade batch on its current target until cargo is
+      // empty. This tick-local projection adds no actor task state; the ContractLedger lease remains
+      // authoritative and ordinary acquisition becomes eligible again on the empty-cargo tick.
+      if (carriedEnergy > 0 && activeCarriedEnergyWorkByActor.get(actor.id) === room.name) continue;
       const canHarvest =
         actor.store.freeCapacity === null ? carriedEnergy === 0 : actor.store.freeCapacity > 0;
       const pickupTarget = canHarvest
@@ -143,6 +148,44 @@ function activeSurvivalActionByActor(
     }
   }
   return actions;
+}
+
+function carriedEnergyWorkByActor(
+  execution: ContractExecutionView,
+  planning: ContractPlanningView,
+): ReadonlyMap<string, string> {
+  if (execution.status !== "ready" || planning.status !== "ready") return new Map();
+  const contracts = new Map(
+    planning.contracts
+      .filter(
+        (contract) =>
+          contract.owner.kind === "colony" &&
+          (contract.state === "assigned" || contract.state === "active") &&
+          contract.execution.version === 1 &&
+          contract.execution.counterpartId === null &&
+          contract.execution.resourceType === null &&
+          (contract.execution.action === "build" ||
+            contract.execution.action === "repair" ||
+            contract.execution.action === "upgrade-controller"),
+      )
+      .map((contract) => [contract.contractId, contract] as const),
+  );
+  const workByActor = new Map<string, string>();
+  for (const lease of execution.leases) {
+    const contract = contracts.get(lease.contractId);
+    if (
+      contract === undefined ||
+      lease.state !== contract.state ||
+      lease.targetId !== contract.targetId ||
+      lease.execution.version !== 1 ||
+      lease.execution.action !== contract.execution.action ||
+      lease.execution.counterpartId !== null ||
+      lease.execution.resourceType !== null
+    )
+      continue;
+    workByActor.set(lease.actorId, contract.owner.id);
+  }
+  return workByActor;
 }
 
 function isSurvivalFlowContract(contract: ContractPlanningView["contracts"][number]): boolean {

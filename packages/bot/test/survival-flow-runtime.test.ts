@@ -294,9 +294,9 @@ describe("survival-flow runtime recovery", () => {
     expect(world.spawnCalls).toEqual([]);
   }, 60_000);
 
-  it("leases distant RCL1 controller work after CPU and route recovery without deadline churn", async () => {
+  it("spends one full distant RCL1 controller batch without harvest preemption", async () => {
     const world = survivalWorld({
-      controllerInitialProgress: 196,
+      controllerInitialProgress: 150,
       controllerPosition: { roomName: "W1N1", x: 47, y: 47 },
       initialWorkerEnergy: 50,
     });
@@ -306,6 +306,9 @@ describe("survival-flow runtime recovery", () => {
     let maximumBootstrapContracts = 0;
     let sawDeadlineInfeasible = false;
     let sawTravelUnknown = false;
+    let firstUpgradeTick: number | null = null;
+    let priorControllerProgress = 150;
+    let sourceWorkAfterUpgrade = 0;
     const assignments: NonNullable<
       TickOutcome["contracts"]
     >["allocation"]["assignments"][number][] = [];
@@ -325,8 +328,32 @@ describe("survival-flow runtime recovery", () => {
       assertSingleTickAuthorities(outcome, world.workerId);
       assignments.push(...(outcome.contracts?.allocation.assignments ?? []));
       releases.push(...(outcome.contracts?.releases ?? []));
+      const sourceContractIds = new Set(
+        outcome.contractExecution.leases
+          .filter(({ targetId }) => targetId === "source-a" || targetId === "source-b")
+          .map(({ contractId }) => contractId),
+      );
       for (const lease of outcome.contractExecution.leases) {
         if (lease.targetId === "controller-1") controllerContractIds.add(lease.contractId);
+      }
+      const upgraded = outcome.movement.actionExecution.some(
+        ({ intent, status }) => status === "executed" && intent.kind === "upgrade-controller",
+      );
+      if (upgraded) firstUpgradeTick ??= tick;
+      if (firstUpgradeTick !== null) {
+        const currentControllerProgress =
+          world.controllerLevel >= 2 ? 200 : world.controllerProgress;
+        expect(currentControllerProgress).toBeGreaterThanOrEqual(priorControllerProgress);
+        priorControllerProgress = currentControllerProgress;
+        sourceWorkAfterUpgrade += outcome.movement.actionExecution.filter(
+          ({ intent, status }) => status === "executed" && intent.kind === "harvest",
+        ).length;
+        sourceWorkAfterUpgrade += outcome.movement.movementExecution.filter(
+          ({ intent, status }) =>
+            status === "executed" &&
+            intent.contractId !== null &&
+            sourceContractIds.has(intent.contractId),
+        ).length;
       }
       const contractsOwner = memory.myrmex?.contracts as
         { readonly active?: readonly { readonly issuer?: string }[] } | undefined;
@@ -372,10 +399,25 @@ describe("survival-flow runtime recovery", () => {
       ),
     ).toBe(true);
     expect(releases.some(({ reason }) => reason === "deadline-infeasible")).toBe(false);
+    expect(
+      releases.some(
+        ({ contractId, reason }) =>
+          controllerContractIds.has(contractId) && reason === "lease-expired",
+      ),
+    ).toBe(true);
+    expect(
+      releases.some(
+        ({ contractId, reason }) =>
+          controllerContractIds.has(contractId) && reason === "allocator-unassigned",
+      ),
+    ).toBe(false);
     expect(resetAt).not.toBeNull();
+    expect(firstUpgradeTick).not.toBeNull();
+    expect(sourceWorkAfterUpgrade).toBe(0);
     expect(world.moveCalls).toBeGreaterThan(0);
-    expect(world.controllerUpgradeCalls).toBe(4);
+    expect(world.controllerUpgradeCalls).toBe(50);
     expect(world.controllerLevel).toBe(2);
+    expect(world.workerEnergy).toBe(0);
     expect(world.spawnEnergy).toBe(300);
     expect(world.spawnCalls).toEqual([]);
   }, 60_000);

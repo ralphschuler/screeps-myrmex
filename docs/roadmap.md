@@ -69,7 +69,10 @@ merged.
   keeps a feasible travel horizon and atomically renews its exact contract generation under
   [issue #479](https://github.com/ralphschuler/screeps-myrmex/issues/479); downgrade-risk work at
   the protected spawn floor uses the same carried-energy path under
-  [issue #481](https://github.com/ralphschuler/screeps-myrmex/issues/481).
+  [issue #481](https://github.com/ralphschuler/screeps-myrmex/issues/481). Matching leased upgrade,
+  build, and repair work keeps spending positive cargo across bounded lease renewal instead of being
+  displaced by acquisition under
+  [issue #485](https://github.com/ralphschuler/screeps-myrmex/issues/485).
 - Bounded survival accounting and explainable structured status are tracked by
   [issue #39](https://github.com/ralphschuler/screeps-myrmex/issues/39) and
   [`phase1-telemetry-evidence.md`](phase1-telemetry-evidence.md).

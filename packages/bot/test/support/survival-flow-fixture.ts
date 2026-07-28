@@ -44,6 +44,7 @@ export interface SurvivalWorld {
   readonly sourceBDelivered: number;
   readonly sourceBHarvested: number;
   readonly controllerLevel: number;
+  readonly controllerProgress: number;
   readonly controllerTicksToDowngrade: number;
   readonly controllerUpgradeCalls: number;
   readonly sinkVanishedAt: number | null;
@@ -444,6 +445,9 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
     },
     get controllerLevel() {
       return state.controllerLevel;
+    },
+    get controllerProgress() {
+      return state.controllerProgress;
     },
     get controllerTicksToDowngrade() {
       return controller.ticksToDowngrade;

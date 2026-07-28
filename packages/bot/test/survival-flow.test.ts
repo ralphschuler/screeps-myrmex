@@ -83,6 +83,22 @@ describe("survival flow", () => {
     ).toEqual(["economy/W1N1/harvest/source-near"]);
   });
 
+  it("retains active carried-energy work until the actor needs another acquisition batch", () => {
+    for (const action of ["upgrade-controller", "build", "repair"] as const) {
+      const work = activeCarriedEnergyWork(action);
+      expect(planSurvivalFlow(snapshot(25), work.execution, work.planning)).toEqual([]);
+      expect(
+        planSurvivalFlow(snapshot(0), work.execution, work.planning).map(
+          ({ budgetRequest }) => budgetRequest.issuer,
+        ),
+      ).toEqual(["economy/W1N1/harvest/source-near"]);
+    }
+
+    expect(planSurvivalFlow(snapshot(25)).map(({ budgetRequest }) => budgetRequest.issuer)).toEqual(
+      ["economy/W1N1/harvest/source-near"],
+    );
+  });
+
   it("excludes full and inactive sinks while retaining a farther active sink", () => {
     expect(planSurvivalFlow(snapshot(50, { sinkFree: 0 }))).toEqual([]);
     expect(planSurvivalFlow(snapshot(50, { spawnActive: false }))).toEqual([]);
@@ -844,6 +860,65 @@ function activeStaticExecution(
         targetId: "source-near",
       },
     ],
+  };
+}
+
+function activeCarriedEnergyWork(action: "build" | "repair" | "upgrade-controller"): {
+  readonly execution: ContractExecutionView;
+  readonly planning: ContractPlanningView;
+} {
+  const contractId = `contract-${action}`;
+  const targetId = action === "upgrade-controller" ? "controller" : `${action}-target`;
+  const issuer =
+    action === "repair" ? `maintenance/W1N1/${targetId}` : `growth/W1N1/${action}/${targetId}`;
+  const executionTerms = {
+    action,
+    completion:
+      action === "upgrade-controller" ? ("continuous" as const) : ("work-complete" as const),
+    completionHits: action === "repair" ? 1_000 : null,
+    counterpartId: null,
+    resourceType: null,
+    version: 1 as const,
+  };
+  return {
+    execution: {
+      status: "ready",
+      leases: [
+        {
+          actorId: "worker-a",
+          actorName: "worker",
+          contractId,
+          deadline: 100,
+          execution: executionTerms,
+          expiresAt: 101,
+          leaseExpiresAt: 101,
+          priority: { class: action === "repair" ? "survival" : "growth", value: 1_000 },
+          quantity: 1,
+          range: 3,
+          revision: 1,
+          state: "active",
+          target: position(25, 25),
+          targetId,
+        },
+      ],
+    },
+    planning: {
+      status: "ready",
+      contracts: [
+        {
+          budgetBinding: {
+            category: action === "repair" ? "critical-maintenance" : "bootstrap-controller",
+            issuer,
+          },
+          contractId,
+          execution: executionTerms,
+          issuer,
+          owner: { id: "W1N1", kind: "colony" },
+          state: "active",
+          targetId,
+        },
+      ],
+    },
   };
 }
 

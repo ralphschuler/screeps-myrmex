@@ -81,12 +81,24 @@ site-placement authority.
   reconstruction and input reorder, and reaches RCL2 with one contract, one lease, no spawn command,
   and all 300 spawn energy intact. Focused ContractLedger evidence retains exact first-tick lease
   expiry/reassignment, while the complete recovery row retains actor death/replacement.
+- Issue #485 makes one matching assigned/active V1 upgrade, build, or repair lease with positive
+  carried energy a derived spend phase. `survival-flow.test.ts` proves those three action kinds
+  admit no competing acquisition/delivery until cargo is empty while an unassigned partial worker
+  still fills the initial batch. `lease-agent.test.ts` proves the exclusive lease boundary emits no
+  stale command or false contract-failure transition. The production `runTick` row starts with a
+  300/300 spawn, one 50-energy legal worker, a distant source, and a 150/200 RCL1 controller; after
+  route/CPU recovery it reaches RCL2 through 50 monotonic upgrade effects with no harvest action,
+  source-bound movement, or allocator release while loaded. The row includes bounded lease
+  expiry/reassignment, JSON/module-heap reconstruction, reordered sources, and zero room-energy
+  spend.
 - The planner selects only observed owned spawn, extension, container, road, and tower sites. It
   creates no construction sites and retains no layout, topology, or placement state.
 
 ## Mechanics sources consulted
 
 - [Screeps documentation: Creep.upgradeController](https://docs.screeps.com/api/#Creep.upgradeController)
+- [Screeps documentation: Creep.harvest](https://docs.screeps.com/api/#Creep.harvest)
+- [Screeps documentation: Creep.repair](https://docs.screeps.com/api/#Creep.repair)
 - [Screeps documentation: Creep.move](https://docs.screeps.com/api/#Creep.move)
 - [Screeps documentation: Creep.ticksToLive](https://docs.screeps.com/api/#Creep.ticksToLive)
 - [Screeps documentation: Creep.build](https://docs.screeps.com/api/#Creep.build)
@@ -95,6 +107,7 @@ site-placement authority.
 - [Screeps documentation: Room.energyCapacityAvailable](https://docs.screeps.com/api/#Room.energyCapacityAvailable)
 - [Screeps documentation: Control](https://docs.screeps.com/control.html)
 - [Screeps Wiki: Energy](https://wiki.screepspl.us/Energy/)
+- [Screeps Wiki: Generic Creeps](https://wiki.screepspl.us/Generic_Creeps/)
 - [Screeps Wiki: Pathfinding and fatigue](https://wiki.screepspl.us/Pathfinding/)
 - [Screeps Wiki: Room Control Level](https://wiki.screepspl.us/Room_Control_Level/)
 - [Screeps Wiki: Automatic Base Building](https://wiki.screepspl.us/Automatic_base_building/)

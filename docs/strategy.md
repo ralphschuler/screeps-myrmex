@@ -435,14 +435,18 @@ withdraw, Wiki Maturity Matrix, and Wiki Energy guidance consulted for this poli
 RCL1 controller work spends only carried creep energy while the 300 spawn reserve remains intact.
 Inside the controller-risk window, only the higher-priority `controller-risk` path is funded;
 ordinary bootstrap does not duplicate it. A legal worker must currently carry energy before
-allocation, while cargo or actor loss preserves the stable budget/contract for later refill. Leaving
-or re-entering that window atomically advances the same issuer between controller-risk and bootstrap
-funding without duplicate budgets, contracts, leases, movement, or upgrade commands. Bootstrap's
-contract horizon matches the existing 1,500-tick assignment ceiling rather than the generic 50-tick
-lease duration, so legal fatigue-aware in-room travel remains assignable. Budget renewal atomically
-advances exactly one contract generation with a fresh horizon; ambiguous or skipped issuer evidence
-fails closed. Worker loss, unknown routes, deadline infeasibility, and renewal conflicts remain
-distinct bounded outcomes rather than silent funded work.
+allocation, while cargo or actor loss preserves the stable budget/contract for later refill. Once a
+worker holds matching upgrade, build, or repair work with positive cargo, survival acquisition and
+delivery cannot displace that spend phase; empty cargo re-enables the existing deterministic energy
+batch. Lease expiry itself is command-free and returns renewal to `ContractLedger`, so a long spend
+batch is not mistaken for contract failure. Leaving or re-entering the controller-risk window
+atomically advances the same issuer between controller-risk and bootstrap funding without duplicate
+budgets, contracts, leases, movement, or upgrade commands. Bootstrap's contract horizon matches the
+existing 1,500-tick assignment ceiling rather than the generic 50-tick lease duration, so legal
+fatigue-aware in-room travel remains assignable. Budget renewal atomically advances exactly one
+contract generation with a fresh horizon; ambiguous or skipped issuer evidence fails closed. Worker
+loss, unknown routes, deadline infeasibility, and renewal conflicts remain distinct bounded outcomes
+rather than silent funded work.
 
 A spawn-only RCL2 room cannot satisfy the normal 300-energy protected floor plus 100-energy growth
 surplus before extensions exist. While capacity remains below that configured normal-growth floor,
