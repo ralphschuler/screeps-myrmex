@@ -2,6 +2,7 @@ import type { RuntimeConfig } from "../config";
 import type { BudgetRequest } from "../colony";
 import {
   contractIdFor,
+  RCL1_CONTROLLER_FUNDING_HANDOFF,
   type ContractPlanningView,
   type ContractReplacementRequest,
   type ContractTransitionRequest,
@@ -51,12 +52,21 @@ export function planSurvivalGrowth(
     const urgency =
       controller.ticksToDowngrade !== null &&
       controller.ticksToDowngrade <= config.policy.recovery.controllerRiskWindowTicks;
+    const rcl1BootstrapPhase = qualifiesRcl1BootstrapPhase(room, config);
+    const rcl1Bootstrap = rcl1BootstrapPhase && hasViableEnergizedWorker(room, config);
     if (urgency) {
       candidates.push(
-        upgradeCandidate(room.name, controller.id, controller.pos, "controller-risk", config),
+        upgradeCandidate(
+          room.name,
+          controller.id,
+          controller.pos,
+          "controller-risk",
+          config,
+          controller.level === 1,
+        ),
       );
     }
-    if (qualifiesRcl1Bootstrap(room, config)) {
+    if (!urgency && rcl1Bootstrap) {
       candidates.push(bootstrapCandidate(room.name, controller.id, controller.pos, config));
       continue;
     }
@@ -112,16 +122,31 @@ export function renewGrowthBudgets(
 ): readonly GrowthCandidate[] {
   return Object.freeze(
     candidates.map((candidate) => {
-      const prior = existing.find(
-        (entry) =>
-          entry.category === candidate.budgetRequest.category &&
-          entry.colonyId === candidate.colonyId &&
-          entry.issuer === candidate.budgetRequest.issuer,
-      );
+      const prior = existing
+        .filter(
+          (entry) =>
+            entry.colonyId === candidate.colonyId &&
+            entry.issuer === candidate.budgetRequest.issuer &&
+            (entry.category === candidate.budgetRequest.category ||
+              isRcl1ControllerCategoryHandoff(entry.category, candidate.budgetRequest.category)),
+        )
+        .sort(
+          (left, right) =>
+            right.revision - left.revision || left.category.localeCompare(right.category),
+        )[0];
       const reservable = prior?.status === "active" || prior?.status === "pending";
+      const categoryChanged =
+        prior !== undefined && prior.category !== candidate.budgetRequest.category;
+      const claimChanged =
+        prior !== undefined &&
+        !sameEnergyClaim(prior.request.energy, candidate.budgetRequest.energy);
       const due = prior !== undefined && prior.request.expiresAt - tick <= renewalWindowTicks;
       const revision =
-        prior === undefined ? 1 : due || !reservable ? prior.revision + 1 : prior.revision;
+        prior === undefined
+          ? 1
+          : categoryChanged || claimChanged || due || !reservable
+            ? prior.revision + 1
+            : prior.revision;
       // Any fresh RCL1 bootstrap worker that passes the 1,500-tick assignment and TTL gates must
       // also fit the contract deadline. Generic 50-tick leases remain unchanged for other work.
       const horizon =
@@ -129,7 +154,9 @@ export function renewGrowthBudgets(
           ? Math.max(durationTicks, BOOTSTRAP_MAX_ASSIGNMENT_COST)
           : durationTicks;
       const expiresAt =
-        prior !== undefined && reservable && !due ? prior.request.expiresAt : tick + horizon;
+        prior !== undefined && reservable && !categoryChanged && !claimChanged && !due
+          ? prior.request.expiresAt
+          : tick + horizon;
       return { ...candidate, budgetRequest: { ...candidate.budgetRequest, expiresAt, revision } };
     }),
   );
@@ -170,13 +197,21 @@ export function authorizedSurvivalGrowth(
   const transitions: ContractTransitionRequest[] = [];
   if (planning.status === "ready") {
     for (const candidate of authorized) {
-      if (candidate.budgetRequest.category !== "bootstrap-controller") continue;
       const matches = planning.contracts.filter(
         ({ issuer }) => issuer === candidate.budgetRequest.issuer,
       );
       const predecessor = matches.length === 1 ? matches[0] : undefined;
+      const categoryHandoff =
+        predecessor !== undefined &&
+        isRcl1ControllerCategoryHandoff(
+          predecessor.budgetBinding.category,
+          candidate.budgetRequest.category,
+        );
       if (
         predecessor === undefined ||
+        (candidate.budgetRequest.category !== "bootstrap-controller" &&
+          candidate.budgetRequest.category !== "controller-risk" &&
+          !categoryHandoff) ||
         predecessor.issuerSequence === undefined ||
         candidate.budgetRequest.revision !== predecessor.issuerSequence + 1
       )
@@ -188,6 +223,7 @@ export function authorizedSurvivalGrowth(
         successor.issuerSequence,
       );
       replacements.push({
+        ...(categoryHandoff ? { fundingHandoff: RCL1_CONTROLLER_FUNDING_HANDOFF } : {}),
         predecessorContractId: predecessor.contractId,
         reason: "growth-budget-renewed",
         successor,
@@ -259,6 +295,7 @@ export function authorizedSurvivalGrowth(
         });
     }
   }
+  const replacingIssuers = new Set(replacements.map(({ successor }) => successor.issuer));
   return Object.freeze({
     candidates: Object.freeze(authorized),
     replacements: Object.freeze(
@@ -268,6 +305,7 @@ export function authorizedSurvivalGrowth(
       authorized
         .filter(
           ({ budgetRequest }) =>
+            !replacingIssuers.has(budgetRequest.issuer) &&
             (!isRcl2InfrastructureBootstrap(budgetRequest.issuer) ||
               !existingIssuers.has(budgetRequest.issuer)) &&
             (budgetRequest.category !== "bootstrap-controller" ||
@@ -288,8 +326,11 @@ function upgradeCandidate(
   target: PositionSnapshot,
   category: "bootstrap-controller" | "controller-risk" | "optional-growth",
   config: RuntimeConfig,
+  usesCarriedEnergy = false,
 ): GrowthCandidate {
-  return candidate(colonyId, "upgrade-controller", targetId, target, category, 0, config);
+  return candidate(colonyId, "upgrade-controller", targetId, target, category, 0, config, {
+    usesCarriedEnergy,
+  });
 }
 function buildCandidate(
   colonyId: string,
@@ -338,6 +379,7 @@ function candidate(
   overrides: {
     readonly issuer?: string;
     readonly reasonCode?: GrowthCandidate["reasonCode"];
+    readonly usesCarriedEnergy?: boolean;
   } = {},
 ): GrowthCandidate {
   const issuer = overrides.issuer ?? `growth/${colonyId}/${action}/${targetId}`;
@@ -356,11 +398,12 @@ function candidate(
       issuer,
       revision: 1,
       expiresAt: EXPIRY,
-      // Bootstrap work spends creep cargo, not room energy. This leaves the full recovery
-      // reserve untouched while carried energy bridges RCL1 or builds initial RCL2 capacity.
+      // Carried-energy work does not spend room energy. This leaves the full recovery reserve
+      // untouched while RCL1 controller work or initial RCL2 construction consumes creep cargo.
       energy:
         category === "bootstrap-controller" ||
-        overrides.reasonCode === "rcl2-infrastructure-bootstrap"
+        overrides.reasonCode === "rcl2-infrastructure-bootstrap" ||
+        overrides.usesCarriedEnergy === true
           ? null
           : { minimum: 1, desired: config.policy.growth.maximumEnergyPerTick },
       cpu: { minimum: 1, desired: 1 },
@@ -466,20 +509,25 @@ function compareCandidate(left: GrowthCandidate, right: GrowthCandidate): number
   );
 }
 
-function qualifiesRcl1Bootstrap(
+function qualifiesRcl1BootstrapPhase(
   room: WorldSnapshot["rooms"][number],
   config: RuntimeConfig,
 ): boolean {
   const controller = room.controller;
-  if (
-    controller?.ownership !== "owned" ||
-    controller.level !== 1 ||
-    room.energyAvailable !== room.energyCapacityAvailable ||
-    room.energyAvailable < config.policy.recovery.protectedSpawnEnergy ||
-    room.ownedExtensions.length !== 0 ||
-    room.ownedSpawns.filter(({ active }) => active).length !== 1
-  )
-    return false;
+  return (
+    controller?.ownership === "owned" &&
+    controller.level === 1 &&
+    room.energyAvailable === room.energyCapacityAvailable &&
+    room.energyAvailable >= config.policy.recovery.protectedSpawnEnergy &&
+    room.ownedExtensions.length === 0 &&
+    room.ownedSpawns.filter(({ active }) => active).length === 1
+  );
+}
+
+function hasViableEnergizedWorker(
+  room: WorldSnapshot["rooms"][number],
+  config: RuntimeConfig,
+): boolean {
   const replacementLeadTicks = 3 * 3 + config.policy.spawn.replacementSafetyMarginTicks;
   return room.ownedCreeps.some(
     (creep) =>
@@ -509,17 +557,20 @@ function qualifiesRcl2InfrastructureBootstrap(
     room.ownedSpawns.filter(({ active }) => active).length !== 1
   )
     return false;
-  const replacementLeadTicks = 3 * 3 + config.policy.spawn.replacementSafetyMarginTicks;
-  return room.ownedCreeps.some(
-    (creep) =>
-      !creep.spawning &&
-      creep.body.work.active >= 1 &&
-      creep.body.carry.active >= 1 &&
-      creep.body.move.active >= 1 &&
-      (creep.ticksToLive === null || creep.ticksToLive > replacementLeadTicks) &&
-      creep.store.resources.some(
-        ({ resourceType, amount }) => resourceType === "energy" && amount > 0,
-      ),
+  return hasViableEnergizedWorker(room, config);
+}
+
+function sameEnergyClaim(left: BudgetRequest["energy"], right: BudgetRequest["energy"]): boolean {
+  return left === null
+    ? right === null
+    : right !== null && left.minimum === right.minimum && left.desired === right.desired;
+}
+
+function isRcl1ControllerCategoryHandoff(from: string, to: string): boolean {
+  return (
+    from !== to &&
+    (from === "bootstrap-controller" || from === "controller-risk") &&
+    (to === "bootstrap-controller" || to === "controller-risk")
   );
 }
 

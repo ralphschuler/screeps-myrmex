@@ -9,6 +9,7 @@ import {
   MAX_CONTRACT_TRANSITIONS_PER_TICK,
   MAX_POPULATION_LOADS,
   ContractValidationError,
+  RCL1_CONTROLLER_FUNDING_HANDOFF,
   CONTRACT_FUNDING_AUTHORIZATION_STATUSES,
   capabilitySatisfies,
   compareStrings,
@@ -445,9 +446,11 @@ export class ContractLedger {
     let successor: WorkContractRequest;
     try {
       validateTick(request.tick);
+      const fundingHandoff: unknown = request.fundingHandoff;
       if (
         !boundedIdentity(request.predecessorContractId, 512) ||
-        !boundedIdentity(request.reason, 128)
+        !boundedIdentity(request.reason, 128) ||
+        (fundingHandoff !== undefined && fundingHandoff !== RCL1_CONTROLLER_FUNDING_HANDOFF)
       ) {
         return rejectedReplacement(request.predecessorContractId, "invalid-replacement");
       }
@@ -476,7 +479,7 @@ export class ContractLedger {
     if (predecessor === undefined) {
       return rejectedReplacement(request.predecessorContractId, "predecessor-not-found");
     }
-    if (!replacementRelationshipMatches(predecessor, successor)) {
+    if (!replacementRelationshipMatches(predecessor, successor, request.fundingHandoff)) {
       return rejectedReplacement(request.predecessorContractId, "relationship-mismatch");
     }
 
@@ -1255,6 +1258,7 @@ function compareReplacementRequests(
     left.tick - right.tick ||
     compareStrings(left.predecessorContractId, right.predecessorContractId) ||
     compareSubmissionRequests(left.successor, right.successor) ||
+    compareStrings(left.fundingHandoff ?? "", right.fundingHandoff ?? "") ||
     compareStrings(left.reason, right.reason)
   );
 }
@@ -1271,6 +1275,7 @@ function compareSubmissionRequests(left: WorkContractRequest, right: WorkContrac
 function replacementRelationshipMatches(
   predecessor: WorkContractRecord,
   successor: WorkContractRequest,
+  fundingHandoff: ContractReplacementRequest["fundingHandoff"],
 ): boolean {
   return (
     successor.issuer === predecessor.issuer &&
@@ -1280,7 +1285,33 @@ function replacementRelationshipMatches(
     successor.targetId === predecessor.targetId &&
     successor.owner.kind === predecessor.owner.kind &&
     successor.owner.id === predecessor.owner.id &&
-    contractFundingBindingKey(successor) === contractFundingBindingKey(predecessor)
+    replacementFundingMatches(predecessor, successor, fundingHandoff)
+  );
+}
+
+function replacementFundingMatches(
+  predecessor: WorkContractRecord,
+  successor: WorkContractRequest,
+  fundingHandoff: ContractReplacementRequest["fundingHandoff"],
+): boolean {
+  if (contractFundingBindingKey(successor) === contractFundingBindingKey(predecessor)) {
+    return fundingHandoff === undefined;
+  }
+  const from = predecessor.budgetBinding.category;
+  const to = successor.budgetBinding.category;
+  return (
+    fundingHandoff === RCL1_CONTROLLER_FUNDING_HANDOFF &&
+    predecessor.owner.kind === "colony" &&
+    predecessor.kind === "upgrade" &&
+    predecessor.execution?.action === "upgrade-controller" &&
+    successor.execution?.action === "upgrade-controller" &&
+    predecessor.budgetBinding.issuer === predecessor.issuer &&
+    successor.budgetBinding.issuer === successor.issuer &&
+    predecessor.issuer ===
+      `growth/${predecessor.owner.id}/upgrade-controller/${predecessor.targetId ?? ""}` &&
+    from !== to &&
+    (from === "bootstrap-controller" || from === "controller-risk") &&
+    (to === "bootstrap-controller" || to === "controller-risk")
   );
 }
 

@@ -27,7 +27,18 @@ owned RCL1 room from bridging to RCL2 if it has no extensions and no extra room 
   only when the room can no longer represent the bootstrap phase (lost ownership, not RCL1,
   extensions present, or non-1 active spawn).
 - Requests for `bootstrap-controller` are denied outside developing/mature and in
-  recovery/emergency/ constrained CPU, matching the existing optional-growth posture rule.
+  recovery/emergency/constrained CPU, matching the existing optional-growth posture rule.
+- Issue #481 extends the same carried-energy boundary when the RCL1 controller is inside the risk
+  window: every RCL1 `controller-risk` candidate uses a null room-energy claim. At the full-floor
+  bootstrap state it is the only emitted controller candidate. A legacy positive claim advances one
+  fresh budget revision instead of conflicting with its pending identity. Workforce allocation
+  requires current positive actor energy, while cargo or actor loss leaves the budget signature
+  stable for later refill. The risk candidate suppresses ordinary bootstrap, and the existing
+  ContractLedger replacement channel atomically advances the shared issuer between risk and
+  bootstrap categories when the official upgrade timer effect moves the controller across that
+  window. One typed `rcl1-controller-risk-bootstrap` proof permits only this exact category pair;
+  owner, budget issuer, kind, target, and next issuer sequence remain unchanged. Every other
+  category-changing replacement remains rejected.
 
 ## Consequences
 
@@ -36,6 +47,8 @@ owned RCL1 room from bridging to RCL2 if it has no extensions and no extra room 
 - Bootstrap growth avoids duplicate bootstrap contracts while the target phase is viable; the
   contract is only retired when phase constraints no longer hold.
 - Existing movement, contract, allocator, and execution authorities remain unchanged.
+- Controller-risk recovery at the protected floor cannot deadlock behind a room-energy claim, and
+  crossing the risk boundary creates no parallel budget, contract, lease, or command.
 
 ## Mechanics sources consulted
 

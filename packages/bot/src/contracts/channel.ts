@@ -1,6 +1,7 @@
 import {
   MAX_CONTRACT_REQUESTS_PER_TICK,
   MAX_CONTRACT_TRANSITIONS_PER_TICK,
+  RCL1_CONTROLLER_FUNDING_HANDOFF,
   WORK_CONTRACT_STATES,
   compareStrings,
   normalizeContractRequest,
@@ -214,7 +215,11 @@ function normalizeReplacement(request: ContractReplacementRequest): ContractRepl
     tick: request.tick,
     to: "cancelled",
   });
+  const fundingHandoff: unknown = request.fundingHandoff;
+  if (fundingHandoff !== undefined && fundingHandoff !== RCL1_CONTROLLER_FUNDING_HANDOFF)
+    throw new TypeError("Contract replacement requires a supported funding handoff");
   return Object.freeze({
+    ...(fundingHandoff === RCL1_CONTROLLER_FUNDING_HANDOFF ? { fundingHandoff } : {}),
     predecessorContractId: transition.contractId,
     reason: transition.reason,
     successor: normalizeContractRequest(request.successor),
@@ -261,6 +266,7 @@ function compareReplacements(
     left.tick - right.tick ||
     compareStrings(left.predecessorContractId, right.predecessorContractId) ||
     compareRequests(left.successor, right.successor) ||
+    compareStrings(left.fundingHandoff ?? "", right.fundingHandoff ?? "") ||
     compareStrings(left.reason, right.reason)
   );
 }

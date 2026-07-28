@@ -176,6 +176,124 @@ describe("survival-flow runtime recovery", () => {
     ).toBe(true);
   }, 60_000);
 
+  it("funds carried-energy RCL1 controller risk at the protected spawn floor", async () => {
+    const world = survivalWorld({
+      controllerInitialProgress: 196,
+      controllerPosition: { roomName: "W1N1", x: 17, y: 10 },
+      controllerTicksToDowngrade: 3_000,
+      initialWorkerEnergy: 4,
+    });
+    let memory = {} as Memory;
+    vi.resetModules();
+    let executeTick = (await import("../src/runtime/tick")).runTick;
+    let resetAt: number | null = null;
+    let maximumControllerContracts = 0;
+    let maximumControllerLeases = 0;
+    let sawCargoDeferral = false;
+    let sawTravelUnknown = false;
+    const outcomes: TickOutcome[] = [];
+
+    world.setCpuBucket(4_000);
+    world.setPathUnavailable(true);
+    for (let tick = START_TICK; tick <= START_TICK + 99; tick += 1) {
+      if (tick === START_TICK + 3) world.setCpuBucket(10_000);
+      const outcome = executeTick({
+        game: world.game(tick),
+        localPathSearch: world.pathSearch,
+        memory,
+      });
+      outcomes.push(outcome);
+      world.assertEnergyConserved();
+      assertSingleTickAuthorities(outcome, world.workerId);
+
+      const activeContracts = (
+        memory.myrmex?.contracts as
+          { readonly active?: readonly { readonly issuer?: string }[] } | undefined
+      )?.active;
+      maximumControllerContracts = Math.max(
+        maximumControllerContracts,
+        (activeContracts ?? []).filter(
+          ({ issuer }) => issuer === "growth/W1N1/upgrade-controller/controller-1",
+        ).length,
+      );
+      maximumControllerLeases = Math.max(
+        maximumControllerLeases,
+        outcome.contractExecution.leases.filter(({ targetId }) => targetId === "controller-1")
+          .length,
+      );
+
+      const deferredReasons =
+        outcome.contracts?.allocation.deferred.map(({ reason }) => reason) ?? [];
+      if (!sawTravelUnknown && deferredReasons.includes("travel-unknown")) {
+        sawTravelUnknown = true;
+        world.setPathUnavailable(false);
+        world.setWorkerEnergy(0);
+      } else if (
+        sawTravelUnknown &&
+        (deferredReasons.includes("no-viable-actor") || deferredReasons.includes("no-actor"))
+      ) {
+        sawCargoDeferral = true;
+        world.setWorkerEnergy(4);
+      }
+
+      if (
+        resetAt === null &&
+        outcome.contractExecution.leases.some(({ targetId }) => targetId === "controller-1")
+      ) {
+        resetAt = tick;
+        memory = JSON.parse(JSON.stringify(memory)) as Memory;
+        vi.resetModules();
+        executeTick = (await import("../src/runtime/tick")).runTick;
+        world.reverseSources = true;
+      }
+      if (world.controllerLevel >= 2) break;
+    }
+
+    const controllerReservations = outcomes
+      .flatMap(({ colony }) => colony.reservations)
+      .filter(({ issuer }) => issuer === "growth/W1N1/upgrade-controller/controller-1");
+    expect(
+      controllerReservations.some(
+        ({ category, grant, request, status }) =>
+          category === "controller-risk" &&
+          grant.energy === 0 &&
+          request.energy === null &&
+          status === "active",
+      ),
+    ).toBe(true);
+    expect(controllerReservations).toContainEqual(
+      expect.objectContaining({ category: "bootstrap-controller", status: "active" }),
+    );
+    expect(
+      outcomes.every(({ colony }) => {
+        const activeCategories = new Set(
+          colony.reservations
+            .filter(
+              ({ issuer, status }) =>
+                issuer === "growth/W1N1/upgrade-controller/controller-1" && status === "active",
+            )
+            .map(({ category }) => category),
+        );
+        return activeCategories.size <= 1;
+      }),
+    ).toBe(true);
+    const replacements = outcomes.flatMap(({ contracts }) => contracts?.replacements ?? []);
+    expect(replacements).toContainEqual(expect.objectContaining({ accepted: true }));
+    expect(replacements.every(({ accepted }) => accepted)).toBe(true);
+    expect(maximumControllerContracts).toBe(1);
+    expect(maximumControllerLeases).toBe(1);
+    expect(world.constrainedCpuObservations).toBeGreaterThanOrEqual(3);
+    expect(world.pathUnavailableObservations).toBeGreaterThan(0);
+    expect(sawTravelUnknown).toBe(true);
+    expect(sawCargoDeferral).toBe(true);
+    expect(resetAt).not.toBeNull();
+    expect(world.moveCalls).toBeGreaterThan(0);
+    expect(world.controllerUpgradeCalls).toBe(4);
+    expect(world.controllerLevel).toBe(2);
+    expect(world.spawnEnergy).toBe(300);
+    expect(world.spawnCalls).toEqual([]);
+  }, 60_000);
+
   it("leases distant RCL1 controller work after CPU and route recovery without deadline churn", async () => {
     const world = survivalWorld({
       controllerInitialProgress: 196,
