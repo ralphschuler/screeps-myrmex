@@ -7,8 +7,12 @@ import {
 import type { PositionSnapshot, WorldSnapshot } from "../world/snapshot";
 import type { MovementRuntimeResult } from "./contracts";
 
-const MAX_MOVEMENT_PROGRESS_RECORDS = 128;
+const MAX_MOVEMENT_ATTEMPT_RECORDS = 128;
+const MAX_GOAL_SEQUENCE_RECORDS = 64;
+const MAX_MOVEMENT_PROGRESS_RECORDS = MAX_MOVEMENT_ATTEMPT_RECORDS + MAX_GOAL_SEQUENCE_RECORDS;
 const MAX_STUCK_AGE = 100;
+const MAX_GOAL_OSCILLATION_AGE = 100;
+const MAX_GOAL_SEQUENCE_GAP_TICKS = 3;
 
 interface MovementAttemptRecord {
   readonly [field: string]: JsonValue;
@@ -23,26 +27,44 @@ interface MovementAttemptRecord {
   readonly goalRoomName: string;
   readonly goalX: number;
   readonly goalY: number;
+  readonly kind: "attempt";
   readonly observedAt: number;
   readonly range: number;
   readonly stuckAge: number;
 }
+
+interface ActorGoalSequenceRecord {
+  readonly [field: string]: JsonValue;
+  readonly currentSignature: string;
+  readonly kind: "goal-sequence";
+  readonly observedAt: number;
+  readonly oscillationAge: number;
+  readonly previousSignature: string | null;
+}
+
+type MovementProgressRecord = MovementAttemptRecord | ActorGoalSequenceRecord;
+type MovementProgressKey =
+  readonly ["attempt", string, string] | readonly ["goal-sequence", string];
 
 export interface MovementProgressQuery {
   readonly actorId: string;
   readonly actorPosition: PositionSnapshot;
   readonly contractId: string;
   readonly contractRevision: number;
+  /** Stable only while the semantic action, target, goal, and range are equivalent. */
+  readonly episodeKey?: string;
   readonly goal: PositionSnapshot;
   readonly range: number;
   readonly tick: number;
 }
 
 export interface MovementProgressView {
+  goalOscillationAge?(query: MovementProgressQuery): number;
   stuckAge(query: MovementProgressQuery): number;
 }
 
 export const EMPTY_MOVEMENT_PROGRESS_VIEW: MovementProgressView = Object.freeze({
+  goalOscillationAge: () => 0,
   stuckAge: () => 0,
 });
 
@@ -52,22 +74,25 @@ export const EMPTY_MOVEMENT_PROGRESS_VIEW: MovementProgressView = Object.freeze(
  */
 export class MovementProgressTracker implements MovementProgressView {
   public constructor(
-    private readonly records: CacheNamespace<readonly [string, string], MovementAttemptRecord>,
+    private readonly records: CacheNamespace<MovementProgressKey, MovementProgressRecord>,
   ) {}
 
   public stuckAge(query: MovementProgressQuery): number {
     if (!isValidQuery(query)) return 0;
     let previous: ReturnType<typeof this.records.get>;
     try {
-      previous = this.records.get([query.actorId, query.contractId], { tick: query.tick });
+      previous = this.records.get(["attempt", query.actorId, movementEpisodeKey(query)], {
+        tick: query.tick,
+      });
     } catch {
       return 0;
     }
     if (!previous.hit) return 0;
     const record = previous.value;
+    if (record.kind !== "attempt") return 0;
     if (
       record.observedAt !== query.tick - 1 ||
-      record.contractRevision !== query.contractRevision ||
+      (query.episodeKey === undefined && record.contractRevision !== query.contractRevision) ||
       record.goalRoomName !== query.goal.roomName ||
       record.goalX !== query.goal.x ||
       record.goalY !== query.goal.y ||
@@ -78,6 +103,30 @@ export class MovementProgressTracker implements MovementProgressView {
     )
       return 0;
     return Math.min(MAX_STUCK_AGE, record.stuckAge + 1);
+  }
+
+  public goalOscillationAge(query: MovementProgressQuery): number {
+    if (!isValidQuery(query)) return 0;
+    let previous: ReturnType<typeof this.records.get>;
+    try {
+      previous = this.records.get(["goal-sequence", query.actorId], {
+        tick: query.tick,
+      });
+    } catch {
+      return 0;
+    }
+    if (!previous.hit) return 0;
+    const record = previous.value;
+    if (record.kind !== "goal-sequence") return 0;
+    if (
+      record.observedAt >= query.tick ||
+      query.tick - record.observedAt > MAX_GOAL_SEQUENCE_GAP_TICKS
+    )
+      return 0;
+    const signature = movementGoalSignature(query);
+    return signature === record.previousSignature && signature !== record.currentSignature
+      ? Math.min(MAX_GOAL_OSCILLATION_AGE, record.oscillationAge + 1)
+      : 0;
   }
 
   public record(result: MovementRuntimeResult, snapshot: WorldSnapshot, tick: number): void {
@@ -96,9 +145,11 @@ export class MovementProgressTracker implements MovementProgressView {
       .sort(
         (left, right) =>
           compareStrings(left.intent.actorId, right.intent.actorId) ||
+          movementEvidenceRank(left.reason) - movementEvidenceRank(right.reason) ||
           compareStrings(left.intent.contractId ?? "", right.intent.contractId ?? "") ||
           compareStrings(left.intent.id, right.intent.id),
       );
+    const recordedActorGoals = new Set<string>();
     for (const { intent } of attempts) {
       const actorPosition = actors.get(intent.actorId);
       const contractId = intent.contractId;
@@ -112,8 +163,9 @@ export class MovementProgressTracker implements MovementProgressView {
       )
         continue;
       try {
+        const episodeKey = movementIntentEpisodeKey(intent);
         this.records.set(
-          [intent.actorId, contractId],
+          ["attempt", intent.actorId, episodeKey],
           {
             actorRoomName: actorPosition.roomName,
             actorX: actorPosition.x,
@@ -126,16 +178,58 @@ export class MovementProgressTracker implements MovementProgressView {
             goalRoomName: intent.goal.roomName,
             goalX: intent.goal.x,
             goalY: intent.goal.y,
+            kind: "attempt",
             observedAt: tick,
             range: intent.range,
             stuckAge: Math.min(MAX_STUCK_AGE, intent.stuckAge),
           },
           { tick },
         );
+        if (!recordedActorGoals.has(intent.actorId)) {
+          this.recordActorGoal(intent, tick);
+          recordedActorGoals.add(intent.actorId);
+        }
       } catch {
         // Heap-only quality evidence must never fault command publication or durable reconciliation.
       }
     }
+  }
+
+  private recordActorGoal(
+    intent: MovementRuntimeResult["movementExecution"][number]["intent"],
+    tick: number,
+  ): void {
+    const signature = movementIntentGoalSignature(intent);
+    let previous: ReturnType<typeof this.records.get>;
+    try {
+      previous = this.records.get(["goal-sequence", intent.actorId], { tick });
+    } catch {
+      return;
+    }
+    const recent =
+      previous.hit &&
+      previous.value.kind === "goal-sequence" &&
+      previous.value.observedAt < tick &&
+      tick - previous.value.observedAt <= MAX_GOAL_SEQUENCE_GAP_TICKS
+        ? previous.value
+        : null;
+    const oscillationAge =
+      recent !== null &&
+      signature === recent.previousSignature &&
+      signature !== recent.currentSignature
+        ? Math.min(MAX_GOAL_OSCILLATION_AGE, recent.oscillationAge + 1)
+        : 0;
+    this.records.set(
+      ["goal-sequence", intent.actorId],
+      {
+        currentSignature: signature,
+        kind: "goal-sequence",
+        observedAt: tick,
+        oscillationAge,
+        previousSignature: recent?.currentSignature ?? null,
+      },
+      { tick },
+    );
   }
 }
 
@@ -144,7 +238,7 @@ const trackers = new WeakMap<CacheManager, MovementProgressTracker>();
 export function getMovementProgressTracker(manager: CacheManager): MovementProgressTracker {
   const existing = trackers.get(manager);
   if (existing !== undefined) return existing;
-  const records = manager.register<readonly [string, string], MovementAttemptRecord>({
+  const records = manager.register<MovementProgressKey, MovementProgressRecord>({
     id: "movement.progress.v1",
     owner: "movement.arbiter",
     version: 1,
@@ -152,9 +246,9 @@ export function getMovementProgressTracker(manager: CacheManager): MovementProgr
     maxKeyLength: 512,
     maxEncodedLength: 1_024,
     estimatedRebuildCpu: 0,
-    ttlTicks: 2,
+    ttlTicks: MAX_GOAL_SEQUENCE_GAP_TICKS + 1,
     keyOf: (key) => key,
-    codec: createJsonCacheCodec<MovementAttemptRecord>(),
+    codec: createJsonCacheCodec<MovementProgressRecord>(),
   });
   const tracker = new MovementProgressTracker(records);
   trackers.set(manager, tracker);
@@ -164,6 +258,7 @@ export function getMovementProgressTracker(manager: CacheManager): MovementProgr
 function isValidQuery(query: MovementProgressQuery): boolean {
   return (
     query.actorId.length > 0 &&
+    query.actorId.length <= 128 &&
     query.contractId.length > 0 &&
     Number.isSafeInteger(query.contractRevision) &&
     query.contractRevision >= 0 &&
@@ -172,8 +267,40 @@ function isValidQuery(query: MovementProgressQuery): boolean {
     Number.isSafeInteger(query.range) &&
     query.range >= 0 &&
     Number.isSafeInteger(query.tick) &&
-    query.tick > 0
+    query.tick > 0 &&
+    (query.episodeKey === undefined ||
+      (query.episodeKey.length > 0 && query.episodeKey.length <= 512))
   );
+}
+
+function movementEpisodeKey(query: MovementProgressQuery): string {
+  return query.episodeKey ?? query.contractId;
+}
+
+function movementIntentEpisodeKey(
+  intent: MovementRuntimeResult["movementExecution"][number]["intent"],
+): string {
+  return intent.episodeKey ?? intent.contractId ?? intent.id;
+}
+
+function movementGoalSignature(query: MovementProgressQuery): string {
+  return goalSignature(movementEpisodeKey(query), query.goal, query.range);
+}
+
+function movementIntentGoalSignature(
+  intent: MovementRuntimeResult["movementExecution"][number]["intent"],
+): string {
+  return goalSignature(movementIntentEpisodeKey(intent), intent.goal, intent.range);
+}
+
+function goalSignature(episodeKey: string, goal: PositionSnapshot, range: number): string {
+  return `${episodeKey}|${goal.roomName}:${String(goal.x)}:${String(goal.y)}:${String(range)}`;
+}
+
+function movementEvidenceRank(
+  reason: MovementRuntimeResult["movementExecution"][number]["reason"],
+): number {
+  return reason === "accepted" ? 0 : reason === "blocked" ? 1 : 2;
 }
 
 function isPosition(position: PositionSnapshot): boolean {

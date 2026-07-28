@@ -197,6 +197,22 @@ export const CONTRACT_EXECUTION_ACTIONS = [
 
 export type ContractExecutionAction = (typeof CONTRACT_EXECUTION_ACTIONS)[number];
 
+export type ContractEnergyExecutionPhase = "acquire" | "consume" | "deliver" | "unrelated";
+
+/**
+ * Derives the actor's tick-local energy phase from its authoritative lease action. This is not
+ * persisted task state: planners and allocation consume the same contract-owned evidence.
+ */
+export function contractEnergyExecutionPhase(
+  action: ContractExecutionAction,
+): ContractEnergyExecutionPhase {
+  if (action === "harvest" || action === "pickup" || action === "withdraw") return "acquire";
+  if (action === "build" || action === "repair" || action === "upgrade-controller")
+    return "consume";
+  if (action === "transfer") return "deliver";
+  return "unrelated";
+}
+
 export const CONTRACT_EXECUTION_DISPOSITIONS = [
   "continuous",
   "target-depleted",
@@ -395,7 +411,7 @@ export interface LeaseTravelOverride {
   readonly routeTravelTicks: number;
 }
 
-/** Bounded, data-only active-contract projection for planners that must renew or retire work. */
+/** Bounded, data-only contract projection for planners that must renew or retire work. */
 export interface ContractPlanningRecord {
   readonly budgetBinding: ContractBudgetBinding;
   /** Original stage start retained for deterministic request reconstruction. */
@@ -420,13 +436,22 @@ export interface ContractPlanningRecord {
 
 export interface ContractPlanningView {
   readonly contracts: readonly ContractPlanningRecord[];
+  /**
+   * Durable terminal issuer evidence. Optional only for detached legacy fixtures; ContractLedger
+   * always publishes the bounded canonical projection.
+   */
+  readonly issuerFrontiers?: readonly ContractIssuerFrontier[];
   readonly status: "ready" | "unavailable";
 }
 
 export function emptyContractPlanningView(
   status: ContractPlanningView["status"] = "unavailable",
 ): ContractPlanningView {
-  return Object.freeze({ contracts: Object.freeze([]), status });
+  return Object.freeze({
+    contracts: Object.freeze([]),
+    issuerFrontiers: Object.freeze([]),
+    status,
+  });
 }
 
 export function emptyContractExecutionView(
@@ -451,6 +476,29 @@ export interface ContractIssuerFrontier {
   readonly issuer: string;
   /** Highest terminal issuance coordinate observed for this issuer. */
   readonly retiredThrough: number;
+}
+
+/**
+ * Selects one stable generation for a recurring issuer.
+ *
+ * A live generation always wins, so repeated planning is byte-stable. Only durable terminal
+ * frontier evidence advances the generation. `null` means the bounded sequence space is exhausted
+ * or the ready projection contains conflicting live generations.
+ */
+export function nextIssuerSequence(planning: ContractPlanningView, issuer: string): number | null {
+  if (planning.status !== "ready") return 1;
+  const active = planning.contracts
+    .filter((contract) => contract.issuer === issuer)
+    .map(({ issuerSequence }) => issuerSequence ?? 1);
+  if (new Set(active).size > 1) return null;
+  const retiredThrough = planning.issuerFrontiers
+    ?.filter((frontier) => frontier.issuer === issuer)
+    .reduce((highest, frontier) => Math.max(highest, frontier.retiredThrough), 0);
+  const activeSequence = active[0];
+  if (activeSequence !== undefined)
+    return retiredThrough !== undefined && retiredThrough >= activeSequence ? null : activeSequence;
+  if (retiredThrough === undefined || retiredThrough === 0) return 1;
+  return retiredThrough < Number.MAX_SAFE_INTEGER ? retiredThrough + 1 : null;
 }
 
 export interface ContractLedgerStateV1 {
@@ -679,16 +727,17 @@ export function compareContractPriority(
     return classDifference;
   }
 
+  const valueDifference = right.priority.value - left.priority.value;
+  if (valueDifference !== 0) {
+    return valueDifference;
+  }
+
   const kindDifference = contractKindRank(left.kind) - contractKindRank(right.kind);
   if (kindDifference !== 0) {
     return kindDifference;
   }
 
-  return (
-    right.priority.value - left.priority.value ||
-    left.deadline - right.deadline ||
-    compareStrings(left.id, right.id)
-  );
+  return left.deadline - right.deadline || compareStrings(left.id, right.id);
 }
 
 export function compareStrings(left: string, right: string): number {

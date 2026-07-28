@@ -1,6 +1,8 @@
 import type { BudgetRequest } from "../colony";
 import {
+  contractEnergyExecutionPhase,
   MAX_LEASE_EXECUTION_ACTORS,
+  nextIssuerSequence,
   type ContractExecutionView,
   type ContractPlanningView,
   type ContractTransitionRequest,
@@ -39,6 +41,7 @@ export function planSurvivalFlow(
 ): readonly SurvivalFlowCandidate[] {
   const candidates: SurvivalFlowCandidate[] = [];
   const activeActionByActor = activeSurvivalActionByActor(execution, planning);
+  const activeEnergyConsumers = activeEnergyConsumersByActor(execution);
   const staticBindings = staticMiningBindings(planning);
   const staticTakeovers = staticSourceTakeovers(execution, planning, snapshot);
   for (const room of snapshot.rooms.filter((value) => value.controller?.ownership === "owned")) {
@@ -57,10 +60,11 @@ export function planSurvivalFlow(
       const carriedEnergy = resourceAmount(actor, "energy");
       const canHarvest =
         actor.store.freeCapacity === null ? carriedEnergy === 0 : actor.store.freeCapacity > 0;
-      const pickupTarget = canHarvest
+      const canAcquire = canHarvest && !(carriedEnergy > 0 && activeEnergyConsumers.has(actor.id));
+      const pickupTarget = canAcquire
         ? staticMiningDrop(room, actor.pos, reservedDrops, roomBindings)
         : null;
-      const harvestTarget = canHarvest
+      const harvestTarget = canAcquire
         ? source(room, actor.pos, reservedSources, new Set(roomTakeovers.keys()))
         : null;
       const transferTarget = carriedEnergy > 0 ? sink(room, actor.pos, reservedSinks) : null;
@@ -82,21 +86,15 @@ export function planSurvivalFlow(
       const target =
         action === "harvest" ? harvestTarget : action === "pickup" ? pickupTarget : transferTarget;
       if (target !== null) {
+        const contractSequence = survivalContractSequence(planning, room.name, action, target.id);
+        if (contractSequence === null) continue;
         (action === "harvest"
           ? reservedSources
           : action === "pickup"
             ? reservedDrops
             : reservedSinks
         ).add(target.id);
-        candidates.push(
-          candidate(
-            room.name,
-            actor.id,
-            action,
-            target,
-            survivalContractSequence(planning, room.name, action, target.id),
-          ),
-        );
+        candidates.push(candidate(room.name, actor.id, action, target, contractSequence));
       }
     }
   }
@@ -104,6 +102,15 @@ export function planSurvivalFlow(
     candidates.sort((left, right) =>
       compareStrings(left.budgetRequest.issuer, right.budgetRequest.issuer),
     ),
+  );
+}
+
+function activeEnergyConsumersByActor(execution: ContractExecutionView): ReadonlySet<string> {
+  if (execution.status !== "ready") return new Set();
+  return new Set(
+    execution.leases
+      .filter(({ execution: terms }) => contractEnergyExecutionPhase(terms.action) === "consume")
+      .map(({ actorId }) => actorId),
   );
 }
 
@@ -430,20 +437,9 @@ function survivalContractSequence(
   colonyId: string,
   action: SurvivalFlowCandidate["action"],
   targetId: string,
-): number {
-  if (planning.status !== "ready") return 1;
+): number | null {
   const issuer = `economy/${colonyId}/${action}/${targetId}`;
-  const existing = planning.contracts.find(
-    (contract) => isSurvivalFlowContract(contract) && contract.issuer === issuer,
-  );
-  if (existing !== undefined) return existing.issuerSequence ?? 1;
-  if (action !== "harvest") return 1;
-  const staticContracts = planning.contracts.filter((contract) => {
-    const identity = staticMiningIdentity(contract, true);
-    return identity?.colonyId === colonyId && identity.sourceId === targetId;
-  });
-  if (staticContracts.length !== 1) return 1;
-  return Math.max(2, (staticContracts[0]?.issuerSequence ?? 1) + 1);
+  return nextIssuerSequence(planning, issuer);
 }
 
 function staticSourceTakeovers(

@@ -21,6 +21,7 @@ import type {
   StoreSnapshot,
   WorldSnapshot,
 } from "../world/snapshot";
+import { projectRoomStructureTargets } from "../world/snapshot";
 
 export const MAX_LEASE_AGENT_ACTORS = MAX_LEASE_EXECUTION_ACTORS;
 
@@ -34,8 +35,10 @@ export type AgentDispositionReason =
   | "contract-expired"
   | "controller-blocked"
   | "movement-blocked"
+  | "movement-oscillation"
   | "path-unavailable"
   | "route-unavailable"
+  | "lease-expired"
   | "work-position-invalid"
   | "target-depleted"
   | "target-full"
@@ -138,15 +141,24 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
         continue;
       }
       if (samePosition(actor.pos, routeStep.exit)) {
-        const stuckAge = input.progress.stuckAge({
-          actorId: actor.id,
-          actorPosition: actor.pos,
-          contractId: lease.contractId,
-          contractRevision: lease.revision,
-          goal: routeStep.destination,
-          range: 0,
-          tick: input.tick,
-        });
+        const progressQuery = movementProgressQuery(
+          lease,
+          actor,
+          routeStep.destination,
+          0,
+          input.tick,
+        );
+        const stuckAge = input.progress.stuckAge(progressQuery);
+        const oscillationAge = input.progress.goalOscillationAge?.(progressQuery) ?? 0;
+        if (oscillationAge >= input.movementPolicy.blockedReleaseTicks) {
+          dispositions.push({
+            contractId: lease.contractId,
+            contractRevision: lease.revision,
+            reason: "movement-oscillation",
+            to: "suspended",
+          });
+          continue;
+        }
         if (stuckAge >= input.movementPolicy.blockedReleaseTicks) {
           dispositions.push({
             contractId: lease.contractId,
@@ -216,15 +228,18 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       });
       continue;
     }
-    const stuckAge = input.progress.stuckAge({
-      actorId: actor.id,
-      actorPosition: actor.pos,
-      contractId: lease.contractId,
-      contractRevision: lease.revision,
-      goal,
-      range,
-      tick: input.tick,
-    });
+    const progressQuery = movementProgressQuery(lease, actor, goal, range, input.tick);
+    const stuckAge = input.progress.stuckAge(progressQuery);
+    const oscillationAge = input.progress.goalOscillationAge?.(progressQuery) ?? 0;
+    if (oscillationAge >= input.movementPolicy.blockedReleaseTicks) {
+      dispositions.push({
+        contractId: lease.contractId,
+        contractRevision: lease.revision,
+        reason: "movement-oscillation",
+        to: "suspended",
+      });
+      continue;
+    }
     if (stuckAge >= input.movementPolicy.blockedReleaseTicks) {
       dispositions.push({
         contractId: lease.contractId,
@@ -316,6 +331,43 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
   });
 }
 
+function movementProgressQuery(
+  lease: LeasedWorkExecution,
+  actor: CreepSnapshot,
+  goal: PositionSnapshot,
+  range: number,
+  tick: number,
+) {
+  return {
+    actorId: actor.id,
+    actorPosition: actor.pos,
+    contractId: lease.contractId,
+    contractRevision: lease.revision,
+    episodeKey: movementEpisodeKey(lease, goal, range),
+    goal,
+    range,
+    tick,
+  };
+}
+
+function movementEpisodeKey(
+  lease: LeasedWorkExecution,
+  goal: PositionSnapshot,
+  range: number,
+): string {
+  const stage =
+    lease.execution.version === 3 || lease.execution.version === 6 ? lease.execution.stage : "work";
+  return [
+    lease.execution.action,
+    stage,
+    lease.targetId,
+    goal.roomName,
+    String(goal.x),
+    String(goal.y),
+    String(range),
+  ].join(":");
+}
+
 export function dispositionTransitions(
   dispositions: readonly LeaseAgentDisposition[],
   tick: number,
@@ -350,11 +402,13 @@ interface TargetView {
   readonly hitsMax: number | null;
   readonly id: string;
   readonly pos: PositionSnapshot;
+  readonly repairable: boolean;
   readonly store: StoreSnapshot | null;
   readonly type:
     | "construction"
     | "controller"
     | "creep"
+    | "mineral"
     | "resource"
     | "ruin"
     | "source"
@@ -378,6 +432,15 @@ function targetIndex(snapshot: WorldSnapshot): ReadonlyMap<string, TargetView> {
     for (const source of room.sources)
       targets.push(
         targetView({ amount: source.energy, id: source.id, pos: source.pos, type: "source" }),
+      );
+    if (room.mineral !== undefined && room.mineral !== null)
+      targets.push(
+        targetView({
+          amount: room.mineral.amount ?? 0,
+          id: room.mineral.id,
+          pos: room.mineral.pos,
+          type: "mineral",
+        }),
       );
     for (const resource of room.droppedResources ?? [])
       targets.push(
@@ -419,24 +482,14 @@ function targetIndex(snapshot: WorldSnapshot): ReadonlyMap<string, TargetView> {
           type: "creep",
         }),
       );
-    for (const structure of room.storedStructures)
+    for (const structure of projectRoomStructureTargets(room))
       targets.push(
         targetView({
           hits: structure.hits,
           hitsMax: structure.hitsMax,
           id: structure.id,
           pos: structure.pos,
-          store: structure.store,
-          type: "structure",
-        }),
-      );
-    for (const structure of [...room.ownedExtensions, ...room.ownedSpawns, ...room.ownedTowers])
-      targets.push(
-        targetView({
-          hits: structure.hits,
-          hitsMax: structure.hitsMax,
-          id: structure.id,
-          pos: structure.pos,
+          repairable: isRepairableStructureTarget(structure.ownership, structure.structureType),
           store: structure.store,
           type: "structure",
         }),
@@ -455,6 +508,7 @@ function targetView(
     controllerReservationUsername: null,
     hits: null,
     hitsMax: null,
+    repairable: false,
     store: null,
     ...value,
   };
@@ -524,7 +578,9 @@ function validateTravelOverride(
     reason,
     to: "suspended",
   });
-  if (tick > Math.min(actionDeadline(lease), override.deadline)) return suspend("contract-expired");
+  if (tick > Math.min(contractActionDeadline(lease), override.deadline))
+    return suspend("contract-expired");
+  if (tick >= lease.leaseExpiresAt) return suspend("lease-expired");
   if (actor === undefined || actor.name !== lease.actorName) return suspend("actor-missing");
   if (actor.spawning) return suspend("actor-spawning");
   if (actor.ticksToLive === null || actor.ticksToLive <= 1)
@@ -549,7 +605,8 @@ function validateLease(
     reason,
     to: "suspended",
   });
-  if (tick > actionDeadline(lease)) return suspend("contract-expired");
+  if (tick > contractActionDeadline(lease)) return suspend("contract-expired");
+  if (tick >= lease.leaseExpiresAt) return suspend("lease-expired");
   if (actor === undefined || actor.name !== lease.actorName) return suspend("actor-missing");
   if (actor.spawning) return suspend("actor-spawning");
   if (actor.ticksToLive === null || actor.ticksToLive <= 1)
@@ -595,10 +652,11 @@ function validateLease(
     actor.store.freeCapacity !== null &&
     actor.store.freeCapacity <= 0 &&
     lease.execution.version !== 2 &&
-    lease.execution.version !== 5
+    lease.execution.version !== 5 &&
+    actor.body.carry.active > 0
   )
     return suspend("actor-store-full");
-  if (lease.execution.action === "harvest" && target.type !== "source")
+  if (lease.execution.action === "harvest" && target.type !== "source" && target.type !== "mineral")
     return unavailableTarget(lease, suspend, "target-depleted");
   if (lease.execution.action === "harvest" && target.amount === 0)
     return isStaticMiningExecution(lease.execution)
@@ -616,6 +674,7 @@ function validateLease(
     return unavailableTarget(lease, suspend, "target-depleted");
   if (lease.execution.action === "build" && (target.type !== "construction" || target.amount === 0))
     return completion(lease, "work-complete");
+  if (lease.execution.action === "repair" && !target.repairable) return suspend("target-missing");
   if (
     lease.execution.action === "repair" &&
     (target.hits === null ||
@@ -663,6 +722,16 @@ function canPerform(
 
 function needsEnergy(action: LeasedWorkExecution["execution"]["action"]): boolean {
   return action === "build" || action === "repair" || action === "upgrade-controller";
+}
+
+function isRepairableStructureTarget(
+  ownership: "owned" | "foreign" | "unowned",
+  structureType: string,
+): boolean {
+  return (
+    ownership !== "foreign" &&
+    !["controller", "invaderCore", "keeperLair", "portal", "powerBank"].includes(structureType)
+  );
 }
 
 function actionIntent(
@@ -739,6 +808,7 @@ function movementIntent(
     deadline: Math.min(actionDeadline(lease), deadline),
     destination,
     direction,
+    episodeKey: movementEpisodeKey(lease, goal, range),
     goal,
     id: `lease:${lease.contractId}:r${String(lease.revision)}:move`,
     priority,
@@ -922,8 +992,12 @@ function consumedColdSearch(result: LocalPathPlanResult): boolean {
   );
 }
 
+function contractActionDeadline(lease: LeasedWorkExecution): number {
+  return Math.min(lease.deadline, lease.expiresAt - 1);
+}
+
 function actionDeadline(lease: LeasedWorkExecution): number {
-  return Math.min(lease.deadline, lease.expiresAt - 1, lease.leaseExpiresAt - 1);
+  return Math.min(contractActionDeadline(lease), lease.leaseExpiresAt - 1);
 }
 
 function resourceAmount(store: StoreSnapshot, resourceType: string): number {

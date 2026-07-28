@@ -17,7 +17,9 @@ export interface SurvivalWorldOptions {
     readonly y: number;
   };
   readonly controllerTicksToDowngrade?: number;
+  readonly initialSpawnEnergy?: number;
   readonly initialWorkerEnergy?: number;
+  readonly simulateTransientSinkFailure?: boolean;
 }
 
 export interface SpawnCall {
@@ -64,13 +66,15 @@ export interface SurvivalWorld {
   setHostilePressure(active: boolean): void;
   setPathUnavailable(unavailable: boolean): void;
   setSpawnBlocker(blocker: "busy" | "energy" | null): void;
+  setSpawnVisible(visible: boolean): void;
   setTargetResolverUnavailable(unavailable: boolean): void;
   setWorkerEnergy(energy: number): void;
 }
 
 export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld {
-  const initialSpawnEnergy = 300;
+  const initialSpawnEnergy = options.initialSpawnEnergy ?? 300;
   const initialWorkerEnergy = options.initialWorkerEnergy ?? 0;
+  const simulateTransientSinkFailure = options.simulateTransientSinkFailure ?? true;
   const initialSourceEnergy = 50 + 3_000;
   const controllerPosition = options.controllerPosition ?? {
     roomName: "W1N1",
@@ -116,6 +120,7 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
     spawnBusyObservations: 0,
     spawnEnergy: initialSpawnEnergy,
     spawnEnergyBlockerObservations: 0,
+    spawnVisible: true,
     successfulSpawnCost: 0,
     targetMissingObservations: 0,
     targetResolverUnavailable: false,
@@ -306,7 +311,9 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
             ...(state.hostileActive ? [hostile] : []),
           ]
         : findType === FIND_STRUCTURES_VALUE
-          ? [spawn]
+          ? state.spawnVisible
+            ? [spawn]
+            : []
           : findType === FIND_SOURCES_VALUE
             ? state.reverseSources
               ? state.sourceAEnergy > 0
@@ -348,6 +355,7 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
       state.pendingSpawn = null;
     }
     if (
+      simulateTransientSinkFailure &&
       state.firstDeliveryAt === null &&
       state.workerEnergy === 50 &&
       !state.fullSinkInjected &&
@@ -490,6 +498,7 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
         creeps: state.workerName === null ? {} : { [state.workerName]: worker },
         getObjectById: (id: string) => {
           if (id === spawn.id) {
+            if (!state.spawnVisible) return null;
             if (state.sinkResolverFailurePending && state.workerEnergy > 0) {
               state.sinkResolverFailurePending = false;
               state.sinkResolverMisses += 1;
@@ -543,6 +552,9 @@ export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld
         state.spawnEnergy -= state.withheldSpawnEnergy;
       }
       state.spawnBlocker = blocker;
+    },
+    setSpawnVisible: (visible: boolean) => {
+      state.spawnVisible = visible;
     },
     setTargetResolverUnavailable: (unavailable: boolean) => {
       state.targetResolverUnavailable = unavailable;

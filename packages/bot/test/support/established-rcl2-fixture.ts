@@ -21,7 +21,12 @@ export interface EstablishedConstructionSiteProfile {
 
 export interface EstablishedRcl2WorldOptions {
   readonly constructionSite?: EstablishedConstructionSiteProfile;
-  readonly initialExtensionCount?: 0 | 1 | 2;
+  readonly initialExtensionCount?: 0 | 1 | 2 | 3 | 4 | 5;
+  readonly initialExtensionEnergy?: number;
+  readonly maintenanceRoad?: {
+    readonly hits: number;
+    readonly hitsMax: number;
+  };
   readonly reverseCollections?: boolean;
 }
 
@@ -57,10 +62,11 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
   let tick = START_TICK - 1;
   let cpuBucket = 10_000;
   let spawnEnergy = 300;
-  const initialExtensionEnergy = options.constructionSite === undefined ? 0 : 50;
+  const initialExtensionEnergy =
+    options.initialExtensionEnergy ?? (options.constructionSite === undefined ? 0 : 50);
   const initialExtensionCount = options.initialExtensionCount ?? 2;
   const extensionEnergy = new Map<string, number>(
-    ["extension-a", "extension-b"]
+    ["extension-a", "extension-b", "extension-c", "extension-d", "extension-e"]
       .slice(0, initialExtensionCount)
       .map((id) => [id, initialExtensionEnergy] as const),
   );
@@ -112,10 +118,19 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
       store: storeFor(() => extensionEnergy.get(id) ?? 0, 50),
       structureType: "extension",
     }) as unknown as StructureExtension;
-  const extensions = [
-    ...(initialExtensionCount >= 1 ? [extension("extension-a", 11, 10)] : []),
-    ...(initialExtensionCount >= 2 ? [extension("extension-b", 12, 10)] : []),
-  ];
+  const extensions = [...extensionEnergy.keys()].map((id, index) => extension(id, 11 + index, 10));
+  const maintenanceRoad =
+    options.maintenanceRoad === undefined
+      ? null
+      : ({
+          hits: options.maintenanceRoad.hits,
+          hitsMax: options.maintenanceRoad.hitsMax,
+          id: "maintenance-road",
+          pos: position(9, 10),
+          room: { name: "W1N1" },
+          structureType: "road",
+          ticksToDecay: 1_000,
+        } as unknown as StructureRoad);
   const spawn = {
     hits: 5_000,
     hitsMax: 5_000,
@@ -362,8 +377,12 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
             : []
           : findType === FIND_STRUCTURES_VALUE
             ? options.reverseCollections
-              ? [spawn, ...extensions].reverse()
-              : [spawn, ...extensions]
+              ? [
+                  spawn,
+                  ...extensions,
+                  ...(maintenanceRoad === null ? [] : [maintenanceRoad]),
+                ].reverse()
+              : [spawn, ...extensions, ...(maintenanceRoad === null ? [] : [maintenanceRoad])]
             : findType === FIND_CONSTRUCTION_SITES_VALUE
               ? siteCompleted
                 ? []
@@ -430,11 +449,13 @@ export function establishedRcl2World(options: EstablishedRcl2WorldOptions = {}) 
                 ? droppedResource
                 : id === "spawn-a"
                   ? spawn
-                  : id === construction.id && !siteCompleted
-                    ? site
-                    : id === source.id
-                      ? source
-                      : (extensions.find((extension) => extension.id === id) ?? null),
+                  : id === maintenanceRoad?.id
+                    ? maintenanceRoad
+                    : id === construction.id && !siteCompleted
+                      ? site
+                      : id === source.id
+                        ? source
+                        : (extensions.find((extension) => extension.id === id) ?? null),
         rooms: { W1N1: room },
         shard: { name: "shard3" },
         time: nextTick,

@@ -119,7 +119,10 @@ describe("leased movement blockage recovery", () => {
       execution: { leases: [lease], status: "ready" },
       movementPolicy: DEFAULT_SURVIVAL_POLICY.movement,
       paths: cpuDeniedPaths,
-      progress: { stuckAge: () => DEFAULT_SURVIVAL_POLICY.movement.stuckReplanTicks },
+      progress: {
+        goalOscillationAge: () => 0,
+        stuckAge: () => DEFAULT_SURVIVAL_POLICY.movement.stuckReplanTicks,
+      },
       snapshot: snapshot(position(10, 10), true),
       tick: 13,
     });
@@ -174,7 +177,10 @@ describe("leased movement blockage recovery", () => {
       execution: { leases: [lease, blockerLease], status: "ready" },
       movementPolicy: DEFAULT_SURVIVAL_POLICY.movement,
       paths: observingPaths,
-      progress: { stuckAge: () => DEFAULT_SURVIVAL_POLICY.movement.stuckReplanTicks },
+      progress: {
+        goalOscillationAge: () => 0,
+        stuckAge: () => DEFAULT_SURVIVAL_POLICY.movement.stuckReplanTicks,
+      },
       snapshot: world,
       tick: 13,
     });

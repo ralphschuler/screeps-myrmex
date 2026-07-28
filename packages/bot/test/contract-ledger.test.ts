@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_ACTIVE_CONTRACTS,
+  MAX_ALLOCATION_CONTRACTS,
   MAX_CONTRACT_HISTORY,
   MAX_CONTRACT_ISSUERS,
   MAX_CONTRACT_OUTCOMES,
@@ -11,6 +12,7 @@ import {
   RCL1_CONTROLLER_FUNDING_HANDOFF,
   contractIdFor,
   isLegalContractTransition,
+  nextIssuerSequence,
   requestSignature,
   serializeContractLedgerState,
   type ActiveWorkContractState,
@@ -84,6 +86,30 @@ describe("ContractLedger", () => {
       reason: "idempotency-conflict",
     });
     expect(JSON.stringify(ledger.view())).toBe(afterCreation);
+  });
+
+  it("publishes bounded issuer frontiers and advances only after terminal evidence", () => {
+    const ledger = openLedger({});
+    const request = makeRequest();
+    const id = submitOrThrow(ledger, request, 1);
+
+    expect(nextIssuerSequence(ledger.planningView(), request.issuer)).toBe(1);
+    expect(ledger.planningView().issuerFrontiers).toEqual([]);
+
+    transitionOrThrow(ledger, id, "cancelled", 2);
+    const retired = ledger.planningView();
+    expect(retired.issuerFrontiers).toEqual([
+      { issuer: request.issuer, retiredThrough: request.issuerSequence },
+    ]);
+    expect(nextIssuerSequence(retired, request.issuer)).toBe(2);
+
+    const successor = makeRequest({
+      issuerSequence: 2,
+      budgetBinding: uniqueBudgetBinding(2),
+    });
+    submitOrThrow(ledger, successor, 3);
+    expect(nextIssuerSequence(ledger.planningView(), request.issuer)).toBe(2);
+    expect(nextIssuerSequence(reopenLedger(ledger).planningView(), request.issuer)).toBe(2);
   });
 
   it("rejects late lower issuer sequences while accepting reordered ascending batch work", () => {
@@ -617,6 +643,106 @@ describe("ContractLedger", () => {
     ]);
     expect(ledger.view().active[0]).toMatchObject({
       lease: { actorId: "replacement", expiresAt: 23 },
+      state: "assigned",
+    });
+  });
+
+  it("renews a valid incumbent on its last authorized tick without releasing the lease", () => {
+    const { ledger, id } = createAssignedLedger(makeRequest());
+    const before = ledger.view().active[0];
+    expect(before?.lease?.expiresAt).toBe(13);
+
+    const reconciliation = ledger.reconcile({
+      actors: [makeActor("incumbent")],
+      funding: activeFunding(),
+      requests: [],
+      tick: 12,
+      transitions: [],
+      travel: ZERO_TRAVEL,
+    });
+
+    expect(reconciliation.releases).toEqual([]);
+    expect(ledger.view().active[0]).toMatchObject({
+      id,
+      lease: {
+        actorId: "incumbent",
+        assignedAt: before?.lease?.assignedAt,
+        expiresAt: 22,
+      },
+      revision: (before?.revision ?? 0) + 1,
+      state: "assigned",
+    });
+  });
+
+  it("renews a validated capacity-preserved incumbent at the allocation boundary", () => {
+    const preservedRequest = makeRequest({
+      budgetBinding: { category: "preserved", issuer: "budget:preserved" },
+      issuer: "preserved",
+      issuerKey: "incumbent",
+      priority: { class: "speculation", value: 1 },
+    });
+    const ledger = openLedger({});
+    const preservedId = submitOrThrow(ledger, preservedRequest, 1);
+    const preservedFunding = fundingForRequests([preservedRequest]);
+    const funded = ledger.reconcile({
+      actors: [],
+      funding: preservedFunding,
+      requests: [],
+      tick: 2,
+      transitions: [{ contractId: preservedId, reason: "fixture-funded", tick: 2, to: "funded" }],
+      travel: ZERO_TRAVEL,
+    });
+    expect(funded.transitions).toEqual([expect.objectContaining({ accepted: true })]);
+    ledger.reconcile({
+      actors: [makeActor("incumbent")],
+      funding: preservedFunding,
+      requests: [],
+      tick: 3,
+      transitions: [],
+      travel: ZERO_TRAVEL,
+    });
+    expect(ledger.view().active.find(({ id }) => id === preservedId)?.lease?.expiresAt).toBe(13);
+
+    const higherPriorityRequests = Array.from({ length: MAX_ALLOCATION_CONTRACTS }, (_, index) =>
+      makeRequest({
+        budgetBinding: {
+          category: "capacity",
+          issuer: `budget:capacity:${String(index)}`,
+        },
+        issuer: `capacity:${String(index)}`,
+        issuerKey: "blocked",
+        priority: { class: "safety", value: 1_000 + index },
+        requiredCapability: capability({ claim: 1 }),
+      }),
+    );
+    const allFunding = fundingForRequests([preservedRequest, ...higherPriorityRequests]);
+    const admitted = ledger.reconcile({
+      actors: [makeActor("incumbent")],
+      funding: allFunding,
+      requests: higherPriorityRequests,
+      tick: 4,
+      transitions: higherPriorityRequests.map((request) => ({
+        contractId: contractIdFor(request.issuer, request.issuerKey, request.issuerSequence),
+        reason: "fixture-funded",
+        tick: 4,
+        to: "funded" as const,
+      })),
+      travel: ZERO_TRAVEL,
+    });
+    expect(admitted.allocation.preservedContractIds).toEqual([preservedId]);
+
+    const renewed = ledger.reconcile({
+      actors: [makeActor("incumbent")],
+      funding: allFunding,
+      requests: [],
+      tick: 12,
+      transitions: [],
+      travel: ZERO_TRAVEL,
+    });
+    expect(renewed.allocation.preservedContractIds).toEqual([preservedId]);
+    expect(renewed.releases).toEqual([]);
+    expect(ledger.view().active.find(({ id }) => id === preservedId)).toMatchObject({
+      lease: { actorId: "incumbent", assignedAt: 3, expiresAt: 22 },
       state: "assigned",
     });
   });
@@ -1486,6 +1612,24 @@ function activeFunding(
       },
     ],
     owners: [{ id: colonyId, visibility: overrides.visibility ?? "visible" }],
+    status: "ready",
+  };
+}
+
+function fundingForRequests(
+  requests: readonly WorkContractRequest[],
+): Extract<ContractFundingView, { readonly status: "ready" }> {
+  return {
+    authorizations: requests.map((request, index) => ({
+      category: request.budgetBinding.category,
+      colonyId: "W1N1",
+      expiresAt: 1_000,
+      issuer: request.budgetBinding.issuer,
+      reservationId: `reservation:capacity:${String(index)}`,
+      revision: 1,
+      status: "active",
+    })),
+    owners: [{ id: "W1N1", visibility: "visible" }],
     status: "ready",
   };
 }

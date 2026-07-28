@@ -7,6 +7,7 @@ import {
   capabilitySurplus,
   compareContractPriority,
   compareStrings,
+  contractEnergyExecutionPhase,
   type WorkforceActor,
   type WorkContractRecord,
 } from "./contracts";
@@ -252,7 +253,7 @@ function evaluateBid(
     actor.spawning ||
     actor.ticksToLive === null ||
     !capabilitySatisfies(actor.capability, contract.requiredCapability) ||
-    !actionEligible(actor, contract)
+    !actionEligible(actor, contract, incumbent)
   ) {
     return { bid: null, reason: "no-viable-actor" };
   }
@@ -294,8 +295,34 @@ function evaluateBid(
 }
 
 /** Action eligibility is current-tick data only; unknown legacy fixture fields fail neither open nor closed. */
-function actionEligible(actor: WorkforceActor, contract: WorkContractRecord): boolean {
+function actionEligible(
+  actor: WorkforceActor,
+  contract: WorkContractRecord,
+  incumbent: WorkContractRecord | undefined,
+): boolean {
   if (contract.execution === undefined) return true;
+  const contractPhase = contractEnergyExecutionPhase(contract.execution.action);
+  const incumbentPhase =
+    incumbent?.execution === undefined
+      ? null
+      : contractEnergyExecutionPhase(incumbent.execution.action);
+  // Complete a known bounded acquisition batch before consuming it. Delivery remains eligible so
+  // survival sinks can retain their existing priority-driven preemption policy.
+  if (
+    actor.freeCapacity !== undefined &&
+    actor.freeCapacity !== null &&
+    actor.freeCapacity > 0 &&
+    incumbentPhase === "acquire" &&
+    contractPhase === "consume"
+  )
+    return false;
+  if (
+    actor.energy !== undefined &&
+    actor.energy > 0 &&
+    incumbentPhase === "consume" &&
+    contractPhase === "acquire"
+  )
+    return false;
   if (
     contract.execution.action === "transfer" ||
     contract.execution.action === "upgrade-controller"
@@ -307,6 +334,7 @@ function actionEligible(actor: WorkforceActor, contract: WorkContractRecord): bo
     return (
       contract.execution.version === 2 ||
       contract.execution.version === 5 ||
+      actor.capability.carry === 0 ||
       actor.freeCapacity === undefined ||
       actor.freeCapacity === null ||
       actor.freeCapacity > 0

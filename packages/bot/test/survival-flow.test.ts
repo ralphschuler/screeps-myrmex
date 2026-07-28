@@ -83,6 +83,30 @@ describe("survival flow", () => {
     ).toEqual(["economy/W1N1/harvest/source-near"]);
   });
 
+  it("retains active carried-energy work across domains while survival sinks may preempt", () => {
+    for (const action of ["upgrade-controller", "build", "repair"] as const) {
+      const execution = activeCarriedEnergyExecution(action);
+      expect(
+        planSurvivalFlow(snapshot(25, { sinkFree: 0 }), execution, {
+          contracts: [],
+          status: "ready",
+        }),
+      ).toEqual([]);
+      expect(
+        planSurvivalFlow(snapshot(25), execution, { contracts: [], status: "ready" }).map(
+          ({ budgetRequest }) => budgetRequest.issuer,
+        ),
+      ).toEqual(["economy/W1N1/transfer/spawn-near"]);
+    }
+
+    expect(
+      planSurvivalFlow(snapshot(), activeCarriedEnergyExecution("upgrade-controller"), {
+        contracts: [],
+        status: "ready",
+      }).map(({ budgetRequest }) => budgetRequest.issuer),
+    ).toEqual(["economy/W1N1/harvest/source-near"]);
+  });
+
   it("excludes full and inactive sinks while retaining a farther active sink", () => {
     expect(planSurvivalFlow(snapshot(50, { sinkFree: 0 }))).toEqual([]);
     expect(planSurvivalFlow(snapshot(50, { spawnActive: false }))).toEqual([]);
@@ -129,6 +153,7 @@ describe("survival flow", () => {
       state: ContractPlanningView["contracts"][number]["state"],
     ): ContractPlanningView => ({
       status: "ready",
+      issuerFrontiers: [{ issuer: "economy/W1N1/harvest/source-near", retiredThrough: 1 }],
       contracts: [
         {
           budgetBinding: {
@@ -540,6 +565,77 @@ describe("survival flow", () => {
     expect(() => normalizeContractRequest(request)).not.toThrow();
   });
 
+  it("advances transfer and pickup exactly once after their terminal frontier", () => {
+    const transferIssuer = "economy/W1N1/transfer/spawn-near";
+    const transferPlanning: ContractPlanningView = {
+      contracts: [],
+      issuerFrontiers: [{ issuer: transferIssuer, retiredThrough: 3 }],
+      status: "ready",
+    };
+    const transfers = [
+      planSurvivalFlow(snapshot(50), undefined, transferPlanning),
+      planSurvivalFlow(roundTrip(snapshot(50)), undefined, roundTrip(transferPlanning)),
+    ];
+    expect(transfers[0]?.[0]).toMatchObject({
+      budgetRequest: { issuer: transferIssuer },
+      contractSequence: 4,
+    });
+    expect(transfers[1]).toEqual(transfers[0]);
+
+    const pickupIssuer = "economy/W1N1/pickup/drop-reappeared";
+    const pickupPlanning: ContractPlanningView = {
+      ...staticPlanning(["source-near"]),
+      issuerFrontiers: [{ issuer: pickupIssuer, retiredThrough: 2 }],
+    };
+    const pickup = planSurvivalFlow(
+      snapshot(0, {
+        droppedResources: [
+          {
+            amount: 50,
+            id: "drop-reappeared",
+            pos: position(9, 10),
+            resourceType: "energy",
+          },
+        ],
+      }),
+      undefined,
+      pickupPlanning,
+    )[0];
+    expect(pickup).toMatchObject({
+      budgetRequest: { issuer: pickupIssuer },
+      contractSequence: 3,
+    });
+
+    for (const candidate of [transfers[0]?.[0], pickup]) {
+      if (candidate === undefined) throw new Error("expected recurring survival candidate");
+      const requests = authorizedSurvivalFlow(
+        [candidate],
+        [{ ...candidate.budgetRequest, status: "active" }],
+        candidate.action === "transfer" ? transferPlanning : pickupPlanning,
+        10,
+      ).requests;
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.issuerSequence).toBe(candidate.contractSequence);
+      const request = requests[0];
+      if (request === undefined) throw new Error("expected recurring survival request");
+      const opened = ContractLedger.open({
+        active: [],
+        issuerFrontiers: [{ issuer: request.issuer, retiredThrough: request.issuerSequence - 1 }],
+        outcomes: [],
+        schemaVersion: 1,
+      });
+      if (opened.status !== "ready") throw new Error("expected recurring survival ledger");
+      expect(opened.ledger.submit(request, 10)).toMatchObject({
+        accepted: true,
+        outcome: "created",
+      });
+      expect(opened.ledger.submit(request, 10)).toMatchObject({
+        accepted: true,
+        outcome: "duplicate-active",
+      });
+    }
+  });
+
   it("keeps static drop pickup identity stable across reset without generalizing into hauling", () => {
     const energyDrop = {
       amount: 50,
@@ -882,6 +978,38 @@ function activeFlowExecution(action: "harvest" | "pickup" | "transfer"): Contrac
   };
 }
 
+function activeCarriedEnergyExecution(
+  action: "build" | "repair" | "upgrade-controller",
+): ContractExecutionView {
+  return {
+    status: "ready",
+    leases: [
+      {
+        actorId: "worker-a",
+        actorName: "worker",
+        contractId: `contract-${action}`,
+        deadline: 100,
+        execution: {
+          action,
+          completion: action === "upgrade-controller" ? "continuous" : "work-complete",
+          counterpartId: null,
+          resourceType: null,
+          version: 1,
+        },
+        expiresAt: 101,
+        leaseExpiresAt: 101,
+        priority: { class: action === "repair" ? "survival" : "growth", value: 1_200 },
+        quantity: 1,
+        range: 3,
+        revision: 1,
+        state: "active",
+        target: position(25, 25),
+        targetId: action === "upgrade-controller" ? "controller" : `target-${action}`,
+      },
+    ],
+  };
+}
+
 function activeFlowPlanning(
   action: "harvest" | "pickup" | "transfer",
   economy = true,
@@ -984,6 +1112,10 @@ function staticTakeoverSnapshot(
       },
     ],
   };
+}
+
+function roundTrip<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function snapshot(

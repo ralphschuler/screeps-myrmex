@@ -56,7 +56,7 @@ describe("WorkforceAllocator", () => {
     ]);
   });
 
-  it("assigns zero-carry static miners while full mobile harvesters remain ineligible", () => {
+  it("assigns zero-carry drop miners while full mobile harvesters remain ineligible", () => {
     const zeroCarryMiner = makeActor("actor:static", {
       capability: capability({ move: 1, work: 2 }),
       energy: 0,
@@ -72,6 +72,17 @@ describe("WorkforceAllocator", () => {
         workPosition: { roomName: "W1N1", x: 10, y: 10 },
       },
       requiredCapability: capability({ move: 1, work: 2 }),
+    });
+    const mineralHarvest = makeContract("contract:mineral", {
+      execution: {
+        action: "harvest",
+        completion: "target-depleted",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      issuer: "industry/extract/W1N1/mineral/H",
+      requiredCapability: capability({ move: 1, work: 1 }),
     });
     const fullMobile = makeActor("actor:mobile", {
       capability: capability({ carry: 1, move: 1, work: 1 }),
@@ -90,6 +101,9 @@ describe("WorkforceAllocator", () => {
 
     expect(allocate([zeroCarryMiner], [staticHarvest]).assignments).toEqual([
       expect.objectContaining({ actorId: zeroCarryMiner.id, contractId: staticHarvest.id }),
+    ]);
+    expect(allocate([zeroCarryMiner], [mineralHarvest]).assignments).toEqual([
+      expect.objectContaining({ actorId: zeroCarryMiner.id, contractId: mineralHarvest.id }),
     ]);
     expect(allocate([fullMobile], [mobileHarvest])).toMatchObject({
       assignments: [],
@@ -158,6 +172,175 @@ describe("WorkforceAllocator", () => {
     expect(new Set(forward.assignments.map(({ contractId }) => contractId)).size).toBe(
       forward.assignments.length,
     );
+  });
+
+  it("honors higher numeric priority before contract kind within one class", () => {
+    const actor = makeActor("actor:repairer", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 25,
+      freeCapacity: 25,
+    });
+    const harvest = makeContract("contract:harvest", {
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "harvest",
+      priority: { class: "survival", value: 1_000 },
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+    });
+    const criticalRepair = makeContract("contract:critical-repair", {
+      execution: {
+        action: "repair",
+        completion: "work-complete",
+        completionHits: 5_000,
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "repair",
+      priority: { class: "survival", value: 1_700 },
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+    });
+
+    expect(allocate([actor], [harvest, criticalRepair]).assignments).toEqual([
+      expect.objectContaining({ actorId: actor.id, contractId: criticalRepair.id }),
+    ]);
+  });
+
+  it("retains a carried-energy incumbent against acquisition but allows survival delivery", () => {
+    const actor = makeActor("actor:working", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 25,
+      freeCapacity: 25,
+    });
+    const lease = {
+      actorId: actor.id,
+      actorName: actor.name,
+      assignedAt: 90,
+      assignmentCost: 0,
+      expiresAt: 150,
+      travelTicks: 0,
+    };
+    const harvest = makeContract("contract:harvest", {
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "harvest",
+      priority: { class: "survival", value: 1_000 },
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+    });
+    const upgrade = makeContract("contract:upgrade", {
+      execution: {
+        action: "upgrade-controller",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "upgrade",
+      lease,
+      priority: { class: "growth", value: 1_200 },
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+      state: "active",
+    });
+    const transfer = makeContract("contract:transfer", {
+      execution: {
+        action: "transfer",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: "energy",
+        version: 1,
+      },
+      kind: "fill",
+      priority: { class: "survival", value: 1_000 },
+      requiredCapability: capability({ carry: 1, move: 1 }),
+    });
+
+    expect(allocate([actor], [harvest, upgrade])).toMatchObject({
+      assignments: [expect.objectContaining({ actorId: actor.id, contractId: upgrade.id })],
+      deferred: [expect.objectContaining({ contractId: harvest.id, reason: "no-viable-actor" })],
+    });
+    expect(allocate([actor], [upgrade, transfer]).assignments).toEqual([
+      expect.objectContaining({ actorId: actor.id, contractId: transfer.id }),
+    ]);
+  });
+
+  it("retains an acquisition incumbent until full without blocking survival delivery", () => {
+    const actor = makeActor("actor:gathering", {
+      capability: capability({ carry: 1, move: 1, work: 1 }),
+      energy: 2,
+      freeCapacity: 48,
+    });
+    const lease = {
+      actorId: actor.id,
+      actorName: actor.name,
+      assignedAt: 90,
+      assignmentCost: 0,
+      expiresAt: 150,
+      travelTicks: 0,
+    };
+    const harvest = makeContract("contract:harvest", {
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "harvest",
+      lease,
+      priority: { class: "survival", value: 1_000 },
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+      state: "active",
+    });
+    const controllerRisk = makeContract("contract:controller-risk", {
+      execution: {
+        action: "upgrade-controller",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "upgrade",
+      priority: { class: "survival", value: 1_600 },
+      requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+    });
+    const transfer = makeContract("contract:survival-transfer", {
+      execution: {
+        action: "transfer",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: "energy",
+        version: 1,
+      },
+      kind: "fill",
+      priority: { class: "survival", value: 2_000 },
+      requiredCapability: capability({ carry: 1, move: 1 }),
+    });
+
+    expect(allocate([actor], [harvest, controllerRisk])).toMatchObject({
+      assignments: [expect.objectContaining({ actorId: actor.id, contractId: harvest.id })],
+      deferred: [
+        expect.objectContaining({
+          contractId: controllerRisk.id,
+          reason: "no-viable-actor",
+        }),
+      ],
+    });
+    expect(allocate([actor], [harvest, controllerRisk, transfer]).assignments).toEqual([
+      expect.objectContaining({ actorId: actor.id, contractId: transfer.id }),
+    ]);
+    expect(
+      allocate([{ ...actor, energy: 50, freeCapacity: 0 }], [harvest, controllerRisk]).assignments,
+    ).toEqual([expect.objectContaining({ actorId: actor.id, contractId: controllerRisk.id })]);
   });
 
   it("rejects damaged and insufficient capability in favor of a viable actor", () => {

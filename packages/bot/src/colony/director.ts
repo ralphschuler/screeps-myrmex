@@ -471,12 +471,14 @@ export class ColonyDirectorSession {
   public settle(
     tick: number,
     settlements: readonly ColonySpawnCommandSettlement[],
+    revokedReservationIds: readonly string[] = [],
   ): ColonyDirectorResult {
     assertTick(tick);
     if (tick !== this.plannedAt) {
       throw new TypeError("spawn settlement tick must equal its colony plan tick");
     }
     const validatedSettlements = validateSpawnSettlements(settlements);
+    const normalizedRevocations = normalizeRevokedReservationIds(revokedReservationIds);
 
     const authorized = new Map(this.authorizedSpawns.map((entry) => [entry.reservationId, entry]));
     const byReservation = new Map<string, ColonySpawnCommandSettlement>();
@@ -501,7 +503,7 @@ export class ColonyDirectorSession {
     const normalized = [...byReservation.values()].sort((left, right) =>
       compareStrings(left.reservationId, right.reservationId),
     );
-    const settlementKey = JSON.stringify([tick, normalized]);
+    const settlementKey = JSON.stringify([tick, normalized, normalizedRevocations]);
     if (this.settlementKey !== null) {
       if (this.settlementKey !== settlementKey || this.settledResult === null) {
         throw new TypeError("ColonyDirector session was already settled differently");
@@ -513,21 +515,34 @@ export class ColonyDirectorSession {
       this.draftOwner === null ||
       this.draftResult.status !== "planned"
     ) {
-      if (normalized.length > 0) {
-        throw new TypeError("spawn results cannot settle without a planned colonies owner");
+      if (normalized.length > 0 || normalizedRevocations.length > 0) {
+        throw new TypeError("settlement changes require a planned colonies owner");
       }
       this.settlementKey = settlementKey;
       this.settledResult = this.draftResult;
       return this.draftResult;
     }
 
-    if (this.authorizedSpawns.length === 0) {
+    if (this.authorizedSpawns.length === 0 && normalizedRevocations.length === 0) {
       this.settlementKey = settlementKey;
       this.settledResult = this.draftResult;
       return this.draftResult;
     }
     const ledger = new BudgetLedger(this.draftOwner.ledger);
     const settlementTransitions: LedgerTransition[] = [];
+    for (const reservationId of normalizedRevocations) {
+      const entry = ledger
+        .snapshot()
+        .entries.find((candidate) => candidate.reservationId === reservationId);
+      if (entry === undefined) {
+        throw new TypeError("revocation references an unknown reservation");
+      }
+      if (authorized.has(reservationId)) {
+        throw new TypeError("spawn authorization cannot be revoked during settlement");
+      }
+      const released = ledger.release(reservationId, tick);
+      settlementTransitions.push(...released.transitions);
+    }
     for (const authorization of [...this.authorizedSpawns].sort((left, right) =>
       compareStrings(left.reservationId, right.reservationId),
     )) {
@@ -620,6 +635,23 @@ export class ColonyDirectorSession {
     this.settledResult = result;
     return result;
   }
+}
+
+function normalizeRevokedReservationIds(value: readonly string[]): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError("revoked reservation ids must be an array");
+  }
+  const normalized = new Set<string>();
+  for (const reservationId of value) {
+    if (
+      !isBoundedIdentifier(reservationId, MAX_RESERVATION_ID_CODE_UNITS) ||
+      normalized.has(reservationId)
+    ) {
+      throw new TypeError("invalid or duplicate revoked reservation id");
+    }
+    normalized.add(reservationId);
+  }
+  return [...normalized].sort(compareStrings);
 }
 
 export function emptyColonyPlanningResult(): ColonyDirectorResult {

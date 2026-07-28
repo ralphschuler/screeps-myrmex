@@ -1,5 +1,10 @@
 import type { BudgetRequest, LedgerEntry } from "../colony";
-import type { WorkContractRequest } from "../contracts";
+import {
+  nextIssuerSequence,
+  type ContractPlanningView,
+  type ContractTransitionRequest,
+  type WorkContractRequest,
+} from "../contracts";
 import type { WorldSnapshot } from "../world/snapshot";
 import type {
   DownstreamCommitment,
@@ -20,6 +25,7 @@ export interface IndustryRoomPolicy {
 export interface IndustryAuthorization {
   readonly budgets: readonly BudgetRequest[];
   readonly extractionContracts: readonly WorkContractRequest[];
+  readonly transitions: readonly ContractTransitionRequest[];
 }
 
 export interface IndustryTerminalWorkRoomView {
@@ -135,31 +141,49 @@ export function observeIndustryRooms(
   );
 }
 
-export function projectIndustryBudgets(plan: IndustryPlan, tick: number): readonly BudgetRequest[] {
+export function projectIndustryBudgets(
+  plan: IndustryPlan,
+  tick: number,
+  existing: readonly LedgerEntry[] = [],
+): readonly BudgetRequest[] {
   return freeze([
-    ...plan.extraction.map((proposal): BudgetRequest => ({
-      category: "industry",
-      colonyId: proposal.roomName,
-      issuer: proposal.identity,
-      revision: 1,
-      expiresAt: safeAdd(tick, 20),
-      energy: { minimum: 300, desired: 800 },
-      cpu: { minimum: 0.1, desired: 0.5 },
-      spawn: null,
-    })),
-    ...plan.sends.map((proposal): BudgetRequest => ({
-      category: "industry",
-      colonyId: proposal.sourceRoom,
-      issuer: proposal.identity,
-      revision: 1,
-      expiresAt: proposal.deadline,
-      energy: {
-        minimum: proposal.transactionEnergy,
-        desired: proposal.transactionEnergy,
-      },
-      cpu: { minimum: 0.02, desired: 0.1 },
-      spawn: null,
-    })),
+    ...plan.extraction.map((proposal): BudgetRequest =>
+      renewIndustryBudget(
+        {
+          category: "industry",
+          colonyId: proposal.roomName,
+          issuer: proposal.identity,
+          revision: 1,
+          expiresAt: safeAdd(tick, 20),
+          energy: { minimum: 300, desired: 800 },
+          cpu: { minimum: 100, desired: 500 },
+          spawn: null,
+        },
+        existing,
+        tick,
+        true,
+      ),
+    ),
+    ...plan.sends.map((proposal): BudgetRequest =>
+      renewIndustryBudget(
+        {
+          category: "industry",
+          colonyId: proposal.sourceRoom,
+          issuer: proposal.identity,
+          revision: 1,
+          expiresAt: proposal.deadline,
+          energy: {
+            minimum: proposal.transactionEnergy,
+            desired: proposal.transactionEnergy,
+          },
+          cpu: { minimum: 20, desired: 100 },
+          spawn: null,
+        },
+        existing,
+        tick,
+        false,
+      ),
+    ),
   ]);
 }
 
@@ -179,7 +203,7 @@ export function projectIndustryLabBudgets(
         revision: demand?.revision ?? 1,
         expiresAt: Math.max(tick, budget.deadline),
         energy: { minimum: energy, desired: energy },
-        cpu: { minimum: 0.05, desired: 0.25 },
+        cpu: { minimum: 50, desired: 250 },
         spawn: null,
       };
     }),
@@ -187,13 +211,21 @@ export function projectIndustryLabBudgets(
 }
 
 export function authorizeIndustryWork(input: {
+  readonly contracts: ContractPlanningView;
   readonly plan: IndustryPlan;
   readonly reservations: readonly LedgerEntry[];
   readonly rooms: readonly IndustryRoomState[];
   readonly tick: number;
 }): IndustryAuthorization {
-  const budgets = projectIndustryBudgets(input.plan, input.tick);
+  const budgets = projectIndustryBudgets(input.plan, input.tick, input.reservations);
+  if (input.contracts.status !== "ready")
+    return freeze({
+      budgets,
+      extractionContracts: [],
+      transitions: [],
+    });
   const extractionContracts: WorkContractRequest[] = [];
+  const transitions: ContractTransitionRequest[] = [];
   for (const proposal of input.plan.extraction) {
     const request = budgets.find(({ issuer }) => issuer === proposal.identity);
     const reservation = input.reservations.find(
@@ -213,6 +245,21 @@ export function authorizeIndustryWork(input: {
       target.pos === undefined
     )
       continue;
+    const active = input.contracts.contracts.find(
+      (contract) => contract.issuer === proposal.identity,
+    );
+    if (active !== undefined) {
+      if (active.state === "proposed" || active.state === "suspended")
+        transitions.push({
+          contractId: active.contractId,
+          reason: "industry-extraction-funded",
+          tick: input.tick,
+          to: "funded",
+        });
+      continue;
+    }
+    const issuerSequence = nextIssuerSequence(input.contracts, proposal.identity);
+    if (issuerSequence === null) continue;
     extractionContracts.push({
       budgetBinding: { category: "industry", issuer: request.issuer },
       conditions: {
@@ -225,7 +272,7 @@ export function authorizeIndustryWork(input: {
         action: "harvest",
         completion: "target-depleted",
         counterpartId: null,
-        resourceType: proposal.resourceType as ResourceConstant,
+        resourceType: null,
         version: 1,
       },
       earliestStart: input.tick,
@@ -233,7 +280,7 @@ export function authorizeIndustryWork(input: {
       expiresAt: safeAdd(input.tick, 1_501),
       issuer: proposal.identity,
       issuerKey: `${proposal.roomName}/${proposal.mineralId}`,
-      issuerSequence: 1,
+      issuerSequence,
       kind: "harvest",
       leasePolicy: { duration: 25, switchingPenalty: 10, ttlSafetyMargin: 50 },
       maxAssignmentCost: 100,
@@ -256,7 +303,53 @@ export function authorizeIndustryWork(input: {
       targetId: proposal.mineralId,
     });
   }
-  return freeze({ budgets, extractionContracts });
+  return freeze({
+    budgets,
+    extractionContracts,
+    transitions: transitions.sort((left, right) => left.contractId.localeCompare(right.contractId)),
+  });
+}
+
+function renewIndustryBudget(
+  desired: BudgetRequest,
+  existing: readonly LedgerEntry[],
+  tick: number,
+  rollingExpiry: boolean,
+): BudgetRequest {
+  const prior = existing.find(
+    ({ category, colonyId, issuer }) =>
+      category === desired.category && colonyId === desired.colonyId && issuer === desired.issuer,
+  );
+  if (prior === undefined) return desired;
+  const reservable = prior.status === "active" || prior.status === "pending";
+  const renewalDue = rollingExpiry && prior.request.expiresAt - tick <= 1;
+  const expiryChanged = !rollingExpiry && prior.request.expiresAt !== desired.expiresAt;
+  if (reservable && !renewalDue && !expiryChanged && sameBudgetClaims(prior.request, desired))
+    return cloneBudgetRequest(prior.request);
+  return { ...desired, revision: safeAdd(prior.revision, 1) };
+}
+
+function sameBudgetClaims(left: BudgetRequest, right: BudgetRequest): boolean {
+  return (
+    left.category === right.category &&
+    left.colonyId === right.colonyId &&
+    left.issuer === right.issuer &&
+    left.energy?.minimum === right.energy?.minimum &&
+    left.energy?.desired === right.energy?.desired &&
+    left.cpu?.minimum === right.cpu?.minimum &&
+    left.cpu?.desired === right.cpu?.desired &&
+    left.spawn === null &&
+    right.spawn === null
+  );
+}
+
+function cloneBudgetRequest(request: BudgetRequest): BudgetRequest {
+  return {
+    ...request,
+    cpu: request.cpu === null ? null : { ...request.cpu },
+    energy: request.energy === null ? null : { ...request.energy },
+    spawn: request.spawn === null ? null : { ...request.spawn },
+  };
 }
 
 function safeAdd(value: number, delta: number): number {

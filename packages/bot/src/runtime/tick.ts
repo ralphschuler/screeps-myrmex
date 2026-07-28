@@ -354,6 +354,7 @@ import {
   type SegmentManagerMetrics,
   type SegmentService,
 } from "../segments";
+import { cleanStaleCreepMemory } from "./platform-memory-hygiene";
 
 const KERNEL_STATE_SCHEMA_VERSION = 1 as const;
 const MAX_RESTORED_SYSTEM_HEALTH = 128;
@@ -441,6 +442,7 @@ interface RestoredKernelState {
  */
 export function runTick(input: TickInput): TickOutcome {
   const tickStartedAtCpu = input.game.cpu.getUsed();
+  cleanStaleCreepMemory(input.memory, input.game.creeps, input.game.time);
   const opened = openMyrmexMemory(input.memory, input.game.time, input.game.shard.name);
   const cacheManager = getRuntimeCacheManager();
   getMovementPathCache(cacheManager);
@@ -621,6 +623,24 @@ interface IndustryTickDraft {
   terminalWork: IndustryTerminalWorkProjection;
 }
 
+export interface IndustryExtractionBootstrap {
+  readonly colonyId: string;
+  readonly createdAtTick: number;
+  readonly issuer: string;
+  readonly mineralId: string;
+}
+
+export interface IndustryTerminalPublication {
+  readonly colonyId: string;
+  readonly issuer: string;
+  readonly publishedAtTick: number;
+}
+
+export interface IndustryPublicationEvidence {
+  readonly extractionBootstraps: readonly IndustryExtractionBootstrap[];
+  readonly terminalIntents: readonly IndustryTerminalPublication[];
+}
+
 /** Static, explicit composition. Roadmap systems replace foundation markers in dependency order. */
 function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<TickContext>[] {
   const spawnDraft: SpawnTickDraft = {
@@ -741,6 +761,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
   let maintenanceTowerCommands: MaintenanceTelemetryInput["towerCommands"] = Object.freeze([]);
   let maintenanceTowerRejections: MaintenanceTelemetryInput["towerRejections"] = Object.freeze([]);
   let maintenanceDuplicateTargetsSuppressed = 0;
+  let routineMaintenanceContractBootstraps: readonly MaintenanceContractBootstrap[] = Object.freeze(
+    [],
+  );
+  let industryPublicationEvidence = emptyIndustryPublicationEvidence();
   let segmentsIngested = false;
   return Object.freeze([
     configBootSystem(input),
@@ -997,7 +1021,9 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         suppressedTowerEvacuationTargetIds = suppressedTowerEvacuationTargets;
       },
     ),
-    industryPublicationSystem(input, industryDraft),
+    industryPublicationSystem(input, industryDraft, (evidence) => {
+      industryPublicationEvidence = evidence;
+    }),
     layoutPlanningSystem(
       input,
       layoutDraft,
@@ -1050,6 +1076,10 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         );
         const assignment = assignMaintenanceExecution(authorizedMaintenance, towerIntents);
         maintenanceDuplicateTargetsSuppressed = assignment.duplicateTargetsSuppressed;
+        const contractBootstraps = maintenanceContractBootstrapEvidence(
+          assignment.creepRequests,
+          context.tick,
+        );
         const contracts = input.contractChannel.openProducer("maintenance.routine-contracts");
         for (const request of assignment.creepRequests) contracts.producer.submit(request);
         for (const transition of authorizedMaintenance.retirements)
@@ -1062,6 +1092,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           () => {
             stagedContracts.commit();
             stagedIntents.commit();
+            routineMaintenanceContractBootstraps = contractBootstraps;
           },
           () => {
             stagedContracts.discard();
@@ -1801,11 +1832,14 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       input,
       spawnDraft,
       layoutDraft,
+      industryDraft,
       () => staticMiningPlan,
       (plan, cpuUsed) => {
         staticMiningPlan = plan;
         staticMiningCpuUsed += cpuUsed;
       },
+      () => industryPublicationEvidence,
+      () => routineMaintenanceContractBootstraps,
     ),
     {
       descriptor: {
@@ -4564,7 +4598,11 @@ function colonyDirectorSystem(
         ),
         ...layoutTowerEvacuations.budgets,
         ...provisionalMaintenance.budgets,
-        ...projectIndustryBudgets(industryProjection.eligiblePlan, context.tick),
+        ...projectIndustryBudgets(
+          industryProjection.eligiblePlan,
+          context.tick,
+          resolveColoniesOwner(owner).owner?.ledger ?? [],
+        ),
         ...projectLabBudgetRequests(labs, context.tick),
         ...mature.policy.budgets,
       ];
@@ -5473,6 +5511,7 @@ function staleLinkEvacuationLayouts(
 function industryPublicationSystem(
   input: CompositionInput,
   draft: IndustryTickDraft,
+  publishEvidence: (evidence: IndustryPublicationEvidence) => void,
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -5487,6 +5526,7 @@ function industryPublicationSystem(
     run: ({ context }) => {
       if (!isFeatureEnabled(context.config, "phase2.industry")) return staged(() => undefined);
       const authorized = authorizeIndustryWork({
+        contracts: context.contractPlanning,
         plan: draft.eligiblePlan,
         reservations: context.colony.reservations,
         rooms: draft.rooms,
@@ -5511,6 +5551,7 @@ function industryPublicationSystem(
       });
       const contracts = input.contractChannel.openProducer("industry.contracts");
       for (const request of authorized.extractionContracts) contracts.producer.submit(request);
+      for (const transition of authorized.transitions) contracts.producer.transition(transition);
       const stagedContracts = contracts.stage();
       const intents = input.intentChannel.openProducer("industry.terminals");
       const currentSnapshotRevision = snapshotRevision(context.snapshot);
@@ -5522,11 +5563,18 @@ function industryPublicationSystem(
       for (const intent of draft.mature.intents) intents.producer.submit(intent);
       for (const intent of draft.observer.arbitration.intents) intents.producer.submit(intent);
       const stagedIntents = intents.stage();
+      const publicationEvidence = projectIndustryPublicationEvidence({
+        extractionContracts: authorized.extractionContracts,
+        plan: draft.eligiblePlan,
+        terminalIntents,
+        tick: context.tick,
+      });
       return staged(
         () => {
           stagedContracts.commit();
           stagedIntents.commit();
           draft.terminalWork = terminalWork;
+          publishEvidence(publicationEvidence);
         },
         () => {
           stagedContracts.discard();
@@ -6006,8 +6054,11 @@ function spawnSettleSystem(
   input: CompositionInput,
   spawnDraft: SpawnTickDraft,
   layoutDraft: LayoutTickDraft,
+  industryDraft: IndustryTickDraft,
   currentStaticMiningPlan: () => StaticMiningPlan,
   onSourceServiceHandoffRejected: (plan: StaticMiningPlan, cpuUsed: number) => void,
+  industryPublicationEvidence: () => IndustryPublicationEvidence,
+  routineMaintenanceContractBootstraps: () => readonly MaintenanceContractBootstrap[],
 ): TickSystem<TickContext> {
   return {
     descriptor: {
@@ -6020,7 +6071,34 @@ function spawnSettleSystem(
       mandatoryTail: true,
     },
     run: ({ context }) => {
-      const settled = settleSpawnDraft(spawnDraft, context.tick);
+      const revokedMaintenanceReservationIds =
+        spawnDraft.session === null
+          ? Object.freeze([])
+          : unpublishedRoutineMaintenanceReservationIds({
+              contractBootstraps: routineMaintenanceContractBootstraps(),
+              contracts: context.contractPlanning,
+              reservations: spawnDraft.session.result.reservations,
+              tick: context.tick,
+            });
+      const revokedIndustryReservationIds =
+        spawnDraft.session === null
+          ? Object.freeze([])
+          : unpublishedIndustryReservationIds({
+              contracts: context.contractPlanning,
+              evidence: industryPublicationEvidence(),
+              plan: industryDraft.eligiblePlan,
+              reservations: spawnDraft.session.result.reservations,
+              tick: context.tick,
+            });
+      const settled = settleSpawnDraft(
+        spawnDraft,
+        context.tick,
+        Object.freeze(
+          [
+            ...new Set([...revokedIndustryReservationIds, ...revokedMaintenanceReservationIds]),
+          ].sort(),
+        ),
+      );
       const handoff = layoutDraft.sourceServiceHandoff;
       if (
         handoff !== null &&
@@ -6419,6 +6497,7 @@ function authorizedSpawnIntents(
 function settleSpawnDraft(
   draft: SpawnTickDraft,
   tick: number,
+  revokedReservationIds: readonly string[] = [],
 ): ReturnType<ColonyDirectorSession["settle"]> | null {
   if (draft.settled !== null || draft.session === null) {
     return draft.settled;
@@ -6436,8 +6515,281 @@ function settleSpawnDraft(
         }
       : { reservationId: intent.reservationId, status: "not-scheduled" };
   });
-  draft.settled = draft.session.settle(tick, settlements);
+  draft.settled = draft.session.settle(tick, settlements, revokedReservationIds);
   return draft.settled;
+}
+
+function emptyIndustryPublicationEvidence(): IndustryPublicationEvidence {
+  return Object.freeze({
+    extractionBootstraps: Object.freeze([]),
+    terminalIntents: Object.freeze([]),
+  });
+}
+
+function projectIndustryPublicationEvidence(input: {
+  readonly extractionContracts: readonly {
+    readonly budgetBinding: { readonly category: string; readonly issuer: string };
+    readonly issuer: string;
+    readonly owner: { readonly id: string; readonly kind: string };
+    readonly targetId: string | null;
+  }[];
+  readonly plan: IndustryPlan;
+  readonly terminalIntents: readonly { readonly id: string }[];
+  readonly tick: number;
+}): IndustryPublicationEvidence {
+  const extractionByTarget = new Map<string, IndustryExtractionBootstrap>();
+  for (const request of input.extractionContracts) {
+    if (
+      request.owner.kind !== "colony" ||
+      request.budgetBinding.category !== "industry" ||
+      request.issuer !== request.budgetBinding.issuer ||
+      request.targetId === null
+    )
+      continue;
+    const evidence = Object.freeze({
+      colonyId: request.owner.id,
+      createdAtTick: input.tick,
+      issuer: request.budgetBinding.issuer,
+      mineralId: request.targetId,
+    });
+    extractionByTarget.set(
+      industryExtractionKey(evidence.colonyId, evidence.issuer, evidence.mineralId),
+      evidence,
+    );
+  }
+
+  const publishedIntentIds = new Set(input.terminalIntents.map(({ id }) => id));
+  const terminalByBinding = new Map<string, IndustryTerminalPublication>();
+  for (const proposal of input.plan.sends) {
+    if (!publishedIntentIds.has(proposal.identity)) continue;
+    const evidence = Object.freeze({
+      colonyId: proposal.sourceRoom,
+      issuer: proposal.identity,
+      publishedAtTick: input.tick,
+    });
+    terminalByBinding.set(industryBindingKey(evidence.colonyId, evidence.issuer), evidence);
+  }
+
+  return Object.freeze({
+    extractionBootstraps: Object.freeze(
+      [...extractionByTarget.values()].sort(compareIndustryExtractionEvidence),
+    ),
+    terminalIntents: Object.freeze(
+      [...terminalByBinding.values()].sort(compareIndustryTerminalEvidence),
+    ),
+  });
+}
+
+export function unpublishedIndustryReservationIds(input: {
+  readonly contracts: ContractPlanningView;
+  readonly evidence: IndustryPublicationEvidence;
+  readonly plan: IndustryPlan;
+  readonly reservations: readonly {
+    readonly category: string;
+    readonly colonyId: string;
+    readonly createdAt: number;
+    readonly issuer: string;
+    readonly reservationId: string;
+    readonly status: string;
+  }[];
+  readonly tick: number;
+}): readonly string[] {
+  const extractionScopes = new Map<string, string | null>();
+  for (const proposal of input.plan.extraction) {
+    const key = industryBindingKey(proposal.roomName, proposal.identity);
+    const prior = extractionScopes.get(key);
+    extractionScopes.set(
+      key,
+      prior === undefined || prior === proposal.mineralId ? proposal.mineralId : null,
+    );
+  }
+  const terminalScopes = new Set(
+    input.plan.sends.map((proposal) => industryBindingKey(proposal.sourceRoom, proposal.identity)),
+  );
+  const extractionBootstraps = new Set(
+    input.evidence.extractionBootstraps.flatMap(({ colonyId, createdAtTick, issuer, mineralId }) =>
+      createdAtTick === input.tick ? [industryExtractionKey(colonyId, issuer, mineralId)] : [],
+    ),
+  );
+  const terminalPublications = new Set(
+    input.evidence.terminalIntents.flatMap(({ colonyId, issuer, publishedAtTick }) =>
+      publishedAtTick === input.tick ? [industryBindingKey(colonyId, issuer)] : [],
+    ),
+  );
+  const liveExtraction = new Set<string>();
+  if (input.contracts.status === "ready") {
+    for (const contract of input.contracts.contracts) {
+      if (
+        contract.owner.kind !== "colony" ||
+        contract.budgetBinding.category !== "industry" ||
+        contract.issuer !== contract.budgetBinding.issuer ||
+        contract.execution.version !== 1 ||
+        contract.execution.action !== "harvest"
+      )
+        continue;
+      const binding = industryBindingKey(contract.owner.id, contract.budgetBinding.issuer);
+      const mineralId = extractionScopes.get(binding);
+      if (mineralId === undefined || mineralId === null || contract.targetId !== mineralId)
+        continue;
+      liveExtraction.add(
+        industryExtractionKey(contract.owner.id, contract.budgetBinding.issuer, mineralId),
+      );
+    }
+  }
+
+  return Object.freeze(
+    input.reservations
+      .flatMap(({ category, colonyId, createdAt, issuer, reservationId, status }) => {
+        if (category !== "industry" || (status !== "active" && status !== "pending")) return [];
+        const binding = industryBindingKey(colonyId, issuer);
+        if (terminalScopes.has(binding))
+          return terminalPublications.has(binding) ? [] : [reservationId];
+        if (!extractionScopes.has(binding)) return [];
+        const mineralId = extractionScopes.get(binding);
+        if (mineralId === null || mineralId === undefined) return [reservationId];
+        if (input.contracts.status !== "ready")
+          return createdAt < input.tick ? [] : [reservationId];
+        const extraction = industryExtractionKey(colonyId, issuer, mineralId);
+        return liveExtraction.has(extraction) || extractionBootstraps.has(extraction)
+          ? []
+          : [reservationId];
+      })
+      .sort(),
+  );
+}
+
+function industryBindingKey(colonyId: string, issuer: string): string {
+  return `${colonyId}\u0000industry\u0000${issuer}`;
+}
+
+function industryExtractionKey(colonyId: string, issuer: string, mineralId: string): string {
+  return `${industryBindingKey(colonyId, issuer)}\u0000${mineralId}`;
+}
+
+function compareIndustryExtractionEvidence(
+  left: IndustryExtractionBootstrap,
+  right: IndustryExtractionBootstrap,
+): number {
+  return (
+    left.colonyId.localeCompare(right.colonyId) ||
+    left.issuer.localeCompare(right.issuer) ||
+    left.mineralId.localeCompare(right.mineralId) ||
+    left.createdAtTick - right.createdAtTick
+  );
+}
+
+function compareIndustryTerminalEvidence(
+  left: IndustryTerminalPublication,
+  right: IndustryTerminalPublication,
+): number {
+  return (
+    left.colonyId.localeCompare(right.colonyId) ||
+    left.issuer.localeCompare(right.issuer) ||
+    left.publishedAtTick - right.publishedAtTick
+  );
+}
+
+export function unpublishedRoutineMaintenanceReservationIds(input: {
+  readonly contractBootstraps: readonly MaintenanceContractBootstrap[];
+  readonly contracts: ContractPlanningView;
+  readonly reservations: readonly {
+    readonly category: string;
+    readonly colonyId: string;
+    readonly createdAt?: number;
+    readonly issuer: string;
+    readonly reservationId: string;
+    readonly status: string;
+  }[];
+  readonly tick: number;
+}): readonly string[] {
+  if (input.contracts.status !== "ready") return Object.freeze([]);
+  const liveBindings = new Set(
+    input.contracts.contracts.flatMap((contract) =>
+      isExactRoutineMaintenanceContract(contract)
+        ? [
+            maintenanceBindingKey(
+              contract.owner.id,
+              contract.budgetBinding.category,
+              contract.budgetBinding.issuer,
+            ),
+          ]
+        : [],
+    ),
+  );
+  const bootstrapBindings = new Set(
+    input.contractBootstraps.flatMap(({ category, colonyId, createdAtTick, issuer }) =>
+      createdAtTick === input.tick ? [maintenanceBindingKey(colonyId, category, issuer)] : [],
+    ),
+  );
+  return Object.freeze(
+    input.reservations
+      .flatMap(({ category, colonyId, issuer, reservationId, status }) => {
+        if (category !== "maintenance" || (status !== "active" && status !== "pending")) return [];
+        const binding = maintenanceBindingKey(colonyId, category, issuer);
+        return liveBindings.has(binding) || bootstrapBindings.has(binding) ? [] : [reservationId];
+      })
+      .sort(),
+  );
+}
+
+export interface MaintenanceContractBootstrap {
+  readonly category: "maintenance";
+  readonly colonyId: string;
+  readonly createdAtTick: number;
+  readonly issuer: string;
+}
+
+function maintenanceContractBootstrapEvidence(
+  requests: readonly {
+    readonly budgetBinding: { readonly category: string; readonly issuer: string };
+    readonly owner: { readonly id: string; readonly kind: string };
+  }[],
+  tick: number,
+): readonly MaintenanceContractBootstrap[] {
+  const byBinding = new Map<string, MaintenanceContractBootstrap>();
+  for (const request of requests) {
+    if (request.owner.kind !== "colony" || request.budgetBinding.category !== "maintenance")
+      continue;
+    const evidence = Object.freeze({
+      category: "maintenance" as const,
+      colonyId: request.owner.id,
+      createdAtTick: tick,
+      issuer: request.budgetBinding.issuer,
+    });
+    byBinding.set(
+      maintenanceBindingKey(evidence.colonyId, evidence.category, evidence.issuer),
+      evidence,
+    );
+  }
+  return Object.freeze([...byBinding.values()].sort(compareMaintenanceBootstraps));
+}
+
+function isExactRoutineMaintenanceContract(
+  contract: ContractPlanningView["contracts"][number],
+): boolean {
+  return (
+    contract.owner.kind === "colony" &&
+    contract.budgetBinding.category === "maintenance" &&
+    contract.execution.version === 1 &&
+    contract.execution.action === "repair" &&
+    contract.issuer.startsWith(`${contract.budgetBinding.issuer}/`)
+  );
+}
+
+function maintenanceBindingKey(colonyId: string, category: string, issuer: string): string {
+  return `${colonyId}\u0000${category}\u0000${issuer}`;
+}
+
+function compareMaintenanceBootstraps(
+  left: MaintenanceContractBootstrap,
+  right: MaintenanceContractBootstrap,
+): number {
+  return (
+    left.colonyId.localeCompare(right.colonyId) ||
+    left.category.localeCompare(right.category) ||
+    left.issuer.localeCompare(right.issuer) ||
+    left.createdAtTick - right.createdAtTick
+  );
 }
 
 function resolveLiveSpawn(game: RuntimeGame, spawnId: string): unknown {
