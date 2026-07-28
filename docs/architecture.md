@@ -4,7 +4,7 @@ Status: **Normative target architecture**
 
 Applies to: `packages/bot`
 
-Last updated: 2026-07-27
+Last updated: 2026-07-28
 
 This document defines the core systems of MYRMEX, the authority each system owns, and the only
 supported ways those systems integrate. It is deliberately specific so that human and AI
@@ -18,12 +18,12 @@ ledger, bounded workforce allocation, deterministic spawn-slot/body arbitration,
 command execution, and atomic command-to-budget settlement. Phase 3 adds the typed `SegmentManager`
 substrate, bounded room-intelligence retention and freshness queries, one data-only vision-demand
 boundary, deterministic threat-aware room-route cost/travel estimates, one command-free full-cost
-`RemotePortfolio`, just-in-time budgeted remote controller reservation, and request-driven budgeted
-remote source mining/capital plus loss-aware routed remote hauling through existing logistics,
-contract, spawn, movement, action, and construction-site authorities. Systems assigned to later
-roadmap gates remain normative targets. Their absence is an implementation task, not permission to
-invent a different boundary. If a requirement cannot fit this architecture, write an ADR before
-changing the architecture.
+`RemotePortfolio`, just-in-time budgeted remote controller reservation, request-driven budgeted
+remote source mining/capital plus loss-aware routed remote hauling, and threat-qualified
+leased-actor remote evacuation through existing relation, logistics, contract, spawn, movement,
+action, and construction-site authorities. Systems assigned to later roadmap gates remain normative
+targets. Their absence is an implementation task, not permission to invent a different boundary. If
+a requirement cannot fit this architecture, write an ADR before changing the architecture.
 
 Normative words have their usual meanings:
 
@@ -409,6 +409,20 @@ disappearance or unrelated sink gain alone. Successful and failed cycles advance
 coordinates. Missing remote vision may not start acquisition, but cannot strand already-authorized
 cargo bound for a current owned sink; sink pressure retains that bounded delivery work without
 opening another pickup. [ADR 0085](adr/0085-loss-aware-remote-hauling.md) records this boundary.
+
+`assessRemoteSafety` is a pure operational evidence projection, not a persistent threat authority.
+It consumes current/fresh IntelService facts, authoritative relation decisions, existing route risk,
+and detached bounded loss/confidence evidence. Configured exclusions are removed before active
+`ATTACK`, `RANGED_ATTACK`, `WORK`, or `CLAIM`, recent attack, Invader Core, route, freshness, or
+loss evidence can make a candidate unsafe. RemotePortfolio retains lifecycle, commitment release,
+and hysteretic resumption. `planRemoteEvacuations` maps unsafe leased V4/V5/acquire-V6 actors onto
+one independently safe return route. One tick-local `LeaseTravelOverride` suppresses the exposed
+action while the existing lease agent, local path, MovementArbiter, and executor retain movement
+authority. A V6 delivery already following that route remains Logistics-owned. Arrival, actor loss,
+or missing safe return emits only a normal ContractLedger suspension; arrival and route failure use
+a tick-local hold override so the opening execution view cannot resume exposed work before
+Reconcile. No owner, role, task queue, command path, or persistent schema is added.
+[ADR 0087](adr/0087-threat-qualified-remote-evacuation.md) records this boundary.
 
 1. `@myrmex/bot` is the only deployable package and produces `dist/main.js`.
 2. `@myrmex/scenario-kit` is development-only and MUST NOT be imported by runtime code.
@@ -1659,6 +1673,7 @@ The following table is the canonical ownership map.
 | `RemotePortfolio`          | remote lifecycle and profitability             | intel, full-cost ledger                   | remote objectives, suspend/resume        | run remote creeps directly                |
 | `RemoteMiningPlanner`      | remote source extraction/capital projection    | active objective, intel, route, grants    | contracts and site proposals             | own lifecycle, leases, sites, commands    |
 | `projectRemoteHauling`     | remote graph evidence adapter                  | active mining, stock, routes, grant       | logistics nodes, edges, dispositions     | admit flows, persist work, issue commands |
+| `assessRemoteSafety`       | operational remote-safety projection           | intel, relations, routes, loss confidence | candidate risk and retreat directives    | own threats, leases, routes, or commands  |
 | `ExpansionDirector`        | claim portfolio and bootstrap state            | empire budget, intel, graph               | claim/bootstrap objectives               | bypass GCL or donor budgets               |
 | `IndustryDirector`         | stock targets and production commitments       | stores, market view, strategy             | lab/factory/power demands                | execute market or structure calls         |
 | `MarketPlanner`            | trade proposals and price/risk model           | stock targets, orders, history            | deal/order intents                       | call market methods directly              |
@@ -1889,7 +1904,12 @@ ready room route into current-room work: the local path service selects one cano
 then one exact cardinal border intent preserves the crossing coordinate in the adjacent route room.
 The arbiter admits only that adjacent border transition; missing exits, route drift, stale vision,
 or CPU denial suspends the contract. Issue #59's V5 remote miner reuses exactly this decomposition
-before approaching its static source position. Exact multi-room tile paths remain unavailable.
+before approaching its static source position. Exact multi-room tile paths remain unavailable. Issue
+[#61](https://github.com/ralphschuler/screeps-myrmex/issues/61) permits one bounded safety-qualified
+reverse route to override an existing remote lease's tick-local travel goal. The lease agent emits
+no exposed primary action while that override exists; the same local search, border crossing,
+dynamic-blockage policy, arbiter, and executor remain sole. A hold-mode override emits no movement
+or primary action while an arrival or route-failure suspension waits for Reconcile.
 
 Issue [#447](https://github.com/ralphschuler/screeps-myrmex/issues/447) adds bounded local
 congestion recovery without another state authority. One 128-entry, two-tick heap cache records only
@@ -2690,6 +2710,18 @@ pickup. Stale/unsafe evidence, route drift, timeout, endpoint change, and produc
 stop or replace bounded work through monotonic cycle identities. Exact evidence is in
 [`phase3-hauling-evidence.md`](phase3-hauling-evidence.md).
 
+Issue #61 qualifies that operation with a request-driven safety projection. Current/fresh complete
+intel, configured relations, previous-tick attacks, Invader Core deployment, route risk, and
+detached loss/confidence evidence produce one bounded reason and candidate risk. RemotePortfolio
+alone releases commitment and owns threat/cooldown/resumption. While it is threatened, suspended, or
+cooling down, V4/V5/acquire-V6 lease actors reuse one safe remote-to-donor RoutePlanner sequence
+through a tick-local lease travel override. Exposed primary actions are suppressed; existing local
+path, cardinal border, movement arbitration, and execution issue any movement. Loaded V6 delivery
+already following that return stays Logistics-owned. Donor arrival, actor loss, or missing safe
+route produces one ordinary suspension; arrival and route failure also hold same-tick lease
+execution closed until Reconcile. Exact evidence is in
+[`phase3-safety-evidence.md`](phase3-safety-evidence.md).
+
 ### 12.9 ExpansionDirector
 
 Expansion ranks claims as scarce portfolio positions. It owns candidate scoring, donor budgets,
@@ -3187,6 +3219,14 @@ Required architecture assertions include:
   Store fall back to drops, and source/route/threat/budget loss plus three-attempt command backoff
   remain bounded across reset/reorder; current funded positive-value container/road proposals retain
   the sole global site arbiter/executor and fail immediately on controller drift;
+- remote safety resolves configured exclusions before active hostile capability, previous-tick
+  attack, Invader Core, route, freshness, confidence, or loss evidence can release a portfolio;
+  harmless scouts remain safe, unsafe/cooling remotes emit no active objective or new reservation,
+  extraction, acquisition, replacement, or capital work, and exposed V4/V5/acquire-V6 leases reuse
+  only one independently ready safe return route through a tick-local lease override; primary work
+  stays suppressed until donor arrival, actor loss, or route failure produces one ordinary
+  suspension, while matching loaded V6 delivery stays Logistics-owned; reset/reorder, CPU denial,
+  stale/partial evidence, and fixed bounds remain deterministic without a new owner or command path;
 - current observation outranks IntelService history; every room/route read has explicit age and
   expiry, and malformed, partial, unavailable, corrupt, cross-shard, future, or over-cap evidence
   remains typed and fail-closed;

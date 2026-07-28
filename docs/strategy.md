@@ -568,6 +568,21 @@ evidence, route/endpoint or production/loss change, timeout, and budget loss sto
 already-loaded cargo may still reach its current owned sink after remote vision disappears. This
 proves delivery mechanics, not strict evacuation (#61) or realized rolling profit (#62).
 
+Remote safety now qualifies those active operations before more exposure. Configured exclusions are
+resolved first; an active offensive NPC/player creep, recent unattributed attack, imminent Invader
+Core, unsafe route, stale/partial intel, excessive detached recent loss, or insufficient confidence
+makes the remote unsafe. Move-only scouts and configured allies do not create false hostility.
+RemotePortfolio releases every commitment dimension and withholds the active objective, so existing
+reservation, mining, hauling-acquisition, replacement, and capital paths stop through their own
+normal boundaries. Already leased exposed actors suppress primary work and reuse one independently
+safe return route through the existing lease agent and movement arbiter. A loaded hauler already
+following that route keeps its Logistics-owned delivery. The retreat continues through portfolio
+suspension/cooldown; fresh complete zero-risk, sufficient-confidence, bounded-loss evidence must
+pass consecutive probes before work resumes. Missing actors or routes suspend once rather than
+creating a retry storm; arrival and route-failure holds prevent the opening lease view from issuing
+ordinary exposed work before reconciliation. This is operational remote exposure policy, not Phase 5
+owned-room defense or a second diplomacy/threat authority.
+
 Remote and claim decisions use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU
 shadow price. Losing remotes are suspended automatically.

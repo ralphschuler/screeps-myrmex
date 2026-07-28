@@ -3,6 +3,7 @@ import {
   type ContractExecutionTerms,
   type ContractExecutionView,
   type ContractTransitionRequest,
+  type LeaseTravelOverride,
   type LeasedWorkExecution,
 } from "../contracts";
 import type { MovementPolicy } from "../config";
@@ -39,6 +40,7 @@ export type AgentDispositionReason =
   | "target-depleted"
   | "target-full"
   | "target-missing"
+  | "travel-override-complete"
   | "work-complete";
 
 export interface LeaseAgentDisposition {
@@ -62,6 +64,7 @@ export interface LeaseAgentPlanInput {
   readonly progress: MovementProgressView;
   readonly snapshot: WorldSnapshot;
   readonly tick: number;
+  readonly travelOverrides?: readonly LeaseTravelOverride[];
 }
 
 /**
@@ -71,6 +74,8 @@ export interface LeaseAgentPlanInput {
  */
 export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
   if (input.execution.status !== "ready") return emptyPlan();
+  const overrides = travelOverrideIndex(input.travelOverrides ?? [], input.execution.leases);
+  if (overrides === null) return emptyPlan();
   const actors = actorIndex(input.snapshot);
   const targets = targetIndex(input.snapshot);
   const actions: CreepActionIntent[] = [];
@@ -95,18 +100,34 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
     if (lease === undefined || seenActors.has(lease.actorId)) continue;
     seenActors.add(lease.actorId);
     const actor = actors.get(lease.actorId);
-    const disposition = validateLease(lease, actor, targets, input.tick);
+    const override = overrides.get(lease.contractId);
+    const disposition =
+      override === undefined
+        ? validateLease(lease, actor, targets, input.tick)
+        : validateTravelOverride(lease, override, actor, input.tick);
     if (disposition !== null) {
       dispositions.push(disposition);
       continue;
     }
     if (actor === undefined) continue;
+    if (override?.mode === "hold") continue;
     const target = targets.get(lease.targetId);
+    const route = override ?? executionRoute(lease.execution);
+    const destinationRoomName = override?.destinationRoomName ?? lease.target.roomName;
+    if (override !== undefined && actor.pos.roomName === destinationRoomName) {
+      dispositions.push({
+        contractId: lease.contractId,
+        contractRevision: lease.revision,
+        reason: "travel-override-complete",
+        to: "suspended",
+      });
+      continue;
+    }
     const routeStep =
-      isCrossRoomExecution(lease.execution) && actor.pos.roomName !== lease.target.roomName
-        ? crossRoomStep(lease, actor.pos, input.snapshot)
+      route !== null && actor.pos.roomName !== destinationRoomName
+        ? crossRoomStep(route, actor.pos, input.snapshot)
         : null;
-    if (isCrossRoomExecution(lease.execution) && actor.pos.roomName !== lease.target.roomName) {
+    if (route !== null && actor.pos.roomName !== destinationRoomName) {
       if (routeStep === null) {
         dispositions.push({
           contractId: lease.contractId,
@@ -143,6 +164,8 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
               0,
               stuckAge,
               true,
+              override?.priority,
+              override?.deadline,
             ),
           );
         }
@@ -152,7 +175,11 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
     if (target === undefined && routeStep === null) continue;
     const goal =
       routeStep?.exit ??
-      (isStaticMiningExecution(lease.execution) ? lease.execution.workPosition : target?.pos);
+      (override === undefined
+        ? isStaticMiningExecution(lease.execution)
+          ? lease.execution.workPosition
+          : target?.pos
+        : undefined);
     if (goal === undefined) continue;
     const range =
       routeStep === null ? (isStaticMiningExecution(lease.execution) ? 0 : lease.range) : 0;
@@ -210,7 +237,19 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
     if (stuckAge >= input.movementPolicy.stuckReplanTicks) {
       const blockedPositions = dynamicMovementBlockers(input.snapshot, actor.id, movement);
       if (blockedPositions === null) {
-        movement.push(movementIntent(lease, actor.pos, null, goal, range, stuckAge));
+        movement.push(
+          movementIntent(
+            lease,
+            actor.pos,
+            null,
+            goal,
+            range,
+            stuckAge,
+            false,
+            override?.priority,
+            override?.deadline,
+          ),
+        );
         continue;
       }
       const replanned = input.paths.plan({
@@ -227,7 +266,19 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       // CPU denial reduces route quality only; the already-authorized cached move remains safe.
       if (replanned.status !== "deferred") {
         if (replanned.status !== "ready" || replanned.directions[0] === undefined) {
-          movement.push(movementIntent(lease, actor.pos, null, goal, range, stuckAge));
+          movement.push(
+            movementIntent(
+              lease,
+              actor.pos,
+              null,
+              goal,
+              range,
+              stuckAge,
+              false,
+              override?.priority,
+              override?.deadline,
+            ),
+          );
           continue;
         }
         path = replanned;
@@ -244,7 +295,19 @@ export function planLeaseAgents(input: LeaseAgentPlanInput): LeaseAgentPlan {
       });
       continue;
     }
-    movement.push(movementIntent(lease, destination, direction, goal, range, stuckAge));
+    movement.push(
+      movementIntent(
+        lease,
+        destination,
+        direction,
+        goal,
+        range,
+        stuckAge,
+        false,
+        override?.priority,
+        override?.deadline,
+      ),
+    );
   }
   return Object.freeze({
     actions: Object.freeze(actions),
@@ -395,6 +458,83 @@ function targetView(
     store: null,
     ...value,
   };
+}
+
+function travelOverrideIndex(
+  values: readonly LeaseTravelOverride[],
+  leases: readonly LeasedWorkExecution[],
+): ReadonlyMap<string, LeaseTravelOverride> | null {
+  if (values.length > MAX_LEASE_AGENT_ACTORS) return null;
+  const leasesByContract = new Map(leases.map((lease) => [lease.contractId, lease]));
+  const result = new Map<string, LeaseTravelOverride>();
+  for (const value of values) {
+    const lease = leasesByContract.get(value.contractId);
+    if (
+      lease === undefined ||
+      result.has(value.contractId) ||
+      value.actorId !== lease.actorId ||
+      value.contractRevision !== lease.revision ||
+      !Number.isSafeInteger(value.deadline) ||
+      value.deadline < 0 ||
+      !Number.isSafeInteger(value.priority) ||
+      value.priority < 0 ||
+      typeof value.reason !== "string" ||
+      value.reason.length === 0 ||
+      value.reason.length > 128 ||
+      !Array.isArray(value.routeRoomNames) ||
+      !validRoomName(value.originRoomName) ||
+      !validRoomName(value.destinationRoomName) ||
+      !validOverrideRoute(value)
+    )
+      return null;
+    result.set(value.contractId, value);
+  }
+  return result;
+}
+
+function validOverrideRoute(value: LeaseTravelOverride): boolean {
+  const mode: unknown = value.mode;
+  if (mode === "hold")
+    return (
+      value.destinationRoomName === value.originRoomName &&
+      value.routeTravelTicks === 0 &&
+      value.routeRoomNames.length === 0
+    );
+  if (mode !== "travel") return false;
+  return (
+    value.destinationRoomName !== value.originRoomName &&
+    Number.isSafeInteger(value.routeTravelTicks) &&
+    value.routeTravelTicks > 0 &&
+    value.routeRoomNames.length > 0 &&
+    value.routeRoomNames.length <= 16 &&
+    value.routeRoomNames[value.routeRoomNames.length - 1] === value.destinationRoomName &&
+    value.routeRoomNames.every(validRoomName)
+  );
+}
+
+function validateTravelOverride(
+  lease: LeasedWorkExecution,
+  override: LeaseTravelOverride,
+  actor: CreepSnapshot | undefined,
+  tick: number,
+): LeaseAgentDisposition | null {
+  const suspend = (reason: AgentDispositionReason): LeaseAgentDisposition => ({
+    contractId: lease.contractId,
+    contractRevision: lease.revision,
+    reason,
+    to: "suspended",
+  });
+  if (tick > Math.min(actionDeadline(lease), override.deadline)) return suspend("contract-expired");
+  if (actor === undefined || actor.name !== lease.actorName) return suspend("actor-missing");
+  if (actor.spawning) return suspend("actor-spawning");
+  if (actor.ticksToLive === null || actor.ticksToLive <= 1)
+    return suspend("actor-ttl-insufficient");
+  if (actor.body.move.active <= 0) return suspend("actor-capability-lost");
+  if (override.mode === "hold")
+    return actor.pos.roomName === override.originRoomName ? null : suspend("route-unavailable");
+  const route = [override.originRoomName, ...override.routeRoomNames];
+  if (!route.includes(actor.pos.roomName)) return suspend("route-unavailable");
+  return null;
 }
 
 function validateLease(
@@ -589,17 +729,19 @@ function movementIntent(
   range: number,
   stuckAge: number,
   roomTransition = false,
+  priority = lease.priority.value,
+  deadline = actionDeadline(lease),
 ): MovementIntent {
   return {
     actorId: lease.actorId,
     contractId: lease.contractId,
     contractRevision: lease.revision,
-    deadline: actionDeadline(lease),
+    deadline: Math.min(actionDeadline(lease), deadline),
     destination,
     direction,
     goal,
     id: `lease:${lease.contractId}:r${String(lease.revision)}:move`,
-    priority: lease.priority.value,
+    priority,
     range,
     ...(roomTransition ? { roomTransition: true } : {}),
     stuckAge,
@@ -644,7 +786,10 @@ function crossRoomRouteIndex(lease: LeasedWorkExecution, roomName: string): numb
 }
 
 function crossRoomStep(
-  lease: LeasedWorkExecution,
+  execution: {
+    readonly originRoomName: string;
+    readonly routeRoomNames: readonly string[];
+  },
   origin: PositionSnapshot,
   snapshot: WorldSnapshot,
 ): {
@@ -652,8 +797,6 @@ function crossRoomStep(
   readonly direction: DirectionConstant;
   readonly exit: PositionSnapshot;
 } | null {
-  const execution = executionRoute(lease.execution);
-  if (execution === null) return null;
   const route = [execution.originRoomName, ...execution.routeRoomNames];
   const index = route.indexOf(origin.roomName);
   const nextRoom = index < 0 ? undefined : route[index + 1];
@@ -687,6 +830,10 @@ function roomDirection(left: string, right: string): DirectionConstant | null {
   if (x === 0 && y === 1) return 5;
   if (x === -1 && y === 0) return 7;
   return null;
+}
+
+function validRoomName(value: unknown): value is string {
+  return typeof value === "string" && /^(W|E)\d+(N|S)\d+$/u.test(value) && value.length <= 16;
 }
 
 function roomCoordinates(value: string): { readonly x: number; readonly y: number } | null {
