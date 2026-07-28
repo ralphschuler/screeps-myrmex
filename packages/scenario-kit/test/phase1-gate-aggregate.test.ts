@@ -29,13 +29,20 @@ describe("Phase 1 aggregate deterministic evidence (#30)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("matches checked-in component outputs and keeps unavailable measurements explicit", async () => {
+  it("keeps the historical receipt immutable while current outputs satisfy its frozen budgets", async () => {
     const actual = await collectAggregateEvidence();
     const { productionBundle, ...checkedAggregate } = checkedResult;
     expect(productionBundle).toBeDefined();
-    expect(actual).toEqual(checkedAggregate);
+    expect(actual).toMatchObject({
+      issue: checkedAggregate.issue,
+      productionBundleExclusion: checkedAggregate.productionBundleExclusion,
+      schemaVersion: checkedAggregate.schemaVersion,
+      status: checkedAggregate.status,
+    });
+    expect(actual.rows.map(({ id }) => id)).toEqual(checkedAggregate.rows.map(({ id }) => id));
 
     for (const row of actual.rows) {
+      assertCurrentRowWithinFrozenBudget(row);
       for (const value of Object.values(row.measurements)) {
         expect(value === null || (Number.isFinite(value) && value >= 0)).toBe(true);
       }
@@ -169,6 +176,58 @@ interface Runs {
   readonly warm: EvidenceRun;
 }
 type MeasurementName = keyof ReturnType<typeof emptyMeasurements>;
+
+interface CurrentEvidenceRow {
+  readonly id: string;
+  readonly measurements: Readonly<Record<MeasurementName, number | null>>;
+  readonly unevidenced: readonly string[];
+}
+
+const measurementNames: readonly MeasurementName[] = Object.freeze([
+  "ticks",
+  "modeledCpu",
+  "persistentBytes",
+  "persistentGrowth",
+  "telemetryBytes",
+  "telemetryCardinality",
+  "spawnUtilizationPct",
+  "energyFlow",
+  "replacementLateness",
+  "controllerMargin",
+  "controllerRisk",
+  "recoveryTime",
+]);
+
+const currentThresholds: Readonly<Record<string, readonly number[]>> = Object.freeze({
+  "rcl2-established": [150, 500, 32_768, 4_096, 8_192, 64, 100, 400, 50, 1, 1, 150],
+  "rcl1-cold-boot-growth": [1_500, 12_000, 32_768, 8_192, 8_192, 64, 100, 300, 50, 1, 1, 1_500],
+  "spawn-blocker-recovery": [200, 1_000, 32_768, 4_096, 8_192, 64, 100, 300, 50, 1, 1, 200],
+  "path-target-recovery": [3, 3, 32_768, 1_024, 8_192, 64, 100, 50, 50, 1, 1, 3],
+  "hostile-pressure-recovery": [100, 1_000, 32_768, 4_096, 8_192, 64, 100, 300, 50, 1, 1, 100],
+  "constrained-cpu": [8, 8, 32_768, 1_024, 8_192, 64, 100, 300, 50, 1, 1, 8],
+  "reset-reorder-equivalence": [1_600, 12_000, 32_768, 8_192, 8_192, 64, 100, 300, 50, 1, 1, 1_500],
+  "aggregate-phase1-matrix": [1_600, 12_000, 32_768, 8_192, 8_192, 64, 100, 300, 50, 1, 1, 1_500],
+});
+
+function assertCurrentRowWithinFrozenBudget(row: CurrentEvidenceRow): void {
+  const thresholds = currentThresholds[row.id];
+  expect(thresholds, `missing frozen thresholds for ${row.id}`).toBeDefined();
+  expect(thresholds).toHaveLength(measurementNames.length);
+  for (const [field, value] of Object.entries(row.measurements)) {
+    expect(value === null || (Number.isFinite(value) && value >= 0)).toBe(true);
+    if (value === null) {
+      expect(row.unevidenced).toContain(field);
+      continue;
+    }
+    expect(row.unevidenced).not.toContain(field);
+    const index = measurementNames.indexOf(field as MeasurementName);
+    expect(index).toBeGreaterThanOrEqual(0);
+    const threshold = thresholds?.[index];
+    expect(threshold).toBeDefined();
+    if (field === "controllerMargin") expect(value).toBeGreaterThanOrEqual(threshold ?? 0);
+    else expect(value).toBeLessThanOrEqual(threshold ?? Number.POSITIVE_INFINITY);
+  }
+}
 
 function composedComponentRow(
   id: string,

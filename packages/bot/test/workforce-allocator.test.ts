@@ -79,7 +79,7 @@ describe("WorkforceAllocator", () => {
     ]);
     expect(forward.deferred).toContainEqual({
       contractId: optional.id,
-      reason: "no-viable-actor",
+      reason: "no-actor",
     });
     expect(new Set(forward.assignments.map(({ actorId }) => actorId)).size).toBe(
       forward.assignments.length,
@@ -145,7 +145,7 @@ describe("WorkforceAllocator", () => {
     );
     expect(late.assignments).toEqual([]);
     expect(late.deferred).toEqual([
-      { contractId: "contract:deadline-missed", reason: "no-viable-actor" },
+      { contractId: "contract:deadline-missed", reason: "deadline-infeasible" },
     ]);
   });
 
@@ -183,8 +183,16 @@ describe("WorkforceAllocator", () => {
     );
 
     expect(result.assignments).toEqual([]);
-    expect(result.deferred).toEqual([{ contractId: contract.id, reason: "no-viable-actor" }]);
+    expect(result.deferred).toEqual([{ contractId: contract.id, reason: "travel-unknown" }]);
     expect(result.safeIdle).toEqual([{ actorId: actor.id, reason: "no-funded-contract" }]);
+  });
+
+  it("distinguishes absence of an available actor from route and deadline blockers", () => {
+    const contract = makeContract("contract:no-actor");
+
+    expect(allocate([], [contract]).deferred).toEqual([
+      { contractId: contract.id, reason: "no-actor" },
+    ]);
   });
 
   it("uses travel and switching cost before stable actor-id tie breaks", () => {

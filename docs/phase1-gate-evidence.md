@@ -37,9 +37,10 @@ and exact outcome equivalence across all variants. Before the closure freeze, is
 layout-command precommit correction reduced the checked RCL1 recovery row from 1,401/1,332
 total/recovery ticks to 1,400/1,331, and issue #457's tower-only deliver authorization advanced only
 the exact production-bundle receipt. The resulting checked closure artifact is now immutable;
-`scripts/test/phase1-gate-bundle.test.mjs` verifies its fixed digest. Later runtime changes use the
-current production compatibility witness in `scripts/test/phase2-gate-evidence.test.mjs` rather than
-rewriting this historical result.
+`scripts/test/phase1-gate-bundle.test.mjs` verifies its fixed digest. Later runtime changes rerun
+the current semantic rows against the frozen numeric budgets in `phase1-gate-aggregate.test.ts` and
+use the current production compatibility witness in `scripts/test/phase2-gate-evidence.test.mjs`;
+they do not compare current hashes to, or rewrite, this historical result.
 
 Reproduce this slice and the checked aggregate with:
 

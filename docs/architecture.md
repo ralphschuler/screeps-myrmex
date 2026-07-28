@@ -1513,7 +1513,10 @@ pre-Execute Observe snapshot, so reconciliation applies one modeled current Exec
 before comparing that evidence with the post-Execute lease schedule; only worse aligned evidence
 adds a detected delay. Equality is viable at both boundaries, and an exact-boundary lease therefore
 remains feasible as its lifetime and modeled work decrease together. Unknown travel fails closed.
-Runtime composition adapts the canonical local-path service into one tick-local
+Bounded allocation deferrals distinguish no available actor, unknown travel, deadline infeasibility,
+and other actor infeasibility; rejected funding-binding or issuer renewal remains a separate
+ContractLedger result. Telemetry hashes contract identities and publishes only those stable reason
+codes. Runtime composition adapts the canonical local-path service into one tick-local
 `TravelEstimateView`. Cached route cost is converted from PathFinder's terrain weights to a
 fatigue-safe upper bound using current fatigue, active `MOVE`, and conservative non-`MOVE` body
 weight; direction count alone is never called travel time. Cold search is admitted in 0.5 CPU
@@ -1585,16 +1588,21 @@ this boundary.
 The Phase 1 `SurvivalGrowthPlanner` is likewise a pure snapshot selector with no layout, placement,
 or durable queue. A downgrade-risk controller may request `controller-risk` upgrade work; optional
 controller upgrading and owned spawn, extension, container, road, and tower construction sites need
-both the protected spawn reserve and configured surplus. One bounded RCL2 exception admits only
-observed owned extension sites while capacity remains below that normal floor, the full protected
-reserve remains available, and a viable `WORK`/`CARRY`/`MOVE` worker carries energy. Its distinct
-`rcl2-infrastructure-bootstrap` candidate claims CPU but no room energy because `Creep.build` spends
-creep cargo; current actor-energy eligibility prevents an empty worker from taking that lease, and a
-stable contract survives temporary worker/cargo loss and retires when the site or bootstrap phase
-ends. `ColonyDirector` remains the sole budget authority, so controller risk is admitted ahead of
-optional construction and constrained CPU, threat, or recovery posture fails optional growth closed.
-Lease agents and executors retain the only Screeps work-command path.
-[ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md) records the exception.
+both the protected spawn reserve and configured surplus. RCL1 `bootstrap-controller` work retains a
+1,500-tick budget/contract horizon, matching its bounded assignment-cost ceiling so a fresh
+TTL-viable worker is not rejected by the generic 50-tick lease horizon. When that budget renews, the
+growth producer uses the existing ContractLedger replacement channel to atomically retire the exact
+predecessor and fund only its next issuer generation with a fresh horizon. Unknown or nonconsecutive
+issuer evidence fails closed rather than creating overlapping work. One bounded RCL2 exception
+admits only observed owned extension sites while capacity remains below that normal floor, the full
+protected reserve remains available, and a viable `WORK`/`CARRY`/`MOVE` worker carries energy. Its
+distinct `rcl2-infrastructure-bootstrap` candidate claims CPU but no room energy because
+`Creep.build` spends creep cargo; current actor-energy eligibility prevents an empty worker from
+taking that lease, and a stable contract survives temporary worker/cargo loss and retires when the
+site or bootstrap phase ends. `ColonyDirector` remains the sole budget authority, so controller risk
+is admitted ahead of optional construction and constrained CPU, threat, or recovery posture fails
+optional growth closed. Lease agents and executors retain the only Screeps work-command path.
+[ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md) records the RCL2 exception.
 
 Lease agents retain no task or role Memory. They correlate each proposal with contract ID and
 revision; the runtime's Reconcile phase feeds typed executor evidence through the existing contract

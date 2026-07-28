@@ -175,4 +175,90 @@ describe("survival-flow runtime recovery", () => {
         .some(({ intent, status }) => status === "executed" && intent.kind === "transfer"),
     ).toBe(true);
   }, 60_000);
+
+  it("leases distant RCL1 controller work after CPU and route recovery without deadline churn", async () => {
+    const world = survivalWorld({
+      controllerInitialProgress: 196,
+      controllerPosition: { roomName: "W1N1", x: 47, y: 47 },
+      initialWorkerEnergy: 50,
+    });
+    let memory = {} as Memory;
+    let executeTick = runTick;
+    let resetAt: number | null = null;
+    let maximumBootstrapContracts = 0;
+    let sawDeadlineInfeasible = false;
+    let sawTravelUnknown = false;
+    const assignments: NonNullable<
+      TickOutcome["contracts"]
+    >["allocation"]["assignments"][number][] = [];
+    const releases: NonNullable<TickOutcome["contracts"]>["releases"][number][] = [];
+    const controllerContractIds = new Set<string>();
+
+    world.setCpuBucket(4_000);
+    world.setPathUnavailable(true);
+    for (let tick = START_TICK; tick <= START_TICK + 249; tick += 1) {
+      if (tick === START_TICK + 3) world.setCpuBucket(10_000);
+      const outcome = executeTick({
+        game: world.game(tick),
+        localPathSearch: world.pathSearch,
+        memory,
+      });
+      world.assertEnergyConserved();
+      assertSingleTickAuthorities(outcome, world.workerId);
+      assignments.push(...(outcome.contracts?.allocation.assignments ?? []));
+      releases.push(...(outcome.contracts?.releases ?? []));
+      for (const lease of outcome.contractExecution.leases) {
+        if (lease.targetId === "controller-1") controllerContractIds.add(lease.contractId);
+      }
+      const contractsOwner = memory.myrmex?.contracts as
+        { readonly active?: readonly { readonly issuer?: string }[] } | undefined;
+      maximumBootstrapContracts = Math.max(
+        maximumBootstrapContracts,
+        (contractsOwner?.active ?? []).filter(
+          ({ issuer }) => issuer === "growth/W1N1/upgrade-controller/controller-1",
+        ).length,
+      );
+      sawDeadlineInfeasible ||=
+        outcome.contracts?.allocation.deferred.some(
+          ({ reason }) => reason === "deadline-infeasible",
+        ) ?? false;
+      const travelUnknown =
+        outcome.contracts?.allocation.deferred.some(({ reason }) => reason === "travel-unknown") ??
+        false;
+      if (travelUnknown) {
+        sawTravelUnknown = true;
+        world.setPathUnavailable(false);
+      }
+
+      const distantAssignment = outcome.contracts?.allocation.assignments.find(
+        ({ travelTicks }) => travelTicks >= 40,
+      );
+      if (distantAssignment !== undefined && resetAt === null) {
+        resetAt = tick;
+        memory = JSON.parse(JSON.stringify(memory)) as Memory;
+        vi.resetModules();
+        executeTick = (await import("../src/runtime/tick")).runTick;
+        world.reverseSources = true;
+      }
+      if (world.controllerLevel >= 2) break;
+    }
+
+    expect(world.constrainedCpuObservations).toBeGreaterThanOrEqual(3);
+    expect(world.pathUnavailableObservations).toBeGreaterThan(0);
+    expect(sawTravelUnknown).toBe(true);
+    expect(sawDeadlineInfeasible).toBe(false);
+    expect(maximumBootstrapContracts).toBe(1);
+    expect(
+      assignments.some(
+        ({ contractId, travelTicks }) => controllerContractIds.has(contractId) && travelTicks >= 40,
+      ),
+    ).toBe(true);
+    expect(releases.some(({ reason }) => reason === "deadline-infeasible")).toBe(false);
+    expect(resetAt).not.toBeNull();
+    expect(world.moveCalls).toBeGreaterThan(0);
+    expect(world.controllerUpgradeCalls).toBe(4);
+    expect(world.controllerLevel).toBe(2);
+    expect(world.spawnEnergy).toBe(300);
+    expect(world.spawnCalls).toEqual([]);
+  }, 60_000);
 });

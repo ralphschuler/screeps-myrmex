@@ -9,6 +9,16 @@ const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 const START_TICK = 100;
 
+export interface SurvivalWorldOptions {
+  readonly controllerInitialProgress?: number;
+  readonly controllerPosition?: {
+    readonly roomName: string;
+    readonly x: number;
+    readonly y: number;
+  };
+  readonly initialWorkerEnergy?: number;
+}
+
 export interface SpawnCall {
   readonly body: readonly string[];
   readonly cost: number;
@@ -56,9 +66,15 @@ export interface SurvivalWorld {
   setTargetResolverUnavailable(unavailable: boolean): void;
 }
 
-export function survivalWorld(): SurvivalWorld {
+export function survivalWorld(options: SurvivalWorldOptions = {}): SurvivalWorld {
   const initialSpawnEnergy = 300;
+  const initialWorkerEnergy = options.initialWorkerEnergy ?? 0;
   const initialSourceEnergy = 50 + 3_000;
+  const controllerPosition = options.controllerPosition ?? {
+    roomName: "W1N1",
+    x: 25,
+    y: 25,
+  };
   const state = {
     cargoAtFirstDelivery: null as number | null,
     constrainedCpuObservations: 0,
@@ -89,7 +105,7 @@ export function survivalWorld(): SurvivalWorld {
     sourceBDelivered: 0,
     sourceBHarvested: 0,
     controllerLevel: 1,
-    controllerProgress: 0,
+    controllerProgress: options.controllerInitialProgress ?? 0,
     controllerUpgradeCalls: 0,
     lostWorkerEnergy: 0,
     spawnCalls: [] as SpawnCall[],
@@ -101,12 +117,12 @@ export function survivalWorld(): SurvivalWorld {
     targetMissingObservations: 0,
     targetResolverUnavailable: false,
     withheldSpawnEnergy: 0,
-    workerEnergy: 0,
+    workerEnergy: initialWorkerEnergy,
     workerFatigue: 0,
-    workerName: null as string | null,
+    workerName: initialWorkerEnergy > 0 ? "bootstrap-worker" : (null as string | null),
     workerPosition: { roomName: "W1N1", x: 10, y: 10 },
-    workerTicksToLive: null as number | null,
-    workerVisibleAt: null as number | null,
+    workerTicksToLive: initialWorkerEnergy > 0 ? 1_500 : (null as number | null),
+    workerVisibleAt: initialWorkerEnergy > 0 ? START_TICK : (null as number | null),
   };
   const sourceA = source("source-a", { roomName: "W1N1", x: 15, y: 10 }, () => state.sourceAEnergy);
   const sourceB = source("source-b", { roomName: "W1N1", x: 20, y: 20 }, () => state.sourceBEnergy);
@@ -259,7 +275,7 @@ export function survivalWorld(): SurvivalWorld {
     },
     my: true,
     owner: { username: "Myrmex" },
-    pos: { roomName: "W1N1", x: 25, y: 25 },
+    pos: controllerPosition,
     get progress() {
       return state.controllerProgress;
     },
@@ -439,7 +455,7 @@ export function survivalWorld(): SurvivalWorld {
     },
     assertEnergyConserved: () => {
       const harvested = initialSourceEnergy - state.sourceAEnergy - state.sourceBEnergy;
-      expect(initialSpawnEnergy + harvested + state.injectedSpawnEnergy).toBe(
+      expect(initialSpawnEnergy + initialWorkerEnergy + harvested + state.injectedSpawnEnergy).toBe(
         state.spawnEnergy +
           state.workerEnergy +
           state.successfulSpawnCost +
