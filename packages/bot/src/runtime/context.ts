@@ -17,6 +17,8 @@ import type { LayoutRuntimeResult } from "../layout";
 import type { LinkRuntimeResult } from "../links";
 import type { SegmentManagerMetrics, SegmentService } from "../segments";
 import type { IntelRuntimeResult } from "../world/intel";
+import type { RemoteOperationsPlan, RemotePortfolioResult } from "../remotes";
+import type { RouteMapView } from "../world/routes";
 
 export interface RuntimeGame {
   readonly cpu: {
@@ -30,6 +32,8 @@ export interface RuntimeGame {
   /** Shard-global construction-site authority; optional only for bounded test adapters. */
   readonly constructionSites?: Readonly<Record<string, ConstructionSite>>;
   readonly rooms: Readonly<Record<string, Room>>;
+  /** Narrow current map observation used only through the world route-topology adapter. */
+  readonly map?: RouteMapView;
   /** Narrow live-object lookup handed only to command executors. */
   readonly getObjectById?: (id: string) => unknown;
   /** Narrow deterministic market fact used by industry planning; no market command authority. */
@@ -73,6 +77,10 @@ export interface TickContext {
   readonly segments: SegmentManagerMetrics;
   /** Freshness-qualified room intelligence; no physical segment IDs or strategy decisions. */
   readonly intel: IntelRuntimeResult;
+  /** Sole owner-qualified Phase 3 remote lifecycle and bounded accounting result. */
+  readonly remotes: RemotePortfolioResult;
+  /** Bounded current-tick projections through existing budget, contract, and logistics owners. */
+  readonly remoteOperations: RemoteOperationsPlan | null;
   /** Tick-local layout planning, arbitration, execution, and durable reconciliation evidence. */
   readonly layout: LayoutRuntimeResult;
   /** Tick-local link classification, arbitration, and command settlement evidence. */

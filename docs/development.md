@@ -66,11 +66,13 @@ Setting `candidate: null` is not rollback. It means no new proposal and keeps a 
 evidence uses source defaults.
 
 Operational feature overrides can only disable known source-available gates. They cannot enable a
-gate, change prerequisites, or bypass an incomplete roadmap outcome. `phase2.mature` is
-source-available under `runtime-config-source-v27`; disabling it preserves `IndustryOwnerV5`
-commitments and receipts while authorizing no factory, power-spawn, or observer command. Exact
-identity matching is case-sensitive; self, ally, and NAP arrays must contain distinct canonical
-names with no overlap.
+gate, change prerequisites, or bypass an incomplete roadmap outcome. `phase3.portfolio` is
+source-available under `runtime-config-source-v28` after `phase2.mature`; disabling it preserves
+portfolio and contract owner bytes while authorizing no new remote objective, budget, contract,
+spawn, site, or evacuation work. Disabling `phase2.mature` still preserves `IndustryOwnerV5`
+commitments and receipts while authorizing no factory, power-spawn, observer, or prerequisite remote
+work. Exact identity matching is case-sensitive; self, ally, and NAP arrays must contain distinct
+canonical names with no overlap.
 
 If the owner itself is malformed or from a future owner schema, the runtime preserves it and uses
 source defaults. Diagnose and save the value privately before an explicit operator reset to exact

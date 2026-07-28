@@ -348,6 +348,19 @@ import {
 } from "../observer";
 import { IntelService, emptyIntelRuntimeResult, type IntelRuntimeResult } from "../world/intel";
 import {
+  DEFAULT_REMOTE_PORTFOLIO_POLICY_V1,
+  PRODUCTION_REMOTE_ACCOUNTING_POLICY_V1,
+  REMOTE_RUNTIME_LIMITS,
+  RemotePortfolio,
+  discoverRemoteRuntime,
+  planRemoteOperations,
+  projectRemoteAccountingObservations,
+  remoteRuntimeIntelQueries,
+  type RemoteOperationsPlan,
+  type RemotePortfolioResult,
+  type RemoteRuntimeDiscovery,
+} from "../remotes";
+import {
   SegmentManager,
   unavailableSegmentMetrics,
   unavailableSegmentService,
@@ -368,6 +381,7 @@ const structureDestroyExecutor = new StructureDestroyExecutor();
 const linkExecutor = new LinkExecutor();
 const constructionPlanner = new ConstructionPlanner();
 const industryDirector = new IndustryDirector();
+const remotePortfolio = new RemotePortfolio();
 const layoutCaches = new WeakMap<CacheManager, ReturnType<typeof registerLayoutCompiledCache>>();
 
 export interface TickInput {
@@ -399,6 +413,10 @@ export interface TickOutcome {
   readonly segments: SegmentManagerMetrics;
   /** Freshness-qualified segment-backed room intelligence. */
   readonly intel: IntelRuntimeResult;
+  /** Sole owner-qualified Phase 3 remote lifecycle and bounded accounting result. */
+  readonly remotes: RemotePortfolioResult;
+  /** Bounded current-tick projections through existing budget, contract, and logistics owners. */
+  readonly remoteOperations: RemoteOperationsPlan | null;
   readonly layout: LayoutRuntimeResult;
   readonly links: LinkRuntimeResult;
   readonly spawn: SpawnRuntimeResult;
@@ -422,6 +440,9 @@ interface TickRuntimeControl {
   publishSegments(result: SegmentManagerMetrics): void;
   publishIntel(result: IntelRuntimeResult): void;
   clearIntel(): void;
+  publishRemotes(result: RemotePortfolioResult): void;
+  clearRemotes(): void;
+  publishRemoteOperations(result: RemoteOperationsPlan | null): void;
   clearMovement(): void;
   publishLayout(result: LayoutRuntimeResult): void;
   publishLinks(result: LinkRuntimeResult): void;
@@ -547,6 +568,8 @@ export function runTick(input: TickInput): TickOutcome {
     localPathPlanning: runtime.context.localPathPlanning,
     segments: runtime.context.segments,
     intel: runtime.context.intel,
+    remotes: runtime.context.remotes,
+    remoteOperations: runtime.context.remoteOperations,
     layout: runtime.context.layout,
     links: runtime.context.links,
     spawn: runtime.context.spawn,
@@ -605,6 +628,12 @@ interface LayoutTickDraft {
     readonly roomName: string;
   }[];
 }
+interface RemoteTickDraft {
+  discovery: RemoteRuntimeDiscovery | null;
+  operations: RemoteOperationsPlan | null;
+  portfolio: RemotePortfolioResult;
+}
+
 interface IndustryTickDraft {
   eligiblePlan: IndustryPlan;
   execution: readonly CommandExecutionResult<TerminalSendCommand>[];
@@ -672,6 +701,11 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
     status: "not-run",
     linkEvidence: Object.freeze([]),
     maintenanceLayouts: Object.freeze([]),
+  };
+  const remoteDraft: RemoteTickDraft = {
+    discovery: null,
+    operations: null,
+    portfolio: unavailableRemotePortfolioResult(input.game.time),
   };
   const industryOwnerResult = industryOwnerForPolicy(
     input.manager?.ownerView("industry") ?? null,
@@ -967,6 +1001,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
       spawnDraft,
       layoutDraft,
       industryDraft,
+      remoteDraft,
       (
         economy,
         maintenance,
@@ -1021,12 +1056,14 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
         suppressedTowerEvacuationTargetIds = suppressedTowerEvacuationTargets;
       },
     ),
+    remoteContractPlanningSystem(input, remoteDraft),
     industryPublicationSystem(input, industryDraft, (evidence) => {
       industryPublicationEvidence = evidence;
     }),
     layoutPlanningSystem(
       input,
       layoutDraft,
+      remoteDraft,
       () => logisticsRuntime,
       () => industryDraft.labs,
       () => industryDraft.terminalWork,
@@ -1523,6 +1560,7 @@ function composeRuntimeSystems(input: CompositionInput): readonly TickSystem<Tic
           progress: getMovementProgressTracker(input.cacheManager),
           snapshot: context.snapshot,
           tick: context.tick,
+          travelOverrides: remoteDraft.operations?.evacuation.overrides ?? Object.freeze([]),
         });
         return staged(
           () => {
@@ -2453,6 +2491,7 @@ function planLayoutSourceServiceHandoff(
 function layoutPlanningSystem(
   input: CompositionInput,
   draft: LayoutTickDraft,
+  remoteDraft: RemoteTickDraft,
   currentLogistics: () => LogisticsRuntimeProjection,
   currentLabs: () => LabCompositionProjection,
   currentTerminalWork: () => IndustryTerminalWorkProjection,
@@ -2678,8 +2717,12 @@ function layoutPlanningSystem(
       const maintenanceLayouts: { placements: readonly LayoutPlacement[]; roomName: string }[] = [];
       const migrationInputs: Parameters<ConstructionPlanner["planMigration"]>[0][] = [];
       const activeSpawnClaimIds = projectActiveSpawnClaimIds(context.spawn.broker);
-      const proposals = [] as ReturnType<typeof diffOwnedRoomLayout>["proposals"][number][];
-      const authorizations: ConstructionProgressionAuthorization[] = [];
+      const proposals = [...(remoteDraft.operations?.siteProposals ?? [])] as ReturnType<
+        typeof diffOwnedRoomLayout
+      >["proposals"][number][];
+      const authorizations: ConstructionProgressionAuthorization[] = [
+        ...(remoteDraft.operations?.siteAuthorizations ?? []),
+      ];
       const eligibleColonies = [...context.colony.colonies]
         .filter(({ state, visibility }) => state !== "lost" && visibility === "visible")
         .sort((a, b) => a.id.localeCompare(b.id));
@@ -3714,6 +3757,7 @@ function colonyDirectorSystem(
   spawnDraft: SpawnTickDraft,
   layoutDraft: LayoutTickDraft,
   industryDraft: IndustryTickDraft,
+  remoteDraft: RemoteTickDraft,
   publishCandidates: (
     economy: readonly SurvivalFlowCandidate[],
     maintenance: readonly CriticalMaintenanceCandidate[],
@@ -3748,19 +3792,33 @@ function colonyDirectorSystem(
       phase: "plan",
       criticality: "mandatory",
       cadence: 1,
-      estimate: 1.5,
+      estimate: 2.25,
       admitInRecovery: true,
       mandatoryTail: false,
     },
     run: ({ context, mode, budget }) => {
       input.onPhase?.("plan");
       resetSpawnDraft(spawnDraft);
+      const owner = input.manager?.ownerView("colonies") ?? null;
+      const plannedRemote = planRemoteRuntime(
+        input,
+        context,
+        mode,
+        context.intel,
+        owner,
+        Math.max(
+          0,
+          Math.floor((budget.available - REMOTE_RUNTIME_LIMITS.colonyPlanningCpuReserve) * 1_000),
+        ),
+      );
+      remoteDraft.discovery = plannedRemote.discovery;
+      remoteDraft.operations = plannedRemote.operations;
+      remoteDraft.portfolio = plannedRemote.portfolio;
       let sourceServiceHandoff: LayoutSourceServiceHandoffPlan | null = null;
       let staleLayoutPolicyColonies: readonly ColonyView[] = Object.freeze([]);
       const plannedEconomyCandidates = isFeatureEnabled(context.config, "phase1.economy")
         ? planSurvivalFlow(context.snapshot, context.contractExecution, context.contractPlanning)
         : Object.freeze([]);
-      const owner = input.manager?.ownerView("colonies") ?? null;
       const staleLayoutsOwner = parseLayoutsOwner(input.manager?.ownerView("layouts") ?? null);
       const explicitStaleSourceService = hasExplicitStaleSourceService(staleLayoutsOwner);
       const stalePolicyPlanningAdmitted =
@@ -4368,6 +4426,11 @@ function colonyDirectorSystem(
           layoutStorageEvacuations.demands,
           layoutTerminalEvacuations.demands,
           layoutTowerEvacuations.demands,
+          remoteDraft.operations?.hauling.projection ?? {
+            edges: Object.freeze([]),
+            endpoints: Object.freeze([]),
+            nodes: Object.freeze([]),
+          },
         );
         logisticsPlan = planLogisticsRuntime({
           execution: context.contractExecution,
@@ -4605,6 +4668,7 @@ function colonyDirectorSystem(
         ),
         ...projectLabBudgetRequests(labs, context.tick),
         ...mature.policy.budgets,
+        ...(remoteDraft.operations?.budgetRequests ?? []),
       ];
       const provisional = colonyDirector.begin({
         tick: context.tick,
@@ -4614,7 +4678,7 @@ function colonyDirectorSystem(
         cpuMode: mode,
         cpuBudget: budget,
         requests: budgetRequests,
-        population: bindPopulationReservations(input.contractPopulation, owner),
+        population: bindPopulationReservations(input.contractPopulation, owner, budgetRequests),
         domainHealth,
       });
       const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
@@ -4715,7 +4779,11 @@ function colonyDirectorSystem(
                   spawn: selection.spawnClaim,
                 })),
               satisfiedRecoveryObjectiveIds: satisfiedObjectiveIds,
-              population: bindPopulationReservations(input.contractPopulation, owner),
+              population: bindPopulationReservations(
+                input.contractPopulation,
+                owner,
+                exactBudgetRequests,
+              ),
               domainHealth,
             });
       if (
@@ -4902,11 +4970,32 @@ function colonyDirectorSystem(
             layoutDraft.status = "planned";
             input.runtime.publishLayout(layoutRuntimeResult(layoutDraft, 0));
           }
+          if (
+            input.manager !== null &&
+            remoteDraft.portfolio.status === "ready" &&
+            remoteDraft.portfolio.owner !== null &&
+            remoteDraft.portfolio.changed
+          ) {
+            const stagedRemotes = remotePortfolio.stage(input.manager, remoteDraft.portfolio);
+            if (!stagedRemotes.staged) {
+              throw new Error(
+                stagedRemotes.fault?.message ?? "remote portfolio state staging failed",
+              );
+            }
+          }
+          input.runtime.publishRemotes(remoteDraft.portfolio);
+          input.runtime.publishRemoteOperations(remoteDraft.operations);
           input.runtime.publishColony(planningView);
           input.runtime.publishSpawn(spawnView);
         },
         () => {
           resetSpawnDraft(spawnDraft);
+          input.manager?.discard("remotes");
+          remoteDraft.discovery = null;
+          remoteDraft.operations = null;
+          remoteDraft.portfolio = unavailableRemotePortfolioResult(context.tick);
+          input.runtime.clearRemotes();
+          input.runtime.publishRemoteOperations(null);
           input.runtime.clearColony();
           input.runtime.clearSpawn();
         },
@@ -6262,6 +6351,7 @@ function readContractPopulation(manager: MemoryManager | null): ContractPopulati
 function bindPopulationReservations(
   population: ContractPopulationView,
   ownerValue: unknown,
+  currentRequests?: readonly BudgetRequest[],
 ): ContractPopulationView {
   if (population.status !== "ready") return population;
   const owner = resolveColoniesOwner(ownerValue).owner;
@@ -6274,7 +6364,15 @@ function bindPopulationReservations(
         entry.issuer === load.objectiveId &&
         entry.status === "active",
     );
-    return reservation === undefined
+    const currentlyRequested =
+      currentRequests === undefined ||
+      currentRequests.some(
+        (request) =>
+          request.colonyId === load.colonyId &&
+          request.category === load.category &&
+          request.issuer === load.objectiveId,
+      );
+    return reservation === undefined || !currentlyRequested
       ? []
       : [{ ...load, reservationId: reservation.reservationId, revision: reservation.revision }];
   });
@@ -6863,7 +6961,14 @@ function intelPlanSystem(input: CompositionInput): TickSystem<TickContext> {
       const service = new IntelService(context.segmentStorage);
       const result = service.plan({
         observerAuthorizations: [],
-        queries: [],
+        queries:
+          isFeatureEnabled(context.config, "phase3.portfolio") && input.game.map !== undefined
+            ? remoteRuntimeIntelQueries({
+                map: input.game.map,
+                owner: input.manager?.ownerView("remotes") ?? null,
+                snapshot: context.snapshot,
+              })
+            : [],
         routeQueries: [],
         scoutAuthorizations: [],
         snapshot: context.snapshot,
@@ -6879,6 +6984,107 @@ function intelPlanSystem(input: CompositionInput): TickSystem<TickContext> {
         },
       );
     },
+  };
+}
+
+function remoteContractPlanningSystem(
+  input: CompositionInput,
+  draft: RemoteTickDraft,
+): TickSystem<TickContext> {
+  return {
+    descriptor: {
+      id: "remotes.contracts",
+      phase: "plan",
+      criticality: "economic",
+      cadence: 1,
+      estimate: 0.25,
+      admitInRecovery: false,
+      mandatoryTail: false,
+    },
+    run: ({ context }) => {
+      if (
+        !isFeatureEnabled(context.config, "phase3.portfolio") ||
+        context.colony.status !== "planned" ||
+        draft.operations === null
+      ) {
+        return staged(() => undefined);
+      }
+      const scope = input.contractChannel.openProducer("remotes.contracts");
+      for (const request of draft.operations.contractRequests) scope.producer.submit(request);
+      for (const transition of draft.operations.transitions) scope.producer.transition(transition);
+      const requests = scope.stage();
+      return staged(
+        () => {
+          requests.commit();
+        },
+        () => {
+          requests.discard();
+        },
+      );
+    },
+  };
+}
+
+function planRemoteRuntime(
+  input: CompositionInput,
+  context: TickContext,
+  mode: CpuMode,
+  intel: IntelRuntimeResult,
+  coloniesOwner: unknown,
+  cpuCapacityMilli: number,
+): RemoteTickDraft {
+  if (
+    !isFeatureEnabled(context.config, "phase3.portfolio") ||
+    input.manager === null ||
+    input.game.map === undefined ||
+    mode === "recovery" ||
+    mode === "emergency"
+  ) {
+    return {
+      discovery: null,
+      operations: null,
+      portfolio: unavailableRemotePortfolioResult(context.tick),
+    };
+  }
+  const owner = input.manager.ownerView("remotes");
+  const discovery = discoverRemoteRuntime({
+    cache: input.cacheManager,
+    config: context.config,
+    cpuCapacityMilli: mode === "constrained" ? 0 : cpuCapacityMilli,
+    intel,
+    map: input.game.map ?? null,
+    owner,
+    snapshot: context.snapshot,
+    tick: context.tick,
+  });
+  const portfolio = remotePortfolio.plan({
+    accounting: projectRemoteAccountingObservations({
+      candidates: discovery.candidates,
+      contracts: context.contractPlanning,
+      execution: context.contractExecution,
+      owner,
+      snapshot: context.snapshot,
+      tick: context.tick,
+    }),
+    tick: context.tick,
+    owner,
+    candidates: discovery.candidates,
+    capacity: discovery.capacity,
+    policy: DEFAULT_REMOTE_PORTFOLIO_POLICY_V1,
+    accountingPolicy: PRODUCTION_REMOTE_ACCOUNTING_POLICY_V1,
+  });
+  return {
+    discovery,
+    portfolio,
+    operations: planRemoteOperations({
+      contracts: context.contractPlanning,
+      discovery,
+      execution: context.contractExecution,
+      ledger: resolveColoniesOwner(coloniesOwner).owner?.ledger ?? Object.freeze([]),
+      portfolio,
+      snapshot: context.snapshot,
+      tick: context.tick,
+    }),
   };
 }
 
@@ -6947,6 +7153,8 @@ function createTickRuntime(
   let telemetry: TickTelemetry | null = null;
   let segments = initialSegmentMetrics;
   let intel: IntelRuntimeResult = emptyIntelRuntimeResult();
+  let remotes = unavailableRemotePortfolioResult(game.time);
+  let remoteOperations: RemoteOperationsPlan | null = null;
   const context = Object.freeze({
     tick: game.time,
     shard: game.shard.name,
@@ -6976,6 +7184,12 @@ function createTickRuntime(
     },
     get intel(): IntelRuntimeResult {
       return intel;
+    },
+    get remotes(): RemotePortfolioResult {
+      return remotes;
+    },
+    get remoteOperations(): RemoteOperationsPlan | null {
+      return remoteOperations;
     },
     get movement(): MovementRuntimeResult {
       return movement;
@@ -7029,6 +7243,15 @@ function createTickRuntime(
     clearIntel(): void {
       intel = emptyIntelRuntimeResult();
     },
+    publishRemotes(value: RemotePortfolioResult): void {
+      remotes = value;
+    },
+    clearRemotes(): void {
+      remotes = unavailableRemotePortfolioResult(game.time);
+    },
+    publishRemoteOperations(value: RemoteOperationsPlan | null): void {
+      remoteOperations = value;
+    },
     clearMovement(): void {
       movement = emptyMovementRuntimeResult();
     },
@@ -7050,6 +7273,22 @@ function createTickRuntime(
     publishTelemetry(value: TickTelemetry): void {
       telemetry = value;
     },
+  });
+}
+
+function unavailableRemotePortfolioResult(tick: number): RemotePortfolioResult {
+  return remotePortfolio.plan({
+    tick,
+    owner: null,
+    candidates: Object.freeze([]),
+    capacity: Object.freeze({
+      activeRemotes: 0,
+      cpuMilli: 0,
+      energy: 0,
+      memoryCodeUnits: 0,
+      spawnTicks: 0,
+    }),
+    policy: DEFAULT_REMOTE_PORTFOLIO_POLICY_V1,
   });
 }
 

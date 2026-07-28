@@ -199,6 +199,8 @@ function evaluate(
   else if (candidate.intel.quality !== "complete" || !candidate.intel.record.complete)
     reason = "partial-intel";
   else if (candidate.intel.record.sources.length === 0) reason = "source-vanished";
+  else if (candidate.threatRisk > input.policy.maximumThreatRisk) reason = "threat-risk";
+  else if (candidate.commitment.cpuMilli > input.capacity.cpuMilli) reason = "capacity-cpu";
   else if (
     candidate.route.status !== "ready" ||
     candidate.route.plan === null ||
@@ -217,11 +219,7 @@ function evaluate(
     reason = "controller-blocked";
   else if (candidate.donor !== "healthy")
     reason = candidate.donor === "threatened" ? "threat-risk" : "donor-pressure";
-  else if (
-    candidate.threatRisk > input.policy.maximumThreatRisk ||
-    candidate.route.plan.risk > input.policy.maximumThreatRisk
-  )
-    reason = "threat-risk";
+  else if (candidate.route.plan.risk > input.policy.maximumThreatRisk) reason = "threat-risk";
   else if (forecast.profit < input.policy.minimumProfitMilliPerTick) reason = "negative-value";
   else if (
     accounting?.donorColonyId !== undefined &&
@@ -416,7 +414,17 @@ function deniedRecord(
         ? previous.resumeAt
         : tick + policy.suspensionCooldownTicks
       : 0;
-  return nextRecord(previous, evaluation, state, reason, 0, tick, null, resumeAt);
+  return nextRecord(
+    previous,
+    evaluation,
+    state,
+    reason,
+    0,
+    tick,
+    null,
+    resumeAt,
+    previous?.expiresAt,
+  );
 }
 
 function missingRecord(
@@ -468,6 +476,7 @@ function nextRecord(
   tick: number,
   commitment: RemoteCapacityCommitment | null,
   resumeAt = previous?.resumeAt ?? 0,
+  expiresAt = evaluation.candidate.expiresAt,
 ): RemotePortfolioRecord {
   const candidate: RemotePortfolioRecord = {
     roomName: evaluation.candidate.roomName,
@@ -478,7 +487,7 @@ function nextRecord(
     revision: previous?.revision ?? 0,
     reasonCode,
     evidenceRevision: evaluation.candidate.evidenceRevision,
-    expiresAt: evaluation.candidate.expiresAt,
+    expiresAt,
     positiveTicks,
     resumeAt,
     forecast: evaluation.forecast,

@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v27");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v28");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v27",
+      "runtime-config-source-v28",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("activates the mature infrastructure gate only after labs under policy v27", () => {
+  it("activates the Phase 3 portfolio gate only after mature infrastructure under policy v28", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v27");
+    expect(config.sourceRevision).toBe("runtime-config-source-v28");
     expect(config.policy.industry).toEqual({
       sourceVersion: "industry-policy-v2",
       stockMinimum: 1_000,
@@ -782,6 +782,11 @@ describe("source feature gates", () => {
       enabled: true,
       reason: "enabled",
     });
+    expect(buildRuntimeConfig().features.gates["phase3.portfolio"]).toEqual({
+      blockedBy: null,
+      enabled: true,
+      reason: "enabled",
+    });
     const phase2Disabled = buildRuntimeConfig({ features: { disabled: ["phase2.colony"] } });
     expect(phase2Disabled.features.gates["phase2.layout"]).toEqual({
       blockedBy: "phase2.colony",
@@ -820,6 +825,12 @@ describe("source feature gates", () => {
     const labsDisabled = buildRuntimeConfig({ features: { disabled: ["phase2.labs"] } });
     expect(labsDisabled.features.gates["phase2.mature"]).toEqual({
       blockedBy: "phase2.labs",
+      enabled: false,
+      reason: "prerequisite-blocked",
+    });
+    const matureDisabled = buildRuntimeConfig({ features: { disabled: ["phase2.mature"] } });
+    expect(matureDisabled.features.gates["phase3.portfolio"]).toEqual({
+      blockedBy: "phase2.mature",
       enabled: false,
       reason: "prerequisite-blocked",
     });
