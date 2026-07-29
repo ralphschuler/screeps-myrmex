@@ -46,6 +46,8 @@ interface MutableStructure {
   energy: number;
   readonly energyCapacity: number;
   readonly id: string;
+  isPublic: boolean | null;
+  my: boolean;
   readonly position: Position;
   readonly structureType: StructureConstant;
 }
@@ -125,8 +127,10 @@ export interface SpawnOnlyRcl2World {
   game(tick: number): RuntimeGame;
   killAllWorkers(): void;
   setCpuBucket(bucket: number): void;
+  setForeignRampartPublic(isPublic: boolean): void;
   setPathUnavailable(unavailable: boolean): void;
   setReverseCollections(reverse: boolean): void;
+  setRoomEnergy(energy: number): void;
 }
 
 export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
@@ -260,7 +264,15 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     energy = 0,
     energyCapacity = 0,
   ): MutableStructure {
-    const structure = { energy, energyCapacity, id, position: position(x, y), structureType };
+    const structure = {
+      energy,
+      energyCapacity,
+      id,
+      isPublic: null,
+      my: true,
+      position: position(x, y),
+      structureType,
+    };
     structures.set(id, structure);
     return structure;
   }
@@ -530,12 +542,15 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       hitsMax: structure.structureType === "spawn" ? 5_000 : 1_000,
       id: structure.id,
       isActive: () => true,
-      my: true,
-      owner: { username: "Myrmex" },
+      my: structure.my,
+      owner: { username: structure.my ? "Myrmex" : "Other" },
       pos: structure.position,
       room: { name: ROOM_NAME },
       structureType: structure.structureType,
     };
+    if (structure.structureType === "rampart") {
+      return { ...common, isPublic: structure.isPublic === true } as unknown as StructureRampart;
+    }
     if (structure.structureType === "spawn") {
       return {
         ...common,
@@ -768,7 +783,7 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       structure === null ||
       structure.structureType === "road" ||
       structure.structureType === "container" ||
-      structure.structureType === "rampart"
+      (structure.structureType === "rampart" && (structure.my || structure.isPublic === true))
     );
   }
 
@@ -820,11 +835,35 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     setCpuBucket: (bucket: number) => {
       cpuBucket = bucket;
     },
+    setForeignRampartPublic: (isPublic: boolean) => {
+      const rampart =
+        structures.get("foreign-rampart") ?? addStructure("foreign-rampart", "rampart", 10, 10);
+      rampart.isPublic = isPublic;
+      rampart.my = false;
+    },
     setPathUnavailable: (unavailable: boolean) => {
       pathUnavailable = unavailable;
     },
     setReverseCollections: (reverse: boolean) => {
       reverseCollections = reverse;
+    },
+    setRoomEnergy: (energy: number) => {
+      if (!Number.isSafeInteger(energy) || energy < 0 || energy > roomEnergyCapacity())
+        throw new Error("fixture room energy is outside capacity");
+      let remaining = energy;
+      const stores = [...structures.values()]
+        .filter(({ structureType }) => structureType === "spawn" || structureType === "extension")
+        .sort((left, right) =>
+          left.structureType === right.structureType
+            ? left.id.localeCompare(right.id)
+            : left.structureType === "spawn"
+              ? -1
+              : 1,
+        );
+      for (const store of stores) {
+        store.energy = Math.min(store.energyCapacity, remaining);
+        remaining -= store.energy;
+      }
     },
     get siteCount() {
       return sites.size;

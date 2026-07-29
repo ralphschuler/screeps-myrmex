@@ -2994,6 +2994,54 @@ function layoutPlanningSystem(
           continue;
         }
         const labHandoffPinned = pinnedHandoff !== null;
+        const observationFingerprint = layoutObservationFingerprint(room);
+        const layoutFactsFingerprint = layoutCacheFactsFingerprint(
+          room,
+          priorSourceServiceRecord?.sourceServices ?? [],
+        );
+        const policyFingerprint = stableHash(JSON.stringify(colony.rclPolicy), "layout-policy-v1");
+        const sourceServiceHandoffAuthorized =
+          colony.activeThreat === false &&
+          colony.controllerRisk === false &&
+          colony.legalWorkforce === true &&
+          colony.rclPolicy.protectedSpawnReserve.state === "restored";
+        const layoutPolicyFingerprint = stableHash(
+          JSON.stringify({
+            level: colony.rclPolicy.level,
+            sourceServiceHandoffAuthorized,
+            unlocks: colony.rclPolicy.unlocks,
+          }),
+          "layout-planning-policy-v1",
+        );
+        const terrainRevision = room.terrain.revision;
+        const cacheDependencies = (algorithmRevision: string) =>
+          layoutCacheDependencies({
+            algorithmRevision,
+            factsRevision: layoutFactsFingerprint,
+            policyRevision: layoutPolicyFingerprint,
+            terrainRevision,
+          });
+        const cachedLayout =
+          labHandoffPinned || priorCommitment === null
+            ? null
+            : cache.get(
+                { fingerprint: priorCommitment.fingerprint, roomName: room.name },
+                {
+                  dependencies: cacheDependencies(priorCommitment.algorithmRevision),
+                  tick: context.tick,
+                },
+              );
+        const cachedResult =
+          priorCommitment !== null && cachedLayout?.hit === true
+            ? Object.freeze({
+                candidatesInspected: 0,
+                commitment: priorCommitment,
+                floodCellsInspected: 0,
+                placements: cachedLayout.value,
+                status: "complete" as const,
+                transformsInspected: 0,
+              })
+            : null;
         const result = labHandoffPinned
           ? Object.freeze({
               candidatesInspected: 0,
@@ -3003,7 +3051,8 @@ function layoutPlanningSystem(
               status: "complete" as const,
               transformsInspected: 0,
             })
-          : planOwnedRoomLayout({
+          : (cachedResult ??
+            planOwnedRoomLayout({
               constructionSites: room.constructionSites,
               controller: room.controller.pos,
               exits: room.exits,
@@ -3014,16 +3063,12 @@ function layoutPlanningSystem(
                 ? {}
                 : { priorSourceServices: priorSourceServiceRecord.sourceServices }),
               roomName: room.name,
-              sourceServiceHandoffAuthorized:
-                colony.activeThreat === false &&
-                colony.controllerRisk === false &&
-                colony.legalWorkforce === true &&
-                colony.rclPolicy.protectedSpawnReserve.state === "restored",
+              sourceServiceHandoffAuthorized,
               sources: room.sources.map(({ pos }) => pos),
               structures: room.structures ?? [],
               terrain: room.terrain,
               tick: context.tick,
-            });
+            }));
         if (result.status === "degraded") {
           planning.push({
             blocker: result.blocker,
@@ -3075,21 +3120,17 @@ function layoutPlanningSystem(
           });
           break;
         }
-        const observationFingerprint = layoutObservationFingerprint(room);
-        const policyFingerprint = stableHash(JSON.stringify(colony.rclPolicy), "layout-policy-v1");
-        const placements = cache.getOrCompute(
-          { fingerprint: commitment.fingerprint, roomName: room.name },
-          {
-            dependencies: layoutCacheDependencies({
-              algorithmRevision: commitment.algorithmRevision,
-              factsRevision: observationFingerprint,
-              policyRevision: policyFingerprint,
-              terrainRevision: room.terrain.revision,
-            }),
-            tick: context.tick,
-          },
-          () => result.placements,
-        );
+        const placements =
+          cachedLayout?.hit === true
+            ? cachedLayout.value
+            : cache.getOrCompute(
+                { fingerprint: commitment.fingerprint, roomName: room.name },
+                {
+                  dependencies: cacheDependencies(commitment.algorithmRevision),
+                  tick: context.tick,
+                },
+                () => result.placements,
+              );
         linkEvidence.push({
           evidence: {
             algorithmRevision: commitment.algorithmRevision,
@@ -3684,6 +3725,69 @@ function layoutObservationFingerprint(room: WorldSnapshot["rooms"][number]): str
       .sort((a, b) => a.id.localeCompare(b.id)),
   };
   return stableHash(JSON.stringify(facts), "layout-observation-v1");
+}
+function layoutCacheFactsFingerprint(
+  room: WorldSnapshot["rooms"][number],
+  priorSourceServices: readonly LayoutPlacement[],
+): string {
+  const normalizedSourceServices = priorSourceServices
+    .map(({ adoption, layer, minimumRcl, pos, service, structureType }) => ({
+      adoption,
+      layer,
+      minimumRcl,
+      pos,
+      service: service ?? null,
+      structureType,
+    }))
+    .sort(compareCanonicalValues);
+  const facts = {
+    controller:
+      room.controller === null
+        ? null
+        : {
+            level: room.controller.level,
+            ownership: room.controller.ownership,
+            pos: room.controller.pos,
+          },
+    exits: [...(room.exits ?? [])].sort(comparePositions),
+    mineral:
+      room.mineral === undefined || room.mineral === null
+        ? null
+        : {
+            id: room.mineral.id,
+            mineralType: room.mineral.mineralType,
+            pos: room.mineral.pos,
+          },
+    priorSourceServices: normalizedSourceServices,
+    sites: [...room.constructionSites]
+      .map(({ id, ownership, pos, structureType }) => ({ id, ownership, pos, structureType }))
+      .sort((a, b) => compareStrings(a.id, b.id)),
+    sources: [...room.sources]
+      .map(({ id, pos }) => ({ id, pos }))
+      .sort((a, b) => compareStrings(a.id, b.id)),
+    structures: [...(room.structures ?? [])]
+      .map(({ id, isPublic, ownership, pos, structureType }) => ({
+        id,
+        isPublic: isPublic ?? null,
+        ownership,
+        pos,
+        structureType,
+      }))
+      .sort((a, b) => compareStrings(a.id, b.id)),
+  };
+  return stableHash(JSON.stringify(facts), "layout-cache-facts-v1");
+}
+function compareCanonicalValues(left: object, right: object): number {
+  return compareStrings(JSON.stringify(left), JSON.stringify(right));
+}
+function comparePositions(
+  left: { readonly roomName: string; readonly x: number; readonly y: number },
+  right: { readonly roomName: string; readonly x: number; readonly y: number },
+): number {
+  return compareStrings(left.roomName, right.roomName) || left.y - right.y || left.x - right.x;
+}
+function compareStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 function stableHash(value: string, prefix: string): string {
   let hash = 2_166_136_261;
