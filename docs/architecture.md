@@ -2074,8 +2074,12 @@ fingerprint, bounded blocker/commitment metadata, at most one compact extension,
 reserve-link, and lab-energy evacuation, and at most one compact container handoff per room; the
 latter may identify a general target or one redundant source target. Reconstructible placements
 remain heap data. `layout.compiled.v1` is a `CacheManager` namespace stamped by exact algorithm,
-terrain, policy, and normalized-facts revisions. Failed or exhausted planning preserves the prior
-commitment and emits no partial plan, command, construction-site intent, or dismantle suggestion.
+terrain, layout-relevant policy, and normalized-facts revisions. Facts include source-service
+issuance and rampart public traversal state; policy includes RCL unlocks and source-service handoff
+authorization, not volatile energy within one reserve state. A current commitment probes that
+namespace before candidate and flood search; only a dependency miss may repeat bounded geometry
+planning. Failed or exhausted planning preserves the prior commitment and emits no partial plan,
+command, construction-site intent, or dismantle suggestion.
 
 PR B adds a pure layout diff and makes `ConstructionSiteArbiter` the sole site-slot authority.
 Exact/adopted structures and matching owned sites suppress duplicates; stale observation, lost
