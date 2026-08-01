@@ -57,7 +57,11 @@ merged.
   execution foundation for the recovery-critical maintenance policy in issue #40.
 - Workforce-loss recovery and its source-gate evidence are tracked by
   [issue #124](https://github.com/ralphschuler/screeps-myrmex/issues/124) and
-  [`phase1-recovery-evidence.md`](phase1-recovery-evidence.md).
+  [`phase1-recovery-evidence.md`](phase1-recovery-evidence.md). Post-gate protection for retained
+  terminal-loss Memory after fresh account respawn is tracked by
+  [issue #499](https://github.com/ralphschuler/screeps-myrmex/issues/499) and
+  [`phase1-respawn-recovery-evidence.md`](phase1-respawn-recovery-evidence.md); it does not expand
+  the frozen Phase 1 closure contract.
 - Recovery-critical maintenance is tracked by
   [issue #40](https://github.com/ralphschuler/screeps-myrmex/issues/40) and
   [`phase1-maintenance-evidence.md`](phase1-maintenance-evidence.md).

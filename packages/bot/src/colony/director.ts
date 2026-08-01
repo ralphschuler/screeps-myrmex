@@ -168,9 +168,10 @@ export class ColonyDirector {
     );
 
     const currentOwner = resolved.owner;
-    const visibleRooms = new Map(input.snapshot.rooms.map((room) => [room.name, room]));
+    const currentRooms = input.snapshot.rooms.filter(({ observedAt }) => observedAt === input.tick);
+    const visibleRooms = new Map(currentRooms.map((room) => [room.name, room]));
     const persisted = new Map(currentOwner.colonies.map((colony) => [colony.roomName, colony]));
-    const ownedRoomNames = input.snapshot.rooms
+    const ownedRoomNames = currentRooms
       .filter((room) => room.controller?.ownership === "owned")
       .map((room) => room.name);
     const persistedRoomNames = [...persisted.keys()].sort(compareStrings);
@@ -908,19 +909,19 @@ function isLegalWorker(creep: CreepSnapshot, config: RuntimeConfig): boolean {
 }
 
 function transitionFor(previous: ColonyRecord | null, facts: ColonyEvidence): Transition {
-  if (previous?.state === "lost") {
-    return { state: "lost", reasonCode: "lost-terminal" };
-  }
   if (!facts.owned) {
-    return { state: "lost", reasonCode: "visible-ownership-lost" };
+    return previous?.state === "lost"
+      ? { state: "lost", reasonCode: "lost-terminal" }
+      : { state: "lost", reasonCode: "visible-ownership-lost" };
   }
+  const lifecyclePrevious = previous?.state === "lost" ? null : previous;
   if (facts.activeThreat) {
     return { state: "threatened", reasonCode: "local-threat-observed" };
   }
-  if (previous?.state === "threatened") {
+  if (lifecyclePrevious?.state === "threatened") {
     return { state: "recovering", reasonCode: "local-threat-cleared" };
   }
-  if (previous?.state === "recovering") {
+  if (lifecyclePrevious?.state === "recovering") {
     if (!facts.hasSpawn || !facts.legalWorkforce || facts.controllerRisk) {
       return { state: "recovering", reasonCode: "survival-capability-lost" };
     }
@@ -935,14 +936,14 @@ function transitionFor(previous: ColonyRecord | null, facts: ColonyEvidence): Tr
       : { state: "developing", reasonCode: "survival-capability-restored" };
   }
   if (!facts.hasSpawn) {
-    return previous === null
+    return lifecyclePrevious === null
       ? { state: "discovering", reasonCode: "owned-room-discovered" }
       : { state: "recovering", reasonCode: "survival-capability-lost" };
   }
   if (!facts.legalWorkforce) {
-    return previous === null ||
-      previous.state === "discovering" ||
-      previous.state === "bootstrapping"
+    return lifecyclePrevious === null ||
+      lifecyclePrevious.state === "discovering" ||
+      lifecyclePrevious.state === "bootstrapping"
       ? { state: "bootstrapping", reasonCode: "spawn-without-workforce" }
       : { state: "recovering", reasonCode: "survival-capability-lost" };
   }
@@ -953,14 +954,14 @@ function transitionFor(previous: ColonyRecord | null, facts: ColonyEvidence): Tr
     return { state: "recovering", reasonCode: "mandatory-floor-unrestored" };
   }
   if (facts.room.controller?.level === 8 && facts.domainHealth.status !== "healthy") {
-    return previous?.state === "mature"
+    return lifecyclePrevious?.state === "mature"
       ? { state: "recovering", reasonCode: "survival-capability-lost" }
       : { state: "developing", reasonCode: "maturity-evidence-lost" };
   }
   if (facts.mature) {
     return { state: "mature", reasonCode: "maturity-evidence-met" };
   }
-  if (previous?.state === "mature") {
+  if (lifecyclePrevious?.state === "mature") {
     return { state: "developing", reasonCode: "maturity-evidence-lost" };
   }
   return { state: "developing", reasonCode: "survival-capability-restored" };

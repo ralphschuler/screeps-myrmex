@@ -65,6 +65,85 @@ describe("ColonyDirector owner boundary", () => {
     ]);
   });
 
+  it("keeps a terminally lost colony inert without fresh owned-room evidence", () => {
+    const config = buildRuntimeConfig();
+    const owner = canonicalColoniesOwner(
+      26,
+      [
+        {
+          roomName: "W1N1",
+          state: "lost",
+          stateSince: 60,
+          revision: 25,
+          policyRevision: config.policyRevision,
+          reasonCode: "visible-ownership-lost",
+        },
+      ],
+      [],
+    );
+    const director = new ColonyDirector();
+
+    const unknown = director.plan({
+      tick: 100,
+      snapshot: emptyWorldSnapshot(100, "shard3"),
+      config,
+      owner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+    });
+    expect(unknown.colonies).toEqual([
+      expect.objectContaining({ state: "lost", visibility: "unknown" }),
+    ]);
+    expect(unknown.objectives).toEqual([]);
+    expect(unknown.replacementOwner).toBeNull();
+
+    const staleOwned = director.plan({
+      tick: 101,
+      snapshot: bootstrapSnapshot(100, 300),
+      config,
+      owner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+    });
+    expect(staleOwned.colonies).toEqual([
+      expect.objectContaining({ state: "lost", visibility: "unknown" }),
+    ]);
+    expect(staleOwned.objectives).toEqual([]);
+
+    const ownedSnapshot = bootstrapSnapshot(102, 300);
+    const ownedRoom = ownedSnapshot.rooms[0];
+    if (ownedRoom?.controller === null || ownedRoom?.controller === undefined) {
+      throw new Error("lost-colony fixture has no controller");
+    }
+    const unownedRoom = {
+      ...ownedRoom,
+      controller: {
+        ...ownedRoom.controller,
+        ownerUsername: null,
+        ownership: "neutral" as const,
+      },
+      ownedCreeps: [],
+      ownedSpawns: [],
+    };
+    const unowned = director.plan({
+      tick: 102,
+      snapshot: freezeWorldSnapshot({
+        ...ownedSnapshot,
+        rooms: [unownedRoom],
+        ownedRooms: [],
+      }),
+      config,
+      owner,
+      cpuMode: "normal",
+      cpuBudget: CPU_BUDGET,
+    });
+    expect(unowned.colonies).toEqual([
+      expect.objectContaining({ state: "lost", visibility: "visible" }),
+    ]);
+    expect(unowned.objectives).toEqual([]);
+    expect(unowned.totals.active).toBe(0);
+  });
+
   it("distinguishes unavailable, malformed, future, and exact initializer owners", () => {
     const director = new ColonyDirector();
     const base = {

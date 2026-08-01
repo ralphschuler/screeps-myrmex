@@ -389,7 +389,12 @@ Every owned room has one survival lifecycle and one local ledger. A bootstrappin
 colony with a spawn but no legal `WORK`/`CARRY`/`MOVE` worker derives exactly one recovery
 objective, which the ledger explicitly funds or blocks. Threat and recovery preempt optional growth;
 losing vision preserves state but authorizes no new work, while current visible ownership loss ends
-the colony and releases its local commitments.
+the colony and releases its local commitments. If fresh current observation later proves that the
+controller is owned again, including after account respawn with retained Memory, the old terminal
+record cannot suppress the new lifecycle. An operational spawn with zero workers re-enters bootstrap
+and uses the same bounded recovery objective. An unobserved prior-lifecycle spawn expectation cannot
+defer it; a currently observed matching creep or spawn still prevents duplication. Unknown, stale,
+or still-unowned evidence remains terminal and spends nothing.
 
 Local spending follows a fixed survival order: emergency spawning, defense, replacement,
 harvesting/filling, controller survival, critical maintenance, then optional growth. Current energy,

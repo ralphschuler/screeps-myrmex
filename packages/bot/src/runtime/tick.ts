@@ -4800,7 +4800,12 @@ function colonyDirectorSystem(
               ),
               ...populationSpawnDemands(provisional.result, context.tick),
             ],
-            expectations: recoverySpawnExpectations(owner, context.snapshot),
+            expectations: recoverySpawnExpectations(
+              owner,
+              context.snapshot,
+              provisional.result,
+              context.tick,
+            ),
             policy: {
               maximumBodyParts: context.config.policy.spawn.maximumBodyParts,
               maximumBodyEnergy: context.config.policy.spawn.maximumBodyEnergy,
@@ -6524,17 +6529,27 @@ function populationSpawnDemands(
 function recoverySpawnExpectations(
   ownerValue: unknown,
   snapshot: WorldSnapshot,
+  colony: ColonyPlanningResult,
+  tick: number,
 ): readonly SpawnExpectation[] {
   const owner = resolveColoniesOwner(ownerValue).owner;
   if (owner === null) {
     return [];
   }
-  const expectationEntries = owner.ledger.filter(
+  const currentColonies = new Map(colony.colonies.map((current) => [current.id, current]));
+  const lifecycleSinceByColony = new Map(
+    owner.colonies.flatMap((record) => {
+      const current = currentColonies.get(record.roomName);
+      if (current?.visibility !== "visible" || current.state === "lost") return [];
+      return [[record.roomName, record.state === "lost" ? tick : record.stateSince] as const];
+    }),
+  );
+  const priorExpectationEntries = owner.ledger.filter(
     (entry) =>
       entry.category === "emergency-spawn" && entry.request.spawn !== null && entry.consumed.spawn,
   );
   const candidateNamesByReservation = new Map(
-    expectationEntries.map((entry) => [
+    priorExpectationEntries.map((entry) => [
       entry.reservationId,
       generatedSpawnCreepNameCandidates({
         id: entry.issuer,
@@ -6547,7 +6562,7 @@ function recoverySpawnExpectations(
   );
   const candidateNames = new Set([...candidateNamesByReservation.values()].flat());
   const observedNames = new Set<string>();
-  for (const room of snapshot.rooms) {
+  for (const room of snapshot.rooms.filter(({ observedAt }) => observedAt === tick)) {
     for (const creep of room.ownedCreeps) {
       if (candidateNames.has(creep.name)) {
         observedNames.add(creep.name);
@@ -6559,6 +6574,15 @@ function recoverySpawnExpectations(
       }
     }
   }
+  const expectationEntries = priorExpectationEntries.filter((entry) => {
+    const lifecycleSince = lifecycleSinceByColony.get(entry.colonyId);
+    const spawn = entry.request.spawn;
+    if (lifecycleSince === undefined || spawn === null || spawn.startTick >= lifecycleSince) {
+      return true;
+    }
+    const candidates = candidateNamesByReservation.get(entry.reservationId) ?? [];
+    return candidates.some((name) => observedNames.has(name));
+  });
   return Object.freeze(
     expectationEntries
       .map((entry) => {
