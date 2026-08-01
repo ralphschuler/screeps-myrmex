@@ -4,7 +4,7 @@ Status: **Normative target architecture**
 
 Applies to: `packages/bot`
 
-Last updated: 2026-07-28
+Last updated: 2026-08-01
 
 This document defines the core systems of MYRMEX, the authority each system owns, and the only
 supported ways those systems integrate. It is deliberately specific so that human and AI
@@ -1756,11 +1756,16 @@ Each owned room belongs to one colony state machine:
 
 `discovering → bootstrapping → developing → mature → threatened → recovering`
 
-`lost` is the Phase 1 terminal path; a later portfolio may add an explicit abandoning operation
-without taking lifecycle ownership from the director. A colony may move between mature/developing,
-threatened, and recovering only through defined evidence-based transitions. The director owns the
-colony's reserve policy, RCL priorities, donor/receiver status, and which local objectives are
-active.
+`lost` is the terminal path while current observation remains unowned or unknown; a later portfolio
+may add an explicit abandoning operation without taking lifecycle ownership from the director. Fresh
+current evidence whose room observation tick matches the executing tick and whose controller is
+owned again starts a new lifecycle from the existing bounded room record. This handles account
+respawn without clearing Memory: an owned operational spawn with no legal worker re-enters
+`bootstrapping` and uses the ordinary zero-creep recovery path. Unknown, stale, or still-unowned
+controller evidence keeps the record terminal and authorizes no spending. A colony may move between
+mature/developing, threatened, and recovering only through defined evidence-based transitions. The
+director owns the colony's reserve policy, RCL priorities, donor/receiver status, and which local
+objectives are active.
 
 A legal recovery worker is one non-spawning owned creep with active `WORK`, `CARRY`, and `MOVE`.
 Before RCL8, lifecycle evidence is an owned controller, an owned spawn, a legal worker, no
@@ -1782,21 +1787,31 @@ reserve evidence is safe; controller upgrading and unrelated optional work remai
 planning evaluates at most two colonies per tick through a deterministic rotating window so a later
 colony cannot be starved by stable room ordering. A visible room with no owned controller becomes
 lost and releases active local reservations. A room absent from the current snapshot is unknown,
-never proof of loss, and authorizes no new live commitment.
+never proof of loss, and authorizes no new live commitment. If a later fresh snapshot proves that
+same logical room is owned again, the director treats the terminal record as prior-lifecycle
+evidence rather than current authorization and derives the new lifecycle solely from current room
+facts.
 
 A colony is a planning boundary, not a separate kernel. All colonies share the same global
 scheduler, caches, movement authority, diplomacy ledger, and executors.
 
 The director's spawn integration is a same-tick continuation, not delegated budget ownership. A
 provisional session may expose a recovery objective, but an exact session admits only the
-broker-selected body cost and half-open spawn interval. The session keeps its replacement owner
-private until `SpawnExecutor` results reach mandatory-tail `spawn.settle`. Exact settlement is
-validated as a complete set before the ledger changes, is idempotent for an identical replay, and
-advances the owner revision at most once. External requests cannot impersonate the director-owned
-restore-workforce issuer. When adding the exact spawn claim advances a retained provisional
-reservation, the director projects that revision and reservation ID into the detached demand and
-then rederives both during admission. It uses the same maximum of current colony revision and prior
-ledger revision plus one as exact request construction. A mismatch fails before an intent exists.
+broker-selected body cost and half-open spawn interval. The current state's `stateSince` tick is the
+recovery-expectation boundary; on the exact `lost` restart tick, the current tick supplies that
+boundary before persistence. An unobserved consumed recovery-spawn expectation scheduled before the
+boundary cannot satisfy or defer the new objective, including when the replacement spawn appears on
+a later tick. A prior candidate that is visible in a room observed on the executing tick as a creep
+or active spawn remains an expectation and still suppresses a duplicate. Existing ledger and
+contract records remain under their owners and reconcile from current funding; no lifecycle cleanup
+edits them. The session keeps its replacement owner private until `SpawnExecutor` results reach
+mandatory-tail `spawn.settle`. Exact settlement is validated as a complete set before the ledger
+changes, is idempotent for an identical replay, and advances the owner revision at most once.
+External requests cannot impersonate the director-owned restore-workforce issuer. When adding the
+exact spawn claim advances a retained provisional reservation, the director projects that revision
+and reservation ID into the detached demand and then rederives both during admission. It uses the
+same maximum of current colony revision and prior ledger revision plus one as exact request
+construction. A mismatch fails before an intent exists.
 
 ### 12.2 SpawnBroker
 
@@ -3202,6 +3217,7 @@ The runtime status surface MUST answer:
 | CPU pressure                    | stop optional admissions; preserve safety, essential execute, reconcile, telemetry   |
 | lost creep/structure            | expire leases/reservations and replan from observation                               |
 | visibly lost owned room         | enter terminal colony lost path; release active local reservations                   |
+| fresh re-owned lost room        | start a new lifecycle; reuse ordinary bootstrap/recovery without clearing Memory     |
 | stale/malformed reputation      | treat as neutral; never weaken configured self/ally/NAP exclusions                   |
 | operation timeout/budget breach | stop new spending and transition to withdrawal/abort                                 |
 
@@ -3744,6 +3760,12 @@ External automation MUST:
 - prove upload or spawn placement with a read-after-write check;
 - keep retries bounded and idempotent;
 - leave expansion, colony bootstrapping, and all post-spawn gameplay to the runtime.
+
+After a successful placement, retained runtime Memory may still contain a terminal `lost` colony
+record. Fresh owned-controller observation supersedes only that old lifecycle disposition; the
+runtime then reuses its existing bootstrap budget, spawn arbitration, command execution, and
+expectation settlement. The external control plane does not edit gameplay Memory or issue the worker
+spawn command.
 
 Auto-respawn is the only external authority allowed to call the account respawn and initial
 place-spawn endpoints. It may act only on the Screeps `lost` or `empty` states. `normal` is

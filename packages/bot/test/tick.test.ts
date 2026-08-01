@@ -872,6 +872,191 @@ describe("tick lifecycle", () => {
     );
   });
 
+  it("restarts zero-creep recovery when fresh ownership supersedes terminal colony loss", async () => {
+    const actorFixture = runTick({ game: fundedContractGame(49), memory: {} as Memory });
+    const staleActor = actorFixture.snapshot.rooms[0]?.ownedCreeps[0];
+    if (staleActor === undefined) {
+      throw new Error("respawn recovery fixture did not observe its stale contract actor");
+    }
+    const memory = {} as Memory;
+    const priorSpawnCreep = vi.fn(() => 0);
+    const priorLifecycle = runTick({
+      game: fundedContractGame(50, { includeCreep: false, spawnCreep: priorSpawnCreep }),
+      memory,
+    });
+    if (memory.myrmex === undefined) {
+      throw new Error("respawn recovery fixture did not initialize Memory");
+    }
+    const retainedOwner = memory.myrmex.colonies as unknown as {
+      readonly ledger: readonly {
+        readonly category: string;
+        readonly consumed: { spawn: boolean };
+      }[];
+    };
+    expect(
+      retainedOwner.ledger.some(
+        ({ category, consumed }) => category === "emergency-spawn" && consumed.spawn,
+      ),
+    ).toBe(true);
+    const opened = ContractLedger.open({});
+    if (opened.status !== "ready") {
+      throw new Error("respawn recovery fixture could not initialize its stale contract");
+    }
+    const submitted = opened.ledger.submit(runtimeFundedRequest(), 50);
+    if (!submitted.accepted) {
+      throw new Error(`stale contract submission failed: ${submitted.reason}`);
+    }
+    opened.ledger.reconcile({
+      actors: [workforceActorFromCreep(staleActor)],
+      funding: activeFundingFromTick(priorLifecycle),
+      requests: [],
+      tick: 50,
+      transitions: [
+        {
+          contractId: submitted.contractId,
+          reason: "budget-authorized",
+          tick: 50,
+          to: "funded",
+        },
+      ],
+      travel: { estimate: () => 0 },
+    });
+    opened.ledger.reconcile({
+      actors: [],
+      funding: {
+        authorizations: [],
+        owners: [{ id: "W1N1", visibility: "visible" }],
+        status: "ready",
+      },
+      requests: [],
+      tick: 51,
+      transitions: [],
+      travel: { estimate: () => 0 },
+    });
+    expect(opened.ledger.view().active[0]?.state).toBe("suspended");
+    (memory.myrmex as unknown as { contracts: unknown }).contracts = serializeContractLedgerState(
+      opened.ledger.view(),
+    );
+    (memory.myrmex as unknown as { colonies: unknown }).colonies = {
+      schemaVersion: 1,
+      revision: 26,
+      colonies: [
+        {
+          roomName: "W1N1",
+          state: "lost",
+          stateSince: 60,
+          revision: 25,
+          policyRevision: priorLifecycle.config.policyRevision,
+          reasonCode: "visible-ownership-lost",
+        },
+      ],
+      ledger: retainedOwner.ledger,
+    };
+
+    const spawnCreep = vi.fn(() => 0);
+    const blocked = runTick({
+      game: fundedContractGame(70, {
+        includeCreep: false,
+        includeSpawn: false,
+        spawnCreep,
+      }),
+      memory,
+    });
+    expect(blocked.colony.colonies[0]).toMatchObject({
+      state: "discovering",
+      reasonCode: "owned-room-discovered",
+      visibility: "visible",
+    });
+    expect(blocked.colony.objectives).toEqual([]);
+    expect(blocked.spawn.execution).toEqual([]);
+    const blockedOwner = memory.myrmex.colonies as unknown as {
+      readonly colonies: readonly { readonly state: string }[];
+      readonly ledger: readonly {
+        readonly category: string;
+        readonly consumed: { readonly spawn: boolean };
+      }[];
+    };
+    expect(blockedOwner.colonies[0]?.state).toBe("discovering");
+    expect(
+      blockedOwner.ledger.some(
+        ({ category, consumed }) => category === "emergency-spawn" && consumed.spawn,
+      ),
+    ).toBe(true);
+
+    const recovered = runTick({
+      game: fundedContractGame(71, { includeCreep: false, spawnCreep }),
+      memory,
+    });
+    expect(recovered.colony.colonies[0]).toMatchObject({
+      state: "bootstrapping",
+      reasonCode: "spawn-without-workforce",
+      visibility: "visible",
+    });
+    expect(recovered.colony.objectives).toEqual([
+      expect.objectContaining({
+        id: "colony/W1N1/restore-workforce",
+        status: "funded",
+      }),
+    ]);
+    const recoveryReservation = recovered.colony.reservations.find(
+      ({ category, request }) => category === "emergency-spawn" && request.spawn?.startTick === 71,
+    );
+    expect(recoveryReservation).toMatchObject({
+      category: "emergency-spawn",
+      consumed: { cpu: 100, energy: 200, spawn: true },
+      grant: {
+        cpu: 100,
+        energy: 300,
+        spawn: { endTick: 80, spawnId: "spawn-budget", startTick: 71 },
+      },
+      request: { spawn: { endTick: 80, spawnId: "spawn-budget", startTick: 71 } },
+      status: "released",
+    });
+    expect(recovered.colony.totals.active).toBe(0);
+    expect(recovered.contracts?.allocation.assignments).toEqual([]);
+    const persistedContracts = memory.myrmex.contracts as unknown as {
+      readonly active: readonly { readonly issuer: string; readonly state: string }[];
+    };
+    expect(persistedContracts.active).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ issuer: "test:runtime", state: "suspended" }),
+      ]),
+    );
+    expect(recovered.kernel.faults).toEqual([]);
+    expect(recovered.spawn.execution).toHaveLength(1);
+    expect(recovered.spawn.execution[0]).toMatchObject({
+      command: {
+        body: ["work", "carry", "move"],
+        energyCost: 200,
+        spawnTicks: 9,
+      },
+      reason: "scheduled",
+      status: "scheduled",
+    });
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+
+    const selectedName = recovered.spawn.broker?.selections[0]?.name;
+    if (selectedName === undefined) {
+      throw new Error("respawn recovery fixture did not select a recovery worker");
+    }
+    const resumedMemory = JSON.parse(JSON.stringify(memory)) as Memory;
+    vi.resetModules();
+    const executeTick = (await import("../src/runtime/tick")).runTick;
+    const resumed = executeTick({
+      game: fundedContractGame(72, {
+        includeCreep: false,
+        spawnCreep,
+        spawning: { creepName: selectedName, remainingTime: 8 },
+      }),
+      memory: resumedMemory,
+    });
+    expect(resumed.spawn.execution).toEqual([]);
+    expect(resumed.spawn.broker?.decisions).toEqual([
+      expect.objectContaining({ reason: "observed-spawning", status: "deferred" }),
+    ]);
+    expect(spawnCreep).toHaveBeenCalledTimes(1);
+  });
+
   it("settles post-admission insufficient-energy rejection before retrying", () => {
     const memory = {} as Memory;
     const rejectedSpawnCreep = vi.fn(() => -6);
@@ -2311,6 +2496,7 @@ interface FundedContractGameOptions {
   readonly energyCapacity?: number;
   readonly includeCreep?: boolean;
   readonly includeSecondSpawn?: boolean;
+  readonly includeSpawn?: boolean;
   readonly legalCreep?: boolean;
   readonly spawning?: { readonly creepName: string; readonly remainingTime: number };
   readonly spawnCreep?: (...arguments_: unknown[]) => number;
@@ -2443,6 +2629,7 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
   const energy = options.energy ?? 300;
   const energyCapacity = options.energyCapacity ?? 300;
   const includeCreep = options.includeCreep ?? true;
+  const includeSpawn = options.includeSpawn ?? true;
   const legalCreep = options.legalCreep ?? false;
   const spawnCreep = options.spawnCreep ?? (() => 0);
   const creepName = options.creepName ?? "budget-worker";
@@ -2535,7 +2722,7 @@ function fundedContractGame(time: number, options: FundedContractGameOptions = {
         return includeCreep ? [creep] : [];
       }
       if (findType === FIND_STRUCTURES_VALUE) {
-        return options.includeSecondSpawn ? [spawn, secondSpawn] : [spawn];
+        return includeSpawn ? (options.includeSecondSpawn ? [spawn, secondSpawn] : [spawn]) : [];
       }
       if (findType === FIND_SOURCES_VALUE || findType === FIND_CONSTRUCTION_SITES_VALUE) {
         return [];
