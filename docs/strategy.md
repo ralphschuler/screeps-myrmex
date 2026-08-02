@@ -511,8 +511,10 @@ Current compatibility separately streams production `runTick` through bounded RC
 industry-settlement paths and invokes the current compiled bundle. Exact classification, rollback,
 and unverified complete-RCL8/live risks are in [`phase2-gate-evidence.md`](phase2-gate-evidence.md).
 The repeated healthy-RCL8 exit remains unproved. The maintainer's 2026-07-27 administrative override
-permits Phase 3 planning only; it neither marks #54 passed nor authorizes Phase 4, later-phase
-actions, or MMO deployment. Thresholds, telemetry, and Scenario Kit remain observer/test inputs and
+permitted Phase 3 planning only and ended when Phase 3 completed; it neither marks #54 passed nor
+authorizes Phase 4, later-phase actions, or MMO deployment. The 2026-08-02 reconciliation
+reactivates #54 as the sole current autonomous slice and keeps Phase 4 blocked until current
+production evidence passes. Thresholds, telemetry, and Scenario Kit remain observer/test inputs and
 cannot authorize gameplay.
 
 Phase 3 room intelligence is evidence only. Current vision outranks segment history; every caller
@@ -622,8 +624,8 @@ owned-sink-delivery or actor-loss cycles: five settlements inside a 1,000-tick w
 over the cycle, and lifetime-amortized energy/spawn time for all current remote bodies. In-flight
 zero-delivery ticks therefore neither invent revenue nor force premature abandonment. The 90-tick
 warm/reset/reordered gate keeps only the profitable remote active after those failures and records
-zero kernel faults. Phase 3 is complete, but the Phase-3-only continuation override still forbids
-Phase 4 while the Phase 2 production RCL8 soak is unproved.
+zero kernel faults. Phase 3 is complete; the historical continuation override is exhausted, and the
+reactivated Phase 2 production RCL8 gate forbids Phase 4 until it passes.
 
 Remote and claim decisions therefore use full-cost accounting. Energy delivered is reduced by spawn
 amortization, road upkeep, reservation cost, expected hostile loss, replacement latency, and a CPU

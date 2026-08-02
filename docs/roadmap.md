@@ -104,8 +104,9 @@ Operational Memory may disable available work but can never activate an unfinish
 
 ## Phase 2 — Complete Colony
 
-**Status:** implementation leaves complete; runtime outcome gate not demonstrated. Phase 3 is
-continuing under the bounded maintainer override recorded below.
+**Status:** implementation leaves complete; runtime outcome gate active and not demonstrated. Phase
+3 completed under the bounded historical maintainer override recorded below. Issue #54 is the sole
+current autonomous outcome slice, and Phase 4 remains blocked until that gate passes.
 
 Phase 2 extends the survival kernel into one deterministic RCL2–RCL8 colony authority covering
 layouts, mining, logistics, links, maintenance, resources, labs, mature infrastructure, cross-domain
@@ -165,7 +166,7 @@ against its original five acceptance criteria:
 Further structure variants, alternative migration strategies, or newly imagined completeness work
 are enhancements, not unfinished #99 or Phase 2 requirements.
 
-### Outcome gate status and continuation override
+### Outcome gate status and current execution path
 
 The dependency set remained frozen to #44–#53, #225, and #99. Issue #54 evaluated the predeclared
 numeric contract without adding another implementation leaf. Its warm/reset/reordered progression
@@ -182,15 +183,49 @@ in [`phase2-gate-evidence.md`](phase2-gate-evidence.md).
 current runtime witnesses pass, but they do not satisfy #54's repeated healthy-RCL8 soak criterion.
 On 2026-07-27 the maintainer explicitly directed the autonomous agent to continue
 [Phase 3 issue #10](https://github.com/ralphschuler/screeps-myrmex/issues/10). That administrative
-override is limited to Phase 3 and does not mark #54 passed; no transition beyond Phase 3 is
-authorized without an explicit maintainer resolution of this gap.
+override was limited to Phase 3 and does not mark #54 passed.
+
+On 2026-08-02 the maintainer reconciled the completed Phase 3 exception with the still-unproved
+Phase 2 gate. The historical exception remains valid, but #54's administrative requirement to
+unblock Phase 3 only after a pass is superseded by one finite replacement: **Phase 4 remains blocked
+until current production evidence satisfies #54**. This decision changes no numeric threshold,
+implementation prerequisite, runtime criterion, or historical artifact.
+
+Issue #54 and parent #9 remain open until that evidence passes. Every autonomous run must select #54
+itself as the sole current slice. It must preserve the immutable analytical result, produce a
+separate current-production receipt for the frozen progression and steady-state rows, and create at
+most one repair issue only when one named row yields a reproducible failure mapped to an unchecked
+criterion. A passing receipt closes #54 and #9 and makes #64 the next eligible issue; no Phase 4
+implementation may start earlier.
+
+The gate is delivered as an ordered sequence of finite #54 prefix receipts, not as new children or
+acceptance criteria. The first runnable slice is `phase2/production/progression-rcl2-rcl3-v1`: add
+one versioned mutable two-source world that starts at the Phase 1 RCL2 exit, executes production
+`runTick`, settles real commands into following-tick observation, and reaches RCL3 within the
+declared 5,000-tick ceiling in warm, reset, and reordered variants. Its separate prefix receipt
+records 45,000 observed controller energy, deferred harvest/build/spawn/upgrade effects, bounded
+root/owner state within the applicable frozen limits, zero kernel faults and forbidden later-phase
+actions, and equal gameplay semantic hashes. It declares `gateComplete: false` and claims neither
+the final 1,024-tick zero-growth row nor full CPU or RCL8 results.
+
+Later invocations reselect #54 and add exactly one next declared transition by rerunning the
+cumulative prefix from the same pinned Phase 1 exit through the target RCL. Warm and reordered
+variants retain one process and module heap for the complete prefix; reset reconstructs modules only
+at its declared reset ticks. Long prefixes may stream rolling measurements and hashes in bounded
+in-process chunks, but they may not skip ticks or restart a warm/reordered process. Diagnostic
+prefix receipts never compose across bundle revisions and never constitute a gate pass. The final
+receipt reruns the complete progression and 15,000-tick RCL8 steady-state variants against one exact
+production bundle/configuration/policy revision, measures CPU and bucket from observed production
+`KernelTickReport`/`Game.cpu` evidence rather than a synthetic meter, and applies every frozen
+recovery injection without accelerated controller progress.
 
 ## Phase 3 — Remote Portfolio
 
 **Status:** implemented; production composition and the deterministic exit matrix are tracked by
 [issue #63](https://github.com/ralphschuler/screeps-myrmex/issues/63) and
 [`phase3-gate-evidence.md`](phase3-gate-evidence.md). Phase 4 remains unauthorized because the
-Phase-3-only continuation override does not resolve the unproved Phase 2 production RCL8 soak.
+historical Phase-3-only continuation override does not resolve the unproved Phase 2 production RCL8
+soak.
 
 - The sole typed RawMemory-segment substrate is tracked by
   [issue #100](https://github.com/ralphschuler/screeps-myrmex/issues/100) and
@@ -243,9 +278,12 @@ Phase-3-only continuation override does not resolve the unproved Phase 2 product
 **Exit:** demonstrated by a 90-tick warm/reset/reordered production `runTick` matrix: only the
 profitable remote remains active after threat, CPU, route, vision, profitability, donor-loss, and
 source-loss pressure. This closes Phase 3 only; it does not authorize Phase 4 under the current
-continuation override.
+Phase 2 gate state.
 
 ## Phase 4 — Expansion
+
+**Status:** blocked by the reactivated Phase 2 production-runtime gate #54. After #54 and #9 close
+with passing current-production evidence, #64 is the first eligible Phase 4 slice.
 
 - Claim scoring, bootstrap operations, donor budgets, and abandonment.
 
