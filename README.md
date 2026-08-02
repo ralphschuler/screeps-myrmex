@@ -11,7 +11,11 @@ Legacy lessons survive only as independently written requirements and outcome sc
 
 ## Status
 
-Bootstrap phase. The repository currently provides:
+Phase 3 implementation is complete. The current autonomous work selector is the reactivated
+[Phase 2 production-runtime gate #54](https://github.com/ralphschuler/screeps-myrmex/issues/54): the
+complete-colony implementation leaves and bounded compatibility witnesses pass, but the frozen
+RCL2–RCL8 production progression and healthy-RCL8 soak remain unproved. Phase 4 stays blocked until
+that gate passes. The repository currently provides:
 
 - a single deployable `@myrmex/bot` package;
 - a dev-only `@myrmex/scenario-kit` for executable outcome specifications;

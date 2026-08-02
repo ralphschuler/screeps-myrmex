@@ -3625,8 +3625,10 @@ healthy RCL8 runtime soak. The complete method and residual risks are recorded i
 [`phase2-gate-evidence.md`](phase2-gate-evidence.md). Scenario Kit remains development-only: no gate
 manifest, result, collector, or evaluator is bundled, persisted, or exposed to gameplay authority.
 Consequently the historical pass artifact is not valid proof of #54's runtime exit criterion. Phase
-3 continues only under the maintainer's 2026-07-27 Phase-3-limited administrative override, not
-because this evidence marks the runtime gate passed.
+3 completed only under the maintainer's 2026-07-27 Phase-3-limited administrative override, not
+because this evidence marks the runtime gate passed. The 2026-08-02 reconciliation reactivates #54
+as the sole current autonomous slice and keeps Phase 4 blocked until current production evidence
+passes.
 
 The Phase 3 portfolio matrix executes 30 production `runTick` calls in each warm, reset, and
 reordered variant. Two competing adjacent remotes pass through forecast admission, active donor
@@ -3636,7 +3638,8 @@ resumption. Expected spawn errors remain typed and bounded. All 90 ticks have ze
 equal semantic hashes while the sole profitable final remote remains active. Exact budgets, owner
 bytes, source/config revisions, full-attribution dependency evidence, rollback, and residual risk
 are recorded in [`phase3-gate-evidence.md`](phase3-gate-evidence.md). This demonstrates the Phase 3
-exit only; Phase 4 remains unauthorized under the Phase-3-limited continuation override.
+exit only; Phase 4 remains unauthorized until the reactivated Phase 2 production-runtime gate #54
+passes.
 
 The Phase 1 spawn authority matrix is recorded in
 [`phase1-spawn-evidence.md`](phase1-spawn-evidence.md). It proves the exclusive broker/executor,

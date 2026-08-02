@@ -45,7 +45,7 @@ These are bounded production runtime-path witnesses plus one exact-bundle entryp
 not a complete healthy RCL8 soak or MMO timing evidence. Scenario Kit remains development-only and
 absent from the bundle.
 
-## Acceptance status and continuation override
+## Acceptance status and current execution path
 
 The frozen #54 acceptance criterion requires the configured colony to repeatedly reach RCL8 and
 sustain CPU, energy, and recovery behavior for the agreed soak window. The repository does not
@@ -54,9 +54,44 @@ artifact is therefore invalid as proof of the Phase 2 runtime exit, although it 
 an audit record.
 
 On 2026-07-27 the maintainer explicitly directed the autonomous agent to continue Phase 3 while this
-evidence repair landed. That is an administrative continuation override limited to Phase 3 work, not
-a #54 pass. Advancing beyond Phase 3 requires another explicit maintainer decision after the
-unproved RCL8 soak is resolved or the roadmap contract is intentionally revised.
+evidence repair landed. That historical administrative override was limited to Phase 3 work and is
+not a #54 pass.
+
+On 2026-08-02 the maintainer reactivated #54 and parent #9 as the sole current autonomous path. The
+completed Phase 3 exception is preserved, while its now-impossible administrative unblock criterion
+is superseded by the finite requirement that Phase 4 remain blocked until #54 passes. The frozen
+numeric contract and every runtime, recovery, budget, exclusion, and prerequisite criterion remain
+unchanged.
+
+The current-production receipt must execute every production tick from the pinned RCL2 start until
+RCL8 without artificial progress acceleration or fast-forwarding, subject to the declared
+per-transition maximums totaling at most 1,820,000 ticks, then execute exactly 15,000 RCL8 ticks in
+each warm, reset, and reordered variant. At every ceiling this is at most 5,505,000 production
+`runTick` calls. The receipt must remain separate from the immutable analytical artifact. If one
+named row fails, the agent may create at most one bounded repair issue linked to that row and one
+unchecked #54 criterion; otherwise it must complete the gate evidence before selecting any Phase 4
+work.
+
+Delivery is incremental under #54 without changing the frozen contract. The first named prefix is
+`phase2/production/progression-rcl2-rcl3-v1`: a versioned mutable two-source world must start at the
+Phase 1 RCL2 exit, execute production `runTick`, settle real commands into following-tick
+observation, and reach RCL3 within 5,000 ticks in warm, reset, and reordered variants. That prefix
+must record 45,000 observed controller energy, real deferred harvest/build/spawn/upgrade effects,
+root and owner state within the applicable frozen limits, zero kernel faults and forbidden
+later-phase actions, and equal gameplay semantic hashes. The separate prefix receipt declares
+`gateComplete: false` and claims neither the final 1,024-tick zero-growth row nor full CPU or RCL8
+results.
+
+Each later invocation reselects #54 and adds one next declared transition by rerunning the
+cumulative prefix from the same pinned Phase 1 exit through the target RCL. Warm and reordered
+variants retain one process and module heap for the complete prefix; reset reconstructs modules only
+at its declared reset ticks. Long prefixes may stream rolling measurements and hashes in bounded
+in-process chunks, but they may not skip ticks or restart a warm/reordered process. Diagnostic
+prefix receipts never compose across production bundle revisions and cannot evaluate the full gate.
+The final receipt reruns the complete progression and 15,000-tick RCL8 steady-state variants against
+one exact production bundle/configuration/policy revision, measures CPU and bucket from observed
+production `KernelTickReport`/`Game.cpu` evidence rather than the spawn-only fixture's synthetic
+meter, and applies every frozen recovery injection without accelerating controller progress.
 
 ## Result
 

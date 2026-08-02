@@ -2,10 +2,11 @@
 
 Issue: [#63](https://github.com/ralphschuler/screeps-myrmex/issues/63)
 
-Status: implemented. The production tick composes adjacent-room discovery, portfolio selection,
-donor budgets, contracts, spawn demand, hauling, safety, evacuation, and accounting feedback through
-the existing authorities. Phase 3 is complete, but Phase 4 remains unauthorized because the
-Phase-3-only continuation override does not resolve the unproved Phase 2 production RCL8 soak.
+Status: implemented under the bounded historical Phase 3 continuation exception. The production tick
+composes adjacent-room discovery, portfolio selection, donor budgets, contracts, spawn demand,
+hauling, safety, evacuation, and accounting feedback through the existing authorities. Phase 3 is
+complete. Reactivated #54 remains the sole current autonomous slice and blocks Phase 4 until its
+frozen production-runtime outcome is demonstrated.
 
 ## Outcome contract
 
@@ -124,8 +125,8 @@ older code is deployed. `RemotePortfolio` V2 bytes remain fail-closed under olde
 
 Deterministic fixtures do not model MMO scheduling jitter, shard outages, novel hostile strategy, or
 a complete healthy RCL8 colony. The Phase 2 production RCL8 soak remains unproved. The maintainer's
-2026-07-27 override ends at Phase 3; this gate does not authorize Phase 4, deployment, or MMO
-promotion.
+bounded 2026-07-27 exception ended at the Phase 3 exit; reactivated #54 now blocks Phase 4,
+deployment, and MMO promotion.
 
 ## Foundation receipt
 
