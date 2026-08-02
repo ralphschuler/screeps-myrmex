@@ -53,6 +53,26 @@ export {
   type Phase2GateUnit,
 } from "./phase2-gate";
 export {
+  PHASE2_GATE_PREFIX_ARTIFACT_KIND,
+  PHASE2_GATE_PREFIX_EXECUTOR,
+  PHASE2_GATE_PREFIX_SCHEMA_VERSION,
+  PHASE2_RCL2_RCL3_PREFIX_ID,
+  PHASE2_RCL2_RCL3_PREFIX_NOT_CLAIMED,
+  PHASE2_RCL2_RCL3_PREFIX_OBSERVED_LIMIT_IDS,
+  validatePhase2GatePrefixReceipt,
+  type Phase2GatePrefixAttestation,
+  type Phase2GatePrefixConfigurationAttestation,
+  type Phase2GatePrefixControllerEvidence,
+  type Phase2GatePrefixDeferredEffectEvidence,
+  type Phase2GatePrefixDeferredEffectsEvidence,
+  type Phase2GatePrefixProductionBundleAttestation,
+  type Phase2GatePrefixReceipt,
+  type Phase2GatePrefixScope,
+  type Phase2GatePrefixStateEvidence,
+  type Phase2GatePrefixVariantEvidence,
+  type Phase2GatePrefixVariantName,
+} from "./phase2-gate-prefix";
+export {
   SCENARIO_TRANSCRIPT_SCHEMA_VERSION,
   MAX_SCENARIO_TICKS,
   MAX_SCENARIO_TRANSCRIPT_LENGTH,

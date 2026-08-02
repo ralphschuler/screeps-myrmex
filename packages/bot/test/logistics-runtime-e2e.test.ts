@@ -191,21 +191,17 @@ function logisticsContracts(memory: Memory): Array<{
   issuer: string;
   state?: string;
 }> {
-  const owner = memory.myrmex?.contracts as unknown as {
-    active?: Array<{
-      execution?: { flowId?: string; version?: number };
-      issuer?: string;
-      state?: string;
-    }>;
-  };
-  return (owner.active ?? []).flatMap((contract) => {
+  const opened = ContractLedger.open(memory.myrmex?.contracts ?? {});
+  expect(opened.status).toBe("ready");
+  if (opened.status !== "ready") throw new Error("expected valid contracts owner");
+  return opened.ledger.view().active.flatMap((contract) => {
     const issuer = contract.issuer;
-    return issuer?.startsWith("logistics/")
+    return issuer.startsWith("logistics/")
       ? [
           {
             ...(contract.execution === undefined ? {} : { execution: contract.execution }),
             issuer,
-            ...(contract.state === undefined ? {} : { state: contract.state }),
+            state: contract.state,
           },
         ]
       : [];

@@ -19,6 +19,7 @@ import {
 } from "../src/layout";
 import {
   authorizeLayoutTowerEvacuationFlowIds,
+  admitColonySpawnDemands,
   projectActiveLeaseTargetIds,
   projectActiveSpawnClaimIds,
   orphanedSpawnEvacuationTransition,
@@ -32,11 +33,15 @@ import { executableLogisticsView, logisticsAcquireAdmissionLimits } from "../src
 import type { RuntimeGame } from "../src/runtime/context";
 import { TICK_PHASES, type TickPhase } from "../src/runtime/phases";
 import {
+  MAX_LOGICAL_SPAWN_DEMANDS,
   MAX_CREEP_NAME_CODE_UNITS,
+  SpawnBroker,
   generatedSpawnCreepName,
   generatedSpawnCreepNameCandidates,
+  type SpawnDemand,
 } from "../src/spawn";
 import { TelemetryService } from "../src/telemetry/service";
+import { emptyWorldSnapshot } from "../src/world/snapshot";
 import { PLAIN_ROOM_TERRAIN } from "./support/room-terrain-fixture";
 
 const FIND_CREEPS_VALUE = 101;
@@ -54,6 +59,93 @@ describe("tick lifecycle", () => {
 
   afterAll(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("admits a deterministic recovery-first broker batch at the 64-demand boundary", () => {
+    const demand = (
+      id: string,
+      category: SpawnDemand["category"],
+      priorityValue: number,
+    ): SpawnDemand => ({
+      id,
+      issuer: id,
+      colonyId: "W1N1",
+      revision: 1,
+      category,
+      priorityValue,
+      deadline: 200,
+      earliestTick: 100,
+      destinationRoomName: "W1N1",
+      replacementCreepName: null,
+      budgetId: `budget-${id}`,
+      requiredPartCounts: {
+        tough: 0,
+        work: 1,
+        carry: 1,
+        attack: 0,
+        ranged_attack: 0,
+        heal: 0,
+        claim: 0,
+        move: 1,
+      },
+      energyCap: 300,
+      nameBasis: null,
+    });
+    const recovery = Array.from({ length: MAX_LOGICAL_SPAWN_DEMANDS - 1 }, (_, index) =>
+      demand(`recovery-${String(index).padStart(2, "0")}`, "emergency-recovery", 1_000),
+    );
+    const population = [
+      demand("population-low", "funded-workforce", 100),
+      demand("population-high", "funded-workforce", 900),
+    ];
+
+    const forward = admitColonySpawnDemands(recovery, population);
+    const reordered = admitColonySpawnDemands([...recovery].reverse(), [...population].reverse());
+    expect(forward).toHaveLength(MAX_LOGICAL_SPAWN_DEMANDS);
+    expect(Object.isFrozen(forward)).toBe(true);
+    expect(forward.map(({ id }) => id)).toEqual(reordered.map(({ id }) => id));
+    expect(forward.filter(({ category }) => category === "emergency-recovery")).toHaveLength(
+      MAX_LOGICAL_SPAWN_DEMANDS - 1,
+    );
+    expect(forward.some(({ id }) => id === "population-high")).toBe(true);
+    expect(forward.some(({ id }) => id === "population-low")).toBe(false);
+    expect(
+      new SpawnBroker().arbitrate({
+        tick: 100,
+        snapshot: emptyWorldSnapshot(100, "shard3"),
+        demands: forward,
+        expectations: [],
+        policy: {
+          maximumBodyParts: 50,
+          maximumBodyEnergy: 3_000,
+          maximumNonMovePartsPerMovePart: 2,
+          nameCollisionRetryLimit: 3,
+          retryDelayTicks: 1,
+        },
+      }),
+    ).toMatchObject({ status: "planned", reason: "planned" });
+
+    const fullRecovery = admitColonySpawnDemands(
+      [...recovery, demand("recovery-63", "emergency-recovery", 1_000)],
+      population,
+    );
+    expect(fullRecovery).toHaveLength(MAX_LOGICAL_SPAWN_DEMANDS);
+    expect(fullRecovery.every(({ category }) => category === "emergency-recovery")).toBe(true);
+
+    const duplicateRecovery = Array.from({ length: MAX_LOGICAL_SPAWN_DEMANDS }, () =>
+      demand("recovery-duplicate", "emergency-recovery", 1_000),
+    );
+    const deduplicated = admitColonySpawnDemands(duplicateRecovery, population);
+    const deduplicatedReordered = admitColonySpawnDemands(
+      [...duplicateRecovery].reverse(),
+      [...population].reverse(),
+    );
+    expect(deduplicated.map(({ id }) => id)).toEqual([
+      "recovery-duplicate",
+      "population-high",
+      "population-low",
+    ]);
+    expect(deduplicatedReordered.map(({ id }) => id)).toEqual(deduplicated.map(({ id }) => id));
   });
 
   it("projects every assigned or active contract endpoint before irreversible migration", () => {
@@ -582,7 +674,7 @@ describe("tick lifecycle", () => {
       active: [],
       issuerFrontiers: [],
       outcomes: [],
-      schemaVersion: 1,
+      schemaVersion: 3,
     });
 
     const stable = runTick({ game: gameAt(41), memory });
@@ -595,7 +687,7 @@ describe("tick lifecycle", () => {
       active: [],
       issuerFrontiers: [],
       outcomes: [],
-      schemaVersion: 1,
+      schemaVersion: 3,
     });
   });
 
@@ -606,7 +698,7 @@ describe("tick lifecycle", () => {
     },
     {
       label: "future",
-      owner: { opaque: { preserve: true }, schemaVersion: 2 },
+      owner: { opaque: { preserve: true }, schemaVersion: 3 },
     },
   ])("faults safely on $label contracts-owner data without overwriting it", ({ owner }) => {
     const memory = {} as Memory;
@@ -1014,10 +1106,11 @@ describe("tick lifecycle", () => {
     });
     expect(recovered.colony.totals.active).toBe(0);
     expect(recovered.contracts?.allocation.assignments).toEqual([]);
-    const persistedContracts = memory.myrmex.contracts as unknown as {
-      readonly active: readonly { readonly issuer: string; readonly state: string }[];
-    };
-    expect(persistedContracts.active).toEqual(
+    const persistedContracts = ContractLedger.open(memory.myrmex.contracts);
+    expect(persistedContracts.status).toBe("ready");
+    if (persistedContracts.status !== "ready")
+      throw new Error("expected compact contracts owner to reopen");
+    expect(persistedContracts.ledger.view().active).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ issuer: "test:runtime", state: "suspended" }),
       ]),
@@ -2247,7 +2340,7 @@ describe("tick lifecycle", () => {
     expect(outcome.kernel.cpuUsed).toBe(2.75);
     expect(outcome.kernel.overheadCpu).toBe(2);
     expect(phaseCpu + outcome.kernel.overheadCpu).toBe(outcome.kernel.cpuUsed);
-    expect(outcome.telemetry).toMatchObject({ cacheEntries: 2, cacheNamespaces: 4 });
+    expect(outcome.telemetry).toMatchObject({ cacheEntries: 2, cacheNamespaces: 3 });
   });
 
   it("returns the kernel report when the mandatory telemetry system itself faults", () => {

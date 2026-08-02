@@ -89,6 +89,177 @@ describe("survival growth", () => {
     ).toBe(true);
   });
 
+  it("keeps thirteen spawnable RCL2 controller lease slots funded while the room pool refills", () => {
+    const config = buildRuntimeConfig();
+    const full = planSurvivalGrowth(
+      world({ controllerLevel: 2, energy: 550, energyCapacity: 550, spawn: true }),
+      config,
+    );
+    const drained = planSurvivalGrowth(
+      world({ controllerLevel: 2, energy: 0, energyCapacity: 550, spawn: true }),
+      config,
+    );
+
+    expect(full).toHaveLength(13);
+    expect(drained).toEqual(full);
+    expect(full.map(({ budgetRequest }) => budgetRequest.issuer)).toEqual(
+      Array.from(
+        { length: 13 },
+        (_, slot) =>
+          `growth/W1N1/upgrade-controller/controller-a/slot/${String(slot).padStart(2, "0")}`,
+      ),
+    );
+    expect(full.every(({ budgetRequest }) => budgetRequest.energy === null)).toBe(true);
+    expect(full[0]?.requiredCapability).toMatchObject({ carry: 3, move: 2, work: 1 });
+    expect(
+      full
+        .slice(1)
+        .every(
+          ({ requiredCapability }) =>
+            requiredCapability.work === 3 &&
+            requiredCapability.carry === 2 &&
+            requiredCapability.move === 3,
+        ),
+    ).toBe(true);
+
+    const renewed = renewGrowthBudgets(
+      full,
+      [],
+      100,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    );
+    expect(renewed.every(({ budgetRequest }) => budgetRequest.expiresAt === 1_000_000_000)).toBe(
+      true,
+    );
+    const authorized = authorizedSurvivalGrowth(
+      renewed,
+      renewed.map(({ budgetRequest }) => ({
+        category: budgetRequest.category,
+        colonyId: budgetRequest.colonyId,
+        issuer: budgetRequest.issuer,
+        status: "active" as const,
+      })),
+      { status: "ready", contracts: [] },
+      100,
+    );
+    expect(authorized.requests).toHaveLength(13);
+    expect(authorized.requests[0]?.requiredCapability).toMatchObject({
+      carry: 3,
+      move: 2,
+      work: 1,
+    });
+    expect(authorized.requests[0]?.priority).toEqual({ class: "growth", value: 500 });
+    expect(authorized.requests.every(({ leasePolicy }) => leasePolicy.duration === 50)).toBe(true);
+    expect(authorized.requests.every(({ maxAssignmentCost }) => maxAssignmentCost === 1_500)).toBe(
+      true,
+    );
+    expect(
+      authorized.requests.slice(1).every(({ requiredCapability }) => requiredCapability.work === 3),
+    ).toBe(true);
+    expect(
+      authorized.requests.slice(1).every(({ priority }) => priority.class === "survival"),
+    ).toBe(true);
+    expect(authorized.requests.slice(1).every(({ priority }) => priority.value === 1_100)).toBe(
+      true,
+    );
+
+    const firstSlot = renewed[1];
+    const firstSlotRequest = authorized.requests[1];
+    if (firstSlot === undefined || firstSlotRequest === undefined)
+      throw new Error("expected first heavy RCL2 slot");
+    const temporarilyUnfunded = authorizedSurvivalGrowth(
+      [firstSlot],
+      [],
+      { status: "ready", contracts: [planningRecord(firstSlotRequest)] },
+      101,
+    );
+    expect(temporarilyUnfunded).toMatchObject({ requests: [], replacements: [], transitions: [] });
+    const stableActive = authorizedSurvivalGrowth(
+      [firstSlot],
+      [
+        {
+          category: firstSlot.budgetRequest.category,
+          colonyId: firstSlot.colonyId,
+          issuer: firstSlot.budgetRequest.issuer,
+          status: "active",
+        },
+      ],
+      { status: "ready", contracts: [planningRecord(firstSlotRequest)] },
+      101,
+    );
+    expect(stableActive).toMatchObject({ requests: [], replacements: [], transitions: [] });
+    const renewedAfterSpawn = renewGrowthBudgets(
+      [firstSlot],
+      [
+        {
+          category: firstSlot.budgetRequest.category,
+          colonyId: firstSlot.colonyId,
+          issuer: firstSlot.budgetRequest.issuer,
+          request: firstSlot.budgetRequest,
+          revision: firstSlot.budgetRequest.revision,
+          status: "consumed",
+        },
+      ],
+      101,
+      config.policy.leases.durationTicks,
+      config.policy.leases.renewalWindowTicks,
+    );
+    const secondRevision = renewedAfterSpawn[0];
+    if (secondRevision === undefined) throw new Error("expected renewed heavy RCL2 slot");
+    expect(secondRevision.budgetRequest.revision).toBe(2);
+    const handoff = authorizedSurvivalGrowth(
+      renewedAfterSpawn,
+      renewedAfterSpawn.map(({ budgetRequest }) => ({
+        category: budgetRequest.category,
+        colonyId: budgetRequest.colonyId,
+        issuer: budgetRequest.issuer,
+        status: "active" as const,
+      })),
+      { status: "ready", contracts: [planningRecord(firstSlotRequest)] },
+      101,
+    );
+    expect(handoff.requests).toEqual([]);
+    expect(handoff.replacements).toMatchObject([
+      {
+        predecessorContractId: contractIdFor(
+          firstSlotRequest.issuer,
+          firstSlotRequest.issuerKey,
+          1,
+        ),
+        reason: "growth-budget-renewed",
+        successor: { issuerSequence: 2, requiredCapability: { work: 3 } },
+      },
+    ]);
+    expect(handoff.transitions).toContainEqual({
+      contractId: contractIdFor(firstSlotRequest.issuer, firstSlotRequest.issuerKey, 2),
+      reason: "growth-work-remains",
+      tick: 101,
+      to: "funded",
+    });
+
+    const caughtUp = authorizedSurvivalGrowth(
+      [
+        {
+          ...secondRevision,
+          budgetRequest: { ...secondRevision.budgetRequest, revision: 4 },
+        },
+      ],
+      [
+        {
+          category: firstSlot.budgetRequest.category,
+          colonyId: firstSlot.colonyId,
+          issuer: firstSlot.budgetRequest.issuer,
+          status: "active" as const,
+        },
+      ],
+      { status: "ready", contracts: [planningRecord(firstSlotRequest)] },
+      102,
+    );
+    expect(caughtUp.replacements[0]?.successor.issuerSequence).toBe(2);
+    expect(caughtUp.transitions).toEqual([]);
+  });
+
   it("bridges RCL1 only from carried energy after the 300-energy spawn reserve is full", () => {
     const config = buildRuntimeConfig();
     const planned = planSurvivalGrowth(
@@ -511,6 +682,7 @@ describe("survival growth", () => {
       {
         action: "build",
         reasonCode: "rcl2-infrastructure-bootstrap",
+        requiredCapability: { carry: 1, move: 1, work: 1 },
         targetId: "site-extension",
         budgetRequest: {
           category: "optional-growth",
@@ -556,7 +728,12 @@ describe("survival growth", () => {
         }),
         config,
       ),
-    ).toEqual([]);
+    ).toMatchObject([
+      {
+        reasonCode: "rcl2-infrastructure-bootstrap",
+        budgetRequest: { energy: null },
+      },
+    ]);
     expect(
       planSurvivalGrowth(
         world({
@@ -586,16 +763,11 @@ describe("survival growth", () => {
     ).toMatchObject([
       {
         action: "build",
-        reasonCode: "optional-growth",
+        reasonCode: "rcl2-infrastructure-bootstrap",
+        requiredCapability: { carry: 1, move: 2, work: 2 },
         budgetRequest: {
-          issuer: "growth/W1N1/build/site-extension",
-        },
-      },
-      {
-        action: "upgrade-controller",
-        reasonCode: "optional-growth",
-        budgetRequest: {
-          issuer: "growth/W1N1/upgrade-controller/controller-a",
+          energy: null,
+          issuer: "growth/W1N1/rcl2-bootstrap/build/site-extension",
         },
       },
     ]);
@@ -627,23 +799,20 @@ describe("survival growth", () => {
       ],
     };
 
-    expect(
-      authorizedSurvivalGrowth(
-        [],
-        [],
-        planning,
-        110,
-        world({
-          controllerLevel: 2,
-          energy: 300,
-          energyCapacity: 300,
-          extensionSite: true,
-          spawn: true,
-          workerEnergy: 0,
-        }),
-        config,
-      ).transitions,
-    ).toEqual([]);
+    const workerlessCandidates = planSurvivalGrowth(
+      world({
+        controllerLevel: 2,
+        energy: 0,
+        energyCapacity: 300,
+        extensionSite: true,
+        spawn: true,
+        workerEnergy: 0,
+      }),
+      config,
+    );
+    expect(workerlessCandidates).toMatchObject([
+      { reasonCode: "rcl2-infrastructure-bootstrap", budgetRequest: { energy: null } },
+    ]);
 
     const resumedCandidates = planSurvivalGrowth(
       world({
@@ -688,8 +857,8 @@ describe("survival growth", () => {
 
     const normalWorld = world({
       controllerLevel: 2,
-      energy: 400,
-      energyCapacity: 400,
+      energy: 550,
+      energyCapacity: 550,
       extensionSite: true,
       spawn: true,
       workerEnergy: 5,
@@ -708,10 +877,15 @@ describe("survival growth", () => {
       normalWorld,
       config,
     );
-    expect(normal.requests).toMatchObject([
-      { issuer: "growth/W1N1/build/site-extension" },
-      { issuer: "growth/W1N1/upgrade-controller/controller-a" },
-    ]);
+    expect(normal.requests).toHaveLength(14);
+    expect(normal.requests[0]).toMatchObject({ issuer: "growth/W1N1/build/site-extension" });
+    expect(
+      normal.requests
+        .slice(1)
+        .every(({ issuer }) =>
+          issuer.startsWith("growth/W1N1/upgrade-controller/controller-a/slot/"),
+        ),
+    ).toBe(true);
     expect(normal.transitions).toEqual([
       {
         contractId: "bootstrap-RCL2-extension",

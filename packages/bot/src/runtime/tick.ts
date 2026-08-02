@@ -60,6 +60,7 @@ import {
   BUDGET_CATEGORIES,
   COLONY_RCL_POLICY_TABLE,
   ColonyDirector,
+  admitRawColonyBudgetRequests,
   emptyColonyPlanningResult,
   isInfrastructureRecoveryAuthorized,
   populationSpawnDemandBinding,
@@ -101,6 +102,7 @@ import {
 } from "../state/memory";
 import {
   CREEP_SPAWN_TICKS_PER_PART,
+  MAX_LOGICAL_SPAWN_DEMANDS,
   SpawnBroker,
   SpawnExecutor,
   generatedSpawnCreepName,
@@ -4725,7 +4727,7 @@ function colonyDirectorSystem(
           status: mature.status,
         },
       });
-      const budgetRequests = [
+      const rawBudgetRequests = [
         ...economyCandidates.map(({ budgetRequest }) => budgetRequest),
         ...maintenanceCandidates.map(({ budgetRequest }) => budgetRequest),
         ...growthCandidates.map(({ budgetRequest }) => budgetRequest),
@@ -4774,6 +4776,7 @@ function colonyDirectorSystem(
         ...mature.policy.budgets,
         ...(remoteDraft.operations?.budgetRequests ?? []),
       ];
+      const budgetRequests = admitRawColonyBudgetRequests(rawBudgetRequests);
       const provisional = colonyDirector.begin({
         tick: context.tick,
         snapshot: context.snapshot,
@@ -4786,20 +4789,23 @@ function colonyDirectorSystem(
         domainHealth,
       });
       const spawnEnabled = isFeatureEnabled(context.config, "phase1.spawn");
+      const spawnDemands = spawnEnabled
+        ? admitColonySpawnDemands(
+            recoverySpawnDemands(
+              provisional.result,
+              owner,
+              context.snapshot,
+              context.config,
+              context.tick,
+            ),
+            populationSpawnDemands(provisional.result, context.snapshot, context.tick),
+          )
+        : [];
       const brokerResult = spawnEnabled
         ? spawnBroker.arbitrate({
             tick: context.tick,
             snapshot: context.snapshot,
-            demands: [
-              ...recoverySpawnDemands(
-                provisional.result,
-                owner,
-                context.snapshot,
-                context.config,
-                context.tick,
-              ),
-              ...populationSpawnDemands(provisional.result, context.tick),
-            ],
+            demands: spawnDemands,
             expectations: recoverySpawnExpectations(
               owner,
               context.snapshot,
@@ -6371,6 +6377,129 @@ function colonyPlanningView(result: ReturnType<ColonyDirector["plan"]>): ColonyP
   });
 }
 
+/**
+ * Admits one broker-safe colony batch without weakening SpawnBroker's structural fail-closed cap.
+ * Recovery owns the batch first; deterministic population priority fills only the remaining slots.
+ */
+export function admitColonySpawnDemands(
+  recoveryDemands: readonly SpawnDemand[],
+  populationDemands: readonly SpawnDemand[],
+): readonly SpawnDemand[] {
+  const recoveryGroups = canonicalRuntimeSpawnDemandGroups(recoveryDemands);
+  const admittedRecovery = recoveryGroups.slice(0, MAX_LOGICAL_SPAWN_DEMANDS);
+  const recoveryIds = new Set(recoveryGroups.map(({ id }) => id));
+  const populationGroups = canonicalRuntimeSpawnDemandGroups(populationDemands);
+  const populationById = new Map(populationGroups.map((group) => [group.id, group] as const));
+  const mergedRecovery = admittedRecovery.map((group) =>
+    mergeRuntimeSpawnDemandGroups(group, populationById.get(group.id)),
+  );
+  const remaining = MAX_LOGICAL_SPAWN_DEMANDS - admittedRecovery.length;
+  const admittedPopulation = populationGroups
+    .filter(({ id }) => !recoveryIds.has(id))
+    .slice(0, remaining);
+  return Object.freeze(
+    [...mergedRecovery, ...admittedPopulation].flatMap(({ demands }) => demands),
+  );
+}
+
+interface RuntimeSpawnDemandGroup {
+  readonly id: string;
+  readonly demands: readonly SpawnDemand[];
+  readonly representative: SpawnDemand;
+}
+
+function canonicalRuntimeSpawnDemandGroups(
+  demands: readonly SpawnDemand[],
+): readonly RuntimeSpawnDemandGroup[] {
+  const byId = new Map<string, Map<string, SpawnDemand>>();
+  for (const demand of demands) {
+    const variants = byId.get(demand.id) ?? new Map<string, SpawnDemand>();
+    const bytes = canonicalRuntimeSpawnDemandBytes(demand);
+    if (!variants.has(bytes)) variants.set(bytes, demand);
+    byId.set(demand.id, variants);
+  }
+  return [...byId.entries()]
+    .map(([id, variants]) => {
+      const canonical = [...variants.entries()]
+        .sort(([left], [right]) => compareStrings(left, right))
+        .map(([, demand]) => demand);
+      const representative = [...canonical].sort(
+        (left, right) =>
+          compareRuntimeSpawnDemands(left, right) ||
+          compareStrings(
+            canonicalRuntimeSpawnDemandBytes(left),
+            canonicalRuntimeSpawnDemandBytes(right),
+          ),
+      )[0];
+      if (representative === undefined) throw new Error("empty runtime spawn demand group");
+      // Two distinct forms are sufficient for SpawnBroker to preserve an identity conflict, while
+      // exact duplicates collapse before the logical cap is applied.
+      return { id, demands: Object.freeze(canonical.slice(0, 2)), representative };
+    })
+    .sort(
+      (left, right) =>
+        compareRuntimeSpawnDemands(left.representative, right.representative) ||
+        compareStrings(left.id, right.id),
+    );
+}
+
+function mergeRuntimeSpawnDemandGroups(
+  primary: RuntimeSpawnDemandGroup,
+  secondary: RuntimeSpawnDemandGroup | undefined,
+): RuntimeSpawnDemandGroup {
+  if (secondary === undefined) return primary;
+  const variants = new Map<string, SpawnDemand>();
+  for (const demand of [...primary.demands, ...secondary.demands])
+    variants.set(canonicalRuntimeSpawnDemandBytes(demand), demand);
+  return {
+    ...primary,
+    demands: Object.freeze(
+      [...variants.entries()]
+        .sort(([left], [right]) => compareStrings(left, right))
+        .slice(0, 2)
+        .map(([, demand]) => demand),
+    ),
+  };
+}
+
+function canonicalRuntimeSpawnDemandBytes(demand: SpawnDemand): string {
+  return JSON.stringify([
+    demand.id,
+    demand.issuer,
+    demand.colonyId,
+    demand.revision,
+    demand.category,
+    demand.priorityValue,
+    demand.deadline,
+    demand.earliestTick,
+    demand.destinationRoomName,
+    demand.replacementCreepName,
+    demand.budgetId,
+    [
+      demand.requiredPartCounts.tough,
+      demand.requiredPartCounts.work,
+      demand.requiredPartCounts.carry,
+      demand.requiredPartCounts.attack,
+      demand.requiredPartCounts.ranged_attack,
+      demand.requiredPartCounts.heal,
+      demand.requiredPartCounts.claim,
+      demand.requiredPartCounts.move,
+    ],
+    demand.energyCap,
+    demand.maximumNonMovePartsPerMovePart ?? null,
+    demand.nameBasis,
+  ]);
+}
+
+function compareRuntimeSpawnDemands(left: SpawnDemand, right: SpawnDemand): number {
+  return (
+    right.priorityValue - left.priorityValue ||
+    left.deadline - right.deadline ||
+    compareStrings(left.id, right.id) ||
+    left.revision - right.revision
+  );
+}
+
 function recoverySpawnDemands(
   colony: ColonyPlanningResult,
   ownerValue: unknown,
@@ -6490,13 +6619,18 @@ function bindPopulationReservations(
 
 function populationSpawnDemands(
   colony: ColonyPlanningResult,
+  snapshot: WorldSnapshot,
   tick: number,
 ): readonly SpawnDemand[] {
   return Object.freeze(
     colony.colonies.flatMap(({ populationPolicy }) =>
       populationPolicy.demands.map((demand) => {
-        const binding = populationSpawnDemandBinding(demand);
-        return {
+        const binding = populationSpawnDemandBinding({
+          category: demand.category,
+          colonyId: demand.colonyId,
+          demandId: demand.id,
+        });
+        const spawnDemand: SpawnDemand = {
           id: demand.id,
           issuer: demand.objectiveId,
           colonyId: demand.colonyId,
@@ -6519,10 +6653,52 @@ function populationSpawnDemands(
             move: demand.requiredCapability.move,
           },
           energyCap: demand.energyCap,
+          ...(isLocalStaticMiningDemand(demand)
+            ? { maximumNonMovePartsPerMovePart: demand.requiredCapability.work }
+            : {}),
           nameBasis: null,
         };
+        const nameBasis = generatedSpawnCreepName(spawnDemand);
+        const incumbent = snapshot.rooms
+          .find(({ name }) => name === demand.colonyId)
+          ?.ownedCreeps.filter(
+            ({ name, spawning }) =>
+              !spawning && (name === nameBasis || name.startsWith(`${nameBasis}~`)),
+          )
+          .sort(
+            (left, right) =>
+              (left.ticksToLive ?? -1) - (right.ticksToLive ?? -1) ||
+              compareStrings(left.name, right.name) ||
+              compareStrings(left.id, right.id),
+          )[0];
+        return incumbent !== undefined
+          ? { ...spawnDemand, nameBasis, replacementCreepName: incumbent.name }
+          : spawnDemand;
       }),
     ),
+  );
+}
+
+function isLocalStaticMiningDemand(demand: {
+  readonly category: string;
+  readonly colonyId: string;
+  readonly objectiveId: string;
+  readonly requiredCapability: {
+    readonly carry: number;
+    readonly move: number;
+    readonly work: number;
+  };
+}): boolean {
+  const segments = demand.objectiveId.split("/");
+  return (
+    demand.category === "harvesting-filling" &&
+    demand.requiredCapability.carry === 0 &&
+    demand.requiredCapability.work === 5 &&
+    demand.requiredCapability.move >= 1 &&
+    segments.length === 3 &&
+    segments[0] === "mining" &&
+    segments[1] === demand.colonyId &&
+    (segments[2]?.length ?? 0) > 0
   );
 }
 

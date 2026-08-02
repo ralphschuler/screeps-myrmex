@@ -158,6 +158,7 @@ export type ColonyPlanReason = (typeof COLONY_PLAN_REASONS)[number];
 /** Structural safety limits. They are source invariants, not operational policy. */
 export const MAX_COLONIES = 64 as const;
 export const MAX_BUDGET_REQUESTS_PER_TICK = 256 as const;
+export const MAX_RAW_BUDGET_REQUESTS_PER_TICK = 512 as const;
 export const MAX_ACTIVE_RESERVATIONS = 256 as const;
 export const MAX_LEDGER_ENTRIES = 512 as const;
 export const MAX_LEDGER_TRANSITIONS_PER_TICK = 1_024 as const;

@@ -371,9 +371,9 @@ describe("RuntimeConfigAuthority", () => {
       reasonCode: "candidate-valid",
       acceptedCandidateRevision: 7,
     });
-    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v28");
+    expect(revalidated.config.sourceRevision).toBe("runtime-config-source-v29");
     expect(revalidated.replacementOwner?.lastValid?.sourceRevision).toBe(
-      "runtime-config-source-v28",
+      "runtime-config-source-v29",
     );
 
     const noCandidate = new RuntimeConfigAuthority().resolve({ ...v3Receipt, candidate: null }, 2);
@@ -631,9 +631,9 @@ describe("runtime override validation", () => {
 });
 
 describe("source feature gates", () => {
-  it("activates the Phase 3 portfolio gate only after mature infrastructure under policy v28", () => {
+  it("activates the Phase 3 portfolio gate only after mature infrastructure under policy v29", () => {
     const config = buildRuntimeConfig({ features: { disabled: ["phase1.growth"] } });
-    expect(config.sourceRevision).toBe("runtime-config-source-v28");
+    expect(config.sourceRevision).toBe("runtime-config-source-v29");
     expect(config.policy.industry).toEqual({
       sourceVersion: "industry-policy-v2",
       stockMinimum: 1_000,

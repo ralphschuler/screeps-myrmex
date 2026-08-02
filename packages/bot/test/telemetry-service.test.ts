@@ -673,14 +673,8 @@ describe("TelemetryService", () => {
     const blockers = result.telemetry.status.details
       .filter(({ domain }) => domain === "contract")
       .map(({ reason }) => reason);
-    expect(blockers).toEqual(
-      expect.arrayContaining([
-        "deadline-infeasible",
-        "funding-binding-conflict",
-        "no-actor",
-        "travel-unknown",
-      ]),
-    );
+    expect(blockers).toEqual(["travel-unknown", "funding-binding-conflict"]);
+    expect(result.telemetry.status.droppedDetails).toBe(2);
     for (const detail of result.telemetry.status.details.filter(
       ({ domain }) => domain === "contract",
     )) {

@@ -49,6 +49,8 @@ export interface SpawnDemand {
   readonly budgetId: string;
   readonly requiredPartCounts: SpawnBodyPartCounts;
   readonly energyCap: number;
+  /** A demand-local movement ratio for stationary work; omitted demands use the global policy. */
+  readonly maximumNonMovePartsPerMovePart?: number;
   /** An exact caller-selected base, or null to use the self-identifying generated base. */
   readonly nameBasis: string | null;
 }
@@ -324,7 +326,7 @@ function prepareDemand(
     energyCapacity: room.energyCapacityAvailable,
     maximumBodyEnergy: Math.min(demand.energyCap, policy.maximumBodyEnergy),
     maximumBodyParts: policy.maximumBodyParts,
-    maximumNonMovePartsPerMovePart: policy.maximumNonMovePartsPerMovePart,
+    maximumNonMovePartsPerMovePart: effectiveMovementRatio(demand, policy),
     requiredPartCounts: demand.requiredPartCounts,
   });
   return {
@@ -352,12 +354,13 @@ function arbitrateDemand(input: {
   }
 
   const matchingExpectations = input.expectations.get(demand.id) ?? [];
+  const movementRatio = effectiveMovementRatio(demand, input.policy);
   if (
     matchingExpectations.some((expectation) =>
       observedCreepSatisfiesDemand(
         input.observedNames.creeps.get(expectation.creepName),
         demand.requiredPartCounts,
-        input.policy.maximumNonMovePartsPerMovePart,
+        movementRatio,
         demand.replacementCreepName,
       ),
     )
@@ -409,8 +412,40 @@ function arbitrateDemand(input: {
       observedCreepSatisfiesDemand(
         input.observedNames.creeps.get(nameBasis),
         demand.requiredPartCounts,
-        input.policy.maximumNonMovePartsPerMovePart,
+        movementRatio,
         demand.replacementCreepName,
+      )
+    ) {
+      return noSelection(decision(demand.id, demand.revision, "satisfied", "observed-creep"));
+    }
+  } else if (demand.replacementCreepName !== null) {
+    // An explicit base denotes one replacement family. The expiring incumbent is deliberately
+    // excluded by observedCreepSatisfiesDemand, but an already spawned or spawning suffixed
+    // successor commits the same logical demand. Without this family check a second idle spawn can
+    // choose the next suffix on the following tick and create duplicate replacements.
+    const familySpawningRetryAt = maximumObservedSpawningRetryAt(
+      names,
+      input.observedNames.spawningRetryAt,
+    );
+    if (familySpawningRetryAt !== null) {
+      return noSelection(
+        decision(
+          demand.id,
+          demand.revision,
+          "deferred",
+          "observed-spawning",
+          familySpawningRetryAt,
+        ),
+      );
+    }
+    if (
+      names.some((name) =>
+        observedCreepSatisfiesDemand(
+          input.observedNames.creeps.get(name),
+          demand.requiredPartCounts,
+          movementRatio,
+          demand.replacementCreepName,
+        ),
       )
     ) {
       return noSelection(decision(demand.id, demand.revision, "satisfied", "observed-creep"));
@@ -605,6 +640,9 @@ function isValidDemand(demand: SpawnDemand): boolean {
     (demand.replacementCreepName === null || isValidCreepName(demand.replacementCreepName)) &&
     isBoundedText(demand.budgetId) &&
     isNonnegativeSafeInteger(demand.energyCap) &&
+    (demand.maximumNonMovePartsPerMovePart === undefined ||
+      (isPositiveSafeInteger(demand.maximumNonMovePartsPerMovePart) &&
+        demand.maximumNonMovePartsPerMovePart <= ENGINE_MAX_BODY_PARTS)) &&
     (demand.nameBasis === null || isValidCreepName(demand.nameBasis))
   );
 }
@@ -659,8 +697,13 @@ function canonicalDemandBytes(demand: SpawnDemand): string {
       demand.requiredPartCounts.move,
     ],
     demand.energyCap,
+    demand.maximumNonMovePartsPerMovePart ?? null,
     demand.nameBasis,
   ]);
+}
+
+function effectiveMovementRatio(demand: SpawnDemand, policy: SpawnBrokerPolicy): number {
+  return demand.maximumNonMovePartsPerMovePart ?? policy.maximumNonMovePartsPerMovePart;
 }
 
 function comparePreparedDemands(left: PreparedDemand, right: PreparedDemand): number {
@@ -754,6 +797,18 @@ function observedCreepSatisfiesDemand(
         ),
     ) ?? false
   );
+}
+
+function maximumObservedSpawningRetryAt(
+  names: readonly string[],
+  spawningRetryAt: ReadonlyMap<string, number>,
+): number | null {
+  let maximum: number | null = null;
+  for (const name of names) {
+    const retryAt = spawningRetryAt.get(name);
+    if (retryAt !== undefined) maximum = Math.max(maximum ?? 0, retryAt);
+  }
+  return maximum;
 }
 
 function activeBodyPartCount(creep: CreepSnapshot, part: SpawnBodyPart): number {

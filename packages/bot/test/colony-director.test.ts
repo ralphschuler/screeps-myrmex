@@ -3,17 +3,22 @@ import {
   BudgetLedger,
   COLONY_DOMAIN_HEALTH_DOMAINS,
   ColonyDirector,
+  admitRawColonyBudgetRequests,
+  populationSpawnDemandBinding,
   recoverySpawnDemandBinding,
   type ColonyDomainHealthStatus,
 } from "../src/colony";
 import {
   MAX_COLONIES,
   MAX_BUDGET_REQUESTS_PER_TICK,
+  MAX_RAW_BUDGET_REQUESTS_PER_TICK,
   type BudgetRequest,
 } from "../src/colony/contracts";
 import { canonicalColoniesOwner } from "../src/colony/persistence";
 import { formatReservationId } from "../src/colony/reservation-id";
 import { buildRuntimeConfig } from "../src/config/runtime-config";
+import type { ContractPopulationView } from "../src/contracts";
+import { MAX_LOGICAL_SPAWN_DEMANDS } from "../src/spawn";
 import { emptyWorldSnapshot, freezeWorldSnapshot, type WorldSnapshot } from "../src/world/snapshot";
 
 const CPU_BUDGET = Object.freeze({
@@ -40,7 +45,237 @@ function recoverySelection(tick: number, revision = 1) {
   } as const;
 }
 
+function populationSelection(index: number, tick: number) {
+  const demandId = `population-demand-${String(index).padStart(2, "0")}`;
+  const binding = populationSpawnDemandBinding({
+    category: "harvesting-filling",
+    colonyId: "W1N1",
+    demandId,
+  });
+  return {
+    objectiveId: demandId,
+    colonyId: "W1N1",
+    revision: binding.revision,
+    reservationId: binding.reservationId,
+    energyCost: 200,
+    spawn: { spawnId: `spawn-${String(index)}`, startTick: tick, endTick: tick + 9 },
+  } as const;
+}
+
 describe("ColonyDirector owner boundary", () => {
+  it("aligns exact population and combined selections with the broker logical cap", () => {
+    const tick = 10;
+    const base = {
+      tick,
+      snapshot: emptyWorldSnapshot(tick, "shard3"),
+      config: buildRuntimeConfig(),
+      owner: {},
+      cpuMode: "normal" as const,
+      cpuBudget: CPU_BUDGET,
+    };
+    const population = Array.from({ length: MAX_LOGICAL_SPAWN_DEMANDS }, (_, index) =>
+      populationSelection(index, tick),
+    );
+
+    expect(() =>
+      new ColonyDirector().begin({ ...base, populationSpawnSelections: population }),
+    ).toThrow(/active capability demand/u);
+    expect(() =>
+      new ColonyDirector().begin({
+        ...base,
+        populationSpawnSelections: [...population, populationSelection(64, tick)],
+      }),
+    ).toThrow(/population spawn selections exceed the broker logical demand cap/u);
+    expect(() =>
+      new ColonyDirector().begin({
+        ...base,
+        populationSpawnSelections: population.slice(0, MAX_LOGICAL_SPAWN_DEMANDS - 1),
+        recoverySpawnSelections: [recoverySelection(tick)],
+      }),
+    ).toThrow(/active capability demand/u);
+    expect(() =>
+      new ColonyDirector().begin({
+        ...base,
+        populationSpawnSelections: population,
+        recoverySpawnSelections: [recoverySelection(tick)],
+      }),
+    ).toThrow(/combined spawn selections exceed the broker logical demand cap/u);
+  });
+
+  it("canonically admits the highest-priority 512 trusted raw budget requests", () => {
+    const optional = Array.from({ length: MAX_RAW_BUDGET_REQUESTS_PER_TICK }, (_, index) =>
+      request(index),
+    );
+    const urgent: BudgetRequest = {
+      ...request(MAX_RAW_BUDGET_REQUESTS_PER_TICK),
+      category: "defense",
+      issuer: "defense/urgent",
+    };
+    const malformed: BudgetRequest = {
+      ...request(MAX_RAW_BUDGET_REQUESTS_PER_TICK + 1),
+      category: "malformed" as BudgetRequest["category"],
+      issuer: "malformed/category",
+    };
+    const forward = admitRawColonyBudgetRequests([...optional, malformed, urgent]);
+    const reversed = admitRawColonyBudgetRequests([urgent, malformed, ...optional].reverse());
+
+    expect(forward).toHaveLength(MAX_RAW_BUDGET_REQUESTS_PER_TICK);
+    expect(Object.isFrozen(forward)).toBe(true);
+    expect(forward.map(({ issuer }) => issuer)).toEqual(reversed.map(({ issuer }) => issuer));
+    expect(forward[0]?.issuer).toBe(urgent.issuer);
+    expect(forward.some(({ issuer }) => issuer === malformed.issuer)).toBe(false);
+    expect(forward.some(({ issuer }) => issuer === "economy/growth-511")).toBe(false);
+    expect(
+      new ColonyDirector().plan({
+        tick: 10,
+        snapshot: emptyWorldSnapshot(10, "shard3"),
+        config: buildRuntimeConfig(),
+        owner: {},
+        cpuMode: "normal",
+        cpuBudget: CPU_BUDGET,
+        requests: forward,
+      }).decisions,
+    ).toHaveLength(MAX_RAW_BUDGET_REQUESTS_PER_TICK);
+  });
+
+  it("consumes only an ephemeral population spawn claim and retains the exact domain revision", () => {
+    const director = new ColonyDirector();
+    const config = buildRuntimeConfig();
+    const objectiveId = "mining/W1N1/source-1";
+    const domainRequest = (revision: number): BudgetRequest => ({
+      colonyId: "W1N1",
+      category: "harvesting-filling",
+      issuer: objectiveId,
+      revision,
+      expiresAt: 10_000,
+      energy: null,
+      cpu: { minimum: 1, desired: 1 },
+      spawn: null,
+    });
+    const stalePopulation: ContractPopulationView = {
+      status: "ready",
+      loads: [
+        {
+          backlogWorkTicks: 50,
+          category: "harvesting-filling",
+          colonyId: "W1N1",
+          contractId: "contract-static-mining",
+          measuredWorkTicks: 0,
+          minimumCapability: {
+            attack: 0,
+            carry: 0,
+            claim: 0,
+            heal: 0,
+            move: 1,
+            rangedAttack: 0,
+            tough: 0,
+            work: 5,
+          },
+          mode: "stationary",
+          objectiveId,
+          reservationId: formatReservationId(domainRequest(1)),
+          revision: 1,
+          sourceCapacityWorkTicks: 50,
+          travelTicks: 0,
+        },
+      ],
+    };
+    const exactSession = (tick: number, owner: unknown, requests: readonly BudgetRequest[]) => {
+      const input = {
+        tick,
+        snapshot: bootstrapSnapshot(tick, 550, "W1N1", {
+          controllerLevel: 2,
+          energyCapacity: 550,
+          legalWorker: true,
+        }),
+        config,
+        owner,
+        cpuMode: "normal" as const,
+        cpuBudget: CPU_BUDGET,
+        requests,
+        population: stalePopulation,
+      };
+      const provisional = director.begin(input);
+      const demand = provisional.result.colonies[0]?.populationPolicy.demands[0];
+      if (demand === undefined) throw new Error("expected a static-mining population demand");
+      const binding = populationSpawnDemandBinding({
+        category: demand.category,
+        colonyId: demand.colonyId,
+        demandId: demand.id,
+      });
+      return {
+        binding,
+        session: director.begin({
+          ...input,
+          populationSpawnSelections: [
+            {
+              objectiveId: demand.id,
+              colonyId: demand.colonyId,
+              revision: binding.revision,
+              reservationId: binding.reservationId,
+              energyCost: 550,
+              spawn: { spawnId: "spawn-1", startTick: tick, endTick: tick + 21 },
+            },
+          ],
+        }),
+      };
+    };
+
+    const first = exactSession(10, {}, [domainRequest(1)]);
+    expect(first.session.result.reservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ issuer: objectiveId, revision: 1, status: "active" }),
+      ]),
+    );
+    expect(
+      first.session.result.reservations.some(
+        ({ issuer, revision, status }) =>
+          issuer.startsWith("population-spawn/") && revision === 1 && status === "active",
+      ),
+    ).toBe(true);
+    const firstSettled = first.session.settle(10, [
+      { reservationId: first.binding.reservationId, status: "scheduled", energyCost: 550 },
+    ]);
+    expect(firstSettled.reservations).toEqual([
+      expect.objectContaining({ issuer: objectiveId, revision: 1, status: "active" }),
+    ]);
+    expect(
+      firstSettled.reservations.some(({ issuer }) => issuer.startsWith("population-spawn/")),
+    ).toBe(false);
+    if (firstSettled.replacementOwner === null) throw new Error("expected settled owner");
+
+    // The contract population can still be owner-bound to rev1 while the exact domain request has
+    // advanced to rev2. Selection follows demand identity; authorization follows active rev2.
+    const forwardRequests = [domainRequest(1), domainRequest(2)];
+    const secondForward = exactSession(11, firstSettled.replacementOwner, forwardRequests);
+    const secondReordered = exactSession(
+      11,
+      firstSettled.replacementOwner,
+      [...forwardRequests].reverse(),
+    );
+    for (const second of [secondForward, secondReordered]) {
+      expect(second.session.result.decisions).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ reasonCode: "revision-reused" })]),
+      );
+      expect(second.session.result.reservations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ issuer: objectiveId, revision: 2, status: "active" }),
+          expect.objectContaining({
+            reservationId: second.binding.reservationId,
+            revision: 1,
+            status: "active",
+          }),
+        ]),
+      );
+      const secondSettled = second.session.settle(11, [
+        { reservationId: second.binding.reservationId, status: "scheduled", energyCost: 550 },
+      ]);
+      expect(secondSettled.reservations).toEqual([
+        expect.objectContaining({ issuer: objectiveId, revision: 2, status: "active" }),
+      ]);
+    }
+  });
+
   it("starts durable recovery before the last worker can outlive its successor handoff", () => {
     const result = new ColonyDirector().plan({
       tick: 100,
@@ -192,7 +427,7 @@ describe("ColonyDirector owner boundary", () => {
       owner: { schemaVersion: 999 },
       cpuMode: "normal",
       cpuBudget: CPU_BUDGET,
-      requests: Array.from({ length: MAX_BUDGET_REQUESTS_PER_TICK * 2 + 1 }, (_, index) =>
+      requests: Array.from({ length: MAX_RAW_BUDGET_REQUESTS_PER_TICK + 1 }, (_, index) =>
         request(index),
       ),
     });
@@ -230,7 +465,7 @@ describe("ColonyDirector owner boundary", () => {
     expect(() =>
       director.plan({
         ...base,
-        requests: Array.from({ length: MAX_BUDGET_REQUESTS_PER_TICK * 2 + 1 }, (_, index) =>
+        requests: Array.from({ length: MAX_RAW_BUDGET_REQUESTS_PER_TICK + 1 }, (_, index) =>
           request(index),
         ),
       }),

@@ -16,7 +16,7 @@ import {
 const TICK = 100;
 
 describe("WorkforceAllocator", () => {
-  it("keeps partially loaded actors eligible for harvest batching", () => {
+  it("keeps empty actors eligible for acquisition and loaded actors eligible for delivery", () => {
     const empty = makeActor("actor:empty", {
       capability: capability({ carry: 1, move: 1, work: 1 }),
       energy: 0,
@@ -48,12 +48,73 @@ describe("WorkforceAllocator", () => {
       requiredCapability: capability({ carry: 1 }),
     });
 
-    expect(allocate([carrying], [harvest]).assignments).toEqual([
-      expect.objectContaining({ actorId: carrying.id, contractId: harvest.id }),
+    expect(allocate([empty], [harvest]).assignments).toEqual([
+      expect.objectContaining({ actorId: empty.id, contractId: harvest.id }),
     ]);
     expect(allocate([empty, carrying], [transfer]).assignments).toEqual([
       expect.objectContaining({ actorId: carrying.id, contractId: transfer.id }),
     ]);
+  });
+
+  it("uses cargo evidence to keep acquisition sticky only across a live incumbent lease", () => {
+    for (const action of ["harvest", "pickup", "withdraw"] as const) {
+      const carrying = makeActor(`actor:carrying:${action}`, {
+        capability: capability({ carry: 1, move: 1, work: 1 }),
+        energy: 25,
+        freeCapacity: 25,
+      });
+      const empty = { ...carrying, energy: 0, freeCapacity: 50 };
+      const lease = {
+        actorId: carrying.id,
+        actorName: carrying.name,
+        assignedAt: TICK - 1,
+        assignmentCost: 0,
+        expiresAt: TICK + 1,
+        travelTicks: 0,
+      };
+      const acquire = makeContract(`contract:acquire:${action}`, {
+        execution: {
+          action,
+          completion: "continuous",
+          counterpartId: null,
+          resourceType: null,
+          version: 1,
+        },
+        kind: action === "harvest" ? "harvest" : "haul",
+        lease,
+        priority: { class: "survival", value: 1_000 },
+        requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+        state: "active",
+      });
+      const consume = makeContract(`contract:consume:${action}`, {
+        execution: {
+          action: "upgrade-controller",
+          completion: "continuous",
+          counterpartId: null,
+          resourceType: null,
+          version: 1,
+        },
+        kind: "upgrade",
+        priority: { class: "growth", value: 1_000 },
+        requiredCapability: capability({ carry: 1, move: 1, work: 1 }),
+      });
+
+      expect(allocate([carrying], [acquire, consume]).assignments).toEqual([
+        expect.objectContaining({ actorId: carrying.id, contractId: acquire.id }),
+      ]);
+      expect(
+        allocate([carrying], [{ ...acquire, lease: { ...lease, expiresAt: TICK } }, consume]),
+      ).toMatchObject({
+        assignments: [expect.objectContaining({ actorId: carrying.id, contractId: consume.id })],
+        deferred: [expect.objectContaining({ contractId: acquire.id, reason: "no-viable-actor" })],
+      });
+      expect(
+        allocate([empty], [{ ...acquire, lease: null, state: "funded" }, consume]).assignments,
+      ).toEqual([expect.objectContaining({ actorId: empty.id, contractId: acquire.id })]);
+      expect(
+        allocate([carrying], [{ ...acquire, lease: null, state: "funded" }]).assignments,
+      ).toEqual([expect.objectContaining({ actorId: carrying.id, contractId: acquire.id })]);
+    }
   });
 
   it("assigns zero-carry drop miners while full mobile harvesters remain ineligible", () => {
@@ -599,6 +660,101 @@ describe("WorkforceAllocator", () => {
         actorId: loadedDistantWorker.id,
         assignmentCost: 111,
         travelTicks: 111,
+      }),
+    ]);
+  });
+
+  it("sends a loaded distant RCL2 worker to its controller instead of reacquiring", () => {
+    const capabilityAtRcl2 = capability({ carry: 2, move: 3, work: 3 });
+    const loaded = makeActor("actor:rcl2-loaded", {
+      capability: capabilityAtRcl2,
+      energy: 100,
+      freeCapacity: 0,
+      ticksToLive: 1_500,
+    });
+    const acquire = makeContract("contract:rcl2-acquire", {
+      execution: {
+        action: "pickup",
+        completion: "target-depleted",
+        counterpartId: null,
+        resourceType: "energy",
+        version: 1,
+      },
+      kind: "haul",
+      priority: { class: "survival", value: 1_200 },
+      requiredCapability: capability({ carry: 1, move: 1 }),
+    });
+    const upgrade = makeContract("contract:rcl2-upgrade", {
+      deadline: 3_000,
+      execution: {
+        action: "upgrade-controller",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 1,
+      },
+      kind: "upgrade",
+      expiresAt: 3_001,
+      maxAssignmentCost: 1_500,
+      priority: { class: "survival", value: 1_100 },
+      requiredCapability: capabilityAtRcl2,
+    });
+
+    const result = allocate(
+      [loaded],
+      [acquire, upgrade],
+      travelView(() => 111),
+    );
+    expect(result.assignments).toEqual([
+      expect.objectContaining({
+        actorId: loaded.id,
+        assignmentCost: 111,
+        contractId: upgrade.id,
+        travelTicks: 111,
+      }),
+    ]);
+    expect(result.deferred).toContainEqual({
+      contractId: acquire.id,
+      reason: "no-viable-actor",
+    });
+  });
+
+  it("leases a fresh distant static-miner successor after incumbent handoff", () => {
+    const staticCapability = capability({ move: 1, work: 5 });
+    const successor = makeActor("actor:static-successor", {
+      capability: staticCapability,
+      energy: 0,
+      freeCapacity: 0,
+      ticksToLive: 1_382,
+    });
+    const stationary = makeContract("contract:static-successor", {
+      deadline: 3_000,
+      estimatedWorkTicks: 50,
+      execution: {
+        action: "harvest",
+        completion: "continuous",
+        counterpartId: null,
+        resourceType: null,
+        version: 2,
+        workPosition: { roomName: "W1N1", x: 10, y: 10 },
+      },
+      expiresAt: 3_001,
+      maxAssignmentCost: 1_250,
+      requiredCapability: staticCapability,
+    });
+
+    expect(
+      allocate(
+        [successor],
+        [stationary],
+        travelView(() => 1_250),
+      ).assignments,
+    ).toEqual([
+      expect.objectContaining({
+        actorId: successor.id,
+        assignmentCost: 1_250,
+        contractId: stationary.id,
+        travelTicks: 1_250,
       }),
     ]);
   });

@@ -200,6 +200,45 @@ describe("SpawnBroker", () => {
     expect(result.selections).toEqual([]);
   });
 
+  it("treats one explicit replacement family as committed across multiple spawns", () => {
+    const replacement = demand({
+      nameBasis: "worker",
+      replacementCreepName: "worker",
+    });
+    const inFlight = arbitrate({
+      snapshot: snapshot([
+        {
+          energy: 600,
+          spawns: [spawn("spawn-a", { creepName: "worker~1", remainingTime: 5 }), spawn("spawn-b")],
+          creepNames: ["worker"],
+        },
+      ]),
+      demands: [replacement],
+    });
+    expect(inFlight.decisions[0]).toMatchObject({
+      status: "deferred",
+      reason: "observed-spawning",
+      retryAt: TICK + 5,
+    });
+    expect(inFlight.selections).toEqual([]);
+
+    const ready = arbitrate({
+      snapshot: snapshot([
+        {
+          energy: 600,
+          spawns: [spawn("spawn-a"), spawn("spawn-b")],
+          creepNames: ["worker", "worker~1"],
+        },
+      ]),
+      demands: [replacement],
+    });
+    expect(ready.decisions[0]).toMatchObject({
+      status: "satisfied",
+      reason: "observed-creep",
+    });
+    expect(ready.selections).toEqual([]);
+  });
+
   it("adopts generated identity names observed as live or spawning", () => {
     const first = arbitrate({
       snapshot: snapshot([{ energy: 300, spawns: [spawn("spawn-a")] }]),
@@ -575,6 +614,43 @@ describe("SpawnBroker", () => {
     expect(expired.decisions[0]).toMatchObject({
       status: "impossible",
       reason: "deadline-expired",
+    });
+  });
+
+  it("permits an exact stationary demand to relax movement without changing the global policy", () => {
+    const stationary = demand({
+      id: "static-miner",
+      requiredPartCounts: counts({ work: 5, move: 1 }),
+      energyCap: 550,
+      maximumNonMovePartsPerMovePart: 5,
+    });
+    const snapshotAtRcl2Capacity = snapshot([
+      { energy: 550, capacity: 550, spawns: [spawn("spawn-a")] },
+    ]);
+
+    const selected = arbitrate({
+      snapshot: snapshotAtRcl2Capacity,
+      demands: [stationary],
+    });
+    expect(selected.selections[0]).toMatchObject({
+      body: ["work", "work", "work", "work", "work", "move"],
+      energyCost: 550,
+    });
+
+    const globallyBoundDemand = demand({
+      id: "static-miner",
+      requiredPartCounts: counts({ work: 5, move: 1 }),
+      energyCap: 550,
+    });
+    const globallyBound = arbitrate({
+      snapshot: snapshotAtRcl2Capacity,
+      demands: [globallyBoundDemand],
+    });
+    expect(globallyBound.decisions[0]).toMatchObject({
+      status: "impossible",
+      reason: "body-impossible",
+      bodyReason: "energy-capacity-exceeded",
+      energyCost: 650,
     });
   });
 

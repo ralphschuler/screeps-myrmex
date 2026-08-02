@@ -19,11 +19,14 @@ repair. Structural guards reject direct, aliased, rebound, `call`, `apply`, `mov
 `moveByPath` bypasses.
 
 The authority stores no persistent queue or creep task Memory. Future lease agents (#38) are only
-producers. Issue #112 provides bounded tick-local producer channels plus reconstructible static
-matrix/local-path cache namespaces and a local-only, policy-bounded search seam. The path cache
-never holds live objects, occupancy, reservations, or task state; the arbiter applies dynamic
-reservation after cache lookup. Expected return codes and adapter faults become typed execution
-results; they do not throw across the tick boundary.
+producers. Issue #112 provides bounded tick-local producer channels plus a reconstructible tagged
+static-matrix/local-path cache and a local-only, policy-bounded search seam.
+`movement.path-cache.v3` keeps both value kinds behind the same canonical owner while preserving
+independent entry TTLs and dependencies. Its shared 240-entry cap leaves bounded headroom for
+movement-progress and compiled layout evidence under the production heap limit. The path cache never
+holds live objects, occupancy, reservations, or task state; the arbiter applies dynamic reservation
+after cache lookup. Expected return codes and adapter faults become typed execution results; they do
+not throw across the tick boundary.
 
 Issue #115 supplies the production composition of that seam: Observe publishes a compact detached
 terrain/static-structure projection, and the runtime-owned adapter alone converts it to `PathFinder`

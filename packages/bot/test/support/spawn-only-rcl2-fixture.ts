@@ -11,6 +11,7 @@ const ERR_FULL = -8;
 const ERR_NOT_IN_RANGE = -9;
 const ERR_INVALID_ARGS = -10;
 const ERR_TIRED = -11;
+const BUILD_POWER = 5;
 
 const FIND_CREEPS_VALUE = 101;
 const FIND_SOURCES_VALUE = 105;
@@ -31,6 +32,7 @@ interface MutableActor {
   readonly id: string;
   readonly name: string;
   position: Position;
+  spawning: boolean;
   ticksToLive: number;
 }
 
@@ -60,16 +62,43 @@ interface MutableSource {
 }
 
 type PendingAction =
-  | { readonly actorId: string; readonly kind: "build"; readonly targetId: string }
-  | { readonly actorId: string; readonly kind: "harvest"; readonly targetId: string }
-  | { readonly actorId: string; readonly kind: "pickup"; readonly targetId: string }
+  | {
+      readonly actorId: string;
+      readonly commandTick: number;
+      readonly kind: "build";
+      readonly targetId: string;
+    }
+  | {
+      readonly actorId: string;
+      readonly commandTick: number;
+      readonly kind: "harvest";
+      readonly targetId: string;
+    }
+  | {
+      readonly actorId: string;
+      readonly commandTick: number;
+      readonly kind: "pickup";
+      readonly targetId: string;
+    }
   | {
       readonly actorId: string;
       readonly amount: number | undefined;
+      readonly commandTick: number;
       readonly kind: "transfer";
       readonly targetId: string;
     }
-  | { readonly actorId: string; readonly kind: "upgrade"; readonly targetId: string };
+  | {
+      readonly actorId: string;
+      readonly commandTick: number;
+      readonly kind: "upgrade";
+      readonly targetId: string;
+    };
+
+export interface SpawnOnlyRcl2WorldOptions {
+  readonly controllerInitialProgress?: number;
+  readonly controllerInitialTicksToDowngrade?: number;
+  readonly reverseCollections?: boolean;
+}
 
 export interface SpawnOnlyMoveCall {
   readonly actorId: string;
@@ -85,8 +114,60 @@ export interface SpawnOnlyMoveEffect extends SpawnOnlyMoveCall {
 
 export interface SpawnOnlyBuildEffect {
   readonly actorId: string;
+  readonly commandTick: number;
   readonly energy: number;
   readonly progressAfter: number;
+  readonly progressBefore: number;
+  readonly progressDelta: number;
+  readonly targetId: string;
+  readonly visibleAt: number;
+}
+
+export interface SpawnOnlyHarvestEffect {
+  readonly actorId: string;
+  readonly carriedEnergy: number;
+  readonly commandTick: number;
+  readonly droppedEnergy: number;
+  readonly energy: number;
+  readonly sourceEnergyAfter: number;
+  readonly targetId: string;
+  readonly visibleAt: number;
+}
+
+export interface SpawnOnlyPickupEffect {
+  readonly actorId: string;
+  readonly commandTick: number;
+  readonly energy: number;
+  readonly remainingEnergy: number;
+  readonly targetId: string;
+  readonly visibleAt: number;
+}
+
+export interface SpawnOnlyTransferEffect {
+  readonly actorId: string;
+  readonly commandTick: number;
+  readonly energy: number;
+  readonly targetId: string;
+  readonly visibleAt: number;
+}
+
+export interface SpawnOnlySpawnEffect {
+  readonly body: readonly BodyPartConstant[];
+  readonly commandTick: number;
+  readonly cost: number;
+  readonly name: string;
+  readonly readyAt: number;
+  readonly visibleAt: number;
+}
+
+export interface SpawnOnlyUpgradeEffect {
+  readonly actorId: string;
+  readonly commandTick: number;
+  readonly energy: number;
+  readonly levelAfter: number;
+  readonly levelBefore: number;
+  readonly progressAfter: number;
+  readonly progressBefore: number;
   readonly targetId: string;
   readonly visibleAt: number;
 }
@@ -106,8 +187,14 @@ export interface SpawnOnlyRcl2World {
     readonly x: number;
     readonly y: number;
   }[];
+  readonly controllerLevel: number;
   readonly controllerProgress: number;
+  readonly controllerProgressTotal: number;
+  readonly controllerTicksToDowngrade: number;
   readonly extensionCount: number;
+  readonly harvestEffects: readonly SpawnOnlyHarvestEffect[];
+  readonly pickupEffects: readonly SpawnOnlyPickupEffect[];
+  readonly droppedEnergy: readonly { readonly amount: number; readonly id: string }[];
   readonly initialWorkerId: string;
   readonly moveCalls: readonly SpawnOnlyMoveCall[];
   readonly moveEffects: readonly SpawnOnlyMoveEffect[];
@@ -115,11 +202,14 @@ export interface SpawnOnlyRcl2World {
   readonly pathUnavailableSearches: number;
   readonly roomEnergyCapacity: number;
   readonly siteCount: number;
+  readonly spawnEffects: readonly SpawnOnlySpawnEffect[];
+  readonly transferEffects: readonly SpawnOnlyTransferEffect[];
   readonly spawnCalls: readonly {
     readonly body: readonly BodyPartConstant[];
     readonly name: string;
     readonly tick: number;
   }[];
+  readonly upgradeEffects: readonly SpawnOnlyUpgradeEffect[];
   readonly globals: {
     readonly PathFinder: unknown;
     readonly RoomPosition: unknown;
@@ -133,17 +223,57 @@ export interface SpawnOnlyRcl2World {
   setRoomEnergy(energy: number): void;
 }
 
-export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
-  let currentTick = START_TICK - 1;
+type InitialWorldProfile = "phase2-rcl2-exit" | "spawn-only";
+
+export function spawnOnlyRcl2World(options: SpawnOnlyRcl2WorldOptions = {}): SpawnOnlyRcl2World {
+  return createRcl2World("spawn-only", options);
+}
+
+/** Versioned legal Phase 1 exit used as the production RCL2 progression start. */
+export function phase2Rcl2ExitWorld(options: SpawnOnlyRcl2WorldOptions = {}): SpawnOnlyRcl2World {
+  return createRcl2World("phase2-rcl2-exit", options);
+}
+
+function createRcl2World(
+  profile: InitialWorldProfile,
+  options: SpawnOnlyRcl2WorldOptions,
+): SpawnOnlyRcl2World {
+  const firstTick = profile === "phase2-rcl2-exit" ? 100 : START_TICK;
+  const controllerInitialProgress = options.controllerInitialProgress ?? 0;
+  if (
+    !Number.isSafeInteger(controllerInitialProgress) ||
+    controllerInitialProgress < 0 ||
+    controllerInitialProgress >= controllerProgressTotalFor(2)
+  ) {
+    throw new Error("fixture controller progress is outside RCL2");
+  }
+  const controllerInitialTicksToDowngrade =
+    options.controllerInitialTicksToDowngrade ??
+    controllerDowngradeMaximumFor(2) / 2 + (profile === "phase2-rcl2-exit" ? 100 : 0);
+  if (
+    !Number.isSafeInteger(controllerInitialTicksToDowngrade) ||
+    controllerInitialTicksToDowngrade <= 0 ||
+    controllerInitialTicksToDowngrade > controllerDowngradeMaximumFor(2)
+  ) {
+    throw new Error("fixture controller downgrade timer is outside RCL2");
+  }
+  let currentTick = firstTick - 1;
   let cpuBucket = 10_000;
-  let reverseCollections = false;
+  let reverseCollections = options.reverseCollections ?? false;
   let pathUnavailable = false;
-  let controllerProgress = 0;
-  let controllerTicksToDowngrade = 20_000;
+  let controllerLevel = 2;
+  let controllerProgress = controllerInitialProgress;
+  let controllerTicksToDowngrade = controllerInitialTicksToDowngrade;
   let pendingSpawn: {
+    readonly actorId: string;
     readonly body: readonly BodyPartConstant[];
     readonly name: string;
     readonly readyAt: number;
+  } | null = null;
+  let pendingSpawnCommand: {
+    readonly body: readonly BodyPartConstant[];
+    readonly commandTick: number;
+    readonly name: string;
   } | null = null;
   const actors = new Map<string, MutableActor>();
   const sites = new Map<string, MutableSite>();
@@ -159,6 +289,11 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
   const moveCalls: SpawnOnlyMoveCall[] = [];
   const moveEffects: SpawnOnlyMoveEffect[] = [];
   const buildEffects: SpawnOnlyBuildEffect[] = [];
+  const harvestEffects: SpawnOnlyHarvestEffect[] = [];
+  const pickupEffects: SpawnOnlyPickupEffect[] = [];
+  const transferEffects: SpawnOnlyTransferEffect[] = [];
+  const spawnEffects: SpawnOnlySpawnEffect[] = [];
+  const upgradeEffects: SpawnOnlyUpgradeEffect[] = [];
   const siteCalls: Array<{
     readonly code: number;
     readonly structureType: string;
@@ -175,18 +310,31 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
   let pathUnavailableSearches = 0;
 
   const spawn = addStructure("spawn-a", "spawn", 25, 25, 300, 300);
-  addActor(
-    "worker-initial",
-    "worker-initial",
-    [
-      ...Array<BodyPartConstant>(20).fill("work"),
-      ...Array<BodyPartConstant>(10).fill("carry"),
-      ...Array<BodyPartConstant>(20).fill("move"),
-    ],
-    18,
-    21,
-    0,
-  );
+  if (profile === "phase2-rcl2-exit") {
+    addStructure("extension-initial-a", "extension", 24, 25, 0, 50);
+    addStructure("extension-initial-b", "extension", 26, 25, 0, 50);
+    sites.set("road-site", {
+      id: "road-site",
+      position: position(25, 24),
+      progress: 5,
+      progressTotal: constructionCost("road"),
+      structureType: "road",
+    });
+    addActor("worker-initial", "worker-initial", ["work", "carry", "carry", "move"], 18, 21, 50);
+  } else {
+    addActor(
+      "worker-initial",
+      "worker-initial",
+      [
+        ...Array<BodyPartConstant>(20).fill("work"),
+        ...Array<BodyPartConstant>(10).fill("carry"),
+        ...Array<BodyPartConstant>(20).fill("move"),
+      ],
+      18,
+      21,
+      0,
+    );
+  }
   addSource("source-a", 21, 21);
   addSource("source-b", 21, 29);
 
@@ -238,6 +386,7 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     x: number,
     y: number,
     energy: number,
+    spawning = false,
   ): MutableActor {
     const actor: MutableActor = {
       body: [...body],
@@ -246,6 +395,7 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       id,
       name,
       position: position(x, y),
+      spawning,
       ticksToLive: 1_500,
     };
     actors.set(id, actor);
@@ -281,6 +431,43 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     if (tick !== currentTick + 1)
       throw new Error("spawn-only RCL2 fixture requires consecutive ticks");
     const visibleAt = tick;
+    // The first call exposes the pinned exit directly; later calls settle one elapsed game tick.
+    // The engine restores the downgrade deadline once per tick with any successful controller
+    // upgrade, regardless of how many creeps or WORK parts contributed during that tick.
+    const settlesElapsedTick = currentTick >= firstTick;
+    let upgradedController = false;
+
+    if (pendingSpawnCommand !== null) {
+      const command = pendingSpawnCommand;
+      const cost = command.body.reduce((sum, part) => sum + bodyPartCost(part), 0);
+      if (roomEnergy() < cost)
+        throw new Error("accepted fixture spawn command lost its reserved room energy");
+      consumeRoomEnergy(cost);
+      const actor = addActor(
+        `spawned-${command.name}`,
+        command.name,
+        command.body,
+        spawn.position.x,
+        spawn.position.y,
+        0,
+        true,
+      );
+      pendingSpawn = {
+        actorId: actor.id,
+        body: command.body,
+        name: command.name,
+        readyAt: command.commandTick + command.body.length * 3,
+      };
+      spawnEffects.push({
+        body: [...command.body],
+        commandTick: command.commandTick,
+        cost,
+        name: command.name,
+        readyAt: pendingSpawn.readyAt,
+        visibleAt,
+      });
+      pendingSpawnCommand = null;
+    }
 
     for (const pending of pendingSites.splice(0)) {
       const id = `site-${pending.structureType}-${String(pending.position.x)}-${String(pending.position.y)}`;
@@ -307,7 +494,11 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
         ![...actors.values()].some((other) => other.id !== actorId && same(other.position, to))
       ) {
         actor.position = to;
-        actor.fatigue += movementFatigue(actor);
+        actor.fatigue += spawnOnlyMovementFatigue(
+          actor.body,
+          actor.energy,
+          structureAt(to)?.structureType === "road",
+        );
         const call = [...moveCalls]
           .reverse()
           .find((entry) => entry.actorId === actorId && entry.tick === tick - 1);
@@ -316,15 +507,28 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     }
     pendingMoves.clear();
 
-    for (const action of pendingActions.values()) applyAction(action, visibleAt);
+    for (const action of [...pendingActions.values()].sort((a, b) =>
+      a.actorId.localeCompare(b.actorId),
+    )) {
+      const upgradeEffectCount = upgradeEffects.length;
+      applyAction(action, visibleAt);
+      if (action.kind === "upgrade" && upgradeEffects.length > upgradeEffectCount)
+        upgradedController = true;
+    }
     pendingActions.clear();
 
+    if (settlesElapsedTick) {
+      controllerTicksToDowngrade = upgradedController
+        ? Math.min(controllerDowngradeMaximumFor(controllerLevel), controllerTicksToDowngrade + 100)
+        : Math.max(0, controllerTicksToDowngrade - 1);
+    }
+
     for (const actor of [...actors.values()]) {
+      if (actor.spawning) continue;
       actor.fatigue = Math.max(0, actor.fatigue - activeParts(actor, "move") * 2);
       actor.ticksToLive -= 1;
       if (actor.ticksToLive <= 0) actors.delete(actor.id);
     }
-    controllerTicksToDowngrade = Math.max(0, controllerTicksToDowngrade - 1);
     for (const source of sources.values()) {
       if (source.energy >= 3_000) continue;
       source.regeneration -= 1;
@@ -334,14 +538,10 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       }
     }
     if (pendingSpawn !== null && tick >= pendingSpawn.readyAt) {
-      addActor(
-        `spawned-${pendingSpawn.name}`,
-        pendingSpawn.name,
-        pendingSpawn.body,
-        spawn.position.x,
-        spawn.position.y,
-        0,
-      );
+      const actor = actors.get(pendingSpawn.actorId);
+      if (actor === undefined)
+        throw new Error("fixture lost the creep object for an active spawn process");
+      actor.spawning = false;
       pendingSpawn = null;
     }
     currentTick = tick;
@@ -367,6 +567,16 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
           position: actor.position,
         });
       }
+      harvestEffects.push({
+        actorId: actor.id,
+        carriedEnergy: carried,
+        commandTick: action.commandTick,
+        droppedEnergy: dropped,
+        energy: amount,
+        sourceEnergyAfter: source.energy,
+        targetId: source.id,
+        visibleAt,
+      });
       return;
     }
     if (action.kind === "pickup") {
@@ -375,6 +585,14 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       const amount = Math.min(drop.amount, carryCapacity(actor) - actor.energy);
       actor.energy += amount;
       drop.amount -= amount;
+      pickupEffects.push({
+        actorId: actor.id,
+        commandTick: action.commandTick,
+        energy: amount,
+        remainingEnergy: Math.max(0, drop.amount),
+        targetId: action.targetId,
+        visibleAt,
+      });
       if (drop.amount <= 0) drops.delete(action.targetId);
       return;
     }
@@ -388,23 +606,36 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       );
       actor.energy -= Math.max(0, amount);
       target.energy += Math.max(0, amount);
+      if (amount > 0)
+        transferEffects.push({
+          actorId: actor.id,
+          commandTick: action.commandTick,
+          energy: amount,
+          targetId: action.targetId,
+          visibleAt,
+        });
       return;
     }
     if (action.kind === "build") {
       const site = sites.get(action.targetId);
       if (site === undefined || range(actor.position, site.position) > 3) return;
+      const progressBefore = site.progress;
       const energy = Math.min(
-        activeParts(actor, "work") * 5,
+        activeParts(actor, "work"),
         actor.energy,
-        site.progressTotal - site.progress,
+        Math.ceil((site.progressTotal - site.progress) / BUILD_POWER),
       );
       if (energy <= 0) return;
+      const progressDelta = Math.min(site.progressTotal - site.progress, energy * BUILD_POWER);
       actor.energy -= energy;
-      site.progress += energy;
+      site.progress += progressDelta;
       buildEffects.push({
         actorId: actor.id,
+        commandTick: action.commandTick,
         energy,
         progressAfter: site.progress,
+        progressBefore,
+        progressDelta,
         targetId: site.id,
         visibleAt,
       });
@@ -414,12 +645,39 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       }
       return;
     }
-    if (action.targetId !== "controller-a" || range(actor.position, controllerPosition) > 3) return;
+    if (
+      action.targetId !== "controller-a" ||
+      controllerLevel >= 8 ||
+      range(actor.position, controllerPosition) > 3
+    )
+      return;
+    const progressTotal = controllerProgressTotalFor(controllerLevel);
     const energy = Math.min(activeParts(actor, "work"), actor.energy);
     if (energy <= 0) return;
+    const levelBefore = controllerLevel;
+    const progressBefore = controllerProgress;
     actor.energy -= energy;
     controllerProgress += energy;
-    controllerTicksToDowngrade += energy * 100;
+    if (
+      controllerProgress >= progressTotal &&
+      controllerTicksToDowngrade + 100 >= controllerDowngradeMaximumFor(controllerLevel) &&
+      controllerLevel < 8
+    ) {
+      controllerLevel += 1;
+      controllerProgress -= progressTotal;
+      controllerTicksToDowngrade = controllerDowngradeMaximumFor(controllerLevel) / 2;
+    }
+    upgradeEffects.push({
+      actorId: actor.id,
+      commandTick: action.commandTick,
+      energy,
+      levelAfter: controllerLevel,
+      levelBefore,
+      progressAfter: controllerProgress,
+      progressBefore,
+      targetId: action.targetId,
+      visibleAt,
+    });
   }
 
   function addCompletedStructure(site: MutableSite): void {
@@ -457,10 +715,12 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
       },
       repair: () => ERR_INVALID_TARGET,
       room,
-      spawning: false,
+      get spawning() {
+        return actor.spawning;
+      },
       store: energyStore(() => actor.energy, carryCapacity(actor)),
       get ticksToLive() {
-        return actor.ticksToLive;
+        return actor.spawning ? undefined : actor.ticksToLive;
       },
       transfer: (target: AnyStoreStructure, resource: ResourceConstant, amount?: number) =>
         scheduleTransfer(actor, target, resource, amount),
@@ -470,6 +730,7 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
   }
 
   function scheduleMove(actor: MutableActor, direction: DirectionConstant): number {
+    if (actor.spawning) return ERR_BUSY;
     if (directionDelta(direction) === null) return ERR_INVALID_ARGS;
     if (actor.fatigue > 0) return ERR_TIRED;
     pendingMoves.set(actor.id, direction);
@@ -478,21 +739,29 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
   }
 
   function scheduleHarvest(actor: MutableActor, target: Source): number {
+    if (actor.spawning) return ERR_BUSY;
     const source = sources.get(String(target.id));
     if (source === undefined) return ERR_INVALID_TARGET;
     if (range(actor.position, source.position) > 1) return ERR_NOT_IN_RANGE;
     if (source.energy <= 0) return ERR_NOT_ENOUGH_ENERGY;
-    pendingActions.set(actor.id, { actorId: actor.id, kind: "harvest", targetId: source.id });
+    pendingActions.set(actor.id, {
+      actorId: actor.id,
+      commandTick: currentTick,
+      kind: "harvest",
+      targetId: source.id,
+    });
     return OK;
   }
 
   function schedulePickup(actor: MutableActor, target: Resource): number {
+    if (actor.spawning) return ERR_BUSY;
     const drop = drops.get(String(target.id));
     if (drop === undefined || drop.amount <= 0) return ERR_INVALID_TARGET;
     if (range(actor.position, drop.position) > 1) return ERR_NOT_IN_RANGE;
     if (actor.energy >= carryCapacity(actor)) return ERR_FULL;
     pendingActions.set(actor.id, {
       actorId: actor.id,
+      commandTick: currentTick,
       kind: "pickup",
       targetId: String(target.id),
     });
@@ -505,6 +774,7 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     resource: ResourceConstant,
     amount?: number,
   ): number {
+    if (actor.spawning) return ERR_BUSY;
     const structure = structures.get(String(target.id));
     if (resource !== "energy" || structure === undefined) return ERR_INVALID_TARGET;
     if (range(actor.position, structure.position) > 1) return ERR_NOT_IN_RANGE;
@@ -513,6 +783,7 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     pendingActions.set(actor.id, {
       actorId: actor.id,
       amount,
+      commandTick: currentTick,
       kind: "transfer",
       targetId: structure.id,
     });
@@ -520,19 +791,31 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
   }
 
   function scheduleBuild(actor: MutableActor, target: ConstructionSite): number {
+    if (actor.spawning) return ERR_BUSY;
     const site = sites.get(String(target.id));
     if (site === undefined) return ERR_INVALID_TARGET;
     if (range(actor.position, site.position) > 3) return ERR_NOT_IN_RANGE;
     if (actor.energy <= 0) return ERR_NOT_ENOUGH_ENERGY;
-    pendingActions.set(actor.id, { actorId: actor.id, kind: "build", targetId: site.id });
+    pendingActions.set(actor.id, {
+      actorId: actor.id,
+      commandTick: currentTick,
+      kind: "build",
+      targetId: site.id,
+    });
     return OK;
   }
 
   function scheduleUpgrade(actor: MutableActor, target: StructureController): number {
+    if (actor.spawning) return ERR_BUSY;
     if (String(target.id) !== "controller-a") return ERR_INVALID_TARGET;
     if (range(actor.position, controllerPosition) > 3) return ERR_NOT_IN_RANGE;
     if (actor.energy <= 0) return ERR_NOT_ENOUGH_ENERGY;
-    pendingActions.set(actor.id, { actorId: actor.id, kind: "upgrade", targetId: "controller-a" });
+    pendingActions.set(actor.id, {
+      actorId: actor.id,
+      commandTick: currentTick,
+      kind: "upgrade",
+      targetId: "controller-a",
+    });
     return OK;
   }
 
@@ -566,12 +849,15 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
         },
         spawnCreep: (body: BodyPartConstant[], name: string) => {
           spawnCalls.push({ body: [...body], name, tick: currentTick });
-          if (pendingSpawn !== null) return ERR_BUSY;
+          if (pendingSpawn !== null || pendingSpawnCommand !== null) return ERR_BUSY;
           if ([...actors.values()].some((actor) => actor.name === name)) return ERR_NAME_EXISTS;
           const cost = body.reduce((sum, part) => sum + bodyPartCost(part), 0);
           if (roomEnergy() < cost) return ERR_NOT_ENOUGH_ENERGY;
-          consumeRoomEnergy(cost);
-          pendingSpawn = { body: [...body], name, readyAt: currentTick + body.length * 3 };
+          pendingSpawnCommand = {
+            body: [...body],
+            commandTick: currentTick,
+            name,
+          };
           return OK;
         },
         store: energyStore(() => structure.energy, structure.energyCapacity),
@@ -628,14 +914,18 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
   const controllerPosition = position(30, 30);
   const controller = {
     id: "controller-a",
-    level: 2,
+    get level() {
+      return controllerLevel;
+    },
     my: true,
     owner: { username: "Myrmex" },
     pos: controllerPosition,
     get progress() {
       return controllerProgress;
     },
-    progressTotal: 45_000,
+    get progressTotal() {
+      return controllerProgressTotalFor(controllerLevel);
+    },
     safeMode: undefined,
     safeModeAvailable: 1,
     safeModeCooldown: undefined,
@@ -789,12 +1079,14 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
 
   const world: SpawnOnlyRcl2World = {
     get actorStates() {
-      return [...actors.values()].map(({ energy, id, position, ticksToLive }) => ({
-        energy,
-        id,
-        position,
-        ticksToLive,
-      }));
+      return [...actors.values()]
+        .filter(({ spawning }) => !spawning)
+        .map(({ energy, id, position, ticksToLive }) => ({
+          energy,
+          id,
+          position,
+          ticksToLive,
+        }));
     },
     get buildEffects() {
       return [...buildEffects];
@@ -802,8 +1094,17 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     get constructionSiteCalls() {
       return [...siteCalls];
     },
+    get controllerLevel() {
+      return controllerLevel;
+    },
     get controllerProgress() {
       return controllerProgress;
+    },
+    get controllerProgressTotal() {
+      return controllerProgressTotalFor(controllerLevel);
+    },
+    get controllerTicksToDowngrade() {
+      return controllerTicksToDowngrade;
     },
     get extensionCount() {
       return [...structures.values()].filter(({ structureType }) => structureType === "extension")
@@ -811,9 +1112,20 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     },
     game,
     globals: { PathFinder: pathFinder, RoomPosition: FakeRoomPosition },
+    get harvestEffects() {
+      return [...harvestEffects];
+    },
+    get pickupEffects() {
+      return [...pickupEffects];
+    },
+    get droppedEnergy() {
+      return [...drops]
+        .map(([id, { amount }]) => ({ amount, id }))
+        .sort((left, right) => left.id.localeCompare(right.id));
+    },
     initialWorkerId: "worker-initial",
     killAllWorkers: () => {
-      actors.clear();
+      for (const [actorId, actor] of actors) if (!actor.spawning) actors.delete(actorId);
       pendingActions.clear();
       pendingMoves.clear();
     },
@@ -868,8 +1180,17 @@ export function spawnOnlyRcl2World(): SpawnOnlyRcl2World {
     get siteCount() {
       return sites.size;
     },
+    get spawnEffects() {
+      return [...spawnEffects];
+    },
+    get transferEffects() {
+      return [...transferEffects];
+    },
     get spawnCalls() {
       return [...spawnCalls];
+    },
+    get upgradeEffects() {
+      return [...upgradeEffects];
     },
   };
   return world;
@@ -903,8 +1224,17 @@ function carryCapacity(actor: MutableActor): number {
   return activeParts(actor, "carry") * 50;
 }
 
-function movementFatigue(actor: MutableActor): number {
-  return actor.body.length - activeParts(actor, "move");
+/** Gross fatigue produced by one fixture movement intent before MOVE recovery settles. */
+export function spawnOnlyMovementFatigue(
+  body: readonly BodyPartConstant[],
+  carriedEnergy: number,
+  finishedRoad: boolean,
+): number {
+  const carryParts = body.filter((part) => part === "carry").length;
+  const occupiedCarryParts = Math.min(carryParts, Math.ceil(carriedEnergy / 50));
+  const weightedNonCarryParts = body.filter((part) => part !== "move" && part !== "carry").length;
+  const terrainFatigue = finishedRoad ? 1 : 2;
+  return (weightedNonCarryParts + occupiedCarryParts) * terrainFatigue;
 }
 
 function bodyPartCost(part: BodyPartConstant): number {
@@ -918,6 +1248,38 @@ function bodyPartCost(part: BodyPartConstant): number {
     tough: 10,
     work: 100,
   }[part];
+}
+
+function controllerProgressTotalFor(level: number): number {
+  const totals: Readonly<Record<number, number>> = {
+    1: 200,
+    2: 45_000,
+    3: 135_000,
+    4: 405_000,
+    5: 1_215_000,
+    6: 3_645_000,
+    7: 10_935_000,
+    8: 0,
+  };
+  const total = totals[level];
+  if (total === undefined) throw new Error("fixture controller level is unsupported");
+  return total;
+}
+
+function controllerDowngradeMaximumFor(level: number): number {
+  const maxima: Readonly<Record<number, number>> = {
+    1: 20_000,
+    2: 10_000,
+    3: 20_000,
+    4: 40_000,
+    5: 80_000,
+    6: 120_000,
+    7: 150_000,
+    8: 200_000,
+  };
+  const maximum = maxima[level];
+  if (maximum === undefined) throw new Error("fixture controller level is unsupported");
+  return maximum;
 }
 
 function constructionCost(structureType: BuildableStructureConstant): number {

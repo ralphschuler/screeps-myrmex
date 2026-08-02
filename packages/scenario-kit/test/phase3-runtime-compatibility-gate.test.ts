@@ -1,31 +1,32 @@
-import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { installMatureRuntimeGlobals } from "../../bot/test/support/mature-runtime-fixture";
+import { collectPhase3CurrentRuntimeCompatibilityReceipt } from "./fixtures/phase3-production-portfolio-soak";
 
-interface HistoricalPhase3Receipt {
-  readonly [key: string]: unknown;
-  readonly finalActiveRooms: readonly string[];
-  readonly maximumPersistentBytes: number;
-  readonly maximumRemotesOwnerBytes: number;
-  readonly reasonRows: readonly (readonly string[])[];
-  readonly semanticHashes: Readonly<Record<string, string>>;
-  readonly stateRows: readonly (readonly string[])[];
-}
+describe("Phase 3 current-runtime portfolio compatibility", () => {
+  beforeAll(() => {
+    vi.stubGlobal("FIND_CREEPS", 101);
+    vi.stubGlobal("FIND_HOSTILE_CREEPS", 102);
+    vi.stubGlobal("FIND_SOURCES", 105);
+    vi.stubGlobal("FIND_DROPPED_RESOURCES", 106);
+    vi.stubGlobal("FIND_STRUCTURES", 107);
+    vi.stubGlobal("FIND_CONSTRUCTION_SITES", 111);
+    installMatureRuntimeGlobals();
+  });
 
-describe("historical Phase 3 production remote portfolio gate", () => {
-  it("preserves the immutable accepted v28 receipt", async () => {
-    const receipt = JSON.parse(
-      await readFile(new URL("../../../docs/phase3-gate-results.json", import.meta.url), "utf8"),
-    ) as HistoricalPhase3Receipt;
+  afterAll(() => vi.unstubAllGlobals());
+
+  it("keeps the accepted remote behavior under the v29 production bundle", async () => {
+    const receipt = await collectPhase3CurrentRuntimeCompatibilityReceipt();
 
     expect(receipt).toMatchObject({
-      id: "phase3/portfolio/production-threat-profit-soak-v2",
+      id: "phase3/portfolio/current-runtime-compatibility-v1",
       executor: "packages/bot/src/runtime/tick.runTick",
       executedVariants: ["warm", "reset", "reordered"],
       ticksPerVariant: [30, 30, 30],
       totalExecutedTicks: 90,
       memoryResetObserved: true,
-      runtimeConfigSourceRevision: "runtime-config-source-v28",
-      runtimePolicyRevision: "fnv1a64-utf16:60656ee428f2f356",
+      runtimeConfigSourceRevision: "runtime-config-source-v29",
+      runtimePolicyRevision: "fnv1a64-utf16:2fa13822451badb4",
       finalActiveRooms: ["W1N3"],
       kernelFaults: 0,
       maximumActiveRemoteBudgetReservations: 5,
@@ -39,7 +40,7 @@ describe("historical Phase 3 production remote portfolio gate", () => {
       minimumProtectedEnergy: 300,
     });
     expect(new Set(Object.values(receipt.semanticHashes))).toEqual(
-      new Set(["fnv1a64-utf16:6455a107910840ac"]),
+      new Set(["fnv1a64-utf16:77f8f5140411e87d"]),
     );
     expect(receipt.maximumPersistentBytes).toBeLessThanOrEqual(65_536);
     expect(receipt.maximumRemotesOwnerBytes).toBeLessThanOrEqual(32_768);

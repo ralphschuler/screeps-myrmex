@@ -53,6 +53,18 @@ describe("population authority chain", () => {
     expect(Object.isFrozen(accepted.loads)).toBe(true);
   });
 
+  it("does not turn actor-derived survival-flow contracts into recursive population demand", () => {
+    const request: WorkContractRequest = {
+      ...contractRequest(),
+      budgetBinding: {
+        category: "harvesting-filling",
+        issuer: "economy/W1N1/harvest/source-1",
+      },
+      issuer: "economy/W1N1/harvest/source-1",
+    };
+    expect(readyLedger(request).populationView()).toEqual({ loads: [], status: "ready" });
+  });
+
   it("SpawnBroker uses priorityValue for safety ordering inside funded-workforce", () => {
     const broker = new SpawnBroker().arbitrate({
       tick: 10,
@@ -170,19 +182,18 @@ describe("population authority chain", () => {
   });
 });
 
-function readyLedger(): ContractLedger {
+function readyLedger(request: WorkContractRequest = contractRequest()): ContractLedger {
   const opened = ContractLedger.open({});
   if (opened.status !== "ready") throw new Error("expected ledger");
-  const request = contractRequest();
   const funding: ContractFundingView = {
     status: "ready",
     owners: [{ id: "W1N1", visibility: "visible" }],
     authorizations: [
       {
-        category: "replacement",
+        category: request.budgetBinding.category,
         colonyId: "W1N1",
         expiresAt: 100,
-        issuer: "population-objective",
+        issuer: request.budgetBinding.issuer,
         reservationId: "reservation-1",
         revision: 1,
         status: "active",

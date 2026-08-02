@@ -1,6 +1,7 @@
 import type { RuntimeConfig } from "../config";
 import type { BudgetRequest } from "../colony";
 import {
+  type CapabilityVector,
   contractIdFor,
   RCL1_CONTROLLER_FUNDING_HANDOFF,
   type ContractPlanningView,
@@ -16,6 +17,7 @@ export interface GrowthCandidate {
   readonly budgetRequest: BudgetRequest;
   readonly colonyId: string;
   readonly order: number;
+  readonly requiredCapability: CapabilityVector;
   readonly reasonCode:
     | "controller-risk"
     | "optional-growth"
@@ -35,6 +37,10 @@ const EXPIRY = 1_000_000_000;
 const MAX_GROWTH_CANDIDATES = 64;
 const BOOTSTRAP_MAX_ASSIGNMENT_COST = 1_500;
 const GROWTH_MAX_ASSIGNMENT_COST = 50;
+const RCL2_PROGRESSION_CAPACITY = 550;
+const RCL2_CONTROLLER_UPGRADE_SLOTS = 13;
+const RCL2_CONTROLLER_LANE_PRIORITY = 1_100;
+const RCL2_CONTROLLER_LEASE_DURATION = 50;
 
 /**
  * Produces only post-survival growth work. Controller risk is explicitly ranked above optional
@@ -78,34 +84,67 @@ export function planSurvivalGrowth(
           siteRank(left.structureType) - siteRank(right.structureType) ||
           left.id.localeCompare(right.id),
       );
-    if (qualifiesRcl2InfrastructureBootstrap(room, config)) {
-      for (const site of sites
+    if (qualifiesRcl2InfrastructureBootstrap(room)) {
+      for (const [index, site] of sites
         .filter(({ structureType }) => structureType === "extension")
-        .slice(0, config.policy.growth.maximumActiveContractsPerRoom)) {
-        candidates.push(rcl2InfrastructureBootstrapCandidate(room.name, site.id, site.pos, config));
+        .slice(0, config.policy.growth.maximumActiveContractsPerRoom)
+        .entries()) {
+        candidates.push(
+          rcl2InfrastructureBootstrapCandidate(
+            room.name,
+            site.id,
+            site.pos,
+            config,
+            index === 0 && room.energyCapacityAvailable >= 400
+              ? capability(2, 1, 2)
+              : capability(1, 1, 1),
+          ),
+        );
       }
       continue;
     }
+    const rcl2ProgressionReady =
+      !urgency &&
+      controller.level === 2 &&
+      room.energyCapacityAvailable >= RCL2_PROGRESSION_CAPACITY;
     if (
       room.energyAvailable <
       config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy
-    )
+    ) {
+      // Controller work consumes creep cargo, not the room pool. Once the complete RCL2 spawn pool
+      // exists, keep its stable workload funded while spawning or filling temporarily drains that
+      // pool. Dropping these candidates here used to discard the consume lease mid-cargo.
+      if (rcl2ProgressionReady)
+        candidates.push(
+          ...rcl2ControllerUpgradeCandidates(room.name, controller.id, controller.pos, config),
+        );
       continue;
-    const reserveRcl2ControllerSlot =
-      !urgency &&
-      controller.level === 2 &&
-      sites.length > 0 &&
-      config.policy.growth.maximumActiveContractsPerRoom >= 2;
-    const buildLimit =
-      config.policy.growth.maximumActiveContractsPerRoom - (reserveRcl2ControllerSlot ? 1 : 0);
+    }
+    // Once the complete RCL2 spawn pool exists, construction may continue but cannot occupy every
+    // discretionary growth lane. The frozen progression row needs one lane of headroom for stable
+    // controller work while layout roads and later structures remain backlogged.
+    const buildLimit = rcl2ProgressionReady
+      ? Math.max(0, config.policy.growth.maximumActiveContractsPerRoom - 1)
+      : config.policy.growth.maximumActiveContractsPerRoom;
     for (const site of sites.slice(0, buildLimit)) {
       candidates.push(
         buildCandidate(room.name, site.id, site.pos, siteRank(site.structureType), config),
       );
     }
-    if (!urgency && (sites.length === 0 || reserveRcl2ControllerSlot)) {
+    if (rcl2ProgressionReady) {
       candidates.push(
-        upgradeCandidate(room.name, controller.id, controller.pos, "optional-growth", config),
+        ...rcl2ControllerUpgradeCandidates(room.name, controller.id, controller.pos, config),
+      );
+    } else if (!urgency && (sites.length === 0 || controller.level === 2)) {
+      candidates.push(
+        upgradeCandidate(
+          room.name,
+          controller.id,
+          controller.pos,
+          "optional-growth",
+          config,
+          controller.level === 2,
+        ),
       );
     }
     if (candidates.length >= MAX_GROWTH_CANDIDATES) break;
@@ -147,7 +186,14 @@ export function renewGrowthBudgets(
       const claimChanged =
         prior !== undefined &&
         !sameEnergyClaim(prior.request.energy, candidate.budgetRequest.energy);
-      const due = prior !== undefined && prior.request.expiresAt - tick <= renewalWindowTicks;
+      const persistentRcl2Controller =
+        candidate.action === "upgrade-controller" &&
+        candidate.budgetRequest.category === "optional-growth" &&
+        candidate.budgetRequest.energy === null;
+      const due =
+        !persistentRcl2Controller &&
+        prior !== undefined &&
+        prior.request.expiresAt - tick <= renewalWindowTicks;
       const revision =
         prior === undefined
           ? 1
@@ -159,7 +205,9 @@ export function renewGrowthBudgets(
       const horizon =
         candidate.budgetRequest.category === "bootstrap-controller"
           ? Math.max(durationTicks, BOOTSTRAP_MAX_ASSIGNMENT_COST)
-          : durationTicks;
+          : persistentRcl2Controller
+            ? EXPIRY - tick
+            : durationTicks;
       const expiresAt =
         prior !== undefined && reservable && !categoryChanged && !claimChanged && !due
           ? prior.request.expiresAt
@@ -195,7 +243,8 @@ export function authorizedSurvivalGrowth(
         reservation.issuer === candidate.budgetRequest.issuer,
     ),
   );
-  const issuers = new Set(authorized.map((candidate) => candidate.budgetRequest.issuer));
+  const plannedIssuers = new Set(candidates.map((candidate) => candidate.budgetRequest.issuer));
+  const authorizedIssuers = new Set(authorized.map((candidate) => candidate.budgetRequest.issuer));
   const existingIssuers = new Set(
     planning.status === "ready" ? planning.contracts.map(({ issuer }) => issuer) : [],
   );
@@ -214,16 +263,22 @@ export function authorizedSurvivalGrowth(
           predecessor.budgetBinding.category,
           candidate.budgetRequest.category,
         );
+      const sameFundingBinding =
+        predecessor !== undefined &&
+        predecessor.budgetBinding.category === candidate.budgetRequest.category &&
+        predecessor.budgetBinding.issuer === candidate.budgetRequest.issuer;
       if (
         predecessor === undefined ||
-        (candidate.budgetRequest.category !== "bootstrap-controller" &&
-          candidate.budgetRequest.category !== "controller-risk" &&
-          !categoryHandoff) ||
+        (!sameFundingBinding && !categoryHandoff) ||
         predecessor.issuerSequence === undefined ||
-        candidate.budgetRequest.revision !== predecessor.issuerSequence + 1
+        candidate.budgetRequest.revision <= predecessor.issuerSequence
       )
         continue;
-      const successor = contractFor(candidate);
+      const successorSequence = predecessor.issuerSequence + 1;
+      const successor = contractFor({
+        ...candidate,
+        budgetRequest: { ...candidate.budgetRequest, revision: successorSequence },
+      });
       const successorId = contractIdFor(
         successor.issuer,
         successor.issuerKey,
@@ -237,12 +292,15 @@ export function authorizedSurvivalGrowth(
         tick,
       });
       replacingPredecessors.add(predecessor.contractId);
-      transitions.push({
-        contractId: successorId,
-        reason: "growth-work-remains",
-        tick,
-        to: "funded",
-      });
+      // A missed prior handoff may leave durable budget identity ahead of its contract. Advance one
+      // safe issuer sequence per tick; only the exact funded revision can become executable.
+      if (successorSequence === candidate.budgetRequest.revision)
+        transitions.push({
+          contractId: successorId,
+          reason: "growth-work-remains",
+          tick,
+          to: "funded",
+        });
     }
 
     for (const contract of planning.contracts) {
@@ -254,7 +312,7 @@ export function authorizedSurvivalGrowth(
           roomByName,
           config ?? null,
         );
-        if (!issuers.has(contract.issuer) && !reusable)
+        if (!plannedIssuers.has(contract.issuer) && !reusable)
           transitions.push({
             contractId: contract.contractId,
             reason: "growth-target-resolved",
@@ -262,7 +320,7 @@ export function authorizedSurvivalGrowth(
             to: "cancelled",
           });
         else if (
-          issuers.has(contract.issuer) &&
+          authorizedIssuers.has(contract.issuer) &&
           (contract.state === "proposed" || contract.state === "suspended")
         )
           transitions.push({
@@ -274,7 +332,7 @@ export function authorizedSurvivalGrowth(
         continue;
       }
       if (
-        !issuers.has(contract.issuer) &&
+        !plannedIssuers.has(contract.issuer) &&
         contract.budgetBinding.category !== "bootstrap-controller"
       )
         transitions.push({
@@ -293,7 +351,10 @@ export function authorizedSurvivalGrowth(
           tick,
           to: "cancelled",
         });
-      } else if (contract.state === "proposed" || contract.state === "suspended")
+      } else if (
+        authorizedIssuers.has(contract.issuer) &&
+        (contract.state === "proposed" || contract.state === "suspended")
+      )
         transitions.push({
           contractId: contract.contractId,
           reason: "growth-work-remains",
@@ -313,10 +374,7 @@ export function authorizedSurvivalGrowth(
         .filter(
           ({ budgetRequest }) =>
             !replacingIssuers.has(budgetRequest.issuer) &&
-            (!isRcl2InfrastructureBootstrap(budgetRequest.issuer) ||
-              !existingIssuers.has(budgetRequest.issuer)) &&
-            (budgetRequest.category !== "bootstrap-controller" ||
-              !existingIssuers.has(budgetRequest.issuer)),
+            !existingIssuers.has(budgetRequest.issuer),
         )
         .map(contractFor)
         .sort((a, b) => a.issuer.localeCompare(b.issuer)),
@@ -334,10 +392,43 @@ function upgradeCandidate(
   category: "bootstrap-controller" | "controller-risk" | "optional-growth",
   config: RuntimeConfig,
   usesCarriedEnergy = false,
+  overrides: {
+    readonly issuer?: string;
+    readonly requiredCapability?: CapabilityVector;
+  } = {},
 ): GrowthCandidate {
   return candidate(colonyId, "upgrade-controller", targetId, target, category, 0, config, {
+    ...(overrides.issuer === undefined ? {} : { issuer: overrides.issuer }),
+    ...(overrides.requiredCapability === undefined
+      ? {}
+      : { requiredCapability: overrides.requiredCapability }),
     usesCarriedEnergy,
   });
+}
+
+/**
+ * One contract owns one primary lease, so RCL2 controller throughput must be represented by stable
+ * lease slots rather than an unspawnable single 9-WORK request. Slot zero is a dedicated 350-energy
+ * refill lane: its CARRY requirement is unavailable on a heavy upgrader and its smaller capability
+ * surplus makes it the deterministic pickup/transfer choice while sinks need energy.
+ * The remaining twelve lanes use the highest-throughput body that fits the official RCL2 550-energy
+ * spawn pool while retaining the global 2:1 non-MOVE/MOVE ratio. The carrier's orthogonal CARRY
+ * requirement prevents a heavy upgrader from satisfying its population objective by substitution.
+ */
+function rcl2ControllerUpgradeCandidates(
+  colonyId: string,
+  targetId: string,
+  target: PositionSnapshot,
+  config: RuntimeConfig,
+): readonly GrowthCandidate[] {
+  return Object.freeze(
+    Array.from({ length: RCL2_CONTROLLER_UPGRADE_SLOTS }, (_, slot) =>
+      upgradeCandidate(colonyId, targetId, target, "optional-growth", config, true, {
+        issuer: `growth/${colonyId}/upgrade-controller/${targetId}/slot/${String(slot).padStart(2, "0")}`,
+        requiredCapability: slot === 0 ? capability(1, 3, 2) : capability(3, 2, 3),
+      }),
+    ),
+  );
 }
 function buildCandidate(
   colonyId: string,
@@ -369,10 +460,12 @@ function rcl2InfrastructureBootstrapCandidate(
   targetId: string,
   target: PositionSnapshot,
   config: RuntimeConfig,
+  requiredCapability: CapabilityVector,
 ): GrowthCandidate {
   return candidate(colonyId, "build", targetId, target, "optional-growth", 0, config, {
     issuer: `growth/${colonyId}/rcl2-bootstrap/build/${targetId}`,
     reasonCode: "rcl2-infrastructure-bootstrap",
+    requiredCapability,
   });
 }
 function candidate(
@@ -386,6 +479,7 @@ function candidate(
   overrides: {
     readonly issuer?: string;
     readonly reasonCode?: GrowthCandidate["reasonCode"];
+    readonly requiredCapability?: CapabilityVector;
     readonly usesCarriedEnergy?: boolean;
   } = {},
 ): GrowthCandidate {
@@ -394,6 +488,7 @@ function candidate(
     action,
     colonyId,
     order,
+    requiredCapability: overrides.requiredCapability ?? capability(1, 1, 1),
     reasonCode:
       overrides.reasonCode ??
       (category === "bootstrap-controller" ? "rcl1-bootstrap-controller" : category),
@@ -420,6 +515,8 @@ function candidate(
 }
 function contractFor(candidate: GrowthCandidate): WorkContractRequest {
   const controller = candidate.action === "upgrade-controller";
+  const rcl2ControllerLane = isRcl2ControllerLane(candidate.budgetRequest.issuer);
+  const rcl2ControllerSlot = isRcl2ControllerSlot(candidate.budgetRequest.issuer);
   return {
     budgetBinding: {
       category: candidate.budgetRequest.category,
@@ -446,38 +543,55 @@ function contractFor(candidate: GrowthCandidate): WorkContractRequest {
     issuerKey: candidate.targetId,
     issuerSequence: candidate.budgetRequest.revision,
     kind: controller ? "upgrade" : "build",
-    leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 1 },
+    leasePolicy: {
+      duration: rcl2ControllerSlot ? RCL2_CONTROLLER_LEASE_DURATION : 10,
+      switchingPenalty: 1,
+      ttlSafetyMargin: 1,
+    },
     maxAssignmentCost:
       candidate.budgetRequest.category === "bootstrap-controller" ||
-      candidate.reasonCode === "rcl2-infrastructure-bootstrap"
+      candidate.reasonCode === "rcl2-infrastructure-bootstrap" ||
+      rcl2ControllerSlot
         ? BOOTSTRAP_MAX_ASSIGNMENT_COST
         : GROWTH_MAX_ASSIGNMENT_COST,
     owner: { id: candidate.colonyId, kind: "colony" },
     preconditionKeys: ["visible-growth-target"],
     priority: {
-      class: candidate.budgetRequest.category === "controller-risk" ? "survival" : "growth",
+      // The small slot-00 worker remains available to refill the spawn pool. Heavy RCL2 controller
+      // lanes rank just above ordinary survival transfers so a 3-energy room deficit cannot pin a
+      // nearly full upgrader to a continuous trickle-fill lease for the rest of its cargo batch.
+      class:
+        candidate.budgetRequest.category === "controller-risk" || rcl2ControllerLane
+          ? "survival"
+          : "growth",
       value:
         candidate.budgetRequest.category === "controller-risk"
           ? 1_600
-          : candidate.budgetRequest.category === "bootstrap-controller" ||
-              candidate.reasonCode === "rcl2-infrastructure-bootstrap"
-            ? 1_200
-            : 500,
+          : rcl2ControllerLane
+            ? RCL2_CONTROLLER_LANE_PRIORITY
+            : candidate.budgetRequest.category === "bootstrap-controller" ||
+                candidate.reasonCode === "rcl2-infrastructure-bootstrap"
+              ? 1_200
+              : 500,
     },
     quantity: 1,
     range: 3,
-    requiredCapability: {
-      attack: 0,
-      carry: 1,
-      claim: 0,
-      heal: 0,
-      move: 1,
-      rangedAttack: 0,
-      tough: 0,
-      work: 1,
-    },
+    requiredCapability: candidate.requiredCapability,
     target: candidate.target,
     targetId: candidate.targetId,
+  };
+}
+
+function capability(work: number, carry: number, move: number): CapabilityVector {
+  return {
+    attack: 0,
+    carry,
+    claim: 0,
+    heal: 0,
+    move,
+    rangedAttack: 0,
+    tough: 0,
+    work,
   };
 }
 function siteRank(type: string): number {
@@ -512,7 +626,8 @@ function compareCandidate(left: GrowthCandidate, right: GrowthCandidate): number
     category(left) - category(right) ||
     (left.action === "build" ? 0 : 1) - (right.action === "build" ? 0 : 1) ||
     left.order - right.order ||
-    left.targetId.localeCompare(right.targetId)
+    left.targetId.localeCompare(right.targetId) ||
+    left.budgetRequest.issuer.localeCompare(right.budgetRequest.issuer)
   );
 }
 
@@ -549,22 +664,14 @@ function hasViableEnergizedWorker(
   );
 }
 
-function qualifiesRcl2InfrastructureBootstrap(
-  room: WorldSnapshot["rooms"][number],
-  config: RuntimeConfig,
-): boolean {
+function qualifiesRcl2InfrastructureBootstrap(room: WorldSnapshot["rooms"][number]): boolean {
   const controller = room.controller;
-  const normalGrowthFloor =
-    config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy;
-  if (
-    controller?.ownership !== "owned" ||
-    controller.level !== 2 ||
-    room.energyCapacityAvailable >= normalGrowthFloor ||
-    room.energyAvailable < config.policy.recovery.protectedSpawnEnergy ||
-    room.ownedSpawns.filter(({ active }) => active).length !== 1
-  )
-    return false;
-  return hasViableEnergizedWorker(room, config);
+  return (
+    controller?.ownership === "owned" &&
+    controller.level === 2 &&
+    room.energyCapacityAvailable < RCL2_PROGRESSION_CAPACITY &&
+    room.ownedSpawns.filter(({ active }) => active).length === 1
+  );
 }
 
 function sameEnergyClaim(left: BudgetRequest["energy"], right: BudgetRequest["energy"]): boolean {
@@ -585,6 +692,14 @@ function isRcl2InfrastructureBootstrap(issuer: string): boolean {
   return issuer.includes("/rcl2-bootstrap/build/");
 }
 
+function isRcl2ControllerLane(issuer: string): boolean {
+  return /\/upgrade-controller\/[^/]+\/slot\/(?:0[1-9]|1[0-2])$/u.test(issuer);
+}
+
+function isRcl2ControllerSlot(issuer: string): boolean {
+  return /\/upgrade-controller\/[^/]+\/slot\/(?:0[0-9]|1[0-2])$/u.test(issuer);
+}
+
 function reusabilityConfirmedForRcl2InfrastructureBootstrap(
   contract: {
     readonly owner: { readonly id: string };
@@ -596,12 +711,10 @@ function reusabilityConfirmedForRcl2InfrastructureBootstrap(
   if (roomsByName === null || config === null) return true;
   const room = roomsByName.get(contract.owner.id);
   if (room === undefined) return true;
-  const normalGrowthFloor =
-    config.policy.recovery.protectedSpawnEnergy + config.policy.growth.minimumSurplusEnergy;
   return (
     room.controller?.ownership === "owned" &&
     room.controller.level === 2 &&
-    room.energyCapacityAvailable < normalGrowthFloor &&
+    room.energyCapacityAvailable < RCL2_PROGRESSION_CAPACITY &&
     room.ownedSpawns.filter(({ active }) => active).length === 1 &&
     room.constructionSites.some(
       ({ id, ownership, structureType }) =>

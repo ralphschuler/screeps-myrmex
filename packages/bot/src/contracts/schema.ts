@@ -2,6 +2,8 @@ import type { JsonObject } from "../state/schema";
 import { redactUntrusted } from "../security";
 import {
   CONTRACT_LEDGER_SCHEMA_VERSION,
+  CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION,
+  CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION,
   CAPABILITY_KEYS,
   MAX_ACTIVE_CONTRACTS,
   MAX_CONTRACT_HISTORY,
@@ -12,15 +14,26 @@ import {
   compareStrings,
   contractFundingBindingKey,
   contractIdFor,
+  contractOutcomeRequestDigest,
   createEmptyContractLedgerState,
+  isContractOutcomeRequestDigest,
+  isContractOutcomeRequestDigestCandidate,
   normalizeContractRequest,
   requestSignature,
   type ActiveWorkContractState,
   type ContractHistoryEvent,
   type ContractIssuerFrontier,
   type ContractLease,
+  type ContractLedgerRuntimeState,
+  type ContractExecutionTerms,
   type ContractLedgerStateV1,
+  type ContractLedgerStateV3,
   type ContractOutcome,
+  type PersistedContractExecutionV3,
+  type PersistedContractHistoryV3,
+  type PersistedContractIssuerFrontierV3,
+  type PersistedContractOutcomeV3,
+  type PersistedWorkContractRecordV3,
   type TerminalWorkContractState,
   type WorkContractRecord,
   type WorkContractRequest,
@@ -30,12 +43,12 @@ import {
 export type ContractLedgerStateOpenResult =
   | {
       readonly initialized: true;
-      readonly state: ContractLedgerStateV1;
+      readonly state: ContractLedgerRuntimeState;
       readonly status: "ready";
     }
   | {
       readonly initialized: false;
-      readonly state: ContractLedgerStateV1;
+      readonly state: ContractLedgerRuntimeState;
       readonly status: "ready";
     }
   | {
@@ -148,7 +161,7 @@ const EXECUTION_V6_KEYS = [
   "version",
 ] as const;
 
-const RECORD_KEYS = [
+const PREVIOUS_RECORD_KEYS = [
   ...REQUEST_KEYS,
   "history",
   "id",
@@ -158,6 +171,8 @@ const RECORD_KEYS = [
   "state",
 ] as const;
 
+const RECORD_KEYS = [...REQUEST_KEYS, "history", "id", "lease", "revision", "state"] as const;
+
 const LEGAL_TRANSITIONS: Readonly<Record<ActiveWorkContractState, readonly WorkContractState[]>> = {
   proposed: ["funded", "cancelled", "expired"],
   funded: ["assigned", "suspended", "cancelled", "expired"],
@@ -165,6 +180,11 @@ const LEGAL_TRANSITIONS: Readonly<Record<ActiveWorkContractState, readonly WorkC
   active: ["completed", "suspended", "cancelled", "expired", "failed"],
   suspended: ["funded", "cancelled", "expired", "failed"],
 };
+
+type SupportedContractLedgerSchemaVersion =
+  | typeof CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION
+  | typeof CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION
+  | typeof CONTRACT_LEDGER_SCHEMA_VERSION;
 
 export function openContractLedgerState(value: unknown): ContractLedgerStateOpenResult {
   if (isRecord(value) && Object.keys(value).length === 0) {
@@ -184,9 +204,11 @@ export function openContractLedgerState(value: unknown): ContractLedgerStateOpen
   }
 
   try {
+    const state = parseContractLedgerState(value);
     return {
-      initialized: false,
-      state: parseContractLedgerState(value),
+      // Valid legacy encodings remain authority, but are staged once even if gameplay is idle.
+      initialized: requiresCanonicalV3Persistence(value),
+      state,
       status: "ready",
     };
   } catch (error: unknown) {
@@ -200,13 +222,14 @@ export function openContractLedgerState(value: unknown): ContractLedgerStateOpen
   }
 }
 
-export function validateContractLedgerState(value: unknown): ContractLedgerStateV1 {
-  return parseContractLedgerState(value);
+export function validateContractLedgerState(value: unknown): ContractLedgerStateV3 {
+  return persistedState(parseContractLedgerState(value));
 }
 
-export function serializeContractLedgerState(state: ContractLedgerStateV1): JsonObject {
-  const validated = parseContractLedgerState(state);
-  return cloneJson(validated) as JsonObject;
+export function serializeContractLedgerState(
+  state: ContractLedgerStateV1 | ContractLedgerStateV3,
+): JsonObject {
+  return cloneJson(validateContractLedgerState(state)) as JsonObject;
 }
 
 export function isLegalContractTransition(
@@ -216,16 +239,21 @@ export function isLegalContractTransition(
   return LEGAL_TRANSITIONS[from].includes(to);
 }
 
-function parseContractLedgerState(value: unknown): ContractLedgerStateV1 {
+function parseContractLedgerState(value: unknown): ContractLedgerRuntimeState {
   const root = requireRecord(value, "$", [
     "active",
     "issuerFrontiers",
     "outcomes",
     "schemaVersion",
   ]);
-  if (root.schemaVersion !== CONTRACT_LEDGER_SCHEMA_VERSION) {
-    invalid("invalid-schema-version", "$.schemaVersion", "must equal 1");
+  if (
+    root.schemaVersion !== CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION &&
+    root.schemaVersion !== CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION &&
+    root.schemaVersion !== CONTRACT_LEDGER_SCHEMA_VERSION
+  ) {
+    invalid("invalid-schema-version", "$.schemaVersion", "must equal 1, 2, or 3");
   }
+  const schemaVersion = root.schemaVersion;
 
   const activeRaw = requireArray(root.active, "$.active", MAX_ACTIVE_CONTRACTS);
   const frontiersRaw = requireArray(
@@ -234,15 +262,24 @@ function parseContractLedgerState(value: unknown): ContractLedgerStateV1 {
     MAX_CONTRACT_ISSUERS,
   );
   const outcomesRaw = requireArray(root.outcomes, "$.outcomes", MAX_CONTRACT_OUTCOMES);
-  const active = activeRaw.map((record, index) =>
-    parseRecord(record, `$.active[${String(index)}]`),
-  );
-  const outcomes = outcomesRaw.map((outcome, index) =>
-    parseOutcome(outcome, `$.outcomes[${String(index)}]`),
-  );
-  const issuerFrontiers = frontiersRaw.map((frontier, index) =>
-    parseIssuerFrontier(frontier, `$.issuerFrontiers[${String(index)}]`),
-  );
+  const active = activeRaw.map((record, index) => {
+    const path = `$.active[${String(index)}]`;
+    return schemaVersion === CONTRACT_LEDGER_SCHEMA_VERSION
+      ? parseRecordV3(record, path)
+      : parseRecord(record, path, schemaVersion);
+  });
+  const outcomes = outcomesRaw.map((outcome, index) => {
+    const path = `$.outcomes[${String(index)}]`;
+    return schemaVersion === CONTRACT_LEDGER_SCHEMA_VERSION
+      ? parseOutcomeV3(outcome, path)
+      : parseOutcome(outcome, path, schemaVersion);
+  });
+  const issuerFrontiers = frontiersRaw.map((frontier, index) => {
+    const path = `$.issuerFrontiers[${String(index)}]`;
+    return schemaVersion === CONTRACT_LEDGER_SCHEMA_VERSION
+      ? parseIssuerFrontierV3(frontier, path)
+      : parseIssuerFrontier(frontier, path);
+  });
 
   requireStrictOrder(active, (record) => record.id, "$.active");
   requireStrictOrder(issuerFrontiers, (frontier) => frontier.issuer, "$.issuerFrontiers");
@@ -323,15 +360,24 @@ function parseContractLedgerState(value: unknown): ContractLedgerStateV1 {
   });
 }
 
-function parseRecord(value: unknown, path: string): WorkContractRecord {
-  const record = requireRecord(value, path, recordKeysFor(value));
+function parseRecord(
+  value: unknown,
+  path: string,
+  schemaVersion:
+    typeof CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION | typeof CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION,
+): WorkContractRecord {
+  const record = requireRecord(value, path, recordKeysFor(value, schemaVersion));
   const request = parseRequest(record, path);
   const id = requireString(record.id, `${path}.id`, 1, 512);
   if (id !== contractIdFor(request.issuer, request.issuerKey, request.issuerSequence)) {
     invalid("invalid-contract-id", `${path}.id`, "does not match the issuer identity");
   }
-  const signature = requireString(record.requestSignature, `${path}.requestSignature`, 1, 16_384);
-  if (signature !== requestSignature(request)) {
+  const derivedSignature = requestSignature(request);
+  const signature =
+    schemaVersion === CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION
+      ? requireString(record.requestSignature, `${path}.requestSignature`, 1, 16_384)
+      : derivedSignature;
+  if (signature !== derivedSignature) {
     invalid(
       "invalid-request-signature",
       `${path}.requestSignature`,
@@ -346,7 +392,7 @@ function parseRecord(value: unknown, path: string): WorkContractRecord {
     invalid("missing-history", `${path}.history`, "must contain the latest transition");
   }
   const history = historyRaw.map((event, index) =>
-    parseHistoryEvent(event, `${path}.history[${String(index)}]`),
+    parseHistoryEvent(event, `${path}.history[${String(index)}]`, schemaVersion),
   );
   for (let index = 1; index < history.length; index += 1) {
     const previous = history[index - 1];
@@ -405,6 +451,194 @@ function parseRecord(value: unknown, path: string): WorkContractRecord {
     revision,
     state,
   });
+}
+
+function parseRecordV3(value: unknown, path: string): WorkContractRecord {
+  const tuple = requireTuple(value, path, 25);
+  const budgetBinding = requireTuple(tuple[0], `${path}[0]`, 2);
+  const conditions = requireTuple(tuple[1], `${path}[1]`, 3);
+  const execution =
+    tuple[3] === null ? undefined : expandPersistedExecutionV3(tuple[3], `${path}[3]`);
+  const leasePolicy = requireTuple(tuple[11], `${path}[11]`, 3);
+  const owner = requireTuple(tuple[13], `${path}[13]`, 2);
+  const priority = requireTuple(tuple[15], `${path}[15]`, 2);
+  const capability = requireTuple(tuple[18], `${path}[18]`, CAPABILITY_KEYS.length);
+  const target = requireTuple(tuple[19], `${path}[19]`, 3);
+  const issuer = requireString(tuple[7], `${path}[7]`, 1, 128);
+  const issuerKey = requireString(tuple[8], `${path}[8]`, 1, 256);
+  const issuerSequence = requireInteger(tuple[9], `${path}[9]`, 0);
+  const lease = tuple[22] === null ? null : expandPersistedLeaseV3(tuple[22], `${path}[22]`);
+  const expanded = {
+    budgetBinding: { category: budgetBinding[0], issuer: budgetBinding[1] },
+    conditions: {
+      cancellation: conditions[0],
+      failure: conditions[1],
+      success: conditions[2],
+    },
+    deadline: tuple[2],
+    ...(execution === undefined ? {} : { execution }),
+    earliestStart: tuple[4],
+    estimatedWorkTicks: tuple[5],
+    expiresAt: tuple[6],
+    history: expandPersistedHistoryV3(tuple[21], `${path}[21]`),
+    id: contractIdFor(issuer, issuerKey, issuerSequence),
+    issuer,
+    issuerKey,
+    issuerSequence,
+    kind: tuple[10],
+    lease,
+    leasePolicy: {
+      duration: leasePolicy[0],
+      switchingPenalty: leasePolicy[1],
+      ttlSafetyMargin: leasePolicy[2],
+    },
+    maxAssignmentCost: tuple[12],
+    owner: { id: owner[0], kind: owner[1] },
+    preconditionKeys: tuple[14],
+    priority: { class: priority[0], value: priority[1] },
+    quantity: tuple[16],
+    range: tuple[17],
+    requiredCapability: Object.fromEntries(
+      CAPABILITY_KEYS.map((key, index) => [key, capability[index]]),
+    ),
+    revision: tuple[23],
+    state: tuple[24],
+    target: { roomName: target[0], x: target[1], y: target[2] },
+    targetId: tuple[20],
+  };
+  return parseRecord(expanded, path, CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION);
+}
+
+function expandPersistedExecutionV3(value: unknown, path: string): Record<string, unknown> {
+  const discriminator = requireArray(value, path, 23)[0];
+  const version = requireInteger(discriminator, `${path}[0]`, 1);
+  if (version === 1) {
+    const tuple = requireTuple(value, path, 6);
+    return {
+      action: tuple[1],
+      completion: tuple[2],
+      completionHits: tuple[3],
+      counterpartId: tuple[4],
+      resourceType: tuple[5],
+      version: 1,
+    };
+  }
+  if (version === 2) {
+    const tuple = requireTuple(value, path, 6);
+    return {
+      action: "harvest",
+      completion: tuple[1],
+      counterpartId: tuple[2],
+      resourceType: null,
+      version: 2,
+      workPosition: { roomName: tuple[3], x: tuple[4], y: tuple[5] },
+    };
+  }
+  if (version === 3) {
+    const tuple = requireTuple(value, path, 10);
+    return {
+      action: tuple[1],
+      completion: tuple[2],
+      counterpartId: tuple[3],
+      flowId: tuple[4],
+      recommendedCarry: tuple[5],
+      recommendedMove: tuple[6],
+      reservedAmount: tuple[7],
+      resourceType: tuple[8],
+      stage: tuple[9],
+      version: 3,
+    };
+  }
+  if (version === 4) {
+    const tuple = requireTuple(value, path, 6);
+    return {
+      action: "reserve-controller",
+      completion: "work-complete",
+      counterpartId: null,
+      originRoomName: tuple[1],
+      resourceType: null,
+      routeRoomNames: tuple[2],
+      routeTravelTicks: tuple[3],
+      signText: tuple[4],
+      targetReservationTicks: tuple[5],
+      version: 4,
+    };
+  }
+  if (version === 5) {
+    const tuple = requireTuple(value, path, 7);
+    return {
+      action: "harvest",
+      completion: "continuous",
+      counterpartId: null,
+      offload: "container-or-drop",
+      originRoomName: tuple[1],
+      resourceType: null,
+      routeRoomNames: tuple[2],
+      routeTravelTicks: tuple[3],
+      version: 5,
+      workPosition: { roomName: tuple[4], x: tuple[5], y: tuple[6] },
+    };
+  }
+  if (version === 6) {
+    const tuple = requireTuple(value, path, 23);
+    const sinkPosition = requireTuple(tuple[17], `${path}[17]`, 3);
+    const sourcePosition = requireTuple(tuple[20], `${path}[20]`, 3);
+    return {
+      acquireOriginRoomName: tuple[4],
+      acquireRouteRoomNames: tuple[5],
+      acquireRouteTravelTicks: tuple[6],
+      action: tuple[1],
+      completion: tuple[2],
+      counterpartId: tuple[3],
+      deliverOriginRoomName: tuple[7],
+      deliverRouteRoomNames: tuple[8],
+      deliverRouteTravelTicks: tuple[9],
+      flowId: tuple[10],
+      recommendedCarry: tuple[11],
+      recommendedMove: tuple[12],
+      reservedAmount: tuple[13],
+      resourceType: tuple[14],
+      sinkBaselineAmount: tuple[15],
+      sinkNodeId: tuple[16],
+      sinkPosition: { roomName: sinkPosition[0], x: sinkPosition[1], y: sinkPosition[2] },
+      sinkTargetId: tuple[18],
+      sourceNodeId: tuple[19],
+      sourcePosition: {
+        roomName: sourcePosition[0],
+        x: sourcePosition[1],
+        y: sourcePosition[2],
+      },
+      sourceTargetId: tuple[21],
+      stage: tuple[22],
+      version: 6,
+    };
+  }
+  invalid("invalid-execution-version", `${path}[0]`, "must equal 1, 2, 3, 4, 5, or 6");
+}
+
+function expandPersistedHistoryV3(value: unknown, path: string): readonly unknown[] {
+  const tuple = requireTuple(value, path, 2);
+  const transitions = requireArray(tuple[1], `${path}[1]`, MAX_CONTRACT_HISTORY);
+  let from = tuple[0];
+  return transitions.map((transition, index) => {
+    const eventPath = `${path}[1][${String(index)}]`;
+    const event = requireTuple(transition, eventPath, 3);
+    const expanded = [from, event[0], event[1], event[2]] as const;
+    from = event[2];
+    return expanded;
+  });
+}
+
+function expandPersistedLeaseV3(value: unknown, path: string): Record<string, unknown> {
+  const tuple = requireTuple(value, path, 6);
+  return {
+    actorId: tuple[0],
+    actorName: tuple[1],
+    assignedAt: tuple[2],
+    assignmentCost: tuple[3],
+    expiresAt: tuple[4],
+    travelTicks: tuple[5],
+  };
 }
 
 function parseRequest(
@@ -486,10 +720,44 @@ function parseRequest(
   }
 }
 
-function parseHistoryEvent(value: unknown, path: string): ContractHistoryEvent {
+function parseHistoryEvent(
+  value: unknown,
+  path: string,
+  schemaVersion:
+    typeof CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION | typeof CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION,
+): ContractHistoryEvent {
+  if (schemaVersion === CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION && Array.isArray(value)) {
+    const tuple = requireArray(value, path, 4);
+    if (tuple.length !== 4) {
+      invalid("invalid-history-tuple", path, "must contain exactly four fields");
+    }
+    return validatedHistoryEvent(tuple[0], tuple[1], tuple[2], tuple[3], path, [
+      "[0]",
+      "[1]",
+      "[2]",
+      "[3]",
+    ]);
+  }
+
   const event = requireRecord(value, path, ["from", "reason", "tick", "to"]);
-  const from = event.from === null ? null : requireState(event.from, `${path}.from`);
-  const to = requireState(event.to, `${path}.to`);
+  return validatedHistoryEvent(event.from, event.reason, event.tick, event.to, path, [
+    ".from",
+    ".reason",
+    ".tick",
+    ".to",
+  ]);
+}
+
+function validatedHistoryEvent(
+  fromValue: unknown,
+  reasonValue: unknown,
+  tickValue: unknown,
+  toValue: unknown,
+  path: string,
+  suffixes: readonly [string, string, string, string],
+): ContractHistoryEvent {
+  const from = fromValue === null ? null : requireState(fromValue, `${path}${suffixes[0]}`);
+  const to = requireState(toValue, `${path}${suffixes[3]}`);
   if (
     from === null ? to !== "proposed" : !isActiveState(from) || !isLegalContractTransition(from, to)
   ) {
@@ -497,8 +765,8 @@ function parseHistoryEvent(value: unknown, path: string): ContractHistoryEvent {
   }
   return {
     from,
-    reason: requireString(event.reason, `${path}.reason`, 1, 128),
-    tick: requireInteger(event.tick, `${path}.tick`, 0),
+    reason: requireString(reasonValue, `${path}${suffixes[1]}`, 1, 128),
+    tick: requireInteger(tickValue, `${path}${suffixes[2]}`, 0),
     to,
   };
 }
@@ -527,7 +795,11 @@ function parseLease(value: unknown, path: string): ContractLease {
   };
 }
 
-function parseOutcome(value: unknown, path: string): ContractOutcome {
+function parseOutcome(
+  value: unknown,
+  path: string,
+  schemaVersion: SupportedContractLedgerSchemaVersion,
+): ContractOutcome {
   const outcome = requireRecord(value, path, [
     "id",
     "issuer",
@@ -547,29 +819,82 @@ function parseOutcome(value: unknown, path: string): ContractOutcome {
     invalid("invalid-outcome-id", `${path}.id`, "does not match the issuer identity");
   }
   const signature = requireString(outcome.requestSignature, `${path}.requestSignature`, 1, 16_384);
-  const signedRequest = parseOutcomeRequestSignature(signature, `${path}.requestSignature`);
-  if (
-    signedRequest.issuer !== issuer ||
-    signedRequest.issuerKey !== issuerKey ||
-    signedRequest.issuerSequence !== issuerSequence
-  ) {
-    invalid(
-      "invalid-outcome-request-identity",
-      `${path}.requestSignature`,
-      "must encode the same issuer identity as the outcome",
-    );
-  }
+  const digest = parseOutcomeDigest(
+    signature,
+    { issuer, issuerKey, issuerSequence },
+    `${path}.requestSignature`,
+    schemaVersion,
+  );
   return {
     id,
     issuer,
     issuerKey,
     issuerSequence,
     reason: requireString(outcome.reason, `${path}.reason`, 1, 128),
-    requestSignature: signature,
+    requestSignature: digest,
     revision: requireInteger(outcome.revision, `${path}.revision`, 1),
     state: requireTerminalState(outcome.state, `${path}.state`),
     tick: requireInteger(outcome.tick, `${path}.tick`, 0),
   };
+}
+
+function parseOutcomeV3(value: unknown, path: string): ContractOutcome {
+  const tuple = requireTuple(value, path, 8);
+  const issuer = requireString(tuple[0], `${path}[0]`, 1, 128);
+  const issuerKey = requireString(tuple[1], `${path}[1]`, 1, 256);
+  const issuerSequence = requireInteger(tuple[2], `${path}[2]`, 0);
+  return parseOutcome(
+    {
+      id: contractIdFor(issuer, issuerKey, issuerSequence),
+      issuer,
+      issuerKey,
+      issuerSequence,
+      reason: tuple[3],
+      requestSignature: tuple[4],
+      revision: tuple[5],
+      state: tuple[6],
+      tick: tuple[7],
+    },
+    path,
+    CONTRACT_LEDGER_SCHEMA_VERSION,
+  );
+}
+
+function parseOutcomeDigest(
+  signature: string,
+  identity: Pick<ContractOutcome, "issuer" | "issuerKey" | "issuerSequence">,
+  path: string,
+  schemaVersion: SupportedContractLedgerSchemaVersion,
+): string {
+  if (
+    schemaVersion !== CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION &&
+    isContractOutcomeRequestDigest(signature)
+  ) {
+    return signature;
+  }
+  if (
+    schemaVersion !== CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION &&
+    isContractOutcomeRequestDigestCandidate(signature)
+  ) {
+    invalid("invalid-outcome-request-digest", path, "must use the versioned digest format");
+  }
+  if (schemaVersion === CONTRACT_LEDGER_SCHEMA_VERSION) {
+    invalid("invalid-outcome-request-digest", path, "must use the versioned digest format");
+  }
+
+  const signedRequest = parseOutcomeRequestSignature(signature, path);
+  if (
+    signedRequest.issuer !== identity.issuer ||
+    signedRequest.issuerKey !== identity.issuerKey ||
+    signedRequest.issuerSequence !== identity.issuerSequence
+  ) {
+    invalid(
+      "invalid-outcome-request-identity",
+      path,
+      "must encode the same issuer identity as the outcome",
+    );
+  }
+  return contractOutcomeRequestDigest(signedRequest);
 }
 
 function parseOutcomeRequestSignature(signature: string, path: string): WorkContractRequest {
@@ -597,10 +922,177 @@ function requestKeysFor(value: unknown): readonly string[] {
     : REQUEST_KEYS;
 }
 
-function recordKeysFor(value: unknown): readonly string[] {
-  return isRecord(value) && hasOwn(value, "execution")
-    ? [...RECORD_KEYS, "execution"]
-    : RECORD_KEYS;
+function recordKeysFor(
+  value: unknown,
+  schemaVersion:
+    typeof CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION | typeof CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION,
+): readonly string[] {
+  const keys =
+    schemaVersion === CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION ? PREVIOUS_RECORD_KEYS : RECORD_KEYS;
+  return isRecord(value) && hasOwn(value, "execution") ? [...keys, "execution"] : keys;
+}
+
+function compactActiveRecordV3(record: WorkContractRecord): PersistedWorkContractRecordV3 {
+  return [
+    [record.budgetBinding.category, record.budgetBinding.issuer],
+    [record.conditions.cancellation, record.conditions.failure, record.conditions.success],
+    record.deadline,
+    record.execution === undefined ? null : compactExecutionV3(record.execution),
+    record.earliestStart,
+    record.estimatedWorkTicks,
+    record.expiresAt,
+    record.issuer,
+    record.issuerKey,
+    record.issuerSequence,
+    record.kind,
+    [
+      record.leasePolicy.duration,
+      record.leasePolicy.switchingPenalty,
+      record.leasePolicy.ttlSafetyMargin,
+    ],
+    record.maxAssignmentCost,
+    [record.owner.id, record.owner.kind],
+    record.preconditionKeys,
+    [record.priority.class, record.priority.value],
+    record.quantity,
+    record.range,
+    CAPABILITY_KEYS.map(
+      (key) => record.requiredCapability[key],
+    ) as unknown as PersistedWorkContractRecordV3[18],
+    [record.target.roomName, record.target.x, record.target.y],
+    record.targetId,
+    compactHistoryV3(record.history),
+    record.lease === null
+      ? null
+      : [
+          record.lease.actorId,
+          record.lease.actorName,
+          record.lease.assignedAt,
+          record.lease.assignmentCost,
+          record.lease.expiresAt,
+          record.lease.travelTicks,
+        ],
+    record.revision,
+    record.state,
+  ];
+}
+
+function compactExecutionV3(execution: ContractExecutionTerms): PersistedContractExecutionV3 {
+  if (execution.version === 1)
+    return [
+      1,
+      execution.action,
+      execution.completion,
+      execution.completionHits ?? null,
+      execution.counterpartId,
+      execution.resourceType,
+    ];
+  if (execution.version === 2)
+    return [
+      2,
+      execution.completion,
+      execution.counterpartId,
+      execution.workPosition.roomName,
+      execution.workPosition.x,
+      execution.workPosition.y,
+    ];
+  if (execution.version === 3)
+    return [
+      3,
+      execution.action,
+      execution.completion,
+      execution.counterpartId,
+      execution.flowId,
+      execution.recommendedCarry,
+      execution.recommendedMove,
+      execution.reservedAmount,
+      execution.resourceType,
+      execution.stage,
+    ];
+  if (execution.version === 4)
+    return [
+      4,
+      execution.originRoomName,
+      execution.routeRoomNames,
+      execution.routeTravelTicks,
+      execution.signText,
+      execution.targetReservationTicks,
+    ];
+  if (execution.version === 5)
+    return [
+      5,
+      execution.originRoomName,
+      execution.routeRoomNames,
+      execution.routeTravelTicks,
+      execution.workPosition.roomName,
+      execution.workPosition.x,
+      execution.workPosition.y,
+    ];
+  return [
+    6,
+    execution.action,
+    execution.completion,
+    execution.counterpartId,
+    execution.acquireOriginRoomName,
+    execution.acquireRouteRoomNames,
+    execution.acquireRouteTravelTicks,
+    execution.deliverOriginRoomName,
+    execution.deliverRouteRoomNames,
+    execution.deliverRouteTravelTicks,
+    execution.flowId,
+    execution.recommendedCarry,
+    execution.recommendedMove,
+    execution.reservedAmount,
+    execution.resourceType,
+    execution.sinkBaselineAmount,
+    execution.sinkNodeId,
+    [execution.sinkPosition.roomName, execution.sinkPosition.x, execution.sinkPosition.y],
+    execution.sinkTargetId,
+    execution.sourceNodeId,
+    [execution.sourcePosition.roomName, execution.sourcePosition.x, execution.sourcePosition.y],
+    execution.sourceTargetId,
+    execution.stage,
+  ];
+}
+
+function compactHistoryV3(history: readonly ContractHistoryEvent[]): PersistedContractHistoryV3 {
+  const first = history[0];
+  if (first === undefined) {
+    throw new ContractValidationError("missing-history", "$.history", "must not be empty");
+  }
+  return [first.from, history.map(({ reason, tick, to }) => [reason, tick, to] as const)];
+}
+
+function compactOutcomeV3(outcome: ContractOutcome): PersistedContractOutcomeV3 {
+  return [
+    outcome.issuer,
+    outcome.issuerKey,
+    outcome.issuerSequence,
+    outcome.reason,
+    outcome.requestSignature,
+    outcome.revision,
+    outcome.state,
+    outcome.tick,
+  ];
+}
+
+function persistedState(state: ContractLedgerRuntimeState): ContractLedgerStateV3 {
+  return deepFreeze({
+    active: state.active.map(compactActiveRecordV3),
+    issuerFrontiers: state.issuerFrontiers.map(
+      ({ issuer, retiredThrough }) => [issuer, retiredThrough] as PersistedContractIssuerFrontierV3,
+    ),
+    outcomes: state.outcomes.map(compactOutcomeV3),
+    schemaVersion: CONTRACT_LEDGER_SCHEMA_VERSION,
+  });
+}
+
+function requiresCanonicalV3Persistence(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    value.schemaVersion === CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION ||
+    value.schemaVersion === CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION
+  );
 }
 
 function parseIssuerFrontier(value: unknown, path: string): ContractIssuerFrontier {
@@ -608,6 +1100,14 @@ function parseIssuerFrontier(value: unknown, path: string): ContractIssuerFronti
   return {
     issuer: requireString(frontier.issuer, `${path}.issuer`, 1, 128),
     retiredThrough: requireInteger(frontier.retiredThrough, `${path}.retiredThrough`, 0),
+  };
+}
+
+function parseIssuerFrontierV3(value: unknown, path: string): ContractIssuerFrontier {
+  const tuple = requireTuple(value, path, 2);
+  return {
+    issuer: requireString(tuple[0], `${path}[0]`, 1, 128),
+    retiredThrough: requireInteger(tuple[1], `${path}[1]`, 0),
   };
 }
 
@@ -638,6 +1138,14 @@ function requireArray(value: unknown, path: string, maximum: number): readonly u
     invalid("invalid-array", path, `must be an array with at most ${String(maximum)} items`);
   }
   return value;
+}
+
+function requireTuple(value: unknown, path: string, length: number): readonly unknown[] {
+  const tuple = requireArray(value, path, length);
+  if (tuple.length !== length) {
+    invalid("invalid-tuple", path, `must contain exactly ${String(length)} fields`);
+  }
+  return tuple;
 }
 
 function requireInteger(value: unknown, path: string, minimum: number): number {

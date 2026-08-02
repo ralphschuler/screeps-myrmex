@@ -8,7 +8,11 @@ import {
   type RemoteCandidateEvidence,
 } from "../src/remotes";
 import { selectRemoteCandidatePairs } from "../src/remotes/runtime";
-import type { ContractExecutionView, ContractPlanningView } from "../src/contracts";
+import {
+  ContractLedger,
+  type ContractExecutionView,
+  type ContractPlanningView,
+} from "../src/contracts";
 import type { WorldSnapshot } from "../src/world/snapshot";
 import { RoutePlanner } from "../src/world/routes";
 import { installMatureRuntimeGlobals, matureRuntimeWorld } from "./support/mature-runtime-fixture";
@@ -78,26 +82,17 @@ describe("remote portfolio production composition", () => {
       "contract-ready",
       "contract-ready",
     ]);
+    const openedContracts = ContractLedger.open(memory.myrmex?.contracts ?? {});
+    expect(openedContracts.status).toBe("ready");
+    if (openedContracts.status !== "ready") throw new Error("expected valid contracts owner");
+    const activeContracts = openedContracts.ledger.view().active;
     expect(
-      (
-        memory.myrmex?.contracts as
-          { readonly active?: readonly { readonly issuer: string }[] } | undefined
-      )?.active?.filter(
+      activeContracts.filter(
         ({ issuer }) =>
           issuer.startsWith("remote-mining/") || issuer.startsWith("remote-reservation/"),
       ),
     ).toHaveLength(3);
-    expect(
-      (
-        memory.myrmex?.contracts as
-          | {
-              readonly active?: readonly {
-                readonly execution: { readonly version: number };
-              }[];
-            }
-          | undefined
-      )?.active?.filter(({ execution }) => execution.version === 6),
-    ).toHaveLength(2);
+    expect(activeContracts.filter(({ execution }) => execution?.version === 6)).toHaveLength(2);
   });
 
   it("renews a continuously qualified objective before its terminal timeout", () => {

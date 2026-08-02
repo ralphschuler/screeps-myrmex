@@ -345,7 +345,7 @@ describe("RemoteMiningPlanner", () => {
     expect(reordered).toEqual(ordered);
   });
 
-  it("projects routed mining as one stationary replacement load", () => {
+  it("projects routed mining as one stationary load without pre-ageing its successor", () => {
     const first = plan();
     const contract = required(
       plan({ budgets: first.budgetRequests.map(activeBudget) }).contractRequests[0],
@@ -416,7 +416,9 @@ describe("RemoteMiningPlanner", () => {
           name: "miner-a",
           pos: { roomName: "W1N2", x: 9, y: 9 },
           spawning: false,
-          ticksToLive: 105,
+          // replacement safety 25 + ten-part spawn 30; the incumbent's 50-tick route is not
+          // executable by a successor while this stationary contract retains its sole lease.
+          ticksToLive: 55,
         },
       ],
       availableEnergy: 1_000,

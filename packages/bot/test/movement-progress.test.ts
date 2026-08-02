@@ -259,9 +259,9 @@ describe("movement progress", () => {
 
     expect(manager.metrics().namespaces).toEqual([
       expect.objectContaining({
-        capacity: 192,
-        entries: 192,
-        evictions: 8,
+        capacity: 128,
+        entries: 128,
+        evictions: 72,
         id: "movement.progress.v1",
       }),
     ]);

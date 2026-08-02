@@ -112,6 +112,10 @@ export class WorkforceAllocator {
         incumbentByActor.set(contract.lease.actorId, contract);
       }
     }
+    const actorsWithEnergyConsumer = viableEnergyConsumerActorIds(
+      consideredActors,
+      consideredContracts,
+    );
 
     const assignedActors = new Set<string>();
     const assignments: ContractAssignmentProposal[] = [];
@@ -136,6 +140,7 @@ export class WorkforceAllocator {
           actor,
           contract,
           incumbentByActor.get(actor.id),
+          actorsWithEnergyConsumer.has(actor.id),
           input.tick,
           input.travel,
         );
@@ -246,6 +251,7 @@ function evaluateBid(
   actor: WorkforceActor,
   contract: WorkContractRecord,
   incumbent: WorkContractRecord | undefined,
+  hasEnergyConsumer: boolean,
   tick: number,
   travel: TravelEstimateView,
 ): BidEvaluation {
@@ -253,7 +259,7 @@ function evaluateBid(
     actor.spawning ||
     actor.ticksToLive === null ||
     !capabilitySatisfies(actor.capability, contract.requiredCapability) ||
-    !actionEligible(actor, contract, incumbent)
+    !actionEligible(actor, contract, incumbent, hasEnergyConsumer)
   ) {
     return { bid: null, reason: "no-viable-actor" };
   }
@@ -299,6 +305,7 @@ function actionEligible(
   actor: WorkforceActor,
   contract: WorkContractRecord,
   incumbent: WorkContractRecord | undefined,
+  hasEnergyConsumer: boolean,
 ): boolean {
   if (contract.execution === undefined) return true;
   const contractPhase = contractEnergyExecutionPhase(contract.execution.action);
@@ -316,11 +323,16 @@ function actionEligible(
     contractPhase === "consume"
   )
     return false;
+  // Cargo is tick-local phase evidence during a short lease gap: once an actor has acquired any
+  // energy, only an established acquisition incumbent may keep filling the same batch while a
+  // funded consumer can accept it. If no consumer exists, acquisition remains eligible so partial
+  // orphan cargo cannot deadlock recovery.
   if (
     actor.energy !== undefined &&
     actor.energy > 0 &&
-    incumbentPhase === "consume" &&
-    contractPhase === "acquire"
+    contractPhase === "acquire" &&
+    incumbentPhase !== "acquire" &&
+    hasEnergyConsumer
   )
     return false;
   if (
@@ -343,6 +355,32 @@ function actionEligible(
     return hasCapacity || incumbent?.id === contract.id;
   }
   return true;
+}
+
+function viableEnergyConsumerActorIds(
+  actors: readonly WorkforceActor[],
+  contracts: readonly WorkContractRecord[],
+): ReadonlySet<string> {
+  const consumers = contracts.filter(
+    (contract) =>
+      contract.execution !== undefined &&
+      contractEnergyExecutionPhase(contract.execution.action) === "consume",
+  );
+  return new Set(
+    actors.flatMap((actor) =>
+      !actor.spawning &&
+      actor.ticksToLive !== null &&
+      actor.ticksToLive > 1 &&
+      (actor.energy ?? 0) > 0 &&
+      consumers.some(
+        (contract) =>
+          contract.target.roomName === actor.pos.roomName &&
+          capabilitySatisfies(actor.capability, contract.requiredCapability),
+      )
+        ? [actor.id]
+        : [],
+    ),
+  );
 }
 
 function switchingPenalty(

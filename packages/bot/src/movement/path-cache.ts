@@ -2,6 +2,7 @@ import {
   createJsonCacheCodec,
   type CacheManager,
   type CacheNamespace,
+  type CacheWriteContext,
   type JsonValue,
 } from "../cache";
 import type { MovementPolicy } from "../config";
@@ -235,40 +236,95 @@ export class LocalPathPlanner {
 
 const caches = new WeakMap<CacheManager, MovementPathCache>();
 
+type MovementPathCacheKey = readonly ["local" | "static", string, string];
+type MovementPathCacheEntry =
+  | {
+      readonly [field: string]: JsonValue;
+      readonly kind: "local";
+      readonly value: LocalPath;
+    }
+  | {
+      readonly [field: string]: JsonValue;
+      readonly kind: "static";
+      readonly value: StaticTraversalMatrix;
+    };
+
 /**
- * Registers the two bounded, reconstructible movement namespaces once per heap CacheManager.
- * Dynamic occupancy, reservations, and live game objects are deliberately absent from both values.
+ * Registers one bounded, reconstructible path namespace once per heap CacheManager. Tagged keys
+ * preserve the independent local-path/static-matrix TTL and dependency contracts without spending
+ * a second namespace. Dynamic occupancy, reservations, and live game objects remain absent.
  */
 export function getMovementPathCache(manager: CacheManager): MovementPathCache {
   const existing = caches.get(manager);
   if (existing !== undefined) return existing;
-  const staticMatrices = manager.register<readonly [string, string], StaticTraversalMatrix>({
-    id: "movement.static-matrix.v1",
+  const namespace = manager.register<MovementPathCacheKey, MovementPathCacheEntry>({
+    id: "movement.path-cache.v3",
     owner: "movement.path-cache",
-    version: 1,
-    capacity: 64,
-    maxKeyLength: 256,
-    maxEncodedLength: 12_000,
+    version: 3,
+    // Leaves exact headroom for the 128-record progress cache and one compiled layout under the
+    // frozen 384-entry production bound.
+    capacity: 240,
+    maxKeyLength: 544,
+    maxEncodedLength: 12_256,
     estimatedRebuildCpu: 0.5,
     ttlTicks: null,
     keyOf: (key) => key,
-    codec: createJsonCacheCodec<StaticTraversalMatrix>(),
+    codec: createJsonCacheCodec<MovementPathCacheEntry>(),
   });
-  const localPaths = manager.register<readonly [string, string], LocalPath>({
-    id: "movement.local-path.v2",
-    owner: "movement.path-cache",
-    version: 2,
-    capacity: 256,
-    maxKeyLength: 512,
-    maxEncodedLength: 2_048,
-    estimatedRebuildCpu: 0.25,
-    ttlTicks: 25,
-    keyOf: (key) => key,
-    codec: createJsonCacheCodec<LocalPath>(),
-  });
+  const staticMatrices = movementPathNamespaceView<StaticTraversalMatrix>(
+    namespace,
+    "static",
+    null,
+  );
+  const localPaths = movementPathNamespaceView<LocalPath>(namespace, "local", 25);
   const created = Object.freeze({ localPaths, staticMatrices });
   caches.set(manager, created);
   return created;
+}
+
+function movementPathNamespaceView<Value extends LocalPath | StaticTraversalMatrix>(
+  namespace: CacheNamespace<MovementPathCacheKey, MovementPathCacheEntry>,
+  kind: MovementPathCacheEntry["kind"],
+  ttlTicks: number | null,
+): CacheNamespace<readonly [string, string], Value> {
+  const cacheKey = (key: readonly [string, string]): MovementPathCacheKey => [kind, key[0], key[1]];
+  const entry = (value: Value): MovementPathCacheEntry =>
+    ({ kind, value }) as MovementPathCacheEntry;
+  const value = (candidate: MovementPathCacheEntry): Value => {
+    if (candidate.kind !== kind) throw new TypeError("movement path cache kind mismatch");
+    return candidate.value as Value;
+  };
+  const context = (candidate: CacheWriteContext): CacheWriteContext =>
+    candidate.ttlTicks === undefined ? { ...candidate, ttlTicks } : candidate;
+  const view: CacheNamespace<readonly [string, string], Value> = {
+    id: namespace.id,
+    version: namespace.version,
+    get(key, readContext) {
+      const found = namespace.get(cacheKey(key), readContext);
+      return found.hit ? Object.freeze({ hit: true, value: value(found.value) }) : found;
+    },
+    set(key, nextValue, writeContext) {
+      namespace.set(cacheKey(key), entry(nextValue), context(writeContext));
+    },
+    getOrCompute(key, writeContext, compute) {
+      return value(
+        namespace.getOrCompute(cacheKey(key), context(writeContext), () => entry(compute())),
+      );
+    },
+    delete(key) {
+      return namespace.delete(cacheKey(key));
+    },
+    clear() {
+      return namespace.clear();
+    },
+    sweep(tick, maximumEntries) {
+      return namespace.sweep(tick, maximumEntries);
+    },
+    metrics() {
+      return namespace.metrics();
+    },
+  };
+  return Object.freeze(view);
 }
 
 function isValidRequest(request: LocalPathPlanRequest): boolean {

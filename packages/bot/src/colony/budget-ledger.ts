@@ -3,8 +3,10 @@ import {
   MAX_ACTIVE_RESERVATIONS,
   MAX_BUDGET_ISSUER_CODE_UNITS,
   MAX_BUDGET_REQUESTS_PER_TICK,
+  MAX_RAW_BUDGET_REQUESTS_PER_TICK,
   MAX_LEDGER_ENTRIES,
   MAX_LEDGER_TRANSITIONS_PER_TICK,
+  MAX_RESERVATION_ID_CODE_UNITS,
   MAX_SPAWN_INTERVAL_TICKS,
   type BudgetCategory,
   type BudgetConsumption,
@@ -25,6 +27,8 @@ export interface BudgetLedgerReconciliationInput {
   readonly tick: number;
   readonly capacity: BudgetLedgerCapacity;
   readonly requests: readonly BudgetRequest[];
+  /** Exact tick-local reservation IDs authorized to spend the protected floor for one spawn. */
+  readonly protectedEnergyReservationIds?: readonly string[];
 }
 
 interface AllocationCandidate {
@@ -69,12 +73,15 @@ export class BudgetLedger {
 
   public reconcile(input: BudgetLedgerReconciliationInput): BudgetLedgerResult {
     assertTick(input.tick);
-    if (input.requests.length > MAX_BUDGET_REQUESTS_PER_TICK * 2) {
+    if (input.requests.length > MAX_RAW_BUDGET_REQUESTS_PER_TICK) {
       throw new RangeError(
-        `raw budget requests exceed the bounded input cap of ${String(MAX_BUDGET_REQUESTS_PER_TICK * 2)}`,
+        `raw budget requests exceed the bounded input cap of ${String(MAX_RAW_BUDGET_REQUESTS_PER_TICK)}`,
       );
     }
     const capacity = normalizeCapacity(input.capacity);
+    const requestedProtectedEnergyReservationIds = normalizeProtectedEnergyReservationIds(
+      input.protectedEnergyReservationIds ?? [],
+    );
     const expiry = expireEntries(this.entries, input.tick);
     const transitions = [...expiry.transitions];
     const decisions: BudgetDecision[] = [];
@@ -94,7 +101,20 @@ export class BudgetLedger {
       decisions.push(invalidDecision(request));
     }
     validRequests.sort(compareRequests);
+    const validReservationIds = new Set(validRequests.map(reservationIdFor));
+    for (const reservationId of requestedProtectedEnergyReservationIds)
+      if (!validReservationIds.has(reservationId))
+        throw new TypeError("protected energy authorization does not match a valid request");
     const admitted = validRequests.slice(0, MAX_BUDGET_REQUESTS_PER_TICK);
+    const admittedReservationIds = new Set(admitted.map(reservationIdFor));
+    // A higher-priority request may displace a provisionally selected spawn at the bounded request
+    // cap. Dropping that tick-local floor authorization is the fail-closed denial; saturation must
+    // not turn a legitimate batch into a kernel exception.
+    const protectedEnergyReservationIds = new Set(
+      [...requestedProtectedEnergyReservationIds].filter((reservationId) =>
+        admittedReservationIds.has(reservationId),
+      ),
+    );
     for (const request of validRequests.slice(MAX_BUDGET_REQUESTS_PER_TICK)) {
       decisions.push(deniedDecision(request, "request-cap-exceeded"));
     }
@@ -193,7 +213,14 @@ export class BudgetLedger {
       });
     }
 
-    candidates.sort(compareCandidates);
+    candidates.sort(
+      (left, right) =>
+        BUDGET_CATEGORIES.indexOf(left.request.category) -
+          BUDGET_CATEGORIES.indexOf(right.request.category) ||
+        Number(!protectedEnergyReservationIds.has(left.reservationId)) -
+          Number(!protectedEnergyReservationIds.has(right.reservationId)) ||
+        compareCandidates(left, right),
+    );
     const energyAllocated = new Map<string, number>();
     const protectedAllocated = new Map<string, number>();
     const spawnAllocated = new Map<string, SpawnIntervalClaim[]>();
@@ -222,6 +249,7 @@ export class BudgetLedger {
         protectedAllocated,
         cpuAllocated,
         spawnAllocated,
+        protectedEnergyReservationIds,
       });
       if (allocation.grant === null) {
         const denied = denyCandidate(candidate, input.tick, allocation.reasonCode);
@@ -420,6 +448,7 @@ function allocateCandidate(
     readonly protectedAllocated: ReadonlyMap<string, number>;
     readonly cpuAllocated: number;
     readonly spawnAllocated: ReadonlyMap<string, readonly SpawnIntervalClaim[]>;
+    readonly protectedEnergyReservationIds: ReadonlySet<string>;
   },
 ): ProvisionalAllocation {
   const { request, existing } = candidate;
@@ -437,7 +466,9 @@ function allocateCandidate(
     const minimumOutstanding = Math.max(0, request.energy.minimum - consumed.energy);
     const desiredOutstanding = Math.max(0, request.energy.desired - consumed.energy);
     let available = rawAvailable;
-    if (!PROTECTED_CATEGORIES.has(request.category)) {
+    const protectedEnergyAuthorized =
+      request.spawn !== null && state.protectedEnergyReservationIds.has(candidate.reservationId);
+    if (!PROTECTED_CATEGORIES.has(request.category) && !protectedEnergyAuthorized) {
       const usedProtected = state.protectedAllocated.get(request.colonyId) ?? 0;
       const floorRemaining = Math.max(0, energyCapacity.protected - usedProtected);
       available = Math.max(0, rawAvailable - floorRemaining);
@@ -493,6 +524,23 @@ function allocateCandidate(
   }
 
   return { grant: { energy, cpu, spawn }, reasonCode: "granted" };
+}
+
+function normalizeProtectedEnergyReservationIds(values: readonly string[]): ReadonlySet<string> {
+  if (values.length > MAX_BUDGET_REQUESTS_PER_TICK)
+    throw new RangeError("protected energy authorizations exceed the request cap");
+  const normalized = new Set<string>();
+  for (const value of values) {
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > MAX_RESERVATION_ID_CODE_UNITS ||
+      normalized.has(value)
+    )
+      throw new TypeError("invalid protected energy authorization");
+    normalized.add(value);
+  }
+  return normalized;
 }
 
 function denyCandidate(

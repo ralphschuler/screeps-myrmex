@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import { utf8ByteLength } from "../../../bot/src/config/canonical";
+import { openContractLedgerState } from "../../../bot/src/contracts";
 import type { TickOutcome } from "../../../bot/src/runtime/tick";
 import { matureRuntimeWorld } from "../../../bot/test/support/mature-runtime-fixture";
 import { remoteRuntimeGame } from "../../../bot/test/support/remote-runtime-fixture";
@@ -9,18 +10,18 @@ const FIRST_TICK = 1_000;
 const TICK_COUNT = 30;
 type Variant = "reordered" | "reset" | "warm";
 
-export async function collectPhase3ProductionPortfolioSoakReceipt() {
+export async function collectPhase3CurrentRuntimeCompatibilityReceipt() {
   const warm = await runVariant("warm");
   const reset = await runVariant("reset");
   const reordered = await runVariant("reordered");
   const summaries = [warm.summary, reset.summary, reordered.summary];
   if (new Set(summaries.map((summary) => canonicalSerialize(summary))).size !== 1) {
     throw new Error(
-      `Phase 3 production portfolio semantic drift: ${canonicalSerialize({ reordered: reordered.summary, reset: reset.summary, warm: warm.summary })}`,
+      `Phase 3 current-runtime portfolio semantic drift: ${canonicalSerialize({ reordered: reordered.summary, reset: reset.summary, warm: warm.summary })}`,
     );
   }
   return Object.freeze({
-    id: "phase3/portfolio/production-threat-profit-soak-v2",
+    id: "phase3/portfolio/current-runtime-compatibility-v1",
     executor: "packages/bot/src/runtime/tick.runTick",
     executedVariants: Object.freeze([warm.kind, reset.kind, reordered.kind]),
     ticksPerVariant: Object.freeze([
@@ -104,14 +105,14 @@ async function runVariant(kind: Variant) {
         ({ issuer, status }) => issuer.startsWith("remote-") && status === "active",
       ).length,
     );
+    const contracts = openContractLedgerState(memory.myrmex?.contracts);
+    if (contracts.status !== "ready") {
+      throw new Error(`${kind} Phase 3 soak could not open the contracts owner`);
+    }
     remoteContractCounts.push(
-      (
-        memory.myrmex?.contracts as
-          | { readonly active?: readonly { readonly execution?: { readonly version?: number } }[] }
-          | undefined
-      )?.active?.filter(({ execution }) =>
-        execution === undefined ? false : [4, 5, 6].includes(execution.version ?? 0),
-      ).length ?? 0,
+      contracts.state.active.filter(({ execution }) =>
+        execution === undefined ? false : [4, 5, 6].includes(execution.version),
+      ).length,
     );
     maximumPersistentBytes = Math.max(
       maximumPersistentBytes,
@@ -185,7 +186,7 @@ async function runVariant(kind: Variant) {
   });
   if (summary.kernelFaults !== 0) {
     throw new Error(
-      `${kind} Phase 3 production portfolio soak reported kernel faults: ${canonicalSerialize(
+      `${kind} Phase 3 current-runtime portfolio soak reported kernel faults: ${canonicalSerialize(
         outcomes.flatMap((outcome) => outcome.kernel.faults),
       )}`,
     );

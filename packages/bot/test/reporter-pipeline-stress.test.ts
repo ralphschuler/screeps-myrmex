@@ -256,7 +256,7 @@ function assertPipelineBounds(
   expect(harness.policy.maximumSignalsPerTick).toBe(2_000);
   expect(
     harness.policy.maximumSignalsPerTick + step.telemetry.telemetryPolicy.maximumDetailRecords,
-  ).toBe(2_064);
+  ).toBe(2_002);
   expect(harness.policy.maximumFingerprints).toBe(64);
   expect(harness.policy.maximumLinesPerTick).toBe(3);
   expect(harness.policy.maximumBytesPerTick).toBe(1_536);

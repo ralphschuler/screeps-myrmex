@@ -41,7 +41,7 @@ const ZERO_TRAVEL: TravelEstimateView = Object.freeze({
 });
 
 describe("ContractLedger", () => {
-  it("initializes an empty owner as schema v1 and round-trips canonical state", () => {
+  it("initializes an empty owner as schema v2 and round-trips canonical state", () => {
     const ledger = openLedger({});
 
     expect(ledger.changed).toBe(true);
@@ -49,7 +49,7 @@ describe("ContractLedger", () => {
       active: [],
       issuerFrontiers: [],
       outcomes: [],
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
 
     const serialized = serializeContractLedgerState(ledger.view());
@@ -618,9 +618,9 @@ describe("ContractLedger", () => {
       state: "assigned",
     });
     expect(ledger.view().active[0]?.history.slice(-3)).toEqual([
-      expect.objectContaining({ from: "assigned", reason, to: "suspended" }),
-      expect.objectContaining({ from: "suspended", reason: "work-remains-funded", to: "funded" }),
-      expect.objectContaining({ from: "funded", reason: "workforce-assigned", to: "assigned" }),
+      ["assigned", reason, 4, "suspended"],
+      ["suspended", "work-remains-funded", 4, "funded"],
+      ["funded", "workforce-assigned", 4, "assigned"],
     ]);
   });
 
@@ -1166,9 +1166,9 @@ describe("ContractLedger", () => {
 
     const record = historyLedger.view().active[0];
     expect(record?.history).toHaveLength(MAX_CONTRACT_HISTORY);
-    expect(record?.history[0]).not.toMatchObject({ from: null, to: "proposed" });
+    expect(record?.history[0]?.[0]).not.toBe(null);
     const finalHistoryEvent = record?.history[record.history.length - 1];
-    expect(finalHistoryEvent).toMatchObject({ from: "suspended", to: "funded" });
+    expect(finalHistoryEvent).toEqual(["suspended", "test-funded", 34, "funded"]);
 
     let outcomeLedger = openLedger({});
     let firstId = "";
@@ -1268,9 +1268,9 @@ describe("ContractLedger", () => {
     }
     expect(JSON.stringify(malformed)).toBe(malformedBytes);
 
-    const future = { active: [{ opaque: true }], outcomes: [], schemaVersion: 2 };
+    const future = { active: [{ opaque: true }], outcomes: [], schemaVersion: 4 };
     const futureBytes = JSON.stringify(future);
-    expect(ContractLedger.open(future)).toEqual({ foundSchemaVersion: 2, status: "unsupported" });
+    expect(ContractLedger.open(future)).toEqual({ foundSchemaVersion: 4, status: "unsupported" });
     expect(JSON.stringify(future)).toBe(futureBytes);
   });
 
