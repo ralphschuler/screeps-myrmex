@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ContractLedger } from "../src/contracts";
 import { runTick, type TickOutcome } from "../src/runtime/tick";
 import { assertSingleTickAuthorities, survivalWorld } from "./support/survival-flow-fixture";
 
@@ -291,13 +292,10 @@ describe("survival-flow runtime recovery", () => {
       world.assertEnergyConserved();
       assertSingleTickAuthorities(outcome, world.workerId);
 
-      const activeContracts = (
-        memory.myrmex?.contracts as
-          { readonly active?: readonly { readonly issuer?: string }[] } | undefined
-      )?.active;
+      const activeContracts = contractOwner(memory).active;
       maximumControllerContracts = Math.max(
         maximumControllerContracts,
-        (activeContracts ?? []).filter(
+        activeContracts.filter(
           ({ issuer }) => issuer === "growth/W1N1/upgrade-controller/controller-1",
         ).length,
       );
@@ -521,11 +519,10 @@ describe("survival-flow runtime recovery", () => {
       for (const lease of outcome.contractExecution.leases) {
         if (lease.targetId === "controller-1") controllerContractIds.add(lease.contractId);
       }
-      const contractsOwner = memory.myrmex?.contracts as
-        { readonly active?: readonly { readonly issuer?: string }[] } | undefined;
+      const contractsOwner = contractOwner(memory);
       maximumBootstrapContracts = Math.max(
         maximumBootstrapContracts,
-        (contractsOwner?.active ?? []).filter(
+        contractsOwner.active.filter(
           ({ issuer }) => issuer === "growth/W1N1/upgrade-controller/controller-1",
         ).length,
       );
@@ -586,22 +583,11 @@ function contractOwner(memory: Memory): {
     readonly retiredThrough: number;
   }[];
 } {
-  const owner = memory.myrmex?.contracts as
-    | {
-        readonly active?: readonly {
-          readonly id?: string;
-          readonly issuer?: string;
-          readonly issuerSequence?: number;
-          readonly state?: string;
-        }[];
-        readonly issuerFrontiers?: readonly {
-          readonly issuer?: string;
-          readonly retiredThrough?: number;
-        }[];
-      }
-    | undefined;
+  const opened = ContractLedger.open(memory.myrmex?.contracts ?? {});
+  if (opened.status !== "ready") throw new Error("expected contracts owner to reopen");
+  const owner = opened.ledger.view();
   return {
-    active: (owner?.active ?? []).flatMap((contract) =>
+    active: owner.active.flatMap((contract) =>
       typeof contract.id === "string" &&
       typeof contract.issuer === "string" &&
       typeof contract.issuerSequence === "number" &&
@@ -616,7 +602,7 @@ function contractOwner(memory: Memory): {
           ]
         : [],
     ),
-    issuerFrontiers: (owner?.issuerFrontiers ?? []).flatMap((frontier) =>
+    issuerFrontiers: owner.issuerFrontiers.flatMap((frontier) =>
       typeof frontier.issuer === "string" && typeof frontier.retiredThrough === "number"
         ? [{ issuer: frontier.issuer, retiredThrough: frontier.retiredThrough }]
         : [],

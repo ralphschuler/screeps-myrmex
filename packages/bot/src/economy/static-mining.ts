@@ -44,6 +44,13 @@ export interface StaleSourceServiceContractReconciliation {
   readonly status: "blocked" | "matched" | "not-required";
 }
 
+/**
+ * A 5-WORK/1-MOVE RCL2 miner may need up to 1,200 modeled ticks on a complete local path at the
+ * configured 200-cost search bound. The remaining margin covers initial fatigue without admitting
+ * a route that a fresh 1,500-TTL creep cannot finish with its modeled work and lease safety.
+ */
+export const STATIC_MINER_MAX_ASSIGNMENT_COST = 1_250;
+
 export function reconcileStaleSourceServiceContracts(input: {
   readonly energyCapacityAvailable: number;
   readonly planning: ContractPlanningView;
@@ -164,11 +171,22 @@ export function planStaticMining(input: {
         continue;
       }
       const capability = minerCapability(room.energyCapacityAvailable);
+      const placementSequence = placement.service?.issuerSequence ?? 1;
+      const issuerSequence = staticMiningIssuerSequence({
+        capability,
+        colonyId: room.name,
+        identity,
+        placementSequence,
+        planning: input.planning,
+        sourceId: source.id,
+        sourcePosition: source.pos,
+        workPosition: placement.pos,
+      });
       const budgetRequest: BudgetRequest = {
         colonyId: room.name,
         category: "harvesting-filling",
         issuer: identity,
-        revision: placement.service?.issuerSequence ?? 1,
+        revision: issuerSequence,
         expiresAt: EXPIRY,
         energy: null,
         cpu: { minimum: 1, desired: 1 },
@@ -181,7 +199,7 @@ export function planStaticMining(input: {
         { roomName: source.pos.roomName, x: source.pos.x, y: source.pos.y },
         placement.pos,
         capability,
-        placement.service?.issuerSequence ?? 1,
+        issuerSequence,
       );
       projections.push({
         blocker: null,
@@ -208,10 +226,7 @@ export function planStaticMining(input: {
       const predecessor = existing[0];
       if (existing.length !== 1 || predecessor === undefined) continue;
       const desiredId = contractIdFor(desired.issuer, desired.issuerKey, desired.issuerSequence);
-      if (predecessor.contractId === desiredId) {
-        if (sameStaticMiningTerms(predecessor, desired)) requests.push(desired);
-        continue;
-      }
+      if (predecessor.contractId === desiredId) continue;
       if (
         predecessor.issuerSequence !== undefined &&
         desired.issuerSequence === predecessor.issuerSequence + 1 &&
@@ -268,9 +283,55 @@ export function planStaticMining(input: {
   });
 }
 
+/**
+ * Keeps one live source-service issuance stable, but advances it exactly once when the room's
+ * available body capacity changes the stationary miner terms. Layout revisions remain authoritative
+ * when they already provide the immediate successor sequence; gaps still fail closed downstream.
+ */
+function staticMiningIssuerSequence(input: {
+  readonly capability: CapabilityVector;
+  readonly colonyId: string;
+  readonly identity: string;
+  readonly placementSequence: number;
+  readonly planning: ContractPlanningView | undefined;
+  readonly sourceId: string;
+  readonly sourcePosition: PositionSnapshot;
+  readonly workPosition: PositionSnapshot;
+}): number {
+  if (input.planning?.status !== "ready") return input.placementSequence;
+  const existing = input.planning.contracts.filter(({ issuer }) => issuer === input.identity);
+  const predecessor = existing[0];
+  if (
+    existing.length !== 1 ||
+    predecessor === undefined ||
+    predecessor.issuerSequence === undefined ||
+    !Number.isSafeInteger(predecessor.issuerSequence) ||
+    predecessor.issuerSequence < 1
+  )
+    return input.placementSequence;
+  const desiredAtCurrentSequence = contract(
+    input.identity,
+    input.colonyId,
+    input.sourceId,
+    input.sourcePosition,
+    input.workPosition,
+    input.capability,
+    predecessor.issuerSequence,
+  );
+  if (sameStaticMiningTerms(predecessor, desiredAtCurrentSequence))
+    return predecessor.issuerSequence;
+  if (input.placementSequence === predecessor.issuerSequence + 1) return input.placementSequence;
+  if (
+    input.placementSequence <= predecessor.issuerSequence &&
+    predecessor.issuerSequence < Number.MAX_SAFE_INTEGER
+  )
+    return predecessor.issuerSequence + 1;
+  return input.placementSequence;
+}
+
 export function minerCapability(energyCapacity: number): CapabilityVector {
-  const work = energyCapacity >= 800 ? 5 : energyCapacity >= 550 ? 4 : 2;
-  const move = work >= 5 ? 3 : work >= 4 ? 2 : 1;
+  const work = energyCapacity >= 550 ? 5 : 2;
+  const move = energyCapacity >= 800 ? 3 : 1;
   return { attack: 0, carry: 0, claim: 0, heal: 0, move, rangedAttack: 0, tough: 0, work };
 }
 
@@ -307,7 +368,7 @@ function contract(
     issuerSequence,
     kind: "harvest",
     leasePolicy: { duration: 10, switchingPenalty: 1, ttlSafetyMargin: 3 },
-    maxAssignmentCost: 150,
+    maxAssignmentCost: STATIC_MINER_MAX_ASSIGNMENT_COST,
     owner: { id: colonyId, kind: "colony" },
     preconditionKeys: ["visible-source", "fresh-source-service"],
     priority: { class: "survival", value: 950 },

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ContractLedger } from "../src/contracts";
 import { runTick } from "../src/runtime/tick";
 import type { RuntimeGame } from "../src/runtime/context";
 import { PLAIN_ROOM_TERRAIN } from "./support/room-terrain-fixture";
@@ -155,7 +156,7 @@ describe("static mining runtime activation", () => {
       outcome.contracts?.submissions.filter(({ contractId }) =>
         contractId?.includes("mining/W1N1/source-a"),
       ),
-    ).toEqual([expect.objectContaining({ accepted: true, outcome: "duplicate-active" })]);
+    ).toEqual([]);
     expect(commands.harvest).not.toHaveBeenCalled();
   });
 
@@ -228,7 +229,11 @@ describe("static mining runtime activation", () => {
       execution: { workPosition: { x: 10, y: 11 } },
       issuerSequence: 2,
     });
-    expect(replaced.contracts?.replacements).toEqual([
+    expect(
+      replaced.contracts?.replacements.filter(
+        ({ predecessorContractId }) => predecessorContractId === predecessor.id,
+      ),
+    ).toEqual([
       expect.objectContaining({
         accepted: true,
         predecessorContractId: predecessor.id,
@@ -241,7 +246,11 @@ describe("static mining runtime activation", () => {
       memory: reconstructed,
     });
     expect(activeMiningContract(reconstructed, "mining/W1N1/source-a")).toEqual(successor);
-    expect(stable.contracts?.replacements).toEqual([]);
+    expect(
+      stable.contracts?.replacements.filter(
+        ({ predecessorContractId }) => predecessorContractId === successor.id,
+      ),
+    ).toEqual([]);
     const layout = reconstructed.myrmex?.layouts as unknown as {
       records?: Array<{
         sourceServices?: Array<{ service?: { issuerSequence?: number; sourceId?: string } }>;
@@ -301,7 +310,11 @@ describe("static mining runtime activation", () => {
     });
     expect(["funded", "assigned"]).toContain(successor.state);
     expect(successor.id).not.toBe(predecessor.id);
-    expect(outcome.contracts?.replacements).toEqual([
+    expect(
+      outcome.contracts?.replacements.filter(
+        ({ predecessorContractId }) => predecessorContractId === predecessor.id,
+      ),
+    ).toEqual([
       expect.objectContaining({
         accepted: true,
         predecessorContractId: predecessor.id,
@@ -314,13 +327,10 @@ describe("static mining runtime activation", () => {
     expect(reconcileOrder.indexOf("layout.handoff-reconcile")).toBeLessThan(
       reconcileOrder.indexOf("state.reconcile"),
     );
-    const contracts = reconstructed.myrmex?.contracts as unknown as {
-      active?: Array<{ issuer?: string }>;
-      outcomes?: Array<{ id?: string; state?: string }>;
-    };
-    expect(
-      contracts.active?.filter(({ issuer }) => issuer === "mining/W1N1/source-a"),
-    ).toHaveLength(1);
+    const contracts = openedContractLedger(reconstructed).view();
+    expect(contracts.active.filter(({ issuer }) => issuer === "mining/W1N1/source-a")).toHaveLength(
+      1,
+    );
     expect(contracts.outcomes).toContainEqual(
       expect.objectContaining({ id: predecessor.id, state: "cancelled" }),
     );
@@ -338,22 +348,26 @@ function miningContractIds(outcome: ReturnType<typeof runTick>): string[] {
 }
 
 function miningContractStates(memory: Memory): string[] {
-  const contracts = memory.myrmex?.contracts as unknown as {
-    active?: Array<{ issuer?: string; state?: string }>;
-  };
-  return (contracts.active ?? [])
-    .filter(({ issuer }) => issuer?.startsWith("mining/"))
-    .map(({ state }) => state ?? "missing")
+  return openedContractLedger(memory)
+    .view()
+    .active.filter(({ issuer }) => issuer.startsWith("mining/"))
+    .map(({ state }) => state)
     .sort();
 }
 
 function activeMiningContract(memory: Memory, issuer: string): unknown {
-  const contracts = memory.myrmex?.contracts as unknown as {
-    active?: Array<{ issuer?: string }>;
-  };
-  const matches = (contracts.active ?? []).filter((contract) => contract.issuer === issuer);
+  const matches = openedContractLedger(memory)
+    .view()
+    .active.filter((contract) => contract.issuer === issuer);
   expect(matches).toHaveLength(1);
   return JSON.parse(JSON.stringify(matches[0])) as unknown;
+}
+
+function openedContractLedger(memory: Memory): ContractLedger {
+  const opened = ContractLedger.open(memory.myrmex?.contracts ?? {});
+  expect(opened.status).toBe("ready");
+  if (opened.status !== "ready") throw new Error("expected valid contracts owner");
+  return opened.ledger;
 }
 
 function setDisabled(memory: Memory, disabled: readonly string[]): void {

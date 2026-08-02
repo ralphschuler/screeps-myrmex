@@ -21,7 +21,7 @@ import type { WorldSnapshot } from "../src/world/snapshot";
 const position = (x: number, y: number) => ({ roomName: "W1N1", x, y });
 
 describe("survival flow", () => {
-  it("batches partial cargo at a deterministic source before selecting a sink", () => {
+  it("consumes orphaned partial cargo while retaining an active acquisition batch", () => {
     const plan = planSurvivalFlow(snapshot());
     expect(plan.map(({ budgetRequest }) => budgetRequest.issuer)).toEqual([
       "economy/W1N1/harvest/source-near",
@@ -32,7 +32,7 @@ describe("survival flow", () => {
       ),
     ).toBe(true);
     expect(planSurvivalFlow(snapshot(25)).map(({ budgetRequest }) => budgetRequest.issuer)).toEqual(
-      ["economy/W1N1/harvest/source-near"],
+      ["economy/W1N1/transfer/spawn-near"],
     );
     expect(planSurvivalFlow(snapshot(50)).map(({ budgetRequest }) => budgetRequest.issuer)).toEqual(
       ["economy/W1N1/transfer/spawn-near"],
@@ -62,7 +62,7 @@ describe("survival flow", () => {
         activeFlowExecution("transfer"),
         activeFlowPlanning("transfer", false),
       ).map(({ budgetRequest }) => budgetRequest.issuer),
-    ).toEqual(["economy/W1N1/harvest/source-near"]);
+    ).toEqual(["economy/W1N1/transfer/spawn-near"]);
 
     const wrongBudget = activeFlowPlanning("transfer");
     const wrongBudgetContract = wrongBudget.contracts[0];
@@ -80,7 +80,7 @@ describe("survival flow", () => {
           },
         ],
       }).map(({ budgetRequest }) => budgetRequest.issuer),
-    ).toEqual(["economy/W1N1/harvest/source-near"]);
+    ).toEqual(["economy/W1N1/transfer/spawn-near"]);
   });
 
   it("retains active carried-energy work across domains while survival sinks may preempt", () => {
@@ -201,6 +201,8 @@ describe("survival flow", () => {
     for (const observed of [
       staticTakeoverSnapshot({ ticksToLive: 1 }),
       staticTakeoverSnapshot({ workParts: 0 }),
+      staticTakeoverSnapshot({ workParts: 2 }),
+      staticTakeoverSnapshot({ workParts: 4 }),
       staticTakeoverSnapshot({ sourcePosition: position(12, 11) }),
     ])
       expect(selectedTarget("active", activeStaticExecution("active"), observed)).toBe(
@@ -476,7 +478,15 @@ describe("survival flow", () => {
         staticTakeoverSnapshot(),
       ).leases.map(({ contractId }) => contractId),
     ).toEqual(["static-near"]);
-
+    const partialStaticSnapshot = staticTakeoverSnapshot({ workParts: 4 });
+    expect(
+      authorizedSurvivalFlow([], [], planning, 10, partialStaticSnapshot, execution).transitions,
+    ).toEqual([]);
+    expect(
+      withoutSupersededSurvivalHarvestLeases(execution, planning, partialStaticSnapshot).leases.map(
+        ({ contractId }) => contractId,
+      ),
+    ).toEqual(["contract-harvest", "static-near"]);
     const suspendedStatic = { ...staticContract, state: "suspended" as const };
     const recoveryCandidate = planSurvivalFlow(
       snapshot(),
@@ -526,7 +536,11 @@ describe("survival flow", () => {
     ];
     const planning = staticPlanning(["source-near", "source-far"]);
     const selected = (orderedDrops: typeof drops) =>
-      planSurvivalFlow(snapshot(0, { droppedResources: orderedDrops }), undefined, planning)[0];
+      planSurvivalFlow(
+        snapshot(0, { droppedResources: orderedDrops, sourceEnergy: 0 }),
+        undefined,
+        planning,
+      )[0];
 
     expect(selected(drops)?.budgetRequest.issuer).toBe("economy/W1N1/pickup/drop-a");
     expect(selected([...drops].reverse())?.budgetRequest.issuer).toBe("economy/W1N1/pickup/drop-a");
@@ -557,12 +571,183 @@ describe("survival flow", () => {
       execution: { action: "pickup", completion: "target-depleted", resourceType: null },
       issuerKey: "pickup:drop-a",
       kind: "haul",
+      leasePolicy: { duration: 50 },
       requiredCapability: { carry: 1, work: 0 },
       targetId: "drop-a",
     });
     const request = authorized.requests[0];
     if (request === undefined) throw new Error("expected authorized pickup request");
     expect(() => normalizeContractRequest(request)).not.toThrow();
+  });
+
+  it("keeps a visible pickup endpoint funded while every observed worker carries cargo", () => {
+    const drops = [
+      { amount: 50, id: "drop-sticky", pos: position(9, 10), resourceType: "energy" as const },
+    ];
+    const staticContracts = staticPlanning(["source-near"]);
+    const initial = planSurvivalFlow(
+      snapshot(0, { droppedResources: drops, sourceEnergy: 0 }),
+      { leases: [], status: "ready" },
+      staticContracts,
+    ).find(({ action }) => action === "pickup");
+    if (initial === undefined) throw new Error("expected initial pickup endpoint");
+    const request = authorizedSurvivalFlow(
+      [initial],
+      [{ ...initial.budgetRequest, status: "active" }],
+      staticContracts,
+      10,
+    ).requests[0];
+    if (request === undefined) throw new Error("expected authorized pickup endpoint");
+    if (request.execution === undefined || request.targetId === null)
+      throw new Error("expected executable pickup endpoint");
+    const planning: ContractPlanningView = {
+      status: "ready",
+      contracts: [
+        ...staticContracts.contracts,
+        {
+          budgetBinding: request.budgetBinding,
+          contractId: contractIdFor(request.issuer, request.issuerKey, request.issuerSequence),
+          execution: request.execution,
+          issuer: request.issuer,
+          issuerSequence: request.issuerSequence,
+          owner: request.owner,
+          state: "funded",
+          targetId: request.targetId,
+        },
+      ],
+    };
+
+    const retained = planSurvivalFlow(
+      snapshot(50, { droppedResources: drops, sourceEnergy: 0 }),
+      { leases: [], status: "ready" },
+      planning,
+    );
+    expect(retained.map(({ budgetRequest }) => budgetRequest.issuer)).toContain(request.issuer);
+    expect(
+      retained.find(({ budgetRequest }) => budgetRequest.issuer === request.issuer),
+    ).toMatchObject({ action: "pickup", pickupSlot: 0, targetId: "drop-sticky" });
+  });
+
+  it("retains a free transfer endpoint across an empty-cargo tick and retires it when full", () => {
+    const initial = planSurvivalFlow(snapshot(50, { sinkFree: 300 })).find(
+      ({ action }) => action === "transfer",
+    );
+    if (initial === undefined) throw new Error("expected initial transfer endpoint");
+    const request = authorizedSurvivalFlow(
+      [initial],
+      [{ ...initial.budgetRequest, status: "active" }],
+      { contracts: [], status: "ready" },
+      10,
+    ).requests[0];
+    if (request?.execution === undefined || request.targetId === null)
+      throw new Error("expected executable transfer endpoint");
+    expect(request).toMatchObject({
+      conditions: { success: "target-full" },
+      execution: { action: "transfer", completion: "target-full" },
+    });
+    const planning: ContractPlanningView = {
+      status: "ready",
+      contracts: [
+        {
+          budgetBinding: request.budgetBinding,
+          contractId: contractIdFor(request.issuer, request.issuerKey, request.issuerSequence),
+          execution: request.execution,
+          issuer: request.issuer,
+          issuerSequence: request.issuerSequence,
+          owner: request.owner,
+          state: "funded",
+          targetId: request.targetId,
+        },
+      ],
+    };
+
+    expect(
+      planSurvivalFlow(
+        snapshot(0, { sinkFree: 250 }),
+        { leases: [], status: "ready" },
+        planning,
+      ).some(
+        ({ action, budgetRequest }) =>
+          action === "transfer" && budgetRequest.issuer === request.issuer,
+      ),
+    ).toBe(true);
+    expect(
+      authorizedSurvivalFlow([], [], planning, 11, snapshot(0, { sinkFree: 0 })).transitions,
+    ).toEqual([
+      expect.objectContaining({
+        contractId: contractIdFor(request.issuer, request.issuerKey, request.issuerSequence),
+        reason: "survival-target-full",
+        to: "cancelled",
+      }),
+    ]);
+  });
+
+  it("publishes four stable pickup lanes for a backlogged static-mining drop", () => {
+    const base = snapshot(0, {
+      droppedResources: [
+        {
+          amount: 1_000,
+          id: "drop-backlog",
+          pos: position(9, 10),
+          resourceType: "energy",
+        },
+      ],
+      sourceEnergy: 0,
+    });
+    const room = base.rooms[0];
+    const worker = room?.ownedCreeps[0];
+    if (room === undefined || worker === undefined) throw new Error("expected worker fixture");
+    const observed: WorldSnapshot = {
+      ...base,
+      rooms: [
+        {
+          ...room,
+          ownedCreeps: Array.from({ length: 6 }, (_, index) => ({
+            ...worker,
+            id: `worker-${String(index)}`,
+            name: `worker-${String(index)}`,
+          })),
+        },
+      ],
+    };
+    const observedRoom = observed.rooms[0];
+    if (observedRoom === undefined) throw new Error("expected observed room");
+    const planning = staticPlanning(["source-near"]);
+    const pickupIssuers = (snapshotValue: WorldSnapshot) =>
+      planSurvivalFlow(snapshotValue, undefined, planning)
+        .filter(({ action }) => action === "pickup")
+        .map(({ budgetRequest }) => budgetRequest.issuer);
+
+    expect(pickupIssuers(observed)).toEqual([
+      "economy/W1N1/pickup/drop-backlog",
+      "economy/W1N1/pickup/drop-backlog/slot/01",
+      "economy/W1N1/pickup/drop-backlog/slot/02",
+      "economy/W1N1/pickup/drop-backlog/slot/03",
+    ]);
+    expect(
+      pickupIssuers({
+        ...observed,
+        rooms: [{ ...room, ownedCreeps: [...observedRoom.ownedCreeps].reverse() }],
+      }),
+    ).toEqual(pickupIssuers(observed));
+
+    const candidates = planSurvivalFlow(observed, undefined, planning).filter(
+      ({ action }) => action === "pickup",
+    );
+    const requests = authorizedSurvivalFlow(
+      candidates,
+      candidates.map(({ budgetRequest }) => ({ ...budgetRequest, status: "active" })),
+      { contracts: [], status: "ready" },
+      10,
+    ).requests;
+    expect(requests).toHaveLength(4);
+    expect(requests.map(({ issuerKey }) => issuerKey)).toEqual([
+      "pickup:drop-backlog",
+      "pickup:drop-backlog:slot:01",
+      "pickup:drop-backlog:slot:02",
+      "pickup:drop-backlog:slot:03",
+    ]);
+    for (const request of requests) expect(() => normalizeContractRequest(request)).not.toThrow();
   });
 
   it("advances transfer and pickup exactly once after their terminal frontier", () => {
@@ -597,6 +782,7 @@ describe("survival flow", () => {
             resourceType: "energy",
           },
         ],
+        sourceEnergy: 0,
       }),
       undefined,
       pickupPlanning,
@@ -663,6 +849,7 @@ describe("survival flow", () => {
           structureType: "container",
         },
       ],
+      sourceEnergy: 0,
     });
     const first = planSurvivalFlow(observed, { leases: [], status: "ready" }, planning)[0];
     const afterReset = planSurvivalFlow(observed, { leases: [], status: "ready" }, planning)[0];
@@ -1015,7 +1202,8 @@ function activeFlowPlanning(
   economy = true,
 ): ContractPlanningView {
   const transfer = action === "transfer";
-  const issuer = `${economy ? "economy" : "operation"}/W1N1/${action}/target`;
+  const targetId = transfer ? "spawn-near" : action === "pickup" ? "drop-near" : "source-near";
+  const issuer = `${economy ? "economy" : "operation"}/W1N1/${action}/${targetId}`;
   return {
     status: "ready",
     contracts: [
@@ -1035,7 +1223,7 @@ function activeFlowPlanning(
         issuer,
         owner: { id: "W1N1", kind: economy ? "colony" : "operation" },
         state: "active",
-        targetId: transfer ? "spawn-near" : action === "pickup" ? "drop-near" : "source-near",
+        targetId,
       },
     ],
   };
@@ -1079,7 +1267,7 @@ function staticTakeoverSnapshot(
   const room = observed.rooms[0];
   const worker = room?.ownedCreeps[0];
   if (room === undefined || worker === undefined) throw new Error("expected worker fixture");
-  const workParts = options.workParts ?? 2;
+  const workParts = options.workParts ?? 5;
   const moveParts = options.moveParts ?? 1;
   const minerId = options.minerId ?? "miner-a";
   const miner = {

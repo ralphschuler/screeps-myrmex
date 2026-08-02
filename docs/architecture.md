@@ -818,18 +818,19 @@ observer history reduces evidence only; `ColonyDirector` and domain-health compo
 consume direct owner outputs and never telemetry.
 
 Reporter aggregation admits at most 2,000 health signals plus the already-capped telemetry details
-(2,064 candidates under source defaults). Oversized arrays are rejected before element traversal,
-and the sanitized candidates are deduplicated, sorted, and prefix-hashed once. The configured 64
-fingerprints are retained only while the shared 8,192-byte telemetry-owner ceiling permits. Byte
-fitting reuses the prepared batch without rereading source identities and makes at most 65 monotone
-capacity attempts, each over no more than 64 current and 64 prior metadata entries. It evicts hash
-history and Phase 2 samples before the oldest ordinary reporter entries, then recovery and reset
-baselines, deterministically. When cardinality or byte fitting omits active fingerprints, one
-retained opaque overflow fingerprint represents the omitted set and changes only when that set
-changes. Overflow `first` and `reminder` evidence is selected before ordinary transitions. A
-transition is published only after the candidate owner commits; ownerless and failed-commit fallback
-telemetry cannot claim a durable first/reminder/resolution event. A thrown telemetry service
-discards only its owner transaction, leaving gameplay reconciliation and command receipts intact.
+(2,002 candidates under current source defaults). Oversized arrays are rejected before element
+traversal, and the sanitized candidates are deduplicated, sorted, and prefix-hashed once. The
+configured 64 fingerprints are retained only while the shared 8,192-byte telemetry-owner ceiling
+permits. Byte fitting reuses the prepared batch without rereading source identities and makes at
+most 65 monotone capacity attempts, each over no more than 64 current and 64 prior metadata entries.
+It evicts hash history and Phase 2 samples before the oldest ordinary reporter entries, then
+recovery and reset baselines, deterministically. When cardinality or byte fitting omits active
+fingerprints, one retained opaque overflow fingerprint represents the omitted set and changes only
+when that set changes. Overflow `first` and `reminder` evidence is selected before ordinary
+transitions. A transition is published only after the candidate owner commits; ownerless and
+failed-commit fallback telemetry cannot claim a durable first/reminder/resolution event. A thrown
+telemetry service discards only its owner transaction, leaving gameplay reconciliation and command
+receipts intact.
 
 Reporter status schema v2 is the redaction boundary for those transition records. It reads only the
 fixed signal and recovery fields through descriptors without enumerating hostile records, re-opaques
@@ -1153,10 +1154,13 @@ fail closed without downgrade. Config candidate validation has intentionally sma
 remains independent of these root-storage limits; those exact limits are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md).
 
-The reserved `contracts` owner uses owner-local schema v1 once the contract gate is active. Exact
-`{}` is its only initialization shorthand. Malformed v1 content and future owner-local schema
-versions are preserved byte-for-byte and authorize no transition or assignment; they are never
-opportunistically rewritten or downgraded.
+The reserved `contracts` owner uses owner-local schema v3 once the contract gate is active. Exact
+`{}` is its only initialization shorthand. Valid legacy v1 and v2 owners are decoded into the
+canonical runtime view and staged once in the compact v3 tuple encoding. Active request fields and
+transition history remain exact; retained terminal request signatures become versioned 64-bit
+digests. Malformed supported content and future owner-local schema versions are preserved
+byte-for-byte and authorize no transition or assignment; they are never opportunistically repaired
+or downgraded.
 
 ### 8.2 CacheManager
 
@@ -1486,28 +1490,34 @@ fails without publishing a prefix; earlier committed work remains available and 
 reconciliation still runs. Fixed phase/system order places safety producers before optional planning
 producers.
 
-The persistent root remains Memory schema v3. Inside its `contracts` owner, the ledger owns this
-independent owner-local schema v1:
+The persistent root remains Memory schema v3. Inside its `contracts` owner, the ledger owns an
+independent owner-local schema v3. Active contracts, issuer frontiers, and outcomes use fixed tuple
+encodings; derived active IDs and request signatures are reconstructed and revalidated when the
+owner opens:
 
 ```ts
-interface ContractLedgerStateV1 {
-  readonly schemaVersion: 1;
-  readonly active: readonly WorkContractRecord[];
-  readonly issuerFrontiers: readonly ContractIssuerFrontier[];
-  readonly outcomes: readonly ContractOutcome[];
+interface ContractLedgerStateV3 {
+  readonly schemaVersion: 3;
+  readonly active: readonly PersistedWorkContractRecordV3[];
+  readonly issuerFrontiers: readonly (readonly [issuer: string, retiredThrough: number])[];
+  readonly outcomes: readonly PersistedContractOutcomeV3[];
 }
 ```
 
-Exact `{}` is the only initialization sentinel. A valid v1 subtree is preserved and advanced only
-through ledger operations. Malformed content or any future owner-local version fails closed, leaves
-the subtree unchanged, and produces a bounded system fault. The ledger stages its complete validated
-draft with `MemoryManager`; it never assigns `Memory.myrmex`, and `state.reconcile` remains the only
-root commit.
+Exact `{}` is the only initialization sentinel. Valid v1 and v2 subtrees are accepted as legacy
+authority, decoded into the same canonical runtime records, and staged once as v3. During legacy
+conversion, full terminal request signatures are parsed canonically and checked against the outcome
+issuer identity before becoming versioned digests. Malformed supported content or any future
+owner-local version fails closed, leaves the subtree unchanged, and produces a bounded system fault.
+The ledger stages its complete validated draft with `MemoryManager`; it never assigns
+`Memory.myrmex`, and `state.reconcile` remains the only root commit.
 
-Retained terminal request signatures are parsed as exact canonical contract requests when the owner
-opens. Their issuer, sequence, and issuer key must match the terminal outcome identity; malformed,
-non-canonical, or mismatched signatures invalidate the owner instead of becoming trusted idempotency
-evidence.
+V3 terminal outcomes retain the explicit issuer identity plus an exact-format FNV-1a-64 digest of
+the canonical request. Repeated submission compares the newly derived digest for bounded terminal
+idempotency, while the independent issuer retirement frontier rejects every retired sequence even
+after outcome eviction. The digest is deliberately compact, not a reversible or collision-proof
+signature; with at most eight retained outcomes it is an operational identity check, not a security
+boundary. Active records continue to reconstruct and validate the full canonical request.
 
 Funding is current authorization, not a producer-owned state label. A contract persists the stable
 BudgetLedger issuer key `(owner colony, category, budget issuer)`. The runtime adapter maps the
@@ -1699,14 +1709,16 @@ while capacity remains below that normal floor, the full protected reserve remai
 viable `WORK`/`CARRY`/`MOVE` worker carries energy. Its distinct `rcl2-infrastructure-bootstrap`
 candidate claims CPU but no room energy because `Creep.build` spends creep cargo; current
 actor-energy eligibility prevents an empty worker from taking that lease, and a stable contract
-survives temporary worker/cargo loss and retires when the site or bootstrap phase ends. At the
-normal 400-energy floor, RCL2 reserves one of the existing two optional-growth slots for controller
-work while one site remains active; existing budget, population, and allocator authorities still
-require funded energy and a separate viable actor before both can execute. `ColonyDirector` remains
-the sole budget authority, so controller risk is admitted ahead of optional construction and
-constrained CPU, threat, or recovery posture fails optional growth closed. Lease agents and
-executors retain the only Screeps work-command path.
-[ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md) records the RCL2 exception.
+survives temporary worker/cargo loss and retires when the site or bootstrap phase ends. After the
+550-energy RCL2 spawn pool is complete, the planner exposes 13 stable controller lease lanes: one
+orthogonal `1 WORK / 3 CARRY / 2 MOVE` refill-capable lane and twelve `3 WORK / 2 CARRY / 3 MOVE`
+upgrade lanes. While an RCL2 infrastructure site remains active, its construction candidate leaves
+controller-lane headroom; existing budget, population, and allocator authorities still require
+funded energy and a separate viable actor before both can execute. `ColonyDirector` remains the sole
+budget authority, so controller risk is admitted ahead of optional construction and constrained CPU,
+threat, or recovery posture fails optional growth closed. Lease agents and executors retain the only
+Screeps work-command path. [ADR 0086](adr/0086-rcl2-infrastructure-bootstrap.md) records the RCL2
+exception.
 
 Lease agents retain no task or role Memory. They correlate each proposal with contract ID and
 revision; the runtime's Reconcile phase feeds typed executor evidence through the existing contract
@@ -2020,6 +2032,11 @@ that executable projection with layout access: a private foreign rampart is a st
 an owned or public rampart remains walkable. When changed public state changes effective tile
 passability, it changes the traversal revision, so cached matrices and paths cannot reuse prior
 evidence.
+
+Static traversal matrices and local paths share the tagged `movement.path-cache.v3` namespace under
+the single `movement.path-cache` owner. Tagged keys keep their dependency stamps separate; static
+matrices have no time expiry while local paths retain their 25-tick TTL. Movement progress and
+compiled layouts remain distinct namespaces because they belong to different authorities.
 
 The arbiter:
 
@@ -3132,12 +3149,12 @@ gate as its prerequisite. Issue `#24` makes `phase1.spawn` source-available unde
 remains unavailable until its own outcome is proved; issue `#257` makes `phase2.labs` available
 under `runtime-config-source-v26` with `phase2.industry` as its prerequisite, issue `#267` makes
 `phase2.mature` available under `runtime-config-source-v27` with `phase2.labs` as its prerequisite,
-and issue `#63` makes `phase3.portfolio` available under `runtime-config-source-v28` with
-`phase2.mature` as its prerequisite. Operational Memory may disable an available gate but cannot
-activate another gate. A source-v3 receipt is incompatible under v4 and is reissued only after a
-present candidate revalidates; an incompatible receipt with no candidate falls back to source
-defaults without rewriting operator bytes. Secrets never enter source, Memory, telemetry, Wiki, or
-committed config.
+and issue `#63` originally made `phase3.portfolio` available under `runtime-config-source-v28` with
+`phase2.mature` as its prerequisite. Current source v29 preserves that gate while reducing observer
+detail retention. Operational Memory may disable an available gate but cannot activate another gate.
+A source-v3 receipt is incompatible under v4 and is reissued only after a present candidate
+revalidates; an incompatible receipt with no candidate falls back to source defaults without
+rewriting operator bytes. Secrets never enter source, Memory, telemetry, Wiki, or committed config.
 
 The versioned policy fields, limits, statuses, gates, and deterministic matrices are recorded in
 [`phase1-config-evidence.md`](phase1-config-evidence.md) and
@@ -3348,11 +3365,12 @@ Required architecture assertions include:
 - remote mining starts only from one exact active positive objective, current/fresh complete bounded
   source evidence, a ready safe route, detached legal controller/donor/threat evidence, an
   atomically sufficient portfolio envelope, and exact per-source donor grants; observed source
-  capacity fixes body throughput, semantic stationary replacement includes route/spawn/safety lead,
-  V5 uses only the existing route/local-path/movement/action authorities, zero-`CARRY` and full
-  Store fall back to drops, and source/route/threat/budget loss plus three-attempt command backoff
-  remain bounded across reset/reorder; current funded positive-value container/road proposals retain
-  the sole global site arbiter/executor and fail immediately on controller drift;
+  capacity fixes body throughput, semantic stationary replacement uses spawn/safety lead and keeps
+  route time out of the lead while the incumbent retains the sole movement lease, V5 uses only the
+  existing route/local-path/movement/action authorities, zero-`CARRY` and full Store fall back to
+  drops, and source/route/threat/budget loss plus three-attempt command backoff remain bounded
+  across reset/reorder; current funded positive-value container/road proposals retain the sole
+  global site arbiter/executor and fail immediately on controller drift;
 - remote safety resolves configured exclusions before active hostile capability, previous-tick
   attack, Invader Core, route, freshness, confidence, or loss evidence can release a portfolio;
   harmless scouts remain safe, unsafe/cooling remotes emit no active objective or new reservation,

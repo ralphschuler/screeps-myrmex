@@ -1,5 +1,6 @@
 import type { MemoryManager, MemoryStageResult } from "../state/memory";
 import {
+  CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION,
   MAX_ACTIVE_CONTRACTS,
   MAX_CONTRACT_HISTORY,
   MAX_CONTRACT_FUNDING_AUTHORIZATIONS,
@@ -15,6 +16,7 @@ import {
   compareStrings,
   contractFundingBindingKey,
   contractIdFor,
+  contractOutcomeRequestDigest,
   normalizeContractRequest,
   requestSignature,
   type ActiveWorkContractState,
@@ -27,6 +29,7 @@ import {
   type ContractIssuerFrontier,
   type ContractExecutionView,
   type ContractLedgerStateV1,
+  type ContractLedgerRuntimeState,
   type LeasedWorkExecution,
   type ContractOutcome,
   type ContractReplacementRequest,
@@ -177,7 +180,7 @@ export class ContractLedger {
   #transitionCount = 0;
 
   private constructor(
-    state: ContractLedgerStateV1,
+    state: ContractLedgerRuntimeState,
     initialized: boolean,
     allocator = new WorkforceAllocator(),
   ) {
@@ -285,6 +288,7 @@ export class ContractLedger {
       .filter(
         (record) =>
           record.owner.kind === "colony" &&
+          !record.issuer.startsWith("economy/") &&
           (record.state === "funded" || record.state === "assigned" || record.state === "active"),
       )
       .flatMap((record): NormalizedPopulationLoad[] => {
@@ -378,7 +382,7 @@ export class ContractLedger {
     }
     const terminal = this.#outcomes.find((outcome) => outcome.id === id);
     if (terminal !== undefined) {
-      return terminal.requestSignature === signature
+      return terminal.requestSignature === contractOutcomeRequestDigest(normalized)
         ? { accepted: true, contractId: id, outcome: "duplicate-terminal" }
         : { accepted: false, contractId: id, reason: "idempotency-conflict" };
     }
@@ -780,7 +784,7 @@ export class ContractLedger {
           issuerKey: record.issuerKey,
           issuerSequence: record.issuerSequence,
           reason,
-          requestSignature: record.requestSignature,
+          requestSignature: contractOutcomeRequestDigest(record),
           revision,
           state: to,
           tick,
@@ -1292,10 +1296,19 @@ function snapshotState(
   outcomes: readonly ContractOutcome[],
 ): ContractLedgerStateV1 {
   return deepFreeze({
-    active: [...active],
+    active: active.map((record) => {
+      const { requestSignature: _derivedSignature, ...persisted } = record;
+      void _derivedSignature;
+      return {
+        ...persisted,
+        history: record.history.map(
+          ({ from, reason, tick, to }) => [from, reason, tick, to] as const,
+        ),
+      };
+    }),
     issuerFrontiers: [...issuerFrontiers],
     outcomes: [...outcomes],
-    schemaVersion: 1 as const,
+    schemaVersion: CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION,
   });
 }
 

@@ -79,6 +79,76 @@ describe("BudgetLedger", () => {
     expect(result.totals.energyReserved).toBe(0);
   });
 
+  it("prioritizes one exact spawn authorization that may spend the protected floor", () => {
+    const slot = request("optional-growth", "growth/W1N1/upgrade-controller/controller-a/slot/01", {
+      energy: claim(550, 550),
+      expiresAt: 1_000_000_000,
+      revision: 2,
+      spawn: interval("spawn-1", 100, 124),
+    });
+    const build = request("optional-growth", "growth/W1N1/build/site-a", {
+      energy: claim(100, 100),
+      expiresAt: 150,
+    });
+    const capacity = capacities({
+      available: 550,
+      protected: 300,
+      spawns: [{ colonyId: "W1N1", spawnId: "spawn-1", blocked: [] }],
+    });
+    const reservationId = reservationIdFor(slot);
+
+    const ordinary = new BudgetLedger().reconcile({ tick: 100, capacity, requests: [slot, build] });
+    expect(ordinary.entries.find(({ issuer }) => issuer === slot.issuer)).toMatchObject({
+      grant: { energy: 0, spawn: null },
+      status: "pending",
+    });
+
+    const authorized = new BudgetLedger().reconcile({
+      tick: 100,
+      capacity,
+      requests: [build, slot],
+      protectedEnergyReservationIds: [reservationId],
+    });
+    expect(authorized.entries.find(({ issuer }) => issuer === slot.issuer)).toMatchObject({
+      grant: { energy: 550, spawn: slot.spawn },
+      reasonCode: "granted",
+      status: "active",
+    });
+    expect(authorized.entries.find(({ issuer }) => issuer === build.issuer)).toMatchObject({
+      grant: { energy: 0 },
+      reasonCode: "insufficient-energy",
+      status: "pending",
+    });
+    expect(() =>
+      new BudgetLedger().reconcile({
+        tick: 100,
+        capacity,
+        requests: [slot],
+        protectedEnergyReservationIds: [`${reservationId}-unknown`],
+      }),
+    ).toThrow(/does not match a valid request/u);
+
+    const emergency = request("emergency-spawn", "recovery", {
+      energy: claim(300, 300),
+      spawn: interval("spawn-1", 100, 124),
+    });
+    const safetyFirst = new BudgetLedger().reconcile({
+      tick: 100,
+      capacity,
+      requests: [slot, emergency],
+      protectedEnergyReservationIds: [reservationId],
+    });
+    expect(safetyFirst.entries.find(({ issuer }) => issuer === emergency.issuer)).toMatchObject({
+      grant: { energy: 300, spawn: emergency.spawn },
+      status: "active",
+    });
+    expect(safetyFirst.entries.find(({ issuer }) => issuer === slot.issuer)).toMatchObject({
+      grant: { energy: 0, spawn: null },
+      reasonCode: "insufficient-energy",
+      status: "pending",
+    });
+  });
+
   it("funds carried-energy growth without reducing the protected room-energy floor", () => {
     const growth = request("optional-growth", "rcl2-infrastructure-bootstrap", {
       cpu: claim(1, 1),
@@ -398,6 +468,31 @@ describe("BudgetLedger", () => {
     expect(
       result.decisions.filter((decision) => decision.reasonCode === "request-cap-exceeded"),
     ).toHaveLength(1);
+  });
+
+  it("denies a displaced protected-floor authorization without faulting the capped batch", () => {
+    const requests = Array.from({ length: MAX_BUDGET_REQUESTS_PER_TICK + 1 }, (_, index) =>
+      request("optional-growth", `issuer-${String(index).padStart(3, "0")}`, {
+        energy: claim(0, 0),
+      }),
+    );
+    const displaced = requests[MAX_BUDGET_REQUESTS_PER_TICK];
+    if (displaced === undefined) throw new Error("expected one request beyond the admission cap");
+
+    const result = new BudgetLedger().reconcile({
+      tick: 100,
+      capacity: capacities({ available: 0, protected: 0 }),
+      requests,
+      protectedEnergyReservationIds: [reservationIdFor(displaced)],
+    });
+
+    expect(result.decisions).toContainEqual(
+      expect.objectContaining({
+        issuer: displaced.issuer,
+        reasonCode: "request-cap-exceeded",
+        status: "denied",
+      }),
+    );
   });
 
   it("enforces the ledger-entry cap at its exact 512/513 boundary", () => {

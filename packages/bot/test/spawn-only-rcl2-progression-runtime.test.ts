@@ -175,7 +175,7 @@ describe("spawn-only RCL2 production progression", () => {
     expect(world.roomEnergyCapacity).toBeGreaterThanOrEqual(400);
     expect(world.controllerProgress).toBeGreaterThan(0);
     expect(world.spawnCalls.length).toBeGreaterThan(0);
-    expect(provisionalSpawnRevocations).toBeGreaterThan(0);
+    expect(provisionalSpawnRevocations).toBe(0);
     expect(replacementUsefulWork).toBe(true);
     expect(constrainedTicks).toBeGreaterThan(0);
     expect(resetApplied).toBe(true);

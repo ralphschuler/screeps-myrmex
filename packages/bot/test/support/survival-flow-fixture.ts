@@ -592,7 +592,12 @@ export function assertSingleTickAuthorities(outcome: TickOutcome, workerId: stri
   const activeEconomyReservations = outcome.colony.reservations.filter(
     ({ issuer, status }) => status === "active" && issuer.startsWith("economy/W1N1/"),
   );
-  expect(activeEconomyReservations.length).toBeLessThanOrEqual(1);
+  // Acquisition and delivery may retain one endpoint authority each across the worker's cargo
+  // phase. Only the lease/action authority must remain singular for the actor in this tick.
+  expect(activeEconomyReservations.length).toBeLessThanOrEqual(2);
+  expect(new Set(activeEconomyReservations.map(({ issuer }) => issuer.split("/")[2])).size).toBe(
+    activeEconomyReservations.length,
+  );
 }
 
 function source(

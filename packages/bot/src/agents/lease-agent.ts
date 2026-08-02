@@ -745,9 +745,10 @@ function actionIntent(
     lease.execution.signText !== null;
   return {
     actorId: lease.actorId,
-    // A continuous fill lease owns a sink slot, not one energy unit. Omitting the Screeps amount
+    // A simple V1 fill lease owns a sink slot, not one energy unit. Omitting the Screeps amount
     // transfers the assigned actor's available cargo without conflating contract quantity with a
-    // resource amount.
+    // resource amount; its completion policy only decides whether a full sink suspends or retires
+    // the contract after that transfer.
     amount: actionAmount(lease, actor, target),
     contractId: lease.contractId,
     contractRevision: lease.revision,
@@ -766,11 +767,8 @@ function actionAmount(
   actor: CreepSnapshot,
   target: TargetView,
 ): number | null {
-  if (lease.execution.version !== 3 && lease.execution.version !== 6) {
-    return lease.execution.action === "transfer" && lease.execution.completion === "continuous"
-      ? null
-      : lease.quantity;
-  }
+  if (lease.execution.version !== 3 && lease.execution.version !== 6)
+    return lease.execution.action === "transfer" ? null : lease.quantity;
   const resource = lease.execution.resourceType;
   const remaining = Math.min(lease.quantity, lease.execution.reservedAmount);
   if (lease.execution.action === "pickup") {

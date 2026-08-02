@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import { utf8ByteLength } from "../../../bot/src/config/canonical";
 import { COLONY_RCL_POLICY_TABLE } from "../../../bot/src/colony";
+import { openContractLedgerState } from "../../../bot/src/contracts";
 import {
   layoutTowerEvacuationBudgetIssuer,
   layoutTowerEvacuationFlowId,
@@ -919,24 +920,15 @@ function owner(memory: Memory): LayoutsOwnerV25 {
 }
 
 function flowContracts(memory: Memory, flowId: string) {
-  const contracts = memory.myrmex?.contracts as
-    | {
-        readonly active?: readonly {
-          readonly execution?: { readonly flowId?: string };
-          readonly lease?: unknown;
-          readonly state?: string;
-        }[];
-        readonly outcomes?: readonly {
-          readonly requestSignature?: string;
-          readonly state?: string;
-        }[];
-      }
-    | undefined;
+  const contracts = openContractLedgerState(memory.myrmex?.contracts);
+  if (contracts.status !== "ready") {
+    throw new Error(`contracts owner unavailable while observing flow ${flowId}`);
+  }
   return {
-    active: contracts?.active?.filter(({ execution }) => execution?.flowId === flowId) ?? [],
-    outcomes:
-      contracts?.outcomes?.filter(({ requestSignature }) => requestSignature?.includes(flowId)) ??
-      [],
+    active: contracts.state.active.filter(
+      ({ execution }) =>
+        execution !== undefined && "flowId" in execution && execution.flowId === flowId,
+    ),
   };
 }
 

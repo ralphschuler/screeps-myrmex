@@ -1,5 +1,6 @@
 import {
   CAPABILITY_KEYS,
+  capabilitySurplus,
   type CapabilityVector,
   type ContractPopulationView,
   type WorkforceActor,
@@ -59,6 +60,8 @@ export interface ColonyPopulationPolicyInput {
   readonly controllerLevel: number | null;
   readonly controllerRisk: boolean | null;
   readonly cpuMode: CpuMode;
+  /** Current visible room capacity; omitted only by detached legacy callers. */
+  readonly energyCapacityAvailable?: number;
   readonly funded: ContractPopulationView;
   readonly maximumBodyEnergy: number;
   readonly protectedSpawnEnergy: number;
@@ -117,13 +120,26 @@ export class ColonyPopulationPolicy {
         load.measuredWorkTicks + Math.min(load.backlogWorkTicks, POPULATION_PLANNING_HORIZON_TICKS),
       );
       if (productive === 0) continue;
+      // Contract assignment caps are feasibility horizons, not replacement lead. A successor has
+      // no movement authority while the incumbent retains the sole lease, so adding route time to
+      // the spawn edge only creates an idle, ageing successor train. Bounded travel is used below
+      // solely to price cyclic throughput for non-exclusive work.
+      const boundedTravelTicks = Math.min(load.travelTicks, MAX_POPULATION_TRAVEL_TICKS);
+      // A contract whose minimum requires multiple copies of any capability must be satisfiable by
+      // one actor. Aggregating three one-WORK creeps into a nominal three-WORK supply produces no
+      // actor that the contract allocator can actually lease.
+      const wholeActorCapability = CAPABILITY_KEYS.some((key) => load.minimumCapability[key] > 1);
       const singleCopy =
-        load.mode === "exclusive" || load.mode === "logistics" || load.mode === "stationary";
-      const exclusiveActor = load.mode === "exclusive" || load.mode === "stationary";
+        wholeActorCapability ||
+        load.mode === "exclusive" ||
+        load.mode === "logistics" ||
+        load.mode === "stationary";
+      const exclusiveActor =
+        wholeActorCapability || load.mode === "exclusive" || load.mode === "stationary";
       const roundTrip = singleCopy
         ? 0
         : Math.min(
-            load.travelTicks * 2,
+            boundedTravelTicks * 2,
             POPULATION_PLANNING_HORIZON_TICKS,
             MAX_POPULATION_TRAVEL_TICKS * 2,
           );
@@ -151,7 +167,6 @@ export class ColonyPopulationPolicy {
             remainingSupply,
             load.minimumCapability,
             input.replacementLeadTicks +
-              load.travelTicks +
               total(load.minimumCapability) * 3 +
               (input.spawnBusyTicks ?? 0),
           )
@@ -160,7 +175,6 @@ export class ColonyPopulationPolicy {
               ...supply(
                 input.actors,
                 input.replacementLeadTicks +
-                  load.travelTicks +
                   total(load.minimumCapability) * 3 +
                   (input.spawnBusyTicks ?? 0),
               ),
@@ -222,7 +236,12 @@ export class ColonyPopulationPolicy {
     const committed = new Set(input.committedDemandIds);
     const demands: ColonyCapabilityDemand[] = [];
     let energy = input.availableEnergy;
+    const spawnableCapacity = Math.min(
+      input.maximumBodyEnergy,
+      input.energyCapacityAvailable ?? input.maximumBodyEnergy,
+    );
     let blocked: ColonyPopulationProjection["reasonCode"] | null = preempted;
+    let rcl2ProgressionReserveUsed = false;
     for (const candidate of candidates) {
       if (demands.length >= MAX_POPULATION_DEMANDS) break;
       const cost = bodyCost(candidate.requiredCapability);
@@ -231,13 +250,22 @@ export class ColonyPopulationPolicy {
         energy = Math.max(0, energy - cost);
         continue;
       }
-      if (cost > energy || cost > input.maximumBodyEnergy) {
+      if (cost > input.maximumBodyEnergy || cost > spawnableCapacity) {
         blocked ??= "insufficient-available-energy";
         continue;
       }
+      if (cost > energy) {
+        blocked ??= "insufficient-available-energy";
+        // Do not starve the first spawnable high-priority objective with a cheaper lower-priority
+        // body. Preserve the room pool until this exact demand can be funded.
+        break;
+      }
       if (!RESERVE_ALLOWED.has(candidate.category) && energy - cost < input.protectedSpawnEnergy) {
-        blocked ??= "protected-spawn-reserve";
-        continue;
+        if (rcl2ProgressionReserveUsed || !isRcl2ProgressionReserveObjective(input, candidate)) {
+          blocked ??= "protected-spawn-reserve";
+          continue;
+        }
+        rcl2ProgressionReserveUsed = true;
       }
       demands.push({ ...candidate, energyCap: Math.min(energy, input.maximumBodyEnergy) });
       energy -= cost;
@@ -265,6 +293,57 @@ export class ColonyPopulationPolicy {
           truncatedDemands,
         );
   }
+}
+
+function isRcl2ProgressionReserveObjective(
+  input: ColonyPopulationPolicyInput,
+  candidate: ColonyCapabilityDemand,
+): boolean {
+  if (input.availableEnergy <= input.protectedSpawnEnergy) return false;
+  if (
+    candidate.category === "harvesting-filling" &&
+    (candidate.requiredCapability.carry !== 0 || candidate.requiredCapability.work !== 5)
+  )
+    return false;
+  return isRcl2ProgressionPopulationObjective({
+    category: candidate.category,
+    colonyId: input.colonyId,
+    controllerLevel: input.controllerLevel,
+    objectiveId: candidate.objectiveId,
+  });
+}
+
+/** Exact tick-local capability used by ColonyDirector to carry the same reserve decision to spawn. */
+export function isRcl2ProgressionPopulationObjective(input: {
+  readonly category: string;
+  readonly colonyId: string;
+  readonly controllerLevel: number | null;
+  readonly objectiveId: string;
+}): boolean {
+  if (input.controllerLevel !== 2) return false;
+  const segments = input.objectiveId.split("/");
+  if (input.category === "harvesting-filling")
+    return (
+      segments.length === 3 &&
+      segments[0] === "mining" &&
+      segments[1] === input.colonyId &&
+      (segments[2]?.length ?? 0) > 0
+    );
+  if (input.category !== "optional-growth") return false;
+  if (segments[0] !== "growth" || segments[1] !== input.colonyId) return false;
+  const build = segments.length === 4 && segments[2] === "build" && (segments[3]?.length ?? 0) > 0;
+  const infrastructureBuild =
+    segments.length === 5 &&
+    segments[2] === "rcl2-bootstrap" &&
+    segments[3] === "build" &&
+    (segments[4]?.length ?? 0) > 0;
+  const controllerSlot =
+    segments.length === 6 &&
+    segments[2] === "upgrade-controller" &&
+    (segments[3]?.length ?? 0) > 0 &&
+    segments[4] === "slot" &&
+    (segments[5]?.length ?? 0) > 0;
+  return build || infrastructureBuild || controllerSlot;
 }
 
 function takeExclusiveSupply(
@@ -295,13 +374,22 @@ function takeActor(
   required: CapabilityVector,
   lead: number,
 ): WorkforceActor | null {
-  const index = actors.findIndex(
-    (actor) =>
-      !actor.spawning &&
-      actor.ticksToLive !== null &&
-      actor.ticksToLive > lead &&
-      CAPABILITY_KEYS.every((key) => actor.capability[key] >= required[key]),
-  );
+  const eligible = actors
+    .map((actor, index) => ({ actor, index }))
+    .filter(
+      ({ actor }) =>
+        !actor.spawning &&
+        actor.ticksToLive !== null &&
+        actor.ticksToLive > lead &&
+        CAPABILITY_KEYS.every((key) => actor.capability[key] >= required[key]),
+    )
+    .sort(
+      (left, right) =>
+        capabilitySurplus(left.actor.capability, required) -
+          capabilitySurplus(right.actor.capability, required) ||
+        left.actor.id.localeCompare(right.actor.id),
+    );
+  const index = eligible[0]?.index ?? -1;
   return index < 0 ? null : (actors.splice(index, 1)[0] ?? null);
 }
 

@@ -25,10 +25,8 @@ describe("movement path cache", () => {
     const firstManager = new CacheManager();
     const first = getMovementPathCache(firstManager);
     expect(getMovementPathCache(firstManager)).toBe(first);
-    expect(firstManager.registeredNamespaceIds()).toEqual([
-      "movement.local-path.v2",
-      "movement.static-matrix.v1",
-    ]);
+    expect(firstManager.registeredNamespaceIds()).toEqual(["movement.path-cache.v3"]);
+    expect(firstManager.metrics().namespaces[0]?.capacity).toBe(240);
 
     first.staticMatrices.set(
       ["W1N1", "terrain:1"],
@@ -52,6 +50,10 @@ describe("movement path cache", () => {
       hit: true,
     });
     expect(first.localPaths.get(["W1N1", "origin:goal"], { tick: 2 })).toMatchObject({ hit: true });
+    expect(first.localPaths.get(["W1N1", "origin:goal"], { tick: 27 })).toEqual({ hit: false });
+    expect(first.staticMatrices.get(["W1N1", "terrain:1"], { tick: 27 })).toMatchObject({
+      hit: true,
+    });
 
     const reset = getMovementPathCache(new CacheManager());
     expect(reset.staticMatrices.get(["W1N1", "terrain:1"], { tick: 2 })).toEqual({ hit: false });

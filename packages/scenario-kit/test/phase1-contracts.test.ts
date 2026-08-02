@@ -237,7 +237,7 @@ function fundingLifecycleScenario(
     id: "phase1/contracts/funding-loss-renewal",
     seed: "phase1-contract-funding",
     initialWorld: {
-      contracts: { active: [], issuerFrontiers: [], outcomes: [], schemaVersion: 1 },
+      contracts: { active: [], issuerFrontiers: [], outcomes: [], schemaVersion: 2 },
     },
     ticks,
     step: ({ gameTime, input, world }) => {
@@ -309,7 +309,7 @@ function boundaryCompletionScenario(
     id: "phase1/contracts/exact-boundary-completion",
     seed: "phase1-contracts-boundary",
     initialWorld: {
-      contracts: { active: [], issuerFrontiers: [], outcomes: [], schemaVersion: 1 },
+      contracts: { active: [], issuerFrontiers: [], outcomes: [], schemaVersion: 2 },
     },
     ticks,
     step: ({ gameTime, input, world }) => {
@@ -373,7 +373,7 @@ function contractScenario(options: {
     id: "phase1/contracts/idempotent-lease-lifecycle",
     seed: "phase1-contracts",
     initialWorld: {
-      contracts: { active: [], issuerFrontiers: [], outcomes: [], schemaVersion: 1 },
+      contracts: { active: [], issuerFrontiers: [], outcomes: [], schemaVersion: 2 },
     },
     ticks,
     step: ({ gameTime, input, world }) => {

@@ -30,7 +30,7 @@ import {
   type LayoutTerminalEvacuation,
 } from "../src/layout";
 import { COLONY_RCL_POLICY_TABLE, reservationIdFor, type BudgetRequest } from "../src/colony";
-import { contractIdFor, requestSignature, type WorkContractRequest } from "../src/contracts";
+import { ContractLedger, contractIdFor } from "../src/contracts";
 import { assignLabCluster } from "../src/industry";
 import { deriveLinkRoleAnchors, type LinkLayoutEvidence } from "../src/links";
 import type { RuntimeGame } from "../src/runtime/context";
@@ -42,6 +42,13 @@ const FIND_SOURCES_VALUE = 105;
 const FIND_STRUCTURES_VALUE = 107;
 const FIND_CONSTRUCTION_SITES_VALUE = 111;
 const ROOM_NAME = "W1N1";
+
+function contractsView(memory: Memory): ReturnType<ContractLedger["view"]> {
+  const opened = ContractLedger.open(memory.myrmex?.contracts ?? {});
+  expect(opened.status).toBe("ready");
+  if (opened.status !== "ready") throw new Error("expected valid contracts owner");
+  return opened.ledger.view();
+}
 
 interface StaleSiteEvidence {
   readonly ownership: "foreign" | "owned";
@@ -409,7 +416,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (migration === undefined) throw new Error("expected stale container migration");
     const budgetIssuer = layoutContainerMigrationBudgetIssuer(ROOM_NAME, migration);
     const flowId = layoutContainerMigrationFlowId(ROOM_NAME, migration);
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -462,7 +469,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     const migration = layoutsOwner(memory).staleRecords[0]?.containerMigration;
     if (migration === undefined) throw new Error("expected stale source-container migration");
     const flowId = layoutContainerMigrationFlowId(ROOM_NAME, migration);
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -519,7 +526,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (migration === undefined)
       throw new Error("expected stale non-energy source-container migration");
     const flowId = layoutContainerMigrationResourceFlowId(ROOM_NAME, migration, "U");
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string; readonly resourceType?: string };
@@ -587,7 +594,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     const flowIds = resourceTypes.map((resourceType) =>
       layoutContainerMigrationResourceFlowId(ROOM_NAME, migration, resourceType),
     );
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string; readonly resourceType?: string };
@@ -650,7 +657,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (migration === undefined) throw new Error("expected stale non-energy container migration");
     const budgetIssuer = layoutContainerMigrationResourceBudgetIssuer(ROOM_NAME, migration, "U");
     const flowId = layoutContainerMigrationResourceFlowId(ROOM_NAME, migration, "U");
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string; readonly resourceType?: string };
@@ -720,7 +727,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     const flowIds = resourceTypes.map((resourceType) =>
       layoutContainerMigrationResourceFlowId(ROOM_NAME, migration, resourceType),
     );
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string; readonly resourceType?: string };
@@ -792,7 +799,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (migration === undefined) throw new Error("expected stale mixed container migration");
     const deliveredFlowId = layoutContainerMigrationResourceFlowId(ROOM_NAME, migration, "U");
     const remainingFlowId = layoutContainerMigrationResourceFlowId(ROOM_NAME, migration, "energy");
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string; readonly resourceType?: string };
@@ -1025,7 +1032,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       }),
       memory,
     });
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly counterpartId?: string; readonly flowId?: string };
@@ -1069,7 +1076,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
     for (let tick = 202; tick <= 205; tick += 1)
       runTick({ game: game(tick, commands, baseOptions), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -1091,7 +1098,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     commands.withdrawEnergy.mockClear();
 
     runTick({ game: game(206, commands, { ...baseOptions, threat: true }), memory });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
     expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -1127,7 +1134,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
     for (let tick = 202; tick <= 205; tick += 1)
       runTick({ game: game(tick, commands, baseOptions), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -1149,7 +1156,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     commands.withdrawEnergy.mockClear();
 
     runTick({ game: game(206, commands, { ...baseOptions, threat: true }), memory });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
     expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -1187,7 +1194,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
     for (let tick = 202; tick <= 205; tick += 1)
       runTick({ game: game(tick, commands, baseOptions), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -1215,7 +1222,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       }),
       memory,
     });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
     expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -1265,7 +1272,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
       for (let tick = 202; tick <= 205; tick += 1)
         runTick({ game: game(tick, commands, baseOptions), memory });
-      const contractsBefore = memory.myrmex?.contracts as
+      const contractsBefore = contractsView(memory) as
         | {
             readonly active?: readonly {
               readonly execution?: { readonly flowId?: string };
@@ -1287,7 +1294,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       commands.withdrawEnergy.mockClear();
 
       runTick({ game: game(206, commands, { ...baseOptions, threat: true }), memory });
-      const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+      const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
       expect(commands.withdrawEnergy).not.toHaveBeenCalled();
       expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -1325,7 +1332,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (evacuation === undefined) throw new Error("expected stale extension evacuation");
     const budgetIssuer = layoutExtensionEvacuationBudgetIssuer(ROOM_NAME, evacuation);
     const flowId = layoutExtensionEvacuationFlowId(ROOM_NAME, evacuation);
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -1446,7 +1453,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       }),
       memory,
     });
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly counterpartId?: string; readonly flowId?: string };
@@ -1495,7 +1502,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       const budgetIssuers = layoutLabEvacuationBudgetIssuers(ROOM_NAME, evacuation);
       if (budgetIssuers === null || flowIds === null)
         throw new Error("expected bounded lab evacuation identities");
-      const contracts = memory.myrmex?.contracts as
+      const contracts = contractsView(memory) as
         | {
             readonly active?: readonly {
               readonly execution?: { readonly flowId?: string };
@@ -1594,7 +1601,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
       for (let tick = 202; tick <= 205; tick += 1)
         runTick({ game: game(tick, commands, baseOptions), memory });
-      const contractsBefore = memory.myrmex?.contracts as
+      const contractsBefore = contractsView(memory) as
         | {
             readonly active?: readonly {
               readonly execution?: { readonly flowId?: string };
@@ -1643,7 +1650,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
         }),
         memory,
       });
-      const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+      const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
       expect(commands.withdrawEnergy).not.toHaveBeenCalled();
       expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -1688,7 +1695,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       const budgetIssuers = layoutStorageEvacuationBudgetIssuers(ROOM_NAME, evacuation);
       if (flowIds === null || budgetIssuers === null)
         throw new Error("expected bounded storage evacuation identities");
-      const contracts = memory.myrmex?.contracts as
+      const contracts = contractsView(memory) as
         | {
             readonly active?: readonly {
               readonly execution?: { readonly flowId?: string };
@@ -1763,7 +1770,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(commands.createConstructionSite).not.toHaveBeenCalled();
     expect(commands.destroyStructure).not.toHaveBeenCalled();
     expect(commands.sendTerminal).not.toHaveBeenCalled();
-    const contractsAtCursor = memory.myrmex?.contracts as
+    const contractsAtCursor = contractsView(memory) as
       | { readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[] }
       | undefined;
     expect(
@@ -1773,7 +1780,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     ).toBe(false);
 
     runTick({ game: game(cursorTick + 1, commands, delivered), memory });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsAtCursor;
+    const contractsAfter = contractsView(memory) as typeof contractsAtCursor;
     expect(
       secondFlowIds.every((flowId) =>
         contractsAfter?.active?.some(({ execution }) => execution?.flowId === flowId),
@@ -1834,7 +1841,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
     for (let tick = 201; tick <= 204; tick += 1)
       runTick({ game: game(tick, commands, base), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -1857,7 +1864,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     commands.withdrawEnergy.mockClear();
 
     runTick({ game: game(205, commands, { ...base, threat: true }), memory });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.sendTerminal).not.toHaveBeenCalled();
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
@@ -1905,7 +1912,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       const budgetIssuers = layoutTerminalEvacuationBudgetIssuers(ROOM_NAME, evacuation);
       if (flowIds === null || budgetIssuers === null)
         throw new Error("expected bounded terminal evacuation identities");
-      const contracts = memory.myrmex?.contracts as
+      const contracts = contractsView(memory) as
         | {
             readonly active?: readonly {
               readonly execution?: { readonly flowId?: string };
@@ -2000,7 +2007,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
     for (let tick = 201; tick <= 204; tick += 1)
       runTick({ game: game(tick, commands, base), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -2023,7 +2030,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     commands.withdrawEnergy.mockClear();
 
     runTick({ game: game(205, commands, { ...base, threat: true }), memory });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.sendTerminal).not.toHaveBeenCalled();
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
@@ -2063,7 +2070,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (evacuation === undefined) throw new Error("expected stale spawn evacuation");
     const budgetIssuer = layoutSpawnEvacuationBudgetIssuer(ROOM_NAME, evacuation);
     const flowId = layoutSpawnEvacuationFlowId(ROOM_NAME, evacuation);
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -2143,7 +2150,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
 
     for (let tick = 202; tick <= 205; tick += 1)
       runTick({ game: game(tick, commands, baseOptions), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -2165,7 +2172,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     commands.withdrawEnergy.mockClear();
 
     runTick({ game: game(206, commands, { ...baseOptions, threat: true }), memory });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
     expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -2203,7 +2210,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (evacuation === undefined) throw new Error("expected stale tower evacuation");
     const budgetIssuer = layoutTowerEvacuationBudgetIssuer(ROOM_NAME, evacuation);
     const flowId = layoutTowerEvacuationFlowId(ROOM_NAME, evacuation);
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -2281,7 +2288,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       }),
       memory,
     });
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly counterpartId?: string; readonly flowId?: string };
@@ -2327,7 +2334,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     runTick({ game: safeGame(203), memory });
     runTick({ game: safeGame(204), memory });
     runTick({ game: safeGame(205), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -2359,7 +2366,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       }),
       memory,
     });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
     expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -2395,7 +2402,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (evacuation === undefined) throw new Error("expected stale reserve-link evacuation");
     const budgetIssuer = layoutLinkEvacuationBudgetIssuer(ROOM_NAME, evacuation);
     const flowId = layoutLinkEvacuationFlowId(ROOM_NAME, evacuation);
-    const contracts = memory.myrmex?.contracts as
+    const contracts = contractsView(memory) as
       | {
           readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[];
         }
@@ -2438,7 +2445,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     if (flowId === null) throw new Error("expected bounded reserve-link flow");
     for (let tick = 202; tick <= 205; tick += 1)
       runTick({ game: game(tick, commands, { ...base, ...safe }), memory });
-    const contractsBefore = memory.myrmex?.contracts as
+    const contractsBefore = contractsView(memory) as
       | {
           readonly active?: readonly {
             readonly execution?: { readonly flowId?: string };
@@ -2469,7 +2476,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       },
     };
     runTick({ game: game(206, commands, { ...base, ...drifted }), memory });
-    const contractsAfter = memory.myrmex?.contracts as typeof contractsBefore;
+    const contractsAfter = contractsView(memory) as typeof contractsBefore;
 
     expect(commands.withdrawEnergy).not.toHaveBeenCalled();
     expect(commands.transferEnergy).not.toHaveBeenCalled();
@@ -2549,13 +2556,8 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(forward.miningOutcomes).toEqual([]);
     expect(forward.handoffReplacements).toEqual([]);
     expect(forward.followingReplacements).toEqual([]);
-    expect(forward.followingSubmissions).toEqual([
-      expect.objectContaining({
-        accepted: true,
-        contractId: forward.contractId,
-        outcome: "duplicate-active",
-      }),
-    ]);
+    // The stable exact service remains active without re-submitting the same contract every tick.
+    expect(forward.followingSubmissions).toEqual([]);
     expect(reset).toEqual(forward);
     expect(reordered).toEqual(forward);
   });
@@ -2592,8 +2594,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
       game: game(103, commands, { staticMiner: true, threat: true }),
       memory,
     });
-    const contracts = memory.myrmex?.contracts as
-      { active?: Array<{ id?: string; state?: string }> } | undefined;
+    const contracts = contractsView(memory);
 
     expect(blocked.layout.planning).toEqual([
       expect.objectContaining({ blocker: "revision-handoff-active", roomName: ROOM_NAME }),
@@ -2601,7 +2602,7 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(
       blocked.colony.reservations.filter(({ issuer }) => issuer.startsWith("mining/")),
     ).toEqual([expect.objectContaining({ status: "released" })]);
-    expect(contracts?.active?.find(({ id }) => id === contractId)?.state).toBe("suspended");
+    expect(contracts.active.find(({ id }) => id === contractId)?.state).toBe("suspended");
     expect(layoutsOwner(memory).records).toEqual([]);
     expect(layoutsOwner(memory).staleRecords).toHaveLength(1);
     expect(commands.createConstructionSite).not.toHaveBeenCalled();
@@ -2638,9 +2639,8 @@ describe("stale layout revision runtime handoff (#385/#387/#389/#391/#393/#395/#
     expect(
       rejected.contracts?.submissions.filter((submission) => submission.contractId === contractId),
     ).toEqual([]);
-    const contracts = memory.myrmex?.contracts as
-      { active?: Array<{ id?: string; state?: string }> } | undefined;
-    expect(contracts?.active?.find(({ id }) => id === contractId)?.state).toBe("suspended");
+    const contracts = contractsView(memory);
+    expect(contracts.active.find(({ id }) => id === contractId)?.state).toBe("suspended");
     expect(layoutsOwner(memory).records).toEqual([]);
     expect(layoutsOwner(memory).staleRecords).toHaveLength(1);
     expect(commands.createConstructionSite).not.toHaveBeenCalled();
@@ -4622,18 +4622,7 @@ async function runSettledStaleSourceServiceVariant(
   const sourceServices = layoutsOwner(memory).records.find(
     ({ roomName }) => roomName === ROOM_NAME,
   )?.sourceServices;
-  const contractOwner = memory.myrmex?.contracts as
-    | {
-        active?: Array<{
-          id?: string;
-          issuer?: string;
-          issuerSequence?: number;
-          lease?: { actorId?: string };
-          state?: string;
-        }>;
-        outcomes?: Array<{ id?: string; issuer?: string }>;
-      }
-    | undefined;
+  const contractOwner = contractsView(memory);
   commands.createConstructionSite.mockClear();
   commands.destroyStructure.mockClear();
   const following = executeTick({
@@ -4643,7 +4632,7 @@ async function runSettledStaleSourceServiceVariant(
   const issuer = `mining/${ROOM_NAME}/source-${ROOM_NAME}`;
 
   return {
-    activeMining: (contractOwner?.active ?? []).filter((contract) => contract.issuer === issuer),
+    activeMining: contractOwner.active.filter((contract) => contract.issuer === issuer),
     contractId,
     expectedActorId,
     followingReplacements: following.contracts?.replacements ?? [],
@@ -4660,7 +4649,7 @@ async function runSettledStaleSourceServiceVariant(
       (transition) => transition.contractId === contractId,
     ),
     kernelFaults: handoff.kernel.faults,
-    miningOutcomes: (contractOwner?.outcomes ?? []).filter((outcome) => outcome.issuer === issuer),
+    miningOutcomes: contractOwner.outcomes.filter((outcome) => outcome.issuer === issuer),
     sourceServices,
   };
 }
@@ -5391,32 +5380,10 @@ function seedSettledStaleSourceService(memory: Memory): {
 } {
   seedStaleOwner(memory, "source-handoff");
   const issuer = `mining/${ROOM_NAME}/source-${ROOM_NAME}`;
-  const contracts = memory.myrmex?.contracts as
-    | {
-        active?: Array<{
-          history: Array<{ from: string | null; reason: string; tick: number; to: string }>;
-          id: string;
-          issuer: string;
-          issuerSequence: number;
-          lease: null | { actorId: string };
-          requestSignature: string;
-          revision: number;
-          state: string;
-        }>;
-        issuerFrontiers?: Array<{ issuer: string; retiredThrough: number }>;
-      }
-    | undefined;
-  const predecessor = contracts?.active?.find((contract) => contract.issuer === issuer);
-  if (
-    predecessor === undefined ||
-    contracts?.active === undefined ||
-    predecessor.state !== "funded"
-  )
+  const contracts = contractsView(memory);
+  const predecessor = contracts.active.find((contract) => contract.issuer === issuer);
+  if (predecessor === undefined || predecessor.state !== "funded")
     throw new Error("expected funded static-mining predecessor");
-  const successorRequest = {
-    ...(JSON.parse(predecessor.requestSignature) as WorkContractRequest),
-    issuerSequence: 2,
-  };
   const successorId = contractIdFor(issuer, `source-${ROOM_NAME}`, 2);
   const expectedActorId = `static-miner-${ROOM_NAME}`;
   const active = contracts.active.map((contract) =>
@@ -5425,12 +5392,7 @@ function seedSettledStaleSourceService(memory: Memory): {
           ...contract,
           history: [
             ...contract.history,
-            {
-              from: "funded",
-              reason: "test-exact-static-mining-assignment",
-              tick: 102,
-              to: "assigned",
-            },
+            ["funded", "test-exact-static-mining-assignment", 102, "assigned"] as const,
           ],
           id: successorId,
           issuerSequence: 2,
@@ -5442,7 +5404,6 @@ function seedSettledStaleSourceService(memory: Memory): {
             expiresAt: 112,
             travelTicks: 0,
           },
-          requestSignature: requestSignature(successorRequest),
           revision: contract.revision + 1,
           state: "assigned",
         }
@@ -5452,12 +5413,7 @@ function seedSettledStaleSourceService(memory: Memory): {
             ...contract,
             history: [
               ...contract.history,
-              {
-                from: contract.state,
-                reason: "test-release-static-mining-actor",
-                tick: 102,
-                to: "suspended",
-              },
+              [contract.state, "test-release-static-mining-actor", 102, "suspended"] as const,
             ],
             lease: null,
             revision: contract.revision + 1,
@@ -5466,13 +5422,13 @@ function seedSettledStaleSourceService(memory: Memory): {
         : contract,
   );
   const issuerFrontiers = [
-    ...(contracts.issuerFrontiers ?? []).filter((frontier) => frontier.issuer !== issuer),
+    ...contracts.issuerFrontiers.filter((frontier) => frontier.issuer !== issuer),
     { issuer, retiredThrough: 1 },
   ].sort((left, right) => left.issuer.localeCompare(right.issuer));
   memory.myrmex = {
     ...memory.myrmex,
-    contracts: { ...(memory.myrmex?.contracts as object), active, issuerFrontiers },
-  } as NonNullable<Memory["myrmex"]>;
+    contracts: { ...(contractsView(memory) as object), active, issuerFrontiers },
+  } as unknown as NonNullable<Memory["myrmex"]>;
   return { contractId: successorId, expectedActorId };
 }
 
@@ -5990,7 +5946,7 @@ async function runCompletedStaleLabEvacuationVariant(
   if (expectedFlowIds === null) throw new Error("expected bounded stale lab flow identities");
   const admissionFlowIds = (
     (
-      memory.myrmex?.contracts as
+      contractsView(memory) as
         | {
             readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[];
           }
@@ -6004,7 +5960,7 @@ async function runCompletedStaleLabEvacuationVariant(
     )
     .sort();
   // A terminal ContractLedger outcome is absent from `active`; inject that retired-work boundary.
-  const contractOwner = memory.myrmex?.contracts as
+  const contractOwner = contractsView(memory) as
     | {
         readonly active?: readonly { readonly execution?: { readonly flowId?: string } }[];
       }

@@ -91,25 +91,32 @@ reported separately from contract expiry.
 
 ### Persistence and failure behavior
 
-The `Memory.myrmex` root remains schema v3. `ContractLedger` owns an independent schema v1 inside
-the existing `contracts` owner:
+The `Memory.myrmex` root remains schema v3. `ContractLedger` now owns an independent schema v3
+inside the existing `contracts` owner. Fixed tuples bound persistence overhead, while IDs and active
+request signatures remain derived and are revalidated when the owner opens:
 
 ```ts
-interface ContractLedgerStateV1 {
-  readonly schemaVersion: 1;
-  readonly active: readonly WorkContractRecord[];
-  readonly issuerFrontiers: readonly ContractIssuerFrontier[];
-  readonly outcomes: readonly ContractOutcome[];
+interface ContractLedgerStateV3 {
+  readonly schemaVersion: 3;
+  readonly active: readonly PersistedWorkContractRecordV3[];
+  readonly issuerFrontiers: readonly (readonly [issuer: string, retiredThrough: number])[];
+  readonly outcomes: readonly PersistedContractOutcomeV3[];
 }
 ```
 
-Only exact `{}` initializes the owner-local schema. A valid v1 subtree is retained. Malformed v1
-content and versions newer than v1 fail closed: the system emits a bounded fault and preserves the
-subtree rather than rebuilding or downgrading it.
+Only exact `{}` initializes the owner-local schema. Valid v1 and v2 subtrees are decoded into the
+canonical runtime view and staged once in the compact v3 encoding. Legacy full terminal request
+signatures must parse canonically and match the outcome issuer identity before conversion. Malformed
+supported content and versions newer than v3 fail closed: the system emits a bounded fault and
+preserves the subtree rather than rebuilding or downgrading it.
 
-Every retained terminal request signature must decode to the exact canonical request and carry the
-same issuer, issuer sequence, and issuer key as its outcome. Malformed, non-canonical, or
-identity-mismatched signatures invalidate the owner rather than becoming idempotency evidence.
+V3 keeps active request fields exactly, but terminal outcomes retain only their explicit issuer
+identity and a versioned FNV-1a-64 digest of the canonical request. Duplicate-terminal submission
+compares that digest; the separate retirement frontier still rejects all coordinates at or below the
+retired issuer sequence after outcome eviction. This is a bounded persistence trade-off, not a
+reversible or collision-proof signature and not a security boundary. With at most eight retained
+outcomes, accidental collision risk is accepted in exchange for keeping production Memory within its
+fixed bound.
 
 General `StateView` consumers cannot inspect raw `config`, `colonies`, or `contracts` persistence.
 The runtime adapter obtains a frozen detached contracts-owner view from `MemoryManager`, and only

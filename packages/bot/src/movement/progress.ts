@@ -7,9 +7,7 @@ import {
 import type { PositionSnapshot, WorldSnapshot } from "../world/snapshot";
 import type { MovementRuntimeResult } from "./contracts";
 
-const MAX_MOVEMENT_ATTEMPT_RECORDS = 128;
-const MAX_GOAL_SEQUENCE_RECORDS = 64;
-const MAX_MOVEMENT_PROGRESS_RECORDS = MAX_MOVEMENT_ATTEMPT_RECORDS + MAX_GOAL_SEQUENCE_RECORDS;
+const MAX_MOVEMENT_PROGRESS_RECORDS = 128;
 const MAX_STUCK_AGE = 100;
 const MAX_GOAL_OSCILLATION_AGE = 100;
 const MAX_GOAL_SEQUENCE_GAP_TICKS = 3;

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ContractLedger } from "../src/contracts";
 import { runTick } from "../src/runtime/tick";
 import { establishedRcl2World } from "./support/established-rcl2-fixture";
 
@@ -113,13 +114,7 @@ describe("Phase 1 gate established RCL2 row", () => {
       expect(world.spawnEnergy()).toBe(300);
     }
 
-    const contracts = memory.myrmex?.contracts as unknown as {
-      active?: readonly {
-        readonly issuer?: string;
-        readonly lease?: unknown;
-        readonly state?: string;
-      }[];
-    };
+    const contracts = openedContractLedger(memory).view();
     expect(world.workerHarvestCalls()).toBeGreaterThan(0);
     expect(world.siteProgress()).toBeGreaterThan(0);
     expect(world.roomEnergyCapacity()).toBe(300);
@@ -159,10 +154,9 @@ describe("Phase 1 gate established RCL2 row", () => {
     let nextTick = START_TICK;
     const takeover = [] as ReturnType<typeof runTick>[];
     const contractState = (prefix: string): string | undefined => {
-      const owner = memory.myrmex?.contracts as unknown as {
-        active?: readonly { readonly issuer?: string; readonly state?: string }[];
-      };
-      return owner.active?.find(({ issuer }) => issuer?.startsWith(prefix))?.state;
+      return openedContractLedger(memory)
+        .view()
+        .active.find(({ issuer }) => issuer.startsWith(prefix))?.state;
     };
 
     for (; nextTick < START_TICK + 30; nextTick += 1) {
@@ -287,3 +281,10 @@ describe("Phase 1 gate established RCL2 row", () => {
     ).toBe(true);
   });
 });
+
+function openedContractLedger(memory: Memory): ContractLedger {
+  const opened = ContractLedger.open(memory.myrmex?.contracts ?? {});
+  expect(opened.status).toBe("ready");
+  if (opened.status !== "ready") throw new Error("expected valid contracts owner");
+  return opened.ledger;
+}

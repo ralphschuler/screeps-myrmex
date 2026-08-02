@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  STATIC_MINER_MAX_ASSIGNMENT_COST,
   minerCapability,
   planStaticMining,
   reconcileStaleSourceServiceContracts,
@@ -42,6 +43,7 @@ describe("StaticMiningPlanner", () => {
     expect(result.requests).toHaveLength(1);
     expect(result.requests[0]).toMatchObject({
       issuer: "mining/W1N1/a",
+      maxAssignmentCost: STATIC_MINER_MAX_ASSIGNMENT_COST,
       requiredCapability: { work: 5, move: 3 },
       execution: { version: 2, workPosition: pos(11, 10) },
     });
@@ -52,7 +54,7 @@ describe("StaticMiningPlanner", () => {
 
   it("scales deterministic stationary bodies at room-capacity boundaries", () => {
     expect(minerCapability(300)).toMatchObject({ work: 2, move: 1 });
-    expect(minerCapability(550)).toMatchObject({ work: 4, move: 2 });
+    expect(minerCapability(550)).toMatchObject({ work: 5, move: 1 });
     expect(minerCapability(800)).toMatchObject({ work: 5, move: 3 });
   });
 
@@ -167,6 +169,71 @@ describe("StaticMiningPlanner", () => {
       issuerSequence: 2,
       execution: { version: 2, workPosition: pos(12, 10) },
     });
+  });
+
+  it("replaces and then stabilizes a stationary miner when room body capacity changes", () => {
+    const placement = service("a", 11);
+    const predecessorRequest = planStaticMining({
+      layouts: new Map([["W1N1", [placement]]]),
+      snapshot: worldAtCapacity(400),
+      tick: 10,
+    }).requests[0];
+    if (predecessorRequest === undefined) throw new Error("expected predecessor request");
+    const predecessorId = contractIdFor(
+      predecessorRequest.issuer,
+      predecessorRequest.issuerKey,
+      predecessorRequest.issuerSequence,
+    );
+    const planningRecord = (
+      request: typeof predecessorRequest,
+      state: ContractPlanningView["contracts"][number]["state"] = "active",
+    ): ContractPlanningView["contracts"][number] => {
+      if (request.execution === undefined || request.targetId === null)
+        throw new Error("expected stationary execution target");
+      return {
+        budgetBinding: request.budgetBinding,
+        contractId: contractIdFor(request.issuer, request.issuerKey, request.issuerSequence),
+        execution: request.execution,
+        issuer: request.issuer,
+        issuerSequence: request.issuerSequence,
+        owner: request.owner,
+        requestSignature: requestSignature(request),
+        state,
+        targetId: request.targetId,
+      };
+    };
+    const upgraded = planStaticMining({
+      layouts: new Map([["W1N1", [placement]]]),
+      planning: { contracts: [planningRecord(predecessorRequest)], status: "ready" },
+      snapshot: worldAtCapacity(550),
+      tick: 11,
+    });
+    const successor = upgraded.replacements[0]?.successor;
+    if (successor === undefined) throw new Error("expected capability successor");
+    expect(upgraded.projections[0]?.budgetRequest?.revision).toBe(2);
+    expect(upgraded.requests).toEqual([]);
+    expect(upgraded.replacements).toEqual([
+      {
+        predecessorContractId: predecessorId,
+        reason: "source-service-handoff",
+        successor,
+        tick: 11,
+      },
+    ]);
+    expect(successor).toMatchObject({
+      issuerSequence: 2,
+      requiredCapability: { move: 1, work: 5 },
+    });
+
+    const stable = planStaticMining({
+      layouts: new Map([["W1N1", [placement]]]),
+      planning: { contracts: [planningRecord(successor)], status: "ready" },
+      snapshot: worldAtCapacity(550),
+      tick: 12,
+    });
+    expect(stable.projections[0]?.budgetRequest?.revision).toBe(2);
+    expect(stable.replacements).toEqual([]);
+    expect(stable.requests).toEqual([]);
   });
 
   it.each(["proposed", "funded", "assigned", "active", "suspended"] as const)(
@@ -707,5 +774,15 @@ function world(reorder = false): WorldSnapshot {
       estimatedPayloadBytes: 0,
     },
     visibility: { absentRoomSemantics: "unknown", rooms: [], scope: "current-tick" },
+  };
+}
+
+function worldAtCapacity(capacity: number): WorldSnapshot {
+  const snapshot = world();
+  const room = snapshot.rooms[0];
+  if (room === undefined) throw new Error("expected room");
+  return {
+    ...snapshot,
+    rooms: [{ ...room, energyAvailable: capacity, energyCapacityAvailable: capacity }],
   };
 }

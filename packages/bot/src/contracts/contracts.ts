@@ -1,7 +1,12 @@
 import { INTENT_PRIORITY_CLASSES, type IntentPriority } from "../execution/contracts";
 import type { CreepSnapshot, PositionSnapshot } from "../world/snapshot";
 
-export const CONTRACT_LEDGER_SCHEMA_VERSION = 1 as const;
+/** Deployed owner schema that persisted a full request copy in every active record signature. */
+export const CONTRACT_LEDGER_LEGACY_SCHEMA_VERSION = 1 as const;
+/** Previous owner schema derives active request signatures and compacts transition histories. */
+export const CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION = 2 as const;
+/** Current owner schema uses fixed tuples and versioned terminal digests for bounded persistence. */
+export const CONTRACT_LEDGER_SCHEMA_VERSION = 3 as const;
 
 export const MAX_ACTIVE_CONTRACTS = 256;
 export const MAX_CONTRACT_OUTCOMES = 8;
@@ -466,6 +471,7 @@ export interface ContractOutcome {
   readonly issuerKey: string;
   readonly issuerSequence: number;
   readonly reason: string;
+  /** Versioned 64-bit digest of the canonical request; active records keep the full signature. */
   readonly requestSignature: string;
   readonly revision: number;
   readonly state: TerminalWorkContractState;
@@ -501,7 +507,115 @@ export function nextIssuerSequence(planning: ContractPlanningView, issuer: strin
   return retiredThrough < Number.MAX_SAFE_INTEGER ? retiredThrough + 1 : null;
 }
 
-export interface ContractLedgerStateV1 {
+/** Canonical schema-V2 history encoding; field positions are fixed by this tuple contract. */
+export type PersistedContractHistoryEventV2 = readonly [
+  from: ContractHistoryEvent["from"],
+  reason: ContractHistoryEvent["reason"],
+  tick: ContractHistoryEvent["tick"],
+  to: ContractHistoryEvent["to"],
+];
+
+/** Canonical schema-V2 active record; derived identity and repeated history keys are omitted. */
+export type PersistedWorkContractRecordV2 = Omit<
+  WorkContractRecord,
+  "history" | "requestSignature"
+> & {
+  readonly history: readonly PersistedContractHistoryEventV2[];
+};
+
+export interface ContractLedgerStateV2 {
+  readonly active: readonly PersistedWorkContractRecordV2[];
+  readonly issuerFrontiers: readonly ContractIssuerFrontier[];
+  readonly outcomes: readonly ContractOutcome[];
+  readonly schemaVersion: typeof CONTRACT_LEDGER_PREVIOUS_SCHEMA_VERSION;
+}
+
+/** Stable source-compatibility alias for callers that used the original state type name. */
+export type ContractLedgerStateV1 = ContractLedgerStateV2;
+
+/** Schema-V3 history keeps the first source state and the complete ordered transition suffix. */
+export type PersistedContractHistoryV3 = readonly [
+  firstFrom: ContractHistoryEvent["from"],
+  transitions: readonly (readonly [
+    reason: ContractHistoryEvent["reason"],
+    tick: ContractHistoryEvent["tick"],
+    to: ContractHistoryEvent["to"],
+  ])[],
+];
+
+/** Fixed positions are decoded and revalidated into the canonical execution-term union. */
+export type PersistedContractExecutionV3 = readonly unknown[];
+
+/** Schema-V3 active tuple. `id` and `requestSignature` are derived from canonical request fields. */
+export type PersistedWorkContractRecordV3 = readonly [
+  budgetBinding: readonly [category: string, issuer: string],
+  conditions: readonly [cancellation: string | null, failure: string | null, success: string],
+  deadline: number,
+  execution: PersistedContractExecutionV3 | null,
+  earliestStart: number,
+  estimatedWorkTicks: number,
+  expiresAt: number,
+  issuer: string,
+  issuerKey: string,
+  issuerSequence: number,
+  kind: WorkContractKind,
+  leasePolicy: readonly [duration: number, switchingPenalty: number, ttlSafetyMargin: number],
+  maxAssignmentCost: number,
+  owner: readonly [id: string, kind: ContractOwnerScope["kind"]],
+  preconditionKeys: readonly string[],
+  priority: readonly [className: IntentPriority["class"], value: number],
+  quantity: number,
+  range: number,
+  requiredCapability: readonly [
+    attack: number,
+    carry: number,
+    claim: number,
+    heal: number,
+    move: number,
+    rangedAttack: number,
+    tough: number,
+    work: number,
+  ],
+  target: readonly [roomName: string, x: number, y: number],
+  targetId: string | null,
+  history: PersistedContractHistoryV3,
+  lease:
+    | readonly [
+        actorId: string,
+        actorName: string,
+        assignedAt: number,
+        assignmentCost: number,
+        expiresAt: number,
+        travelTicks: number,
+      ]
+    | null,
+  revision: number,
+  state: ActiveWorkContractState,
+];
+
+export type PersistedContractIssuerFrontierV3 = readonly [issuer: string, retiredThrough: number];
+
+/** Outcome `id` remains derivable from its immutable issuer identity. */
+export type PersistedContractOutcomeV3 = readonly [
+  issuer: string,
+  issuerKey: string,
+  issuerSequence: number,
+  reason: string,
+  requestSignature: string,
+  revision: number,
+  state: TerminalWorkContractState,
+  tick: number,
+];
+
+export interface ContractLedgerStateV3 {
+  readonly active: readonly PersistedWorkContractRecordV3[];
+  readonly issuerFrontiers: readonly PersistedContractIssuerFrontierV3[];
+  readonly outcomes: readonly PersistedContractOutcomeV3[];
+  readonly schemaVersion: typeof CONTRACT_LEDGER_SCHEMA_VERSION;
+}
+
+/** Internal opened form; the signature exists on heap for exact idempotency and projections. */
+export interface ContractLedgerRuntimeState {
   readonly active: readonly WorkContractRecord[];
   readonly issuerFrontiers: readonly ContractIssuerFrontier[];
   readonly outcomes: readonly ContractOutcome[];
@@ -557,7 +671,7 @@ export class ContractValidationError extends Error {
   }
 }
 
-export function createEmptyContractLedgerState(): ContractLedgerStateV1 {
+export function createEmptyContractLedgerState(): ContractLedgerRuntimeState {
   return Object.freeze({
     active: Object.freeze([]),
     issuerFrontiers: Object.freeze([]),
@@ -675,6 +789,35 @@ export function normalizeContractRequest(request: WorkContractRequest): WorkCont
 export function requestSignature(request: WorkContractRequest): string {
   const normalized = normalizeContractRequest(request);
   return JSON.stringify(normalized);
+}
+
+const CONTRACT_OUTCOME_REQUEST_DIGEST_PREFIX = "contract-request-v1:";
+const CONTRACT_OUTCOME_REQUEST_DIGEST_PATTERN = /^contract-request-v1:fnv1a64-utf16:[0-9a-f]{16}$/;
+
+/** Compact terminal identity only; this deliberately does not change active request signatures. */
+export function contractOutcomeRequestDigest(request: WorkContractRequest): string {
+  return `${CONTRACT_OUTCOME_REQUEST_DIGEST_PREFIX}${contractRequestSignatureHash(requestSignature(request))}`;
+}
+
+export function isContractOutcomeRequestDigest(value: unknown): value is string {
+  return typeof value === "string" && CONTRACT_OUTCOME_REQUEST_DIGEST_PATTERN.test(value);
+}
+
+export function isContractOutcomeRequestDigestCandidate(value: string): boolean {
+  return value.startsWith(CONTRACT_OUTCOME_REQUEST_DIGEST_PREFIX);
+}
+
+/** FNV-1a64 over the canonical JSON string representation used by the deployed V2 digest. */
+function contractRequestSignatureHash(signature: string): string {
+  const serialized = JSON.stringify(signature);
+  let hash = 0xcbf29ce484222325n;
+
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= BigInt(serialized.charCodeAt(index));
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+
+  return `fnv1a64-utf16:${hash.toString(16).padStart(16, "0")}`;
 }
 
 export function workforceActorFromCreep(creep: CreepSnapshot): WorkforceActor {

@@ -67,7 +67,7 @@ evidence uses source defaults.
 
 Operational feature overrides can only disable known source-available gates. They cannot enable a
 gate, change prerequisites, or bypass an incomplete roadmap outcome. `phase3.portfolio` is
-source-available under `runtime-config-source-v28` after `phase2.mature`; disabling it preserves
+source-available under `runtime-config-source-v29` after `phase2.mature`; disabling it preserves
 portfolio and contract owner bytes while authorizing no new remote objective, budget, contract,
 spawn, site, or evacuation work. Disabling `phase2.mature` still preserves `IndustryOwnerV5`
 commitments and receipts while authorizing no factory, power-spawn, observer, or prerequisite remote
